@@ -37,9 +37,13 @@ fn json_to_value(json: Value) -> ValueType {
     match json {
         Value::Null => ValueType::Null,
         Value::Bool(b) => ValueType::Integer(b as i64),
-        Value::Number(n) => n.as_i64().map(ValueType::Integer).or(n.as_f64().map(ValueType::Float)).unwrap(),
+        Value::Number(n) => n.as_i64().map(ValueType::Integer)
+                            .or(n.as_f64().map(ValueType::Float))
+                            .unwrap(),
         Value::String(s) => ValueType::String(s),
-        Value::Array(arr) => ValueType::Set(arr.into_iter().map(|v| match v { Value::String(s) => s, _ => panic!("Expected list of strings") }).collect()),
+        Value::Array(arr) => ValueType::Set(arr.into_iter()
+                                            .map(|v| match v { Value::String(s) => s, _ => panic!("Expected list of strings") })
+                                            .collect()),
         o => panic!("Objects not supported: {:?}", o)
     }
 }
