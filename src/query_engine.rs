@@ -9,38 +9,47 @@ use aggregator::*;
 
 #[derive(Debug)]
 pub struct Query {
-    pub select: Vec<usize>,
+    pub select: Vec<Expr>,
     pub filter: Expr,
     pub aggregate: Vec<(Aggregator, Expr)>,
 }
 
 
 impl Query {
-    pub fn run(&self, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
+    pub fn run(&self, source: &Vec<Vec<ValueType>>, columns: &HashMap<String, usize>) -> Vec<Vec<ValueType>> {
+        let query = self.compile(columns);
         if self.aggregate.len() == 0 {
-            run_select_query(&self.select, &self.filter, source)
+            run_select_query(&query.select, &query.filter, source)
         } else {
-            run_aggregate_query(&self.select, &self.filter, &self.aggregate, source)
+            run_aggregate_query(&query.select, &query.filter, &query.aggregate, source)
+        }
+    }
+
+    fn compile(&self, column_names: &HashMap<String, usize>) -> Query {
+        Query {
+            select: self.select.iter().map(|expr| expr.compile(column_names)).collect(),
+            filter: self.filter.compile(column_names),
+            aggregate: self.aggregate.iter().map(|&(agg, ref expr)| (agg, expr.compile(column_names))).collect(),
         }
     }
 }
 
-fn run_select_query(select: &Vec<usize>, filter: &Expr, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
+fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
     source.iter()
-        .filter(|record| eval(record, filter) == ValueType::Bool(true))
-        .map(|record| select.iter().map(|&col| record[col].clone()).collect())
+        .filter(|record| filter.eval(record) == ValueType::Bool(true))
+        .map(|record| select.iter().map(|expr| expr.eval(record)).collect())
         .collect()
 }
 
-fn run_aggregate_query(select: &Vec<usize>, filter: &Expr, aggregation: &Vec<(Aggregator, Expr)>, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
+fn run_aggregate_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(Aggregator, Expr)>, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
     let mut groups: HashMap<Vec<ValueType>, Vec<ValueType>> = HashMap::new();
 
     for record in source.iter() {
-        if eval(record, filter) == ValueType::Bool(true) {
-            let group: Vec<ValueType> = select.iter().map(|&col| record[col].clone()).collect();
+        if filter.eval(record) == ValueType::Bool(true) {
+            let group: Vec<ValueType> = select.iter().map(|expr| expr.eval(record)).collect();
             let accumulator = groups.entry(group).or_insert(aggregation.iter().map(|x| x.0.zero()).collect());
             for (i, &(ref agg_func, ref expr)) in aggregation.iter().enumerate() {
-                accumulator[i] = agg_func.reduce(&accumulator[i], &eval(&record, expr));
+                accumulator[i] = agg_func.reduce(&accumulator[i], &expr.eval(record));
             }
         }
     }
@@ -65,33 +74,39 @@ pub fn test() {
     use self::Expr::*;
     use self::FuncType::*;
     use ValueType::*;
+
+    let mut columns: HashMap<String, usize> = HashMap::new();
+    columns.insert("timestamp".to_string(), 0);
+    columns.insert("url".to_string(), 1);
+    columns.insert("loadtime".to_string(), 2);
+
     let query1 = Query {
-        select: vec![1usize],
-        filter: Func(And,
-                     Box::new(Func(LT, Box::new(Column(2usize)), Box::new(Const(Integer(1000))))),
-                     Box::new(Func(GT, Box::new(Column(0usize)), Box::new(Const(Timestamp(1000)))))),
+        select: vec![Expr::col("url")],
+        filter: Expr::func(And,
+                           Expr::func(LT, Expr::col("loadtime"), Const(Integer(1000))),
+                           Expr::func(GT, Expr::col("timestamp"), Const(Timestamp(1000)))),
         aggregate: vec![],
     };
     let query2 = Query {
-        select: vec![0usize, 2usize],
-        filter: Func(Equals, Box::new(Column(1usize)), Box::new(Const(String(Rc::new("/".to_string()))))),
+        select: vec![Expr::col("timestamp"), Expr::col("loadtime")],
+        filter: Expr::func(Equals, Expr::col("url"), Const(Str(Rc::new("/".to_string())))),
         aggregate: vec![],
     };
     let count_query = Query {
-        select: vec![1usize],
+        select: vec![Expr::col("url")],
         filter: Const(Bool(true)),
         aggregate: vec![(Aggregator::Count, Const(Integer(0)))],
     };
     let sum_query = Query {
-        select: vec![1usize],
+        select: vec![Expr::col("url")],
         filter: Const(Bool(true)),
-        aggregate: vec![(Aggregator::Sum, Column(2))],
+        aggregate: vec![(Aggregator::Sum, Expr::col("loadtime"))],
     };
 
-    let result1 = query1.run(&dataset);
-    let result2 = query2.run(&dataset);
-    let count_result = count_query.run(&dataset);
-    let sum_result = sum_query.run(&dataset);
+    let result1 = query1.run(&dataset, &columns);
+    let result2 = query2.run(&dataset, &columns);
+    let count_result = count_query.run(&dataset, &columns);
+    let sum_result = sum_query.run(&dataset, &columns);
 
     println!("Result 1: {:?}", result1);
     println!("Result 2: {:?}", result2);
@@ -100,5 +115,5 @@ pub fn test() {
 }
 
 fn record(timestamp: u64, url: &str, loadtime: i64) -> Vec<ValueType> {
-    vec![ValueType::Timestamp(timestamp), ValueType::String(Rc::new(url.to_string())), ValueType::Integer(loadtime)]
+    vec![ValueType::Timestamp(timestamp), ValueType::Str(Rc::new(url.to_string())), ValueType::Integer(loadtime)]
 }

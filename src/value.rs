@@ -6,7 +6,7 @@ pub enum ValueType {
     Bool(bool),
     Timestamp(u64),
     Integer(i64),
-    String(Rc<String>),
+    Str(Rc<String>),
     Set(Rc<Vec<String>>)
 }
 
