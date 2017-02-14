@@ -1,0 +1,8 @@
+[
+  { "timestamp": 0, "x": "one", "y": "A", "z": 5.0 },
+  { "timestamp": 1, "x": "two", "y": "A", "z": 9.8 },
+  { "timestamp": 2, "x": "three", "y": "B", "z": 2.2 },
+  { "timestamp": 3, "x": "four", "y": "B", "z": 7.6 },
+  { "timestamp": 4, "x": "five", "y": "C", "z": 8.1 },
+  { "timestamp": 5, "x": "six", "y": "C", "z": 3.9 }
+]

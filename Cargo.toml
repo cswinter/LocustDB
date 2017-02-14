@@ -4,3 +4,4 @@ version = "0.1.0"
 authors = ["David Fisher <ddfisher@dropbox.com>", "clemens"]
 
 [dependencies]
+serde_json = "0.9.6"

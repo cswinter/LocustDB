@@ -9,3 +9,5 @@ pub enum ValueType {
     Float(f64),
     Set(HashSet<String>)
 }
+
+pub type RecordType = Vec<(String, ValueType)>;
