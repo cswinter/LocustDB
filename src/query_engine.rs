@@ -7,7 +7,7 @@ use std::collections::HashMap;
 pub struct Query {
     pub select: Vec<usize>,
     pub filter: Expr,
-    pub groupBy: Vec<usize>,
+    pub group_by: Vec<usize>,
     pub aggregate: Vec<(Aggregator, usize)>,
 }
 
