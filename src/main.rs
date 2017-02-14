@@ -1,6 +1,7 @@
 extern crate serde_json;
 
 mod value;
+mod query_engine;
 use value::{RecordType, ValueType};
 
 use std::fs::File;
@@ -8,6 +9,7 @@ use serde_json::Value;
 use std::io::{BufReader};
 use std::env;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -40,10 +42,10 @@ fn json_to_value(json: Value) -> ValueType {
         Value::Number(n) => n.as_i64().map(ValueType::Integer)
                             .or(n.as_f64().map(ValueType::Float))
                             .unwrap(),
-        Value::String(s) => ValueType::String(s),
-        Value::Array(arr) => ValueType::Set(arr.into_iter()
-                                            .map(|v| match v { Value::String(s) => s, _ => panic!("Expected list of strings") })
-                                            .collect()),
+        Value::String(s) => ValueType::String(Rc::new(s)),
+        Value::Array(arr) => ValueType::Set(Rc::new(arr.into_iter()
+                                                    .map(|v| match v { Value::String(s) => s, _ => panic!("Expected list of strings") })
+                                                    .collect())),
         o => panic!("Objects not supported: {:?}", o)
     }
 }

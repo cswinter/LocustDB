@@ -1,14 +1,15 @@
 use std::collections::HashSet;
+use std::rc::Rc;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ValueType {
     Null,
     Bool(bool),
-    String(String),
     Timestamp(u64),
     Integer(i64),
     Float(f64),
-    Set(HashSet<String>)
+    String(Rc<String>),
+    Set(Rc<HashSet<String>>)
 }
 
 pub type RecordType = Vec<(String, ValueType)>;
