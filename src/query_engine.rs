@@ -61,13 +61,10 @@ impl Query {
 }
 
 fn run_select_query(select: &Vec<usize>, filter: &Expr, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
-    let mut result = Vec::new();
-    for record in source.iter() {
-        if eval(record, filter) == ValueType::Bool(true) {
-            result.push(select.iter().map(|&col| record[col].clone()).collect());
-        }
-    }
-    result
+    source.iter()
+        .filter(|record| eval(record, filter) == ValueType::Bool(true))
+        .map(|record| select.iter().map(|&col| record[col].clone()).collect())
+        .collect()
 }
 
 fn run_aggregate_query(select: &Vec<usize>, filter: &Expr, aggregation: &Vec<(Aggregator, Expr)>, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
