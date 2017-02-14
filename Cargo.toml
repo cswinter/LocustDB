@@ -1,6 +1,6 @@
 [package]
 name = "ruba"
 version = "0.1.0"
-authors = ["clemens"]
+authors = ["David Fisher <ddfisher@dropbox.com>", "clemens"]
 
 [dependencies]
