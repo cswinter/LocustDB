@@ -8,7 +8,7 @@ pub struct Query {
     pub select: Vec<usize>,
     pub filter: Expr,
     pub group_by: Vec<usize>,
-    pub aggregate: Vec<(Aggregator, usize)>,
+    pub aggregate: Vec<(Aggregator, Expr)>,
 }
 
 
@@ -63,15 +63,15 @@ fn run(query: &Query, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
     result
 }
 
-fn run_aggregate(select: &Vec<usize>, filter: &Expr, aggregation: &Vec<(Aggregator, usize)>, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
+fn run_aggregate(select: &Vec<usize>, filter: &Expr, aggregation: &Vec<(Aggregator, Expr)>, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
     let mut groups: HashMap<Vec<ValueType>, Vec<ValueType>> = HashMap::new();
 
     for record in source.iter() {
         if eval(record, filter) == ValueType::Bool(true) {
             let group: Vec<ValueType> = select.iter().map(|&col| record[col].clone()).collect();
             let accumulator = groups.entry(group).or_insert(aggregation.iter().map(|x| x.0.zero()).collect());
-            for (i, &(ref agg_func, col)) in aggregation.iter().enumerate() {
-                accumulator[i] = agg_func.reduce(&accumulator[i], &record[col]);
+            for (i, &(ref agg_func, ref expr)) in aggregation.iter().enumerate() {
+                accumulator[i] = agg_func.reduce(&accumulator[i], &eval(&record, expr));
             }
         }
     }
@@ -123,32 +123,32 @@ pub fn test() {
         filter: Func(And,
                      Box::new(Func(LT, Box::new(Column(2usize)), Box::new(Const(Integer(1000))))),
                      Box::new(Func(GT, Box::new(Column(0usize)), Box::new(Const(Timestamp(1000)))))),
-        groupBy: vec![],
+        group_by: vec![],
         aggregate: vec![],
     };
     let query2 = Query {
         select: vec![0usize, 2usize],
         filter: Func(Equals, Box::new(Column(1usize)), Box::new(Const(String(Rc::new("/".to_string()))))),
-        groupBy: vec![],
+        group_by: vec![],
         aggregate: vec![],
     };
     let count_query = Query {
         select: vec![1usize],
         filter: True,
-        groupBy: vec![1usize],
-        aggregate: vec![(Aggregator::Count, 0)],
+        group_by: vec![1usize],
+        aggregate: vec![(Aggregator::Count, Const(Integer(0)))],
     };
     let sum_query = Query {
         select: vec![1usize],
         filter: True,
-        groupBy: vec![1usize],
-        aggregate: vec![(Aggregator::Sum, 2)],
+        group_by: vec![1usize],
+        aggregate: vec![(Aggregator::Sum, Column(2))],
     };
 
     let result1 = run(&query1, &dataset);
     let result2 = run(&query2, &dataset);
-    let count_result = run_aggregate(&count_query.groupBy, &count_query.filter, &count_query.aggregate, &dataset);
-    let sum_result = run_aggregate(&sum_query.groupBy, &sum_query.filter, &sum_query.aggregate, &dataset);
+    let count_result = run_aggregate(&count_query.group_by, &count_query.filter, &count_query.aggregate, &dataset);
+    let sum_result = run_aggregate(&sum_query.group_by, &sum_query.filter, &sum_query.aggregate, &dataset);
 
     println!("Result 1: {:?}", result1);
     println!("Result 2: {:?}", result2);
