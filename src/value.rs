@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ValueType {
     Null,
+    Bool(bool),
     String(String),
     Timestamp(u64),
     Integer(i64),
