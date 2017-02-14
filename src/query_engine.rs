@@ -1,12 +1,15 @@
 use value::ValueType;
 use std::iter::Iterator;
 use std::rc::Rc;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct Query {
     pub select: Vec<usize>,
     pub filter: Condition,
+    pub groupBy: Vec<usize>,
 }
+
 
 #[derive(Debug)]
 pub enum Condition {
@@ -36,6 +39,26 @@ fn run(query: &Query, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
     result
 }
 
+fn runAggregate(query: &Query, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
+    let mut groups: HashMap<Vec<ValueType>, Vec<ValueType>> = HashMap::new();
+
+    for record in source.iter() {
+        if eval(record, &query.filter) == ValueType::Bool(true) {
+            let group: Vec<ValueType> = query.select.iter().map(|&col| record[col].clone()).collect();
+            let aggregate = groups.entry(group).or_insert(vec![ValueType::Integer(0)]);
+            if let ValueType::Integer(i) = aggregate[0] {
+                aggregate[0] = ValueType::Integer(i + 1);
+            }
+        }
+    }
+
+    let mut result: Vec<Vec<ValueType>> = Vec::new();
+    for (mut group, aggregate) in groups {
+        group.extend(aggregate);
+        result.push(group);
+    }
+    result
+}
 
 fn eval(record: &Vec<ValueType>, condition: &Condition) -> ValueType {
     use self::Condition::*;
@@ -76,17 +99,26 @@ pub fn test() {
         filter: Func(And,
                      Box::new(Func(LT, Box::new(Column(2usize)), Box::new(Const(Integer(1000))))),
                      Box::new(Func(GT, Box::new(Column(0usize)), Box::new(Const(Timestamp(1000)))))),
+        groupBy: vec![],
     };
     let query2 = Query {
         select: vec![0usize, 2usize],
         filter: Func(Equals, Box::new(Column(1usize)), Box::new(Const(String(Rc::new("/".to_string()))))),
+        groupBy: vec![],
+    };
+    let countQuery = Query {
+        select: vec![1usize],
+        filter: True,
+        groupBy: vec![1usize],
     };
 
     let result1 = run(&query1, &dataset);
     let result2 = run(&query2, &dataset);
+    let countResult = runAggregate(&countQuery, &dataset);
 
     println!("Result 1: {:?}", result1);
     println!("Result 2: {:?}", result2);
+    println!("Count Result: {:?}", countResult);
 }
 
 fn record(timestamp: u64, url: &str, loadtime: i64) -> Vec<ValueType> {
