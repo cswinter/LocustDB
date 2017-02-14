@@ -36,8 +36,6 @@ impl Aggregator {
 
 #[derive(Debug)]
 pub enum Expr {
-    True,
-    False,
     Column(usize),
     Func(FuncType, Box<Expr>, Box<Expr>),
     Const(ValueType),
@@ -97,8 +95,6 @@ fn eval(record: &Vec<ValueType>, condition: &Expr) -> ValueType {
     use self::Expr::*;
     use self::ValueType::*;
     match condition {
-        &True => Bool(true),
-        &False => Bool(false),
         &Func(ref functype, ref exp1, ref exp2) =>
             match (functype, eval(record, &exp1), eval(record, &exp2)) {
                 (&FuncType::Equals, v1,            v2)            => Bool(v1 == v2),
@@ -141,12 +137,12 @@ pub fn test() {
     };
     let count_query = Query {
         select: vec![1usize],
-        filter: True,
+        filter: Const(Bool(true)),
         aggregate: vec![(Aggregator::Count, Const(Integer(0)))],
     };
     let sum_query = Query {
         select: vec![1usize],
-        filter: True,
+        filter: Const(Bool(true)),
         aggregate: vec![(Aggregator::Sum, Column(2))],
     };
 

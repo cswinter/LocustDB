@@ -8,7 +8,6 @@ use std::fs::File;
 use serde_json::Value;
 use std::io::{BufReader};
 use std::env;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 fn main() {
