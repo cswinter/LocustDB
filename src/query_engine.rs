@@ -1,8 +1,10 @@
 use value::ValueType;
+use std::iter::Iterator;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Query<'a> {
-    pub select: Vec<String>,
+    pub select: Vec<usize>,
     pub filter: Condition<'a>,
 }
 
@@ -10,7 +12,7 @@ pub struct Query<'a> {
 pub enum Condition<'a> {
     True,
     False,
-    Column(String),
+    Column(usize),
     Func(FuncType, &'a Condition<'a>, &'a Condition<'a>),
     Const(ValueType),
 }
@@ -24,15 +26,18 @@ pub enum FuncType {
     Or
 }
 
-/*
-fn run(query: Query, source: Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
-    source.iter().filter(|record| {
+fn run(query: &Query, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
+    let mut result = Vec::new();
+    for record in source.iter() {
+        if eval(record, &query.filter) == ValueType::Bool(true) {
+            result.push(query.select.iter().map(|&col| record[col].clone()).collect());
+        }
+    }
+    result
+}
 
-    })
-}*/
 
-
-fn eval(record: fn(String) -> Option<ValueType>, condition: &Condition) -> ValueType {
+fn eval(record: &Vec<ValueType>, condition: &Condition) -> ValueType {
     use self::Condition::*;
     use self::ValueType::*;
     match condition {
@@ -49,7 +54,33 @@ fn eval(record: fn(String) -> Option<ValueType>, condition: &Condition) -> Value
                 (&FuncType::GT,     Float(f1),   Float(f2))   => Bool(f1 > f2),
                 (functype, v1, v2) => panic!("Type error: function {:?} not defined for values {:?} and {:?}", functype, v1, v2),
             },
-        &Column(ref col_name) => panic!("tmp"),//record.iter().find(|col_entry| col_entry.0 == col_name).unwrap().1,
+        &Column(col) => record[col].clone(),
         &Const(ref value) => value.clone(),
     }
+}
+
+pub fn test() {
+    let dataset = vec![
+        record(1200, "/", 0.4),
+        record(1231, "/", 0.3),
+        record(1132, "/admin", 1.2),
+        record(994, "/admin/crashdash", 3.4),
+        record(931, "/", 0.8),
+    ];
+
+    use self::Condition::*;
+    let col2 = Column(2usize);
+    let constf1 = Const(ValueType::Float(1.));
+    let query = Query {
+        select: vec![1usize],
+        filter: Func(FuncType::GT, &col2, &constf1),
+    };
+
+    let result = run(&query, &dataset);
+
+    println!("{:?}", result)
+}
+
+fn record(timestamp: u64, url: &str, loadtime: f64) -> Vec<ValueType> {
+    vec![ValueType::Timestamp(timestamp), ValueType::String(Rc::new(url.to_string())), ValueType::Float(loadtime)]
 }

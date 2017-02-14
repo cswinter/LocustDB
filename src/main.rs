@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 fn main() {
+    query_engine::test();
     let args: Vec<String> = env::args().collect();
     let data = read_data(&args[1]);
     println!("{:?}", data);
