@@ -5,7 +5,10 @@ mod value;
 mod expression;
 mod aggregator;
 mod query_engine;
+mod ingest;
+mod columns;
 use value::{RecordType, ValueType};
+use columns::columnarize;
 
 use std::fs::File;
 use serde_json::Value;
@@ -17,7 +20,8 @@ fn main() {
     query_engine::test();
     let args: Vec<String> = env::args().collect();
     let data = read_data(&args[1]);
-    println!("{:?}", data);
+    let cols = columnarize(data);
+    println!("{:?}", cols[3].iter().collect::<Vec<_>>());
 }
 
 fn read_data(filename: &str) -> Vec<RecordType> {

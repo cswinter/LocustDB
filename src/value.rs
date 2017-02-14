@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::fmt;
+use std::iter::Iterator;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ValueType {
