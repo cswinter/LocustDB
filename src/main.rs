@@ -43,12 +43,16 @@ fn repl(datasource: &Vec<Box<Column>>) {
             s.pop();
         }
         if s == "exit" { break }
+        if s.chars().next_back() != Some(';') {
+            s.push(';');
+        }
         match parser::parse_query(s.as_bytes()) {
-            nom::IResult::Done(_, query) => {
+            nom::IResult::Done(remaining, query) => {
+                println!("{:?}, {:?}\n", query, remaining);
                 let result = query.run(datasource);
                 query_engine::print_query_result(&result);
             },
-            _ => println!("Failed to parse query!"),
+            err => println!("Failed to parse query! {:?}", err),
         }
     }
 }

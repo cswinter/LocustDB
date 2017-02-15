@@ -110,6 +110,7 @@ fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &mut Vec<ColIter>
     let mut result = Vec::new();
     let mut record = Vec::with_capacity(source.len());
     let mut rows_touched = 0;
+    if source.len() == 0 { return (result, rows_touched) }
     loop {
         record.clear();
         for i in 0..source.len() {
@@ -168,7 +169,7 @@ pub fn print_query_result(results: &QueryResult) {
         format!("{}s", rt / 1000_000_000)
     };
 
-    println!("\nScanned {} rows in {}!", results.stats.rows_scanned, fmt_time);
+    println!("Scanned {} rows in {}!\n", results.stats.rows_scanned, fmt_time);
     println!("{}", format_results(&results.colnames, &results.rows));
 }
 
