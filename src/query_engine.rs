@@ -156,7 +156,7 @@ fn run_aggregation_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(A
     (result, rows_touched)
 }
 
-fn print_query_result(results: &QueryResult) {
+pub fn print_query_result(results: &QueryResult) {
     let rt = results.stats.runtime_ns;
     let fmt_time = if rt < 1000 {
         format!("{}ns", rt)

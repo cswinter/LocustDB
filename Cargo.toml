@@ -6,3 +6,4 @@ authors = ["David Fisher <ddfisher@dropbox.com>", "clemens"]
 [dependencies]
 serde_json = "0.9.6"
 time = "0.1.36"
+nom = "^2.1"
