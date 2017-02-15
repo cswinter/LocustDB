@@ -1,0 +1,7 @@
+[
+  { "timestamp": 1200, "url": "/", "loadtime": 400 },
+  { "timestamp": 1231, "url": "/", "loadtime": 300 },
+  { "timestamp": 1132, "url": "/admin", "loadtime": 1200 },
+  { "timestamp": 994, "url": "/admin/crashdash", "loadtime": 3400 },
+  { "timestamp": 931, "url": "/", "loadtime": 800 }
+]
