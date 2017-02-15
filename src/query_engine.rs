@@ -6,6 +6,8 @@ use value::ValueType;
 use expression::*;
 use aggregator::*;
 use util::fmt_table;
+use columns::Column;
+use columns::ColIter;
 
 
 #[derive(Debug)]
@@ -17,12 +19,14 @@ pub struct Query {
 
 
 impl Query {
-    pub fn run(&self, source: &Vec<Vec<ValueType>>, columns: &HashMap<String, usize>) -> (Vec<Rc<String>>, Vec<Vec<ValueType>>) {
-        let query = self.compile(columns);
+    pub fn run(&self, source: &Vec<Box<Column>>) -> (Vec<Rc<String>>, Vec<Vec<ValueType>>) {
+        let columns = create_colname_map(source);
+        let mut coliter = source.iter().map(|col| col.iter()).collect();
+        let query = self.compile(&columns);
         let result = if self.aggregate.len() == 0 {
-            run_select_query(&query.select, &query.filter, source)
+            run_select_query(&query.select, &query.filter, &mut coliter)
         } else {
-            run_aggregation_query(&query.select, &query.filter, &query.aggregate, source)
+            run_aggregation_query(&query.select, &query.filter, &query.aggregate, &mut coliter)
         };
 
         (self.result_column_names(), result)
@@ -62,22 +66,47 @@ impl Query {
     }
 }
 
-fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
-    source.iter()
-        .filter(|record| filter.eval(record) == ValueType::Bool(true))
-        .map(|record| select.iter().map(|expr| expr.eval(record)).collect())
-        .collect()
+fn create_colname_map(source: &Vec<Box<Column>>) -> HashMap<String, usize> {
+    let mut columns = HashMap::new();
+    for (i, col) in source.iter().enumerate() {
+        columns.insert(col.get_name().to_string(), i as usize);
+    }
+    columns
 }
 
-fn run_aggregation_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(Aggregator, Expr)>, source: &Vec<Vec<ValueType>>) -> Vec<Vec<ValueType>> {
-    let mut groups: HashMap<Vec<ValueType>, Vec<ValueType>> = HashMap::new();
+fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &mut Vec<ColIter>) -> Vec<Vec<ValueType>> {
+    let mut result = Vec::new();
+    let mut record = Vec::with_capacity(source.len());
+    loop {
+        record.clear();
+        for i in 0..source.len() {
+            match source[i].next() {
+                Some(item) => record.push(item),
+                None => return result,
+            }
+        }
+        if filter.eval(&record) == ValueType::Bool(true) {
+            result.push(select.iter().map(|expr| expr.eval(&record)).collect());
+        }
+    }
+}
 
-    for record in source.iter() {
-        if filter.eval(record) == ValueType::Bool(true) {
-            let group: Vec<ValueType> = select.iter().map(|expr| expr.eval(record)).collect();
+fn run_aggregation_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(Aggregator, Expr)>, source: &mut Vec<ColIter>) -> Vec<Vec<ValueType>> {
+    let mut groups: HashMap<Vec<ValueType>, Vec<ValueType>> = HashMap::new();
+    let mut record = Vec::with_capacity(source.len());
+    'outer: loop {
+        record.clear();
+        for i in 0..source.len() {
+            match source[i].next() {
+                Some(item) => record.push(item),
+                None => break 'outer,
+            }
+        }
+        if filter.eval(&record) == ValueType::Bool(true) {
+            let group: Vec<ValueType> = select.iter().map(|expr| expr.eval(&record)).collect();
             let accumulator = groups.entry(group).or_insert(aggregation.iter().map(|x| x.0.zero()).collect());
             for (i, &(ref agg_func, ref expr)) in aggregation.iter().enumerate() {
-                accumulator[i] = agg_func.reduce(&accumulator[i], &expr.eval(record));
+                accumulator[i] = agg_func.reduce(&accumulator[i], &expr.eval(&record));
             }
         }
     }
@@ -101,23 +130,10 @@ fn format_results(r: &(Vec<Rc<String>>, Vec<Vec<ValueType>>)) -> String {
     fmt_table(&strcolnames, &strrows)
 }
 
-pub fn test() {
-    let dataset = vec![
-        record(1200, "/", 400),
-        record(1231, "/", 300),
-        record(1132, "/admin", 1200),
-        record(994, "/admin/crashdash", 3400),
-        record(931, "/", 800),
-    ];
-
+pub fn test(source: &Vec<Box<Column>>) {
     use self::Expr::*;
     use self::FuncType::*;
     use ValueType::*;
-
-    let mut columns: HashMap<String, usize> = HashMap::new();
-    columns.insert("timestamp".to_string(), 0);
-    columns.insert("url".to_string(), 1);
-    columns.insert("loadtime".to_string(), 2);
 
     let query1 = Query {
         select: vec![Expr::col("url")],
@@ -142,17 +158,13 @@ pub fn test() {
         aggregate: vec![(Aggregator::Sum, Expr::col("loadtime"))],
     };
 
-    let result1 = query1.run(&dataset, &columns);
-    let result2 = query2.run(&dataset, &columns);
-    let count_result = count_query.run(&dataset, &columns);
-    let sum_result = sum_query.run(&dataset, &columns);
+    let result1 = query1.run(source);
+    let result2 = query2.run(source);
+    let count_result = count_query.run(source);
+    let sum_result = sum_query.run(source);
 
     println!("{}\n", format_results(&result1));
     println!("{}\n", format_results(&result2));
     println!("{}\n", format_results(&count_result));
     println!("{}\n", format_results(&sum_result));
-}
-
-fn record(timestamp: u64, url: &str, loadtime: i64) -> Vec<ValueType> {
-    vec![ValueType::Timestamp(timestamp), ValueType::Str(Rc::new(url.to_string())), ValueType::Integer(loadtime)]
 }

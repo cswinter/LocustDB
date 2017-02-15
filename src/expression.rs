@@ -37,6 +37,7 @@ impl Expr {
                     (&LT,     Timestamp(t1), Timestamp(t2)) => Bool(t1 < t2),
                     (&GT,     Integer(i1),   Integer(i2))   => Bool(i1 > i2),
                     (&GT,     Timestamp(t1), Timestamp(t2)) => Bool(t1 > t2),
+                    (&GT,     Integer(i),    Timestamp(t))  if i >= 0 => Bool(i as u64 > t),
                     (functype, v1, v2) => panic!("Type error: function {:?} not defined for values {:?} and {:?}", functype, v1, v2),
                 },
             &ColIndex(col) => record[col].clone(),

@@ -4,8 +4,8 @@ mod util;
 mod value;
 mod expression;
 mod aggregator;
-mod query_engine;
 mod columns;
+mod query_engine;
 use value::{RecordType, ValueType};
 use columns::columnarize;
 
@@ -16,11 +16,11 @@ use std::env;
 use std::rc::Rc;
 
 fn main() {
-    query_engine::test();
     let args: Vec<String> = env::args().collect();
     let data = read_data(&args[1]);
     let cols = columnarize(data);
-    println!("{:?}", cols[3].iter().collect::<Vec<_>>());
+    println!("{:?}", cols[2].iter().collect::<Vec<_>>());
+    query_engine::test(&cols);
 }
 
 fn read_data(filename: &str) -> Vec<RecordType> {
