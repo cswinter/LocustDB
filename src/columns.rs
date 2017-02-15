@@ -142,7 +142,7 @@ impl Column for StringColumn {
     }
 
     fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().map(|s| ValueType::String(Rc::new(s.clone())));
+        let iter = self.values.iter().map(|s| ValueType::Str(Rc::new(s.clone())));
         ColIter{iter: Box::new(iter)}
     }
 }
@@ -216,7 +216,7 @@ impl VecType {
             &ValueType::Bool(_) => BoolVec(Vec::new()),
             &ValueType::Timestamp(_) => TimestampVec(Vec::new()),
             &ValueType::Integer(_) => IntegerVec(Vec::new()),
-            &ValueType::String(_) => StringVec(Vec::new()),
+            &ValueType::Str(_) => StringVec(Vec::new()),
             &ValueType::Set(_) => SetVec(Vec::new()),
         }
     }
@@ -227,7 +227,7 @@ impl VecType {
             &mut VecType::BoolVec(ref mut v)      => match value { ValueType::Bool(b)      => {v.push(b); None},                          _ => Some(value) },
             &mut VecType::TimestampVec(ref mut v) => match value { ValueType::Timestamp(t) => {v.push(t); None},                          _ => Some(value) },
             &mut VecType::IntegerVec(ref mut v)   => match value { ValueType::Integer(i)   => {v.push(i); None},                          _ => Some(value) },
-            &mut VecType::StringVec(ref mut v)    => match value { ValueType::String(s)    => {v.push(Rc::try_unwrap(s).unwrap()); None}, _ => Some(value) },
+            &mut VecType::StringVec(ref mut v)    => match value { ValueType::Str(s)       => {v.push(Rc::try_unwrap(s).unwrap()); None}, _ => Some(value) },
             &mut VecType::SetVec(ref mut v)       => match value { ValueType::Set(s)       => {v.push(Rc::try_unwrap(s).unwrap()); None}, _ => Some(value) },
             &mut VecType::MixedVec(ref mut v)     => {v.push(value); None}
         }
@@ -239,7 +239,7 @@ impl VecType {
             VecType::BoolVec(v)      => VecType::MixedVec(v.into_iter().map(|b| ValueType::Bool(b)).collect()),
             VecType::TimestampVec(v) => VecType::MixedVec(v.into_iter().map(|t| ValueType::Timestamp(t)).collect()),
             VecType::IntegerVec(v)   => VecType::MixedVec(v.into_iter().map(|i| ValueType::Integer(i)).collect()),
-            VecType::StringVec(v)    => VecType::MixedVec(v.into_iter().map(|s| ValueType::String(Rc::new(s))).collect()),
+            VecType::StringVec(v)    => VecType::MixedVec(v.into_iter().map(|s| ValueType::Str(Rc::new(s))).collect()),
             VecType::SetVec(v)       => VecType::MixedVec(v.into_iter().map(|s| ValueType::Set(Rc::new(s))).collect()),
             vec@VecType::MixedVec(_) => vec
         }
