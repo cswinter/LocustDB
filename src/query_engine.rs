@@ -16,13 +16,40 @@ pub struct Query {
 
 
 impl Query {
-    pub fn run(&self, source: &Vec<Vec<ValueType>>, columns: &HashMap<String, usize>) -> Vec<Vec<ValueType>> {
+    pub fn run(&self, source: &Vec<Vec<ValueType>>, columns: &HashMap<String, usize>) -> (Vec<Rc<String>>, Vec<Vec<ValueType>>) {
         let query = self.compile(columns);
-        if self.aggregate.len() == 0 {
+        let result = if self.aggregate.len() == 0 {
             run_select_query(&query.select, &query.filter, source)
         } else {
             run_aggregation_query(&query.select, &query.filter, &query.aggregate, source)
-        }
+        };
+
+        (self.result_column_names(), result)
+    }
+
+    fn result_column_names(&self) -> Vec<Rc<String>> {
+        let mut anon_columns = -1;
+        let select_cols = self.select
+            .iter()
+            .map(|expr| match expr {
+                &Expr::ColName(ref name) => name.clone(),
+                _ => {
+                    anon_columns += 1;
+                    Rc::new(format!("col_{}", anon_columns))
+                },
+            });
+        let mut anon_aggregates = -1;
+        let aggregate_cols = self.aggregate
+            .iter()
+            .map(|&(agg, _)| {
+                anon_aggregates += 1;
+                match agg {
+                    Aggregator::Count => Rc::new(format!("count_{}", anon_aggregates)),
+                    Aggregator::Sum => Rc::new(format!("sum_{}", anon_aggregates)),
+                }
+            });
+
+        select_cols.chain(aggregate_cols).collect()
     }
 
     fn compile(&self, column_names: &HashMap<String, usize>) -> Query {
