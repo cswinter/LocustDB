@@ -5,7 +5,6 @@ mod value;
 mod expression;
 mod aggregator;
 mod query_engine;
-mod ingest;
 mod columns;
 use value::{RecordType, ValueType};
 use columns::columnarize;
