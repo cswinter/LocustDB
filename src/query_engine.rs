@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use value::ValueType;
 use expression::*;
 use aggregator::*;
+use util::fmt_table;
 
 
 #[derive(Debug)]
@@ -89,6 +90,17 @@ fn run_aggregation_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(A
     result
 }
 
+fn format_results(r: &(Vec<Rc<String>>, Vec<Vec<ValueType>>)) -> String {
+    let &(ref colnames, ref results) = r;
+    let strcolnames: Vec<&str> = colnames.iter().map(|ref s| s.clone() as &str).collect();
+    let formattedrows: Vec<Vec<String>> = results.iter().map(
+        |row| row.iter().map(
+            |val| format!("{}", val)).collect()).collect();
+    let strrows = formattedrows.iter().map(|row| row.iter().map(|val| val as &str).collect()).collect();
+
+    fmt_table(&strcolnames, &strrows)
+}
+
 pub fn test() {
     let dataset = vec![
         record(1200, "/", 400),
@@ -135,10 +147,10 @@ pub fn test() {
     let count_result = count_query.run(&dataset, &columns);
     let sum_result = sum_query.run(&dataset, &columns);
 
-    println!("Result 1: {:?}", result1);
-    println!("Result 2: {:?}", result2);
-    println!("Count Result: {:?}", count_result);
-    println!("Sum Result: {:?}", sum_result);
+    println!("{}\n", format_results(&result1));
+    println!("{}\n", format_results(&result2));
+    println!("{}\n", format_results(&count_result));
+    println!("{}\n", format_results(&sum_result));
 }
 
 fn record(timestamp: u64, url: &str, loadtime: i64) -> Vec<ValueType> {
