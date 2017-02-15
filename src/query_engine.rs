@@ -1,6 +1,7 @@
 use std::iter::Iterator;
 use std::rc::Rc;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use value::ValueType;
 use expression::*;
@@ -20,16 +21,34 @@ pub struct Query {
 
 impl Query {
     pub fn run(&self, source: &Vec<Box<Column>>) -> (Vec<Rc<String>>, Vec<Vec<ValueType>>) {
-        let columns = create_colname_map(source);
-        let mut coliter = source.iter().map(|col| col.iter()).collect();
-        let query = self.compile(&columns);
+        let referenced_cols = self.find_referenced_cols();
+        let efficient_source: Vec<&Box<Column>> = source.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
+        let mut coliter = efficient_source.iter().map(|col| col.iter()).collect();
+
+        let column_indices = create_colname_map(&efficient_source);
+        let compiled_selects = self.select.iter().map(|expr| expr.compile(&column_indices)).collect();
+        let compiled_filter = self.filter.compile(&column_indices);
+        let compiled_aggregate = self.aggregate.iter().map(|&(agg, ref expr)| (agg, expr.compile(&column_indices))).collect();
+
         let result = if self.aggregate.len() == 0 {
-            run_select_query(&query.select, &query.filter, &mut coliter)
+            run_select_query(&compiled_selects, &compiled_filter, &mut coliter)
         } else {
-            run_aggregation_query(&query.select, &query.filter, &query.aggregate, &mut coliter)
+            run_aggregation_query(&compiled_selects, &compiled_filter, &compiled_aggregate, &mut coliter)
         };
 
         (self.result_column_names(), result)
+    }
+
+    fn find_referenced_cols(&self) -> HashSet<Rc<String>> {
+        let mut colnames = HashSet::new();
+        for expr in self.select.iter() {
+            expr.add_colnames(&mut colnames);
+        }
+        self.filter.add_colnames(&mut colnames);
+        for &(_, ref expr) in self.aggregate.iter() {
+            expr.add_colnames(&mut colnames);
+        }
+        colnames
     }
 
     fn result_column_names(&self) -> Vec<Rc<String>> {
@@ -56,17 +75,9 @@ impl Query {
 
         select_cols.chain(aggregate_cols).collect()
     }
-
-    fn compile(&self, column_names: &HashMap<String, usize>) -> Query {
-        Query {
-            select: self.select.iter().map(|expr| expr.compile(column_names)).collect(),
-            filter: self.filter.compile(column_names),
-            aggregate: self.aggregate.iter().map(|&(agg, ref expr)| (agg, expr.compile(column_names))).collect(),
-        }
-    }
 }
 
-fn create_colname_map(source: &Vec<Box<Column>>) -> HashMap<String, usize> {
+fn create_colname_map(source: &Vec<&Box<Column>>) -> HashMap<String, usize> {
     let mut columns = HashMap::new();
     for (i, col) in source.iter().enumerate() {
         columns.insert(col.get_name().to_string(), i as usize);

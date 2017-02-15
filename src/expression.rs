@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use value::ValueType;
 
@@ -53,6 +54,25 @@ impl Expr {
             &Const(ref v) => Const(v.clone()),
             &Func(ref ftype, ref expr1, ref expr2) => Expr::func(*ftype, expr1.compile(column_names), expr2.compile(column_names)),
             &ColIndex(_) => panic!("Uncompiled Expr should not contain ColumnIndex."),
+        }
+    }
+
+    pub fn find_colnames(&self) -> HashSet<Rc<String>> {
+        let mut result = HashSet::new();
+        self.add_colnames(&mut result);
+        result
+    }
+
+    pub fn add_colnames(&self, result: &mut HashSet<Rc<String>>) {
+        match self {
+            &ColName(ref name) => {
+                result.insert(name.clone());
+            },
+            &Func(_, ref expr1, ref expr2) => {
+                expr1.add_colnames(result);
+                expr2.add_colnames(result);
+            },
+            _ => (),
         }
     }
 
