@@ -17,6 +17,7 @@ impl Aggregator {
     pub fn reduce(self, accumulator: &ValueType, elem: &ValueType) -> ValueType {
         match (self, accumulator, elem) {
             (Aggregator::Sum, &ValueType::Integer(i1), &ValueType::Integer(i2)) => ValueType::Integer(i1 + i2),
+            (Aggregator::Sum, &ValueType::Integer(i1), &ValueType::Null) => ValueType::Integer(i1),
             (Aggregator::Count, accumulator, &ValueType::Null) => accumulator.clone(),
             (Aggregator::Count, &ValueType::Integer(i1), _) => ValueType::Integer(i1 + 1),
             (aggregator, accumulator, elem) => panic!("Type error: aggregator {:?} not defined for values {:?} and {:?}", aggregator, *accumulator, *elem),

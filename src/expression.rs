@@ -32,6 +32,8 @@ impl Expr {
             &Func(ref functype, ref exp1, ref exp2) =>
                 match (functype, exp1.eval(record), exp2.eval(record)) {
                     (&Equals, v1,            v2)            => Bool(v1 == v2),
+                    (_,       Null,          _)             => Null,
+                    (_,       _,             Null)          => Null,
                     (&And,    Bool(b1),      Bool(b2))      => Bool(b1 && b2),
                     (&Or,     Bool(b1),      Bool(b2))      => Bool(b1 || b2),
                     (&LT,     Integer(i1),   Integer(i2))   => Bool(i1 < i2),
@@ -50,7 +52,7 @@ impl Expr {
     pub fn compile(&self, column_names: &HashMap<String, usize>) -> Expr {
         use self::Expr::*;
         match self {
-            &ColName(ref name) => ColIndex(*column_names.get(name.as_ref()).unwrap()),
+            &ColName(ref name) => column_names.get(name.as_ref()).map(|&index| ColIndex(index)).unwrap_or(Const(Null)),
             &Const(ref v) => Const(v.clone()),
             &Func(ref ftype, ref expr1, ref expr2) => Expr::func(*ftype, expr1.compile(column_names), expr2.compile(column_names)),
             &ColIndex(_) => panic!("Uncompiled Expr should not contain ColumnIndex."),
