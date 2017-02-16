@@ -21,13 +21,17 @@ use std::io::{BufReader};
 use std::env;
 use std::rc::Rc;
 use heapsize::HeapSizeOf;
+use time::precise_time_s;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let data = read_data(if args.len() > 1 { &args[1] } else { "test2.json"} );
+    let columnarization_start_time = precise_time_s();
     let cols = columnarize(data);
     let bytes_in_ram = cols.heap_size_of_children();
-    println!("Loaded data into {:.2} MiB in RAM.", bytes_in_ram as f64 / 1024f64 / 1024f64);
+    println!("Loaded data into {:.2} MiB in RAM in {:.1} seconds.",
+             bytes_in_ram as f64 / 1024f64 / 1024f64,
+             precise_time_s() - columnarization_start_time);
     //query_engine::test(&cols);
     repl(&cols);
 }
