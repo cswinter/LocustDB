@@ -23,6 +23,7 @@ use serde_json::Value;
 use std::io::{BufReader};
 use std::env;
 use std::rc::Rc;
+use std::collections::HashMap;
 use heapsize::HeapSizeOf;
 use time::precise_time_s;
 use itertools::Itertools;
@@ -36,12 +37,34 @@ fn main() {
     let batches: Vec<Batch> = data_iter.chunks(LOAD_CHUNK_SIZE).into_iter()
         .map(|chunk| columnarize(chunk.collect()))
         .collect();
+    print_ingestion_stats(&batches, columnarization_start_time);
+    
+    repl(&batches);
+}
+
+fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {
     let bytes_in_ram: usize = batches.iter().map(|batch| batch.cols.heap_size_of_children()).sum();
     println!("Loaded data into {:.2} MiB in RAM in {} chunk(s) in {:.1} seconds.",
              bytes_in_ram as f64 / 1024f64 / 1024f64,
              batches.len(),
-             precise_time_s() - columnarization_start_time);
-    repl(&batches);
+             precise_time_s() - starttime);
+
+    println!("\n# Breakdown by column #");
+    let mut column_sizes = HashMap::new();
+    for batch in batches {
+        for col in &batch.cols {
+            let heapsize = col.heap_size_of_children();
+            if let Some(size) = column_sizes.get_mut(col.get_name()) {
+                *size += heapsize;
+            }
+            if !column_sizes.contains_key(col.get_name()) {
+                column_sizes.insert(col.get_name().to_string(), heapsize);
+            }
+        }
+    }
+    for (columname, heapsize) in column_sizes {
+        println!("{}: {:.2}MiB", columname, heapsize as f64 / 1024. / 1024.);
+    }
 }
 
 fn repl(datasource: &Vec<Batch>) {
