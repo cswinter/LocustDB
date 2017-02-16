@@ -185,7 +185,8 @@ struct MixedColumn {
 }
 
 impl MixedColumn {
-    fn new(name: String, values: Vec<ValueType>) -> MixedColumn {
+    fn new(name: String, mut values: Vec<ValueType>) -> MixedColumn {
+        values.shrink_to_fit();
         MixedColumn {
             name: name,
             values: values,
