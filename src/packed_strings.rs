@@ -7,15 +7,19 @@ pub struct StringPacker {
 }
 
 
+// TODO: encode using variable size length + special value to represent null
 impl StringPacker {
     pub fn new() -> StringPacker {
         StringPacker { data: Vec::new() }
     }
 
-    pub fn from_strings(strings: &Vec<String>) -> StringPacker {
+    pub fn from_strings(strings: &Vec<Option<String>>) -> StringPacker {
         let mut sp = StringPacker::new();
         for string in strings {
-            sp.push(string);
+            match string {
+                &Some(ref string) => sp.push(string),
+                &None => sp.push(""),
+            }
         }
         sp.shrink_to_fit();
         sp

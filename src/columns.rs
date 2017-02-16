@@ -135,7 +135,7 @@ struct StringColumn {
 }
 
 impl StringColumn {
-    fn new(name: String, values: Vec<String>) -> StringColumn {
+    fn new(name: String, values: Vec<Option<String>>) -> StringColumn {
         StringColumn {
             name: name,
             values: StringPacker::from_strings(&values),
@@ -260,7 +260,7 @@ enum VecType {
     BoolVec(Vec<bool>),
     TimestampVec(Vec<u64>),
     IntegerVec(Vec<i64>),
-    StringVec(Vec<String>),
+    StringVec(Vec<Option<String>>),
     SetVec(Vec<Vec<String>>),
     MixedVec(Vec<ValueType>),
 }
@@ -273,34 +273,48 @@ impl VecType {
             ValueType::Bool(b) => BoolVec(vec![b]),
             ValueType::Timestamp(t) => TimestampVec(vec![t]),
             ValueType::Integer(i) => IntegerVec(vec![i]),
-            ValueType::Str(s) => StringVec(vec![Rc::try_unwrap(s).unwrap()]),
+            ValueType::Str(s) => StringVec(vec![Some(Rc::try_unwrap(s).unwrap())]),
             ValueType::Set(s) => SetVec(vec![Rc::try_unwrap(s).unwrap()]),
         }
     }
 
-    fn push(&mut self, value: ValueType) -> Option<ValueType> {
-        match self {
-            &mut VecType::NullVec(ref mut n)      => match value { ValueType::Null         => {*n += 1; None},                            _ => Some(value) },
-            &mut VecType::BoolVec(ref mut v)      => match value { ValueType::Bool(b)      => {v.push(b); None},                          _ => Some(value) },
-            &mut VecType::TimestampVec(ref mut v) => match value { ValueType::Timestamp(t) => {v.push(t); None},                          _ => Some(value) },
-            &mut VecType::IntegerVec(ref mut v)   => match value { ValueType::Integer(i)   => {v.push(i); None},                          _ => Some(value) },
-            &mut VecType::StringVec(ref mut v)    => match value { ValueType::Str(s)       => {v.push(Rc::try_unwrap(s).unwrap()); None}, _ => Some(value) },
-            &mut VecType::SetVec(ref mut v)       => match value { ValueType::Set(s)       => {v.push(Rc::try_unwrap(s).unwrap()); None}, _ => Some(value) },
-            &mut VecType::MixedVec(ref mut v)     => {v.push(value); None}
+    fn push(&mut self, value: ValueType) -> Option<VecType> {
+        match (self, value) {
+            (&mut VecType::NullVec(ref mut n), ValueType::Null) => *n += 1,
+            (&mut VecType::NullVec(ref n), ValueType::Str(ref s)) => {
+                let mut string_vec = iter::repeat(None).take(*n).collect::<Vec<Option<String>>>();
+                string_vec.push(Some(s.as_ref().clone()));
+                return Some(VecType::StringVec(string_vec))
+            },
+            (&mut VecType::BoolVec(ref mut v), ValueType::Bool(b)) => v.push(b),
+            (&mut VecType::TimestampVec(ref mut v), ValueType::Timestamp(t)) => v.push(t),
+            (&mut VecType::IntegerVec(ref mut v), ValueType::Integer(i)) => v.push(i),
+            (&mut VecType::StringVec(ref mut v), ValueType::Str(ref s)) => v.push(Some(s.as_ref().clone())),
+            (&mut VecType::StringVec(ref mut v), ValueType::Null) => v.push(None),
+            (&mut VecType::SetVec(ref mut v), ValueType::Set(ref s)) => v.push(Rc::try_unwrap(s.clone()).unwrap()),
+            (&mut VecType::MixedVec(ref mut v), ref anyval) => v.push(anyval.clone()),
+            (ref slf, ref anyval) => {
+                let mut new_vec = slf.to_mixed();
+                new_vec.push(anyval.clone());
+                return Some(new_vec)
+            },
         }
+        None
     }
 
-    fn to_mixed(self) -> VecType {
+    fn to_mixed(&self) -> VecType {
         match self {
-            VecType::NullVec(n)      => VecType::MixedVec(iter::repeat(ValueType::Null).take(n).collect()),
-            VecType::BoolVec(v)      => VecType::MixedVec(v.into_iter().map(|b| ValueType::Bool(b)).collect()),
-            VecType::TimestampVec(v) => VecType::MixedVec(v.into_iter().map(|t| ValueType::Timestamp(t)).collect()),
-            VecType::IntegerVec(v)   => VecType::MixedVec(v.into_iter().map(|i| ValueType::Integer(i)).collect()),
-            VecType::StringVec(v)    => VecType::MixedVec(v.into_iter().map(|s| ValueType::Str(Rc::new(s))).collect()),
-            VecType::SetVec(v)       => VecType::MixedVec(v.into_iter().map(|s| ValueType::Set(Rc::new(s))).collect()),
-            vec@VecType::MixedVec(_) => vec
+            &VecType::NullVec(ref n)      => VecType::MixedVec(iter::repeat(ValueType::Null).take(*n).collect()),
+            &VecType::BoolVec(ref v)      => VecType::MixedVec(v.iter().map(|b| ValueType::Bool(*b)).collect()),
+            &VecType::TimestampVec(ref v) => VecType::MixedVec(v.iter().map(|t| ValueType::Timestamp(*t)).collect()),
+            &VecType::IntegerVec(ref v)   => VecType::MixedVec(v.iter().map(|i| ValueType::Integer(*i)).collect()),
+            &VecType::StringVec(ref v)    => VecType::MixedVec(v.iter().map(|s| match s {
+                &Some(ref string) => ValueType::Str(Rc::new(string.clone())),
+                &None => ValueType::Null,
+            }).collect()),
+            &VecType::SetVec(ref v)       => VecType::MixedVec(v.iter().map(|s| ValueType::Set(Rc::new(s.clone()))).collect()),
+            &VecType::MixedVec(_) => panic!("Trying to convert mixed columns to mixed column!"),
         }
-
     }
 
     fn to_column(self, name: String) -> Box<Column> {
@@ -317,7 +331,9 @@ impl VecType {
 }
 
 pub fn columnarize(records: Vec<RecordType>) -> Batch {
-    let mut field_map = BTreeMap::new();
+    println!("COLUMNARIXE");
+    let mut field_map: BTreeMap<String, VecType> = BTreeMap::new();
+    let mut count = 0;
     for record in records {
         for (name, value) in record {
             let to_insert = match field_map.entry(name) {
@@ -326,16 +342,15 @@ pub fn columnarize(records: Vec<RecordType>) -> Batch {
                     None
                 },
                 Entry::Occupied(mut e) => {
-                    if let Some(value) = e.get_mut().push(value) {
-                        let (name, vec) = e.remove_entry();
-                        let mut mixed_vec = vec.to_mixed();
-                        mixed_vec.push(value);
-                        Some((name, mixed_vec))
+                    if let Some(new_vec) = e.get_mut().push(value) {
+                        let (name, _) = e.remove_entry();
+                        Some((name, new_vec))
                     } else {
                         None
                     }
                 },
             };
+
             if let Some((name, vec)) = to_insert {
                 field_map.insert(name, vec);
             }

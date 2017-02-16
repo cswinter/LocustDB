@@ -28,7 +28,7 @@ use heapsize::HeapSizeOf;
 use time::precise_time_s;
 use itertools::Itertools;
 
-const LOAD_CHUNK_SIZE: usize = 10_000_000;
+const LOAD_CHUNK_SIZE: usize = 100_000;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
