@@ -159,14 +159,14 @@ fn run_aggregation_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(A
 
 pub fn print_query_result(results: &QueryResult) {
     let rt = results.stats.runtime_ns;
-    let fmt_time = if rt < 1000 {
+    let fmt_time = if rt < 10_000 {
         format!("{}ns", rt)
-    } else if rt < 1000_0000 {
+    } else if rt < 10_000_000 {
         format!("{}μs", rt / 1000)
-    } else if rt < 1000_0000_0000 {
-        format!("{}ms", rt / 1000_000)
+    } else if rt < 10_000_000_000 {
+        format!("{}ms", rt / 1_000_000)
     } else {
-        format!("{}s", rt / 1000_000_000)
+        format!("{}s", rt / 1_000_000_000)
     };
 
     println!("Scanned {} rows in {}!\n", results.stats.rows_scanned, fmt_time);

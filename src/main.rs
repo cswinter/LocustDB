@@ -10,6 +10,7 @@ mod expression;
 mod aggregator;
 mod columns;
 mod query_engine;
+mod csv_loader;
 mod parser;
 use value::{RecordType, ValueType};
 use columns::columnarize;
@@ -25,14 +26,13 @@ use time::precise_time_s;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let data = read_data(if args.len() > 1 { &args[1] } else { "test2.json"} );
+    let data = csv_loader::load_csv_file("data/crashdash-10M.csv");
     let columnarization_start_time = precise_time_s();
     let cols = columnarize(data);
     let bytes_in_ram = cols.heap_size_of_children();
     println!("Loaded data into {:.2} MiB in RAM in {:.1} seconds.",
              bytes_in_ram as f64 / 1024f64 / 1024f64,
              precise_time_s() - columnarization_start_time);
-    //query_engine::test(&cols);
     repl(&cols);
 }
 
