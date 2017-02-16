@@ -109,10 +109,11 @@ struct IntegerColumn {
 }
 
 impl IntegerColumn {
-    fn new(name: String, values: Vec<i64>) -> IntegerColumn {
+    fn new(name: String, mut values: Vec<i64>) -> IntegerColumn {
+        values.shrink_to_fit();
         IntegerColumn {
             name: name,
-            values: values
+            values: values,
         }
     }
 }
