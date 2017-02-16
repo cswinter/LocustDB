@@ -6,5 +6,6 @@ version = "0.1.0"
 [dependencies]
 heapsize = "0.3.8"
 nom = "^2.1"
+rustyline = "1.0.0"
 serde_json = "0.9.6"
 time = "0.1.36"

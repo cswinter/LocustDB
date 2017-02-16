@@ -3,6 +3,7 @@ extern crate time;
 #[macro_use]
 extern crate nom;
 extern crate heapsize;
+extern crate rustyline;
 
 mod util;
 mod value;
@@ -26,7 +27,7 @@ use time::precise_time_s;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let data = csv_loader::load_csv_file("data/crashdash-10M.csv");
+    let data = csv_loader::load_csv_file(&args[1]);
     let columnarization_start_time = precise_time_s();
     let cols = columnarize(data);
     let bytes_in_ram = cols.heap_size_of_children();
@@ -38,11 +39,10 @@ fn main() {
 
 fn repl(datasource: &Vec<Box<Column>>) {
     use std::io::{stdin,stdout,Write};
+    let mut rl = rustyline::Editor::<()>::new();
+    rl.load_history(".ruba_history");
     loop {
-        let mut s = String::new();
-        print!("ruba> ");
-        let _=stdout().flush();
-        stdin().read_line(&mut s).expect("Did not enter a correct string");
+        let mut s = rl.readline("ruba> ").expect("Did not enter a correct string");
         if let Some('\n')=s.chars().next_back() {
             s.pop();
         }
@@ -53,6 +53,7 @@ fn repl(datasource: &Vec<Box<Column>>) {
         if s.chars().next_back() != Some(';') {
             s.push(';');
         }
+        rl.add_history_entry(&s);
         match parser::parse_query(s.as_bytes()) {
             nom::IResult::Done(remaining, query) => {
                 println!("{:?}, {:?}\n", query, remaining);
@@ -62,6 +63,7 @@ fn repl(datasource: &Vec<Box<Column>>) {
             err => println!("Failed to parse query! {:?}", err),
         }
     }
+    rl.save_history(".ruba_history");
 }
 
 fn read_data(filename: &str) -> Vec<RecordType> {
