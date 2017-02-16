@@ -1,4 +1,4 @@
-use value::{ValueType, RecordType, InpVal, InpRecordType};
+use value::{ValueType, InpVal, InpRecordType};
 use std::boxed::Box;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;

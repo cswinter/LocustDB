@@ -15,7 +15,7 @@ mod columns;
 mod query_engine;
 mod csv_loader;
 mod parser;
-use value::{RecordType, ValueType};
+use value::ValueType;
 use columns::{Column, columnarize, Batch};
 
 use std::fs::File;

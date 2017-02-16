@@ -21,7 +21,6 @@ pub enum InpVal {
     Set(Rc<Vec<String>>),
 }
 
-pub type RecordType<'a> = Vec<(String, ValueType<'a>)>;
 pub type InpRecordType = Vec<(String, InpVal)>;
 
 impl InpVal {
