@@ -20,12 +20,14 @@ use serde_json::Value;
 use std::io::{BufReader};
 use std::env;
 use std::rc::Rc;
+use heapsize::HeapSizeOf;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let data = read_data(if args.len() > 1 { &args[1] } else { "test2.json"} );
     let cols = columnarize(data);
-    println!("{:?}", cols[2].iter().collect::<Vec<_>>());
+    let bytes_in_ram = cols.heap_size_of_children();
+    println!("Loaded data into {:.2} MiB in RAM.", bytes_in_ram as f64 / 1024f64 / 1024f64);
     //query_engine::test(&cols);
     repl(&cols);
 }
