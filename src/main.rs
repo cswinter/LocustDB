@@ -4,6 +4,7 @@ extern crate time;
 extern crate nom;
 extern crate heapsize;
 extern crate rustyline;
+extern crate itertools;
 
 mod util;
 mod value;
@@ -14,8 +15,7 @@ mod query_engine;
 mod csv_loader;
 mod parser;
 use value::{RecordType, ValueType};
-use columns::columnarize;
-use columns::Column;
+use columns::{Column, columnarize, Batch};
 
 use std::fs::File;
 use serde_json::Value;
@@ -24,20 +24,26 @@ use std::env;
 use std::rc::Rc;
 use heapsize::HeapSizeOf;
 use time::precise_time_s;
+use itertools::Itertools;
+
+const LOAD_CHUNK_SIZE: usize = 100_000;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let data = csv_loader::load_csv_file(&args[1]);
+    let data_iter = csv_loader::load_csv_file(&args[1]);
     let columnarization_start_time = precise_time_s();
-    let cols = columnarize(data);
-    let bytes_in_ram = cols.heap_size_of_children();
-    println!("Loaded data into {:.2} MiB in RAM in {:.1} seconds.",
+    let batches: Vec<Batch> = data_iter.chunks(LOAD_CHUNK_SIZE).into_iter()
+        .map(|chunk| columnarize(chunk.collect()))
+        .collect();
+    let bytes_in_ram: usize = batches.iter().map(|batch| batch.cols.heap_size_of_children()).sum();
+    println!("Loaded data into {:.2} MiB in RAM in {} chunk(s) in {:.1} seconds.",
              bytes_in_ram as f64 / 1024f64 / 1024f64,
+             batches.len(),
              precise_time_s() - columnarization_start_time);
-    repl(&cols);
+    repl(&batches);
 }
 
-fn repl(datasource: &Vec<Box<Column>>) {
+fn repl(datasource: &Vec<Batch>) {
     use std::io::{stdin,stdout,Write};
     let mut rl = rustyline::Editor::<()>::new();
     rl.load_history(".ruba_history");
@@ -57,7 +63,7 @@ fn repl(datasource: &Vec<Box<Column>>) {
         match parser::parse_query(s.as_bytes()) {
             nom::IResult::Done(remaining, query) => {
                 println!("{:?}, {:?}\n", query, remaining);
-                let result = query.run(datasource);
+                let result = query.run_batches(datasource);
                 query_engine::print_query_result(&result);
             },
             err => {

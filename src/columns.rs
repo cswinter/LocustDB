@@ -6,6 +6,10 @@ use std::rc::Rc;
 use std::iter;
 use heapsize::HeapSizeOf;
 
+pub struct Batch {
+    pub cols: Vec<Box<Column>>,
+}
+
 pub trait Column : HeapSizeOf {
     fn get_name(&self) -> &str;
     fn iter(&self) -> ColIter;
@@ -199,6 +203,12 @@ impl Column for MixedColumn {
 }
 
 
+impl HeapSizeOf for Batch {
+    fn heap_size_of_children(&self) -> usize {
+        self.cols.heap_size_of_children()
+    }
+}
+
 impl HeapSizeOf for NullColumn {
     fn heap_size_of_children(&self) -> usize {
         self.name.heap_size_of_children()
@@ -303,7 +313,7 @@ impl VecType {
     }
 }
 
-pub fn columnarize(records: Vec<RecordType>) -> Vec<Box<Column>> {
+pub fn columnarize(records: Vec<RecordType>) -> Batch {
     let mut field_map = BTreeMap::new();
     for record in records {
         for (name, value) in record {
@@ -334,5 +344,5 @@ pub fn columnarize(records: Vec<RecordType>) -> Vec<Box<Column>> {
         columns.push(values.to_column(name))
     }
 
-    columns
+    Batch { cols: columns }
 }
