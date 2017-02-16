@@ -3,3 +3,4 @@
 /target/
 /data/
 **/node_modules/
+/.ruba_history

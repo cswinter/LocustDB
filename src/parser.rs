@@ -111,8 +111,10 @@ named!(function<&[u8], Expr>,
         ft: function_name >>
         char!('(') >>
         e1: expr >>
+        opt!(multispace) >>
         char!(',') >>
         e2: expr >>
+        opt!(multispace) >>
         char!(')') >>
         (Expr::func(ft, e1, e2))
     )
@@ -177,10 +179,14 @@ named!(and<&[u8], FuncType>,
 
 named!(identifier<&[u8], &str>,
     map_res!(
-        take_while1!(is_alphabetic),
+        take_while1!(is_sql_identifier),
         str::from_utf8
     )
 );
+
+fn is_sql_identifier(chr: u8) -> bool {
+    is_alphabetic(chr) || chr == '_' as u8
+}
 
 enum AggregateOrSelect {
     Aggregate((Aggregator, Expr)),

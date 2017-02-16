@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use time::precise_time_ns;
+use std::ops::Add;
 
 use value::ValueType;
 use expression::*;
@@ -10,6 +11,7 @@ use aggregator::*;
 use util::fmt_table;
 use columns::Column;
 use columns::ColIter;
+use columns::Batch;
 
 
 #[derive(Debug)]
@@ -30,11 +32,22 @@ pub struct QueryStats {
     pub rows_scanned: u64,
 }
 
+impl Add for QueryStats {
+    type Output = QueryStats;
+
+    fn add(self, other: QueryStats) -> QueryStats {
+        QueryStats{
+            runtime_ns: self.runtime_ns + other.runtime_ns,
+            rows_scanned: self.rows_scanned + other.rows_scanned,
+        }
+    }
+}
+
 
 impl Query {
-    pub fn run(&self, source: &Vec<Box<Column>>) -> QueryResult {
+    pub fn run(&self, source: &Batch) -> QueryResult {
         let referenced_cols = self.find_referenced_cols();
-        let efficient_source: Vec<&Box<Column>> = source.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
+        let efficient_source: Vec<&Box<Column>> = source.cols.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
         let mut coliter = efficient_source.iter().map(|col| col.iter()).collect();
 
         let column_indices = create_colname_map(&efficient_source);
@@ -57,6 +70,21 @@ impl Query {
                 runtime_ns: precise_time_ns() - start_time_ns,
                 rows_scanned: rows_touched,
             },
+        }
+    }
+
+    pub fn run_batches(&self, batches: &Vec<Batch>) -> QueryResult {
+        let mut combined_rows = Vec::new();
+        let mut combined_stats = QueryStats { runtime_ns: 0, rows_scanned: 0 };
+        for batch in batches {
+            let QueryResult { rows, stats, .. } = self.run(batch);
+            combined_rows.extend(rows); // TODO: This isn't the right way to combine results!!!
+            combined_stats = combined_stats + stats;
+        }
+        QueryResult {
+            colnames: self.result_column_names(),
+            rows: combined_rows,
+            stats: combined_stats,
         }
     }
 
@@ -159,14 +187,14 @@ fn run_aggregation_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(A
 
 pub fn print_query_result(results: &QueryResult) {
     let rt = results.stats.runtime_ns;
-    let fmt_time = if rt < 1000 {
+    let fmt_time = if rt < 10_000 {
         format!("{}ns", rt)
-    } else if rt < 1000_0000 {
+    } else if rt < 10_000_000 {
         format!("{}μs", rt / 1000)
-    } else if rt < 1000_0000_0000 {
-        format!("{}ms", rt / 1000_000)
+    } else if rt < 10_000_000_000 {
+        format!("{}ms", rt / 1_000_000)
     } else {
-        format!("{}s", rt / 1000_000_000)
+        format!("{}s", rt / 1_000_000_000)
     };
 
     println!("Scanned {} rows in {}!\n", results.stats.rows_scanned, fmt_time);
@@ -183,7 +211,7 @@ fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<ValueType>>) -> Str
     fmt_table(&strcolnames, &strrows)
 }
 
-pub fn test(source: &Vec<Box<Column>>) {
+pub fn test(source: &Batch) {
     use self::Expr::*;
     use self::FuncType::*;
     use ValueType::*;
