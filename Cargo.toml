@@ -1,9 +1,10 @@
 [package]
+authors = ["David Fisher <ddfisher@dropbox.com>", "clemens"]
 name = "ruba"
 version = "0.1.0"
-authors = ["David Fisher <ddfisher@dropbox.com>", "clemens"]
 
 [dependencies]
+heapsize = "0.3.8"
+nom = "^2.1"
 serde_json = "0.9.6"
 time = "0.1.36"
-nom = "^2.1"

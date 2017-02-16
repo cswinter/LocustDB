@@ -2,6 +2,7 @@ extern crate serde_json;
 extern crate time;
 #[macro_use]
 extern crate nom;
+extern crate heapsize;
 
 mod util;
 mod value;

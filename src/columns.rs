@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::rc::Rc;
 use std::iter;
+use heapsize::HeapSizeOf;
 
-pub trait Column {
+pub trait Column : HeapSizeOf {
     fn get_name(&self) -> &str;
     fn iter(&self) -> ColIter;
 }
@@ -196,6 +197,50 @@ impl Column for MixedColumn {
         ColIter{iter: Box::new(iter)}
     }
 }
+
+
+impl HeapSizeOf for NullColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for BoolColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for IntegerColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for TimestampColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for StringColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for SetColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for MixedColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
 
 enum VecType {
     NullVec(usize),
