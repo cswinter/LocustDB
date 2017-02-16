@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "sourceMap": true,
+    "target": "es5",
+    "jsx": "react",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "declaration": false,
+    "noImplicitAny": false,
+    "noImplicitReturns": false,
+    "removeComments": true,
+    "strictNullChecks": false,
+    "outDir": "build",
+    "lib": [
+      "es6",
+      "es7",
+      "dom"
+    ]
+  },
+  "exclude": [
+    "dist",
+    "build",
+    "node_modules"
+  ]
+}
