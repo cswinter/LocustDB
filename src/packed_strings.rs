@@ -1,5 +1,6 @@
 use std::str;
 use heapsize::HeapSizeOf;
+use std::rc::Rc;
 
 
 pub struct StringPacker {
@@ -13,7 +14,7 @@ impl StringPacker {
         StringPacker { data: Vec::new() }
     }
 
-    pub fn from_strings(strings: &Vec<Option<String>>) -> StringPacker {
+    pub fn from_strings(strings: &Vec<Option<Rc<String>>>) -> StringPacker {
         let mut sp = StringPacker::new();
         for string in strings {
             match string {

@@ -6,11 +6,11 @@ use value::ValueType;
 
 
 #[derive(Debug)]
-pub enum Expr {
+pub enum Expr<'a> {
     ColName(Rc<String>),
     ColIndex(usize),
-    Func(FuncType, Box<Expr>, Box<Expr>),
-    Const(ValueType),
+    Func(FuncType, Box<Expr<'a>>, Box<Expr<'a>>),
+    Const(ValueType<'a>),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -26,8 +26,8 @@ use self::Expr::*;
 use self::ValueType::*;
 use self::FuncType::*;
 
-impl Expr {
-    pub fn eval(&self, record: &Vec<ValueType>) -> ValueType {
+impl<'a> Expr<'a> {
+    pub fn eval(&self, record: &Vec<ValueType<'a>>) -> ValueType<'a> {
         match self {
             &Func(ref functype, ref exp1, ref exp2) =>
                 match (functype, exp1.eval(record), exp2.eval(record)) {
@@ -78,7 +78,7 @@ impl Expr {
         }
     }
 
-    pub fn func(ftype: FuncType, expr1: Expr, expr2: Expr) -> Expr {
+    pub fn func(ftype: FuncType, expr1: Expr<'a>, expr2: Expr<'a>) -> Expr<'a> {
         Func(ftype, Box::new(expr1), Box::new(expr2))
     }
 

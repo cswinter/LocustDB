@@ -46,12 +46,12 @@ named!(simple_query<&[u8], Query>,
     )
 );
 
-fn construct_query(select_clauses: Vec<AggregateOrSelect>, filter: Expr) -> Query {
+fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect<'a>>, filter: Expr<'a>) -> Query<'a> {
     let (select, aggregate) = partition(select_clauses);
     Query { select: select, filter: filter, aggregate: aggregate }
 }
 
-fn partition(select_or_aggregates: Vec<AggregateOrSelect>) -> (Vec<Expr>, Vec<(Aggregator, Expr)>) {
+fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect<'a>>) -> (Vec<Expr<'a>>, Vec<(Aggregator, Expr<'a>)>) {
     let (selects, aggregates): (Vec<AggregateOrSelect>, Vec<AggregateOrSelect>) =
         select_or_aggregates.into_iter()
             .partition(|x| match x {
@@ -145,7 +145,7 @@ named!(string<&[u8], ValueType>,
         char!('"') >>
         s: is_not!("\"") >>
         char!('"') >>
-        (ValueType::Str(Rc::new(str::from_utf8(s).unwrap().to_string())))
+        (ValueType::Str(str::from_utf8(s).unwrap()))
     )
 );
 
@@ -188,7 +188,7 @@ fn is_sql_identifier(chr: u8) -> bool {
     is_alphabetic(chr) || chr == '_' as u8
 }
 
-enum AggregateOrSelect {
-    Aggregate((Aggregator, Expr)),
-    Select(Expr),
+enum AggregateOrSelect<'a> {
+    Aggregate((Aggregator, Expr<'a>)),
+    Select(Expr<'a>),
 }
