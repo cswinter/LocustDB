@@ -5,6 +5,7 @@ use std::collections::btree_map::Entry;
 use std::rc::Rc;
 use std::iter;
 use heapsize::HeapSizeOf;
+use packed_strings::StringPacker;
 
 pub struct Batch {
     pub cols: Vec<Box<Column>>,
@@ -129,14 +130,14 @@ impl Column for IntegerColumn {
 
 struct StringColumn {
     name: String,
-    values: Vec<String>
+    values: StringPacker,
 }
 
 impl StringColumn {
     fn new(name: String, values: Vec<String>) -> StringColumn {
         StringColumn {
             name: name,
-            values: values
+            values: StringPacker::from_strings(&values),
         }
     }
 }
@@ -147,7 +148,7 @@ impl Column for StringColumn {
     }
 
     fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().map(|s| ValueType::Str(Rc::new(s.clone())));
+        let iter = self.values.iter().map(|s| ValueType::Str(Rc::new(s.to_string())));
         ColIter{iter: Box::new(iter)}
     }
 }
