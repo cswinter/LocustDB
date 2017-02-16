@@ -60,7 +60,11 @@ fn repl(datasource: &Vec<Box<Column>>) {
                 let result = query.run(datasource);
                 query_engine::print_query_result(&result);
             },
-            err => println!("Failed to parse query! {:?}", err),
+            err => {
+                println!("Failed to parse query! {:?}", err);
+                println!("Example for supported query:");
+                println!("select url, count(1), app_name, sum(events) where and( >(timestamp, 1000), =(version, \"1.5.3\") )\n");
+            },
         }
     }
     rl.save_history(".ruba_history");
