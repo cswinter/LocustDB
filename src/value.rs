@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::fmt;
 use heapsize::HeapSizeOf;
+use std::convert::From;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ValueType<'a> {
@@ -69,3 +70,40 @@ impl HeapSizeOf for InpVal {
         }
     }
 }
+
+impl<'a> From<()> for ValueType<'a> {
+    fn from(_: ()) -> ValueType<'a> {
+        ValueType::Null
+    }
+}
+
+impl<'a> From<bool> for ValueType<'a> {
+    fn from(b: bool) -> ValueType<'a> {
+        ValueType::Bool(b)
+    }
+}
+
+impl<'a> From<u64> for ValueType<'a> {
+    fn from(t: u64) -> ValueType<'a> {
+        ValueType::Timestamp(t)
+    }
+}
+
+impl<'a> From<i64> for ValueType<'a> {
+    fn from(t: i64) -> ValueType<'a> {
+        ValueType::Integer(t)
+    }
+}
+
+impl<'a> From<&'a str> for ValueType<'a> {
+    fn from(s: &'a str) -> ValueType<'a> {
+        ValueType::Str(s)
+    }
+}
+
+impl<'a> From<Vec<String>> for ValueType<'a> {
+    fn from(s: Vec<String>) -> ValueType<'a> {
+        ValueType::Set(Rc::new(s))
+    }
+}
+
