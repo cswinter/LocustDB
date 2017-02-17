@@ -89,7 +89,7 @@ fn repl(datasource: &Vec<Batch>) {
         match parser::parse_query(s.as_bytes()) {
             nom::IResult::Done(remaining, query) => {
                 println!("{:?}, {:?}\n", query, remaining);
-                let mut compiled_query = query.compile(&datasource[0]);
+                let mut compiled_query = query.compile(datasource);
                 let result = compiled_query.run();
                 query_engine::print_query_result(&result);
             },

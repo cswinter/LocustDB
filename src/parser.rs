@@ -50,7 +50,7 @@ named!(simple_query<&[u8], Query>,
     )
 );
 
-fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect<'a>>, filter: Expr<'a>, limit: Oprion<LimitClause>) -> Query<'a> {
+fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect<'a>>, filter: Expr<'a>, limit: Option<LimitClause>) -> Query<'a> {
     let (select, aggregate) = partition(select_clauses);
     Query { select: select, filter: filter, aggregate: aggregate, limit: limit }
 }

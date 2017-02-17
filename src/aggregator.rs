@@ -23,4 +23,11 @@ impl Aggregator {
             (&aggregator, accumulator, elem) => panic!("Type error: aggregator {:?} not defined for values {:?} and {:?}", aggregator, *accumulator, *elem),
         }
     }
+
+    pub fn combine<'a>(&self, accumulator: &ValueType, elem: &ValueType) -> ValueType<'a> {
+        match (self, accumulator, elem) {
+            (_, &ValueType::Integer(i1), &ValueType::Integer(i2)) => ValueType::Integer(i1 + i2),
+            (&aggregator, accumulator, elem) => panic!("Type error: aggregator.combine {:?} not defined for values {:?} and {:?}", aggregator, *accumulator, *elem),
+        }
+    }
 }
