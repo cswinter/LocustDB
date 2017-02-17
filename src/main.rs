@@ -16,13 +16,9 @@ mod query_engine;
 mod csv_loader;
 mod parser;
 use value::ValueType;
-use columns::{Column, columnarize, Batch};
+use columns::{columnarize, Batch};
 
-use std::fs::File;
-use serde_json::Value;
-use std::io::{BufReader};
 use std::env;
-use std::rc::Rc;
 use std::collections::HashMap;
 use heapsize::HeapSizeOf;
 use time::precise_time_s;
@@ -70,9 +66,8 @@ fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {
 }
 
 fn repl(datasource: &Vec<Batch>) {
-    use std::io::{stdin,stdout,Write};
     let mut rl = rustyline::Editor::<()>::new();
-    rl.load_history(".ruba_history");
+    rl.load_history(".ruba_history").ok();
     loop {
         let mut s = rl.readline("ruba> ").expect("Did not enter a correct string");
         if let Some('\n')=s.chars().next_back() {
@@ -100,7 +95,7 @@ fn repl(datasource: &Vec<Batch>) {
             },
         }
     }
-    rl.save_history(".ruba_history");
+    rl.save_history(".ruba_history").ok();
 }
 
 /*
