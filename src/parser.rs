@@ -104,8 +104,18 @@ named!(expr<&[u8], Expr>,
 named!(expr_no_left_recur<&[u8], Expr>, 
     do_parse!(
         opt!(multispace) >>
-        result: alt!(function | negation | colname | constant) >>
+        result: alt!(parentheses | function | negation | colname | constant) >>
         (result)
+    )
+);
+
+named!(parentheses<&[u8], Expr>,
+    do_parse!(
+        char!('(') >>
+        e1: expr >>
+        opt!(multispace) >>
+        char!(')') >>
+        (e1)
     )
 );
 
