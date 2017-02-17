@@ -1,5 +1,5 @@
-mod packed_strings;
 mod integers;
+mod strings;
 use value::{ValueType, InpVal, InpRecordType};
 use std::boxed::Box;
 use std::collections::BTreeMap;
@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::iter;
 use std::cmp;
 use heapsize::HeapSizeOf;
-use self::packed_strings::StringPacker;
 use self::integers::IntegerColumn;
+use self::strings::StringColumn;
 use std::i64;
 
 pub struct Batch {
@@ -96,25 +96,6 @@ impl ColumnData for TimestampColumn {
     }
 }
 
-struct StringColumn {
-    values: StringPacker,
-}
-
-impl StringColumn {
-    fn new(values: Vec<Option<Rc<String>>>) -> StringColumn {
-        StringColumn {
-            values: StringPacker::from_strings(&values),
-        }
-    }
-}
-
-impl ColumnData for StringColumn {
-    fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().map(|s| ValueType::Str(s));
-        ColIter{iter: Box::new(iter)}
-    }
-}
-
 struct SetColumn {
     values: Vec<Vec<String>>
 }
@@ -168,12 +149,6 @@ impl HeapSizeOf for NullColumn {
 }
 
 impl HeapSizeOf for TimestampColumn {
-    fn heap_size_of_children(&self) -> usize {
-        self.values.heap_size_of_children()
-    }
-}
-
-impl HeapSizeOf for StringColumn {
     fn heap_size_of_children(&self) -> usize {
         self.values.heap_size_of_children()
     }

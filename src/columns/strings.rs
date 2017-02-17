@@ -1,9 +1,35 @@
-use std::str;
+use value::ValueType;
+use columns::{ColumnData, ColIter};
 use heapsize::HeapSizeOf;
 use std::rc::Rc;
+use std::str;
 
+pub struct StringColumn {
+    values: StringPacker,
+}
 
-pub struct StringPacker {
+impl StringColumn {
+    pub fn new(values: Vec<Option<Rc<String>>>) -> StringColumn {
+        StringColumn {
+            values: StringPacker::from_strings(&values),
+        }
+    }
+}
+
+impl ColumnData for StringColumn {
+    fn iter<'a>(&'a self) -> ColIter<'a> {
+        let iter = self.values.iter().map(|s| ValueType::Str(s));
+        ColIter{iter: Box::new(iter)}
+    }
+}
+
+impl HeapSizeOf for StringColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.values.heap_size_of_children()
+    }
+}
+
+struct StringPacker {
     data: Vec<u8>,
 }
 
