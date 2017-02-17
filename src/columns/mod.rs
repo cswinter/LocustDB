@@ -1,3 +1,4 @@
+mod packed_strings;
 use value::{ValueType, InpVal, InpRecordType};
 use std::boxed::Box;
 use std::collections::BTreeMap;
@@ -5,7 +6,7 @@ use std::collections::btree_map::Entry;
 use std::rc::Rc;
 use std::iter;
 use heapsize::HeapSizeOf;
-use packed_strings::StringPacker;
+use self::packed_strings::StringPacker;
 
 pub struct Batch {
     pub cols: Vec<Box<Column>>,

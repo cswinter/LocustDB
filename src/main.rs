@@ -7,7 +7,6 @@ extern crate rustyline;
 extern crate itertools;
 
 mod util;
-mod packed_strings;
 mod value;
 mod expression;
 mod aggregator;
