@@ -5,6 +5,7 @@ extern crate nom;
 extern crate heapsize;
 extern crate rustyline;
 extern crate itertools;
+extern crate num;
 
 mod util;
 mod value;

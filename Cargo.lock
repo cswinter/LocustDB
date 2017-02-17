@@ -5,6 +5,7 @@ dependencies = [
  "heapsize 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.5.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "nom 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustyline 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -80,13 +81,87 @@ version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "num"
+version = "0.1.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num-bigint 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-complex 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-integer 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-iter 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-rational 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "num-bigint"
+version = "0.1.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num-integer 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustc-serialize 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "num-complex"
+version = "0.1.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustc-serialize 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "num-integer"
+version = "0.1.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "num-iter"
+version = "0.1.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num-integer 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "num-rational"
+version = "0.1.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num-bigint 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-integer 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustc-serialize 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.1.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "rand"
+version = "0.3.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "libc 0.2.20 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "rustc-serialize"
+version = "0.3.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -156,8 +231,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum libc 0.2.20 (registry+https://github.com/rust-lang/crates.io-index)" = "684f330624d8c3784fb9558ca46c4ce488073a8d22450415c5eb4f4cfb0d11b5"
 "checksum nix 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "bfb3ddedaa14746434a02041940495bf11325c22f6d36125d3bdd56090d50a79"
 "checksum nom 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e5d4598834859fedb9a0a69d5b862a970e77982a92f544d547257a4d49469067"
+"checksum num 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)" = "bde7c03b09e7c6a301ee81f6ddf66d7a28ec305699e3d3b056d2fc56470e3120"
+"checksum num-bigint 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)" = "88b14378471f7c2adc5262f05b4701ef53e8da376453a8d8fee48e51db745e49"
+"checksum num-complex 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)" = "f0c78e054dd19c3fd03419ade63fa661e9c49bb890ce3beb4eee5b7baf93f92f"
+"checksum num-integer 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)" = "fb24d9bfb3f222010df27995441ded1e954f8f69cd35021f6bef02ca9552fb92"
+"checksum num-iter 0.1.32 (registry+https://github.com/rust-lang/crates.io-index)" = "287a1c9969a847055e1122ec0ea7a5c5d6f72aad97934e131c83d5c08ab4e45c"
+"checksum num-rational 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)" = "54ff603b8334a72fbb27fe66948aac0abaaa40231b3cecd189e76162f6f38aaf"
 "checksum num-traits 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)" = "a16a42856a256b39c6d3484f097f6713e14feacd9bfb02290917904fae46c81c"
+"checksum rand 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)" = "022e0636ec2519ddae48154b028864bdce4eaf7d35226ab8e65c611be97b189d"
 "checksum redox_syscall 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)" = "8dd35cc9a8bdec562c757e3d43c1526b5c6d2653e23e2315065bc25556550753"
+"checksum rustc-serialize 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)" = "237546c689f20bb44980270c73c3b9edd0891c1be49cc1274406134a66d3957b"
 "checksum rustyline 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "00b06ac9c8e8e3e83b33d175d39a9f7b6c2c930c82990593719c8e48788ae2d9"
 "checksum serde 0.9.7 (registry+https://github.com/rust-lang/crates.io-index)" = "1e0ed773960f90a78567fcfbe935284adf50c5d7cf119aa2cf43bb0b4afa69bb"
 "checksum serde_json 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)" = "e095e4e94e7382b76f48e93bd845ffddda62df8dfd4c163b1bfa93d40e22e13a"
