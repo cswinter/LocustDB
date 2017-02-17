@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::rc::Rc;
 use std::iter;
+use std::{u8, u16, u32, i64};
+use std::cmp;
 use heapsize::HeapSizeOf;
 use self::packed_strings::StringPacker;
 
@@ -86,11 +88,20 @@ struct IntegerColumn {
 }
 
 impl IntegerColumn {
-    fn new(name: String, mut values: Vec<i64>) -> IntegerColumn {
-        values.shrink_to_fit();
-        IntegerColumn {
-            name: name,
-            values: values,
+    fn new(name: String, mut values: Vec<i64>, min: i64, max: i64) -> Box<Column> {
+        println!("{}: {} - {} = {}", name, max, min, max - min);
+        if max - min <= u8::MAX as i64 {
+            Box::new(IntegerColumn1B::new(name, values, max - min))
+        } else if max - min <= u16::MAX as i64 {
+            Box::new(IntegerColumn2B::new(name, values, max - min))
+        } else if max - min <= u32::MAX as i64 {
+            Box::new(IntegerColumn4B::new(name, values, max - min))
+        } else {
+            values.shrink_to_fit();
+            Box::new(IntegerColumn {
+                name: name,
+                values: values,
+            })
         }
     }
 }
@@ -103,6 +114,74 @@ impl Column for IntegerColumn {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let iter = self.values.iter().map(|&i| ValueType::Integer(i));
         ColIter{iter: Box::new(iter)}
+    }
+}
+
+
+struct IntegerColumn4B { name: String, values: Vec<u32>, offset: i64, }
+struct IntegerColumn2B { name: String, values: Vec<u16>, offset: i64, }
+struct IntegerColumn1B { name: String, values: Vec<u8>, offset: i64, }
+
+impl IntegerColumn4B {
+    fn new(name: String, values: Vec<i64>, offset: i64) -> IntegerColumn4B {
+        println!("Created 4b for {}", name);
+        let mut encoded_vals = Vec::with_capacity(values.len());
+        for v in values {
+            encoded_vals.push((v - offset) as u32);
+        }
+        IntegerColumn4B { name: name, values: encoded_vals, offset: offset, }
+    }
+}
+
+impl IntegerColumn2B {
+    fn new(name: String, values: Vec<i64>, offset: i64) -> IntegerColumn2B {
+        println!("Created 2b for {}", name);
+        let mut encoded_vals = Vec::with_capacity(values.len());
+        for v in values {
+            encoded_vals.push((v - offset) as u16);
+        }
+        IntegerColumn2B { name: name, values: encoded_vals, offset: offset, }
+    }
+}
+
+impl IntegerColumn1B {
+    fn new(name: String, values: Vec<i64>, offset: i64) -> IntegerColumn1B {
+        println!("Created 1b for {}", name);
+        let mut encoded_vals = Vec::with_capacity(values.len());
+        for v in values {
+            encoded_vals.push((v - offset) as u8);
+        }
+        IntegerColumn1B { name: name, values: encoded_vals, offset: offset, }
+    }
+}
+
+impl Column for IntegerColumn4B {
+    fn get_name(&self) -> &str { &self.name }
+    
+    fn iter<'a>(&'a self) -> ColIter<'a> {
+        let offset = self.offset;
+        let iter = self.values.iter().map(move |i| ValueType::Integer(*i as i64 + offset));
+        ColIter { iter: Box::new(iter) }
+    }
+}
+
+impl Column for IntegerColumn2B {
+    fn get_name(&self) -> &str { &self.name }
+    
+    fn iter<'a>(&'a self) -> ColIter<'a> {
+        let offset = self.offset;
+        let iter = self.values.iter().map(move |i| ValueType::Integer(*i as i64 + offset));
+        ColIter { iter: Box::new(iter) }
+    }
+}
+
+impl Column for IntegerColumn1B {
+    fn get_name(&self) -> &str { &self.name }
+    
+    fn iter<'a>(&'a self) -> ColIter<'a> {
+        let offset = self.offset;
+        let iter = self.values.iter().map(move |i| ValueType::Integer(*i as i64 + offset));
+        ColIter { iter: Box::new(iter) }
     }
 }
 
@@ -201,6 +280,24 @@ impl HeapSizeOf for IntegerColumn {
     }
 }
 
+impl HeapSizeOf for IntegerColumn4B {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for IntegerColumn2B {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
+impl HeapSizeOf for IntegerColumn1B {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+    }
+}
+
 impl HeapSizeOf for TimestampColumn {
     fn heap_size_of_children(&self) -> usize {
         self.name.heap_size_of_children() + self.values.heap_size_of_children()
@@ -229,7 +326,7 @@ impl HeapSizeOf for MixedColumn {
 enum VecType {
     NullVec(usize),
     TimestampVec(Vec<u64>),
-    IntegerVec(Vec<i64>),
+    IntegerVec(Vec<i64>, i64, i64),
     StringVec(Vec<Option<Rc<String>>>),
     SetVec(Vec<Vec<String>>),
     MixedVec(Vec<InpVal>),
@@ -241,7 +338,7 @@ impl VecType {
         match value {
             InpVal::Null => NullVec(1),
             InpVal::Timestamp(t) => TimestampVec(vec![t]),
-            InpVal::Integer(i) => IntegerVec(vec![i]),
+            InpVal::Integer(i) => IntegerVec(vec![i], i64::MAX, i64::MIN),
             InpVal::Str(s) => StringVec(vec![Some(s)]),
             InpVal::Set(s) => SetVec(vec![Rc::try_unwrap(s).unwrap()]),
         }
@@ -256,7 +353,11 @@ impl VecType {
                 return Some(VecType::StringVec(string_vec))
             },
             (&mut VecType::TimestampVec(ref mut v), InpVal::Timestamp(t)) => v.push(t),
-            (&mut VecType::IntegerVec(ref mut v), InpVal::Integer(i)) => v.push(i),
+            (&mut VecType::IntegerVec(ref mut v, ref mut min, ref mut max), InpVal::Integer(i)) => {
+                *min = cmp::min(i, *min);
+                *max = cmp::max(i, *max);
+                v.push(i)
+            },
             (&mut VecType::StringVec(ref mut v), InpVal::Str(ref s)) => v.push(Some(s.clone())),
             (&mut VecType::StringVec(ref mut v), InpVal::Null) => v.push(None),
             (&mut VecType::SetVec(ref mut v), InpVal::Set(ref s)) => v.push(Rc::try_unwrap(s.clone()).unwrap()),
@@ -274,7 +375,7 @@ impl VecType {
         match self {
             &VecType::NullVec(ref n)      => VecType::MixedVec(iter::repeat(InpVal::Null).take(*n).collect()),
             &VecType::TimestampVec(ref v) => VecType::MixedVec(v.iter().map(|t| InpVal::Timestamp(*t)).collect()),
-            &VecType::IntegerVec(ref v)   => VecType::MixedVec(v.iter().map(|i| InpVal::Integer(*i)).collect()),
+            &VecType::IntegerVec(ref v, ..)   => VecType::MixedVec(v.iter().map(|i| InpVal::Integer(*i)).collect()),
             &VecType::StringVec(ref v)    => VecType::MixedVec(v.iter().map(|s| match s {
                 &Some(ref string) => InpVal::Str(string.clone()),
                 &None => InpVal::Null,
@@ -288,7 +389,7 @@ impl VecType {
         match self {
             VecType::NullVec(n)      => Box::new(NullColumn::new(name, n)),
             VecType::TimestampVec(v) => Box::new(TimestampColumn::new(name, v)),
-            VecType::IntegerVec(v)   => Box::new(IntegerColumn::new(name, v)),
+            VecType::IntegerVec(v, min, max) => IntegerColumn::new(name, v, min, max),
             VecType::StringVec(v)    => Box::new(StringColumn::new(name, v)),
             VecType::SetVec(v)       => Box::new(SetColumn::new(name, v)),
             VecType::MixedVec(v)     => Box::new(MixedColumn::new(name, v)),
