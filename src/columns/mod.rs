@@ -1,11 +1,12 @@
-use value::{ValueType, RecordType};
+mod packed_strings;
+use value::{ValueType, InpVal, InpRecordType};
 use std::boxed::Box;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::rc::Rc;
 use std::iter;
 use heapsize::HeapSizeOf;
-use packed_strings::StringPacker;
+use self::packed_strings::StringPacker;
 
 pub struct Batch {
     pub cols: Vec<Box<Column>>,
@@ -13,17 +14,17 @@ pub struct Batch {
 
 pub trait Column : HeapSizeOf {
     fn get_name(&self) -> &str;
-    fn iter(&self) -> ColIter;
+    fn iter<'a>(&'a self) -> ColIter<'a>;
 }
 
 pub struct ColIter<'a> {
-    iter: Box<Iterator<Item=ValueType> + 'a>
+    iter: Box<Iterator<Item=ValueType<'a>> + 'a>
 }
 
 impl<'a> Iterator for ColIter<'a> {
-    type Item = ValueType;
+    type Item = ValueType<'a>;
 
-    fn next(&mut self) -> Option<ValueType> {
+    fn next(&mut self) -> Option<ValueType<'a>> {
         self.iter.next()
     }
 }
@@ -135,7 +136,7 @@ struct StringColumn {
 }
 
 impl StringColumn {
-    fn new(name: String, values: Vec<Option<String>>) -> StringColumn {
+    fn new(name: String, values: Vec<Option<Rc<String>>>) -> StringColumn {
         StringColumn {
             name: name,
             values: StringPacker::from_strings(&values),
@@ -149,7 +150,7 @@ impl Column for StringColumn {
     }
 
     fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().map(|s| ValueType::Str(Rc::new(s.to_string())));
+        let iter = self.values.iter().map(|s| ValueType::Str(s));
         ColIter{iter: Box::new(iter)}
     }
 }
@@ -181,11 +182,11 @@ impl Column for SetColumn {
 
 struct MixedColumn {
     name: String,
-    values: Vec<ValueType>
+    values: Vec<InpVal>,
 }
 
 impl MixedColumn {
-    fn new(name: String, mut values: Vec<ValueType>) -> MixedColumn {
+    fn new(name: String, mut values: Vec<InpVal>) -> MixedColumn {
         values.shrink_to_fit();
         MixedColumn {
             name: name,
@@ -199,8 +200,8 @@ impl Column for MixedColumn {
         &self.name
     }
 
-    fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().cloned();
+    fn iter(&self) -> ColIter {
+        let iter = self.values.iter().map(|val| val.to_val());
         ColIter{iter: Box::new(iter)}
     }
 }
@@ -260,40 +261,38 @@ enum VecType {
     BoolVec(Vec<bool>),
     TimestampVec(Vec<u64>),
     IntegerVec(Vec<i64>),
-    StringVec(Vec<Option<String>>),
+    StringVec(Vec<Option<Rc<String>>>),
     SetVec(Vec<Vec<String>>),
-    MixedVec(Vec<ValueType>),
+    MixedVec(Vec<InpVal>),
 }
 
 impl VecType {
-    fn new_with_value(value: ValueType) -> VecType {
+    fn new_with_value(value: InpVal) -> VecType {
         use self::VecType::*;
         match value {
-            ValueType::Null => NullVec(1),
-            ValueType::Bool(b) => BoolVec(vec![b]),
-            ValueType::Timestamp(t) => TimestampVec(vec![t]),
-            ValueType::Integer(i) => IntegerVec(vec![i]),
-            ValueType::Str(s) => StringVec(vec![Some(Rc::try_unwrap(s).unwrap())]),
-            ValueType::Set(s) => SetVec(vec![Rc::try_unwrap(s).unwrap()]),
+            InpVal::Null => NullVec(1),
+            InpVal::Timestamp(t) => TimestampVec(vec![t]),
+            InpVal::Integer(i) => IntegerVec(vec![i]),
+            InpVal::Str(s) => StringVec(vec![Some(s)]),
+            InpVal::Set(s) => SetVec(vec![Rc::try_unwrap(s).unwrap()]),
         }
     }
 
-    fn push(&mut self, value: ValueType) -> Option<VecType> {
+    fn push(&mut self, value: InpVal) -> Option<VecType> {
         match (self, value) {
-            (&mut VecType::NullVec(ref mut n), ValueType::Null) => *n += 1,
-            (&mut VecType::NullVec(ref n), ValueType::Str(ref s)) => {
-                let mut string_vec = iter::repeat(None).take(*n).collect::<Vec<Option<String>>>();
-                string_vec.push(Some(s.as_ref().clone()));
+            (&mut VecType::NullVec(ref mut n), InpVal::Null) => *n += 1,
+            (&mut VecType::NullVec(ref n), InpVal::Str(ref s)) => {
+                let mut string_vec = iter::repeat(None).take(*n).collect::<Vec<Option<Rc<String>>>>();
+                string_vec.push(Some(s.clone()));
                 return Some(VecType::StringVec(string_vec))
             },
-            (&mut VecType::BoolVec(ref mut v), ValueType::Bool(b)) => v.push(b),
-            (&mut VecType::TimestampVec(ref mut v), ValueType::Timestamp(t)) => v.push(t),
-            (&mut VecType::IntegerVec(ref mut v), ValueType::Integer(i)) => v.push(i),
-            (&mut VecType::StringVec(ref mut v), ValueType::Str(ref s)) => v.push(Some(s.as_ref().clone())),
-            (&mut VecType::StringVec(ref mut v), ValueType::Null) => v.push(None),
-            (&mut VecType::SetVec(ref mut v), ValueType::Set(ref s)) => v.push(Rc::try_unwrap(s.clone()).unwrap()),
+            (&mut VecType::TimestampVec(ref mut v), InpVal::Timestamp(t)) => v.push(t),
+            (&mut VecType::IntegerVec(ref mut v), InpVal::Integer(i)) => v.push(i),
+            (&mut VecType::StringVec(ref mut v), InpVal::Str(ref s)) => v.push(Some(s.clone())),
+            (&mut VecType::StringVec(ref mut v), InpVal::Null) => v.push(None),
+            (&mut VecType::SetVec(ref mut v), InpVal::Set(ref s)) => v.push(Rc::try_unwrap(s.clone()).unwrap()),
             (&mut VecType::MixedVec(ref mut v), ref anyval) => v.push(anyval.clone()),
-            (ref slf, ref anyval) => {
+            (slf, anyval) => {
                 let mut new_vec = slf.to_mixed();
                 new_vec.push(anyval.clone());
                 return Some(new_vec)
@@ -304,15 +303,15 @@ impl VecType {
 
     fn to_mixed(&self) -> VecType {
         match self {
-            &VecType::NullVec(ref n)      => VecType::MixedVec(iter::repeat(ValueType::Null).take(*n).collect()),
-            &VecType::BoolVec(ref v)      => VecType::MixedVec(v.iter().map(|b| ValueType::Bool(*b)).collect()),
-            &VecType::TimestampVec(ref v) => VecType::MixedVec(v.iter().map(|t| ValueType::Timestamp(*t)).collect()),
-            &VecType::IntegerVec(ref v)   => VecType::MixedVec(v.iter().map(|i| ValueType::Integer(*i)).collect()),
+            &VecType::NullVec(ref n)      => VecType::MixedVec(iter::repeat(InpVal::Null).take(*n).collect()),
+            &VecType::BoolVec(_)          => panic!("Bool input columns not currently supported."),
+            &VecType::TimestampVec(ref v) => VecType::MixedVec(v.iter().map(|t| InpVal::Timestamp(*t)).collect()),
+            &VecType::IntegerVec(ref v)   => VecType::MixedVec(v.iter().map(|i| InpVal::Integer(*i)).collect()),
             &VecType::StringVec(ref v)    => VecType::MixedVec(v.iter().map(|s| match s {
-                &Some(ref string) => ValueType::Str(Rc::new(string.clone())),
-                &None => ValueType::Null,
+                &Some(ref string) => InpVal::Str(string.clone()),
+                &None => InpVal::Null,
             }).collect()),
-            &VecType::SetVec(ref v)       => VecType::MixedVec(v.iter().map(|s| ValueType::Set(Rc::new(s.clone()))).collect()),
+            &VecType::SetVec(ref v)       => VecType::MixedVec(v.iter().map(|s| InpVal::Set(Rc::new(s.clone()))).collect()),
             &VecType::MixedVec(_) => panic!("Trying to convert mixed columns to mixed column!"),
         }
     }
@@ -330,8 +329,7 @@ impl VecType {
     }
 }
 
-pub fn columnarize(records: Vec<RecordType>) -> Batch {
-    println!("COLUMNARIXE");
+pub fn columnarize(records: Vec<InpRecordType>) -> Batch {
     let mut field_map: BTreeMap<String, VecType> = BTreeMap::new();
     let mut count = 0;
     for record in records {

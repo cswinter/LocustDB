@@ -16,16 +16,23 @@ use columns::Batch;
 
 
 #[derive(Debug)]
-pub struct Query {
-    pub select: Vec<Expr>,
-    pub filter: Expr,
+pub struct Query<'a> {
+    pub select: Vec<Expr<'a>>,
+    pub filter: Expr<'a>,
     pub limit: Option<LimitClause>,
-    pub aggregate: Vec<(Aggregator, Expr)>,
+    pub aggregate: Vec<(Aggregator, Expr<'a>)>,
 }
 
-pub struct QueryResult {
+pub struct CompiledQuery<'a> {
+    select: Vec<Expr<'a>>,
+    filter: Expr<'a>,
+    aggregate: Vec<(Aggregator, Expr<'a>)>,
+    coliter: Vec<ColIter<'a>>,
+}
+
+pub struct QueryResult<'a> {
     pub colnames: Vec<Rc<String>>,
-    pub rows: Vec<Vec<ValueType>>,
+    pub rows: Vec<Vec<ValueType<'a>>>,
     pub stats: QueryStats,
 }
 
@@ -46,27 +53,18 @@ impl Add for QueryStats {
 }
 
 
-impl Query {
-    pub fn run(&self, source: &Batch) -> QueryResult {
-        let referenced_cols = self.find_referenced_cols();
-        let efficient_source: Vec<&Box<Column>> = source.cols.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
-        let mut coliter = efficient_source.iter().map(|col| col.iter()).collect();
-
-        let column_indices = create_colname_map(&efficient_source);
-        let compiled_selects = self.select.iter().map(|expr| expr.compile(&column_indices)).collect();
-        let compiled_filter = self.filter.compile(&column_indices);
-        let compiled_aggregate = self.aggregate.iter().map(|&(agg, ref expr)| (agg, expr.compile(&column_indices))).collect();
-
+impl<'a> CompiledQuery<'a> {
+    pub fn run(&mut self) -> QueryResult {
+        let colnames = self.result_column_names(); 
         let start_time_ns = precise_time_ns();
         let (result_rows, rows_touched) = if self.aggregate.len() == 0 {
-            run_select_query(&compiled_selects, &compiled_filter, &mut coliter)
+            run_select_query(&self.select, &self.filter, &mut self.coliter)
         } else {
-            run_aggregation_query(&compiled_selects, &compiled_filter, &compiled_aggregate, &mut coliter)
+            run_aggregation_query(&self.select, &self.filter, &self.aggregate, &mut self.coliter)
         };
 
-
         QueryResult {
-            colnames: self.result_column_names(),
+            colnames: colnames,
             rows: result_rows,
             stats: QueryStats {
                 runtime_ns: precise_time_ns() - start_time_ns,
@@ -75,8 +73,10 @@ impl Query {
         }
     }
 
-    pub fn run_batches(&self, batches: &Vec<Batch>) -> QueryResult {
-        let mut combined_rows = Vec::new();
+/*
+    pub fn run_batches(&'a self, batches: &'a Vec<Batch>) -> QueryResult<'a> {
+        self.run(&batches[0])
+        /*let mut combined_rows = Vec::new();
         let mut combined_stats = QueryStats { runtime_ns: 0, rows_scanned: 0 };
         for batch in batches {
             let QueryResult { rows, stats, .. } = self.run(batch);
@@ -87,20 +87,8 @@ impl Query {
             colnames: self.result_column_names(),
             rows: combined_rows,
             stats: combined_stats,
-        }
-    }
-
-    fn find_referenced_cols(&self) -> HashSet<Rc<String>> {
-        let mut colnames = HashSet::new();
-        for expr in self.select.iter() {
-            expr.add_colnames(&mut colnames);
-        }
-        self.filter.add_colnames(&mut colnames);
-        for &(_, ref expr) in self.aggregate.iter() {
-            expr.add_colnames(&mut colnames);
-        }
-        colnames
-    }
+        }*/
+    }*/
 
     fn result_column_names(&self) -> Vec<Rc<String>> {
         let mut anon_columns = -1;
@@ -128,6 +116,37 @@ impl Query {
     }
 }
 
+impl<'a> Query<'a> {
+    pub fn compile(&'a self, source: &'a Batch) -> CompiledQuery<'a> {
+        let referenced_cols = self.find_referenced_cols();
+        let efficient_source: Vec<&Box<Column>> = source.cols.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
+        let mut coliter = efficient_source.iter().map(|col| col.iter()).collect();
+        let column_indices = create_colname_map(&efficient_source);
+        let compiled_selects = self.select.iter().map(|expr| expr.compile(&column_indices)).collect();
+        let compiled_filter = self.filter.compile(&column_indices);
+        let compiled_aggregate = self.aggregate.iter().map(|&(agg, ref expr)| (agg, expr.compile(&column_indices))).collect();
+        CompiledQuery {
+            select: compiled_selects,
+            filter: compiled_filter,
+            aggregate: compiled_aggregate,
+            coliter: coliter,
+        }
+    }
+
+
+    fn find_referenced_cols(&self) -> HashSet<Rc<String>> {
+        let mut colnames = HashSet::new();
+        for expr in self.select.iter() {
+            expr.add_colnames(&mut colnames);
+        }
+        self.filter.add_colnames(&mut colnames);
+        for &(_, ref expr) in self.aggregate.iter() {
+            expr.add_colnames(&mut colnames);
+        }
+        colnames
+    }
+}
+
 fn create_colname_map(source: &Vec<&Box<Column>>) -> HashMap<String, usize> {
     let mut columns = HashMap::new();
     for (i, col) in source.iter().enumerate() {
@@ -136,7 +155,7 @@ fn create_colname_map(source: &Vec<&Box<Column>>) -> HashMap<String, usize> {
     columns
 }
 
-fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &mut Vec<ColIter>) -> (Vec<Vec<ValueType>>, u64) {
+fn run_select_query<'a>(select: &Vec<Expr<'a>>, filter: &'a Expr, source: &'a mut Vec<ColIter>) -> (Vec<Vec<ValueType<'a>>>, u64) {
     let mut result = Vec::new();
     let mut record = Vec::with_capacity(source.len());
     let mut rows_touched = 0;
@@ -164,7 +183,8 @@ fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &mut Vec<ColIter>
     }
 }
 
-fn run_aggregation_query(select: &Vec<Expr>, filter: &Expr, aggregation: &Vec<(Aggregator, Expr)>, source: &mut Vec<ColIter>) -> (Vec<Vec<ValueType>>, u64) {
+
+fn run_aggregation_query<'a>(select: &Vec<Expr<'a>>, filter: &'a Expr, aggregation: &Vec<(Aggregator, Expr<'a>)>, source: &'a mut Vec<ColIter>) -> (Vec<Vec<ValueType<'a>>>, u64) {
     let mut groups: HashMap<Vec<ValueType>, Vec<ValueType>> = HashMap::new();
     let mut record = Vec::with_capacity(source.len());
     let mut rows_touched = 0;
@@ -221,43 +241,8 @@ fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<ValueType>>) -> Str
     fmt_table(&strcolnames, &strrows)
 }
 
-pub fn test(source: &Batch) {
-    use self::Expr::*;
-    use self::FuncType::*;
-    use ValueType::*;
-
-    let query1 = Query {
-        select: vec![Expr::col("url")],
-        filter: Expr::func(And,
-                           Expr::func(LT, Expr::col("loadtime"), Const(Integer(1000))),
-                           Expr::func(GT, Expr::col("timestamp"), Const(Timestamp(1000)))),
-        aggregate: vec![],
-        limit: None,
-    };
-    let query2 = Query {
-        select: vec![Expr::col("timestamp"), Expr::col("loadtime")],
-        filter: Expr::func(Equals, Expr::col("url"), Const(Str(Rc::new("/".to_string())))),
-        aggregate: vec![],
-        limit: None,
-    };
-    let count_query = Query {
-        select: vec![Expr::col("url")],
-        filter: Const(Bool(true)),
-        aggregate: vec![(Aggregator::Count, Const(Integer(0)))],
-        limit: None,
-    };
-    let sum_query = Query {
-        select: vec![Expr::col("url")],
-        filter: Const(Bool(true)),
-        aggregate: vec![(Aggregator::Sum, Expr::col("loadtime"))],
-        limit: None,
-    };
-    let missing_col_query = Query {
-        select: vec![],
-        filter: Const(Bool(true)),
-        aggregate: vec![(Aggregator::Sum, Expr::col("doesntexist"))],
-        limit: None,
-    } ;
+    // former test() function - just to show how LIMIT would work
+    // DELETE ME once we fixe / figure out LIMIT
 
     //TODO(limit)
     //let limited_query = Query {
@@ -269,17 +254,6 @@ pub fn test(source: &Batch) {
     //    limit: LimitClause{ limit:3, offset:0 },
     //} ;
 
-    let result1 = query1.run(source);
-    let result2 = query2.run(source);
-    let count_result = count_query.run(source);
-    let sum_result = sum_query.run(source);
-    let missing_col_result = missing_col_query.run(source);
     //let limited_result = limited_query.run(source);
 
-    print_query_result(&result1);
-    print_query_result(&result2);
-    print_query_result(&count_result);
-    print_query_result(&sum_result);
-    print_query_result(&missing_col_result);
     //print_query_result(&limited_result);
-}

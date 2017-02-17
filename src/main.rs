@@ -7,7 +7,6 @@ extern crate rustyline;
 extern crate itertools;
 
 mod util;
-mod packed_strings;
 mod value;
 mod expression;
 mod aggregator;
@@ -16,7 +15,7 @@ mod columns;
 mod query_engine;
 mod csv_loader;
 mod parser;
-use value::{RecordType, ValueType};
+use value::ValueType;
 use columns::{Column, columnarize, Batch};
 
 use std::fs::File;
@@ -88,7 +87,8 @@ fn repl(datasource: &Vec<Batch>) {
         match parser::parse_query(s.as_bytes()) {
             nom::IResult::Done(remaining, query) => {
                 println!("{:?}, {:?}\n", query, remaining);
-                let result = query.run_batches(datasource);
+                let mut compiled_query = query.compile(&datasource[0]);
+                let result = compiled_query.run();
                 query_engine::print_query_result(&result);
             },
             err => {
@@ -101,7 +101,8 @@ fn repl(datasource: &Vec<Batch>) {
     rl.save_history(".ruba_history");
 }
 
-fn read_data(filename: &str) -> Vec<RecordType> {
+/*
+fn read_data<'a>(filename: &str) -> Vec<RecordType<'a>> {
     let file = BufReader::new(File::open(filename).unwrap());
     let json = serde_json::from_reader(file).unwrap();
     if let Value::Array(data) = json {
@@ -111,7 +112,7 @@ fn read_data(filename: &str) -> Vec<RecordType> {
     }
 }
 
-fn json_to_record(json: Value) -> RecordType {
+fn json_to_record<'a>(json: Value) -> RecordType<'a> {
     if let Value::Object(object) = json {
         object.into_iter().map(|(k, v)| (k, json_to_value(v))).collect()
     } else {
@@ -133,3 +134,4 @@ fn json_to_value(json: Value) -> ValueType {
         o => panic!("Objects not supported: {:?}", o)
     }
 }
+*/
