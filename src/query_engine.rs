@@ -20,14 +20,15 @@ use columns::Batch;
 pub struct Query<'a> {
     pub select: Vec<Expr<'a>>,
     pub filter: Expr<'a>,
-    pub limit: Option<LimitClause>,
     pub aggregate: Vec<(Aggregator, Expr<'a>)>,
+    pub limit: Option<LimitClause>,
 }
 
 pub struct CompiledQuery<'a> {
     subqueries: Vec<CompiledSingleBatchQuery<'a>>,
     output_colnames: Vec<Rc<String>>,
     aggregate: Vec<Aggregator>,
+    limit: Option<LimitClause>,
 }
 
 struct CompiledSingleBatchQuery<'a> {
@@ -117,10 +118,15 @@ impl<'a> CompiledQuery<'a> {
             }
             (result, combined_results.stats)
         };
+        let limited_result_rows = match &self.limit {
+            &Some(ref limit) => result_rows.into_iter().take(limit.limit as usize).collect(),
+            &None => result_rows,
+        };
+
 
         QueryResult {
             colnames: colnames,
-            rows: result_rows,
+            rows: limited_result_rows,
             stats: stats,
         }
     }
@@ -186,10 +192,12 @@ impl<'a> CompiledSingleBatchQuery<'a> {
 impl<'a> Query<'a> {
     pub fn compile(&'a self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
         let subqueries = source.iter().map(|batch| self.compile_for_batch(batch)).collect();
+        let limit = self.limit.clone();
         CompiledQuery {
             subqueries: subqueries,
             output_colnames: self.result_column_names(),
             aggregate: self.aggregate.iter().map(|&(aggregate, ref expr)| aggregate).collect(),
+            limit: limit,
         }
     }
 

@@ -200,7 +200,6 @@ named!(identifier<&[u8], &str>,
 
 named!(limit_clause<&[u8], LimitClause>,
     do_parse!(
-        multispace >>
         tag_no_case!("limit") >>
         multispace >>
         limit_val: number >>
