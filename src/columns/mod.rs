@@ -89,7 +89,6 @@ struct IntegerColumn {
 
 impl IntegerColumn {
     fn new(name: String, mut values: Vec<i64>, min: i64, max: i64) -> Box<Column> {
-        println!("{}: {} - {} = {}", name, max, min, max - min);
         if max - min <= u8::MAX as i64 {
             Box::new(IntegerColumn1B::new(name, values, max - min))
         } else if max - min <= u16::MAX as i64 {
@@ -124,7 +123,6 @@ struct IntegerColumn1B { name: String, values: Vec<u8>, offset: i64, }
 
 impl IntegerColumn4B {
     fn new(name: String, values: Vec<i64>, offset: i64) -> IntegerColumn4B {
-        println!("Created 4b for {}", name);
         let mut encoded_vals = Vec::with_capacity(values.len());
         for v in values {
             encoded_vals.push((v - offset) as u32);
@@ -135,7 +133,6 @@ impl IntegerColumn4B {
 
 impl IntegerColumn2B {
     fn new(name: String, values: Vec<i64>, offset: i64) -> IntegerColumn2B {
-        println!("Created 2b for {}", name);
         let mut encoded_vals = Vec::with_capacity(values.len());
         for v in values {
             encoded_vals.push((v - offset) as u16);
@@ -146,7 +143,6 @@ impl IntegerColumn2B {
 
 impl IntegerColumn1B {
     fn new(name: String, values: Vec<i64>, offset: i64) -> IntegerColumn1B {
-        println!("Created 1b for {}", name);
         let mut encoded_vals = Vec::with_capacity(values.len());
         for v in values {
             encoded_vals.push((v - offset) as u8);
@@ -371,6 +367,35 @@ impl VecType {
         None
     }
 
+    fn push_null(&mut self) -> Option<VecType> {
+        match self {
+            &mut VecType::NullVec(ref mut n) => *n += 1,
+            &mut VecType::StringVec(ref mut v) => v.push(None),
+            slf => return slf.push(InpVal::Null),
+        }
+        None
+    }
+
+    fn push_int(&mut self, i: i64) -> Option<VecType> {
+        match self {
+            &mut VecType::IntegerVec(ref mut v, ref mut min, ref mut max) => {
+                *min = cmp::min(i, *min);
+                *max = cmp::max(i, *max);
+                v.push(i)
+            },
+            slf => return slf.push(InpVal::Integer(i)),
+        }
+        None
+    }
+
+    fn push_str(&mut self, s: &str) -> Option<VecType> {
+        match self {
+            &mut VecType::StringVec(ref mut v) => v.push(Some(Rc::new(s.to_string()))),
+            slf => return slf.push(InpVal::Str(Rc::new(s.to_string()))),
+        }
+        None
+    }
+
     fn to_mixed(&self) -> VecType {
         match self {
             &VecType::NullVec(ref n)      => VecType::MixedVec(iter::repeat(InpVal::Null).take(*n).collect()),
@@ -428,4 +453,58 @@ pub fn columnarize(records: Vec<InpRecordType>) -> Batch {
     }
 
     Batch { cols: columns }
+}
+
+pub fn fused_csvload_columnarize(filename: &str, batch_size: usize) -> Vec<Batch> {
+    use std::fs::File;
+    use std::io::BufReader;
+    use std::io::BufRead;
+    use std::rc::Rc;
+    use std::boxed::Box;
+
+    let mut batches = Vec::new();
+    let mut partial_columns: Vec<VecType> = Vec::new();
+    let file = BufReader::new(File::open(filename).unwrap());
+    let mut lines_iter = file.lines();
+    let first_line = lines_iter.next().unwrap().unwrap();
+    let colnames: Vec<String> = first_line.split(",").map(|s| s.to_owned()).collect();
+
+    for (rownumber, line) in lines_iter.enumerate() {
+        for (i, val) in line.unwrap().split(",").enumerate() {
+            if partial_columns.len() <= i {
+                partial_columns.push(VecType::new_with_value(
+                    if val == "" { InpVal::Null }
+                    else {
+                        match val.parse::<i64>() {
+                            Ok(int) => InpVal::Integer(int),
+                            Err(_) => InpVal::Str(Rc::new(val.to_string())),
+                        }
+                    }
+                ));
+            } else {
+                if let Some(new_col) = {
+                    if val == "" { partial_columns[i].push_null() }
+                    else {
+                        match val.parse::<i64>() {
+                            Ok(int) => partial_columns[i].push_int(int),
+                            Err(_) => partial_columns[i].push_str(val),
+                        }
+                    }
+                } {
+                    partial_columns[i] = new_col;
+                }
+            }
+        }
+
+        if rownumber % batch_size == batch_size - 1 {
+            let mut columns = Vec::new();
+            for (i, col) in partial_columns.into_iter().enumerate() {
+                columns.push(col.to_column(colnames[i].clone()));
+            }
+            partial_columns = Vec::new();
+            batches.push(Batch { cols: columns});
+        }
+    }
+
+    batches
 }
