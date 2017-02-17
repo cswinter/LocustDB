@@ -9,32 +9,11 @@ use std::{u8, u16};
 
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
-pub struct StringColumn {
-    values: StringPacker,
-}
-
-impl StringColumn {
-    pub fn new(values: Vec<Option<Rc<String>>>, unique_values: UniqueValues<Option<Rc<String>>>) -> Box<ColumnData> {
-        if let Some(u) = unique_values.get_values() {
-            Box::new(DictEncodedStrings::from_strings(&values, u))
-        } else {
-            Box::new(StringColumn {
-                values: StringPacker::from_strings(&values),
-            })
-        }
-    }
-}
-
-impl ColumnData for StringColumn {
-    fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().map(|s| ValueType::Str(s));
-        ColIter{iter: Box::new(iter)}
-    }
-}
-
-impl HeapSizeOf for StringColumn {
-    fn heap_size_of_children(&self) -> usize {
-        self.values.heap_size_of_children()
+pub fn build_string_column(values: Vec<Option<Rc<String>>>, unique_values: UniqueValues<Option<Rc<String>>>) -> Box<ColumnData> {
+    if let Some(u) = unique_values.get_values() {
+        Box::new(DictEncodedStrings::from_strings(&values, u))
+    } else {
+        Box::new(StringPacker::from_strings(&values))
     }
 }
 
@@ -73,6 +52,13 @@ impl StringPacker {
 
     pub fn iter(&self) -> StringPackerIterator {
         StringPackerIterator { data: &self.data, curr_index: 0 }
+    }
+}
+
+impl ColumnData for StringPacker {
+    fn iter<'a>(&'a self) -> ColIter<'a> {
+        let iter = self.iter().map(|s| ValueType::Str(s));
+        ColIter{iter: Box::new(iter)}
     }
 }
 

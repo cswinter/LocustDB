@@ -10,7 +10,7 @@ use std::iter;
 use std::cmp;
 use heapsize::HeapSizeOf;
 use self::integers::IntegerColumn;
-use self::strings::{StringColumn, MAX_UNIQUE_STRINGS};
+use self::strings::{build_string_column, MAX_UNIQUE_STRINGS};
 use std::i64;
 use std::hash::Hash;
 
@@ -322,7 +322,7 @@ impl VecType {
             VecType::NullVec(n)      => Box::new(NullColumn::new(n)),
             VecType::TimestampVec(v) => Box::new(TimestampColumn::new(v)),
             VecType::IntegerVec(v, min, max) => IntegerColumn::new(v, min, max),
-            VecType::StringVec(v, u)    => StringColumn::new(v, u),
+            VecType::StringVec(v, u)    => build_string_column(v, u),
             VecType::SetVec(v)       => Box::new(SetColumn::new(v)),
             VecType::MixedVec(v)     => Box::new(MixedColumn::new(v)),
         }
