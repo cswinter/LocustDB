@@ -11,6 +11,7 @@ mod packed_strings;
 mod value;
 mod expression;
 mod aggregator;
+mod limit;
 mod columns;
 mod query_engine;
 mod csv_loader;
@@ -38,7 +39,7 @@ fn main() {
         .map(|chunk| columnarize(chunk.collect()))
         .collect();
     print_ingestion_stats(&batches, columnarization_start_time);
-    
+
     repl(&batches);
 }
 

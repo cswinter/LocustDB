@@ -7,6 +7,7 @@ use value::*;
 use expression::*;
 use query_engine::*;
 use aggregator::Aggregator;
+use limit::LimitClause;
 
 
 
@@ -16,7 +17,6 @@ pub fn test() {
     println!("{:?}", res);
     println!("{:?}", res.unwrap().1);
 }
-
 
 named!(pub parse_query<&[u8], Query>, alt_complete!(full_query | simple_query));
 
@@ -30,8 +30,10 @@ named!(full_query<&[u8], Query>,
         multispace >>
         filter: expr >>
         opt!(multispace) >>
+        limit: opt!(limit_clause) >>
+        opt!(multispace) >>
         char!(';') >>
-        (construct_query(select, filter))
+        (construct_query(select, filter, limit))
     )
 );
 
@@ -41,14 +43,16 @@ named!(simple_query<&[u8], Query>,
         multispace >>
         select: select_clauses >>
         opt!(multispace) >>
+        limit: opt!(limit_clause) >>
+        opt!(multispace) >>
         opt!(char!(';')) >>
-        (construct_query(select, Expr::Const(ValueType::Bool(true))))
+        (construct_query(select, Expr::Const(ValueType::Bool(true)), limit))
     )
 );
 
-fn construct_query(select_clauses: Vec<AggregateOrSelect>, filter: Expr) -> Query {
+fn construct_query(select_clauses: Vec<AggregateOrSelect>, filter: Expr, limit: Option<LimitClause>) -> Query {
     let (select, aggregate) = partition(select_clauses);
-    Query { select: select, filter: filter, aggregate: aggregate }
+    Query { select: select, filter: filter, aggregate: aggregate, limit: limit }
 }
 
 fn partition(select_or_aggregates: Vec<AggregateOrSelect>) -> (Vec<Expr>, Vec<(Aggregator, Expr)>) {
@@ -140,6 +144,16 @@ named!(integer<&[u8], ValueType>,
     )
 );
 
+named!(number<&[u8], u64>,
+    map_res!(
+        map_res!(
+            digit,
+            str::from_utf8
+        ),
+        FromStr::from_str
+    )
+);
+
 named!(string<&[u8], ValueType>,
     do_parse!(
         char!('"') >>
@@ -184,6 +198,16 @@ named!(identifier<&[u8], &str>,
     )
 );
 
+named!(limit_clause<&[u8], LimitClause>,
+    do_parse!(
+        multispace >>
+        tag_no_case!("limit") >>
+        multispace >>
+        limit_val: number >>
+        (LimitClause{limit: limit_val, offset:0})
+    )
+);
+
 fn is_sql_identifier(chr: u8) -> bool {
     is_alphabetic(chr) || chr == '_' as u8
 }
@@ -192,3 +216,4 @@ enum AggregateOrSelect {
     Aggregate((Aggregator, Expr)),
     Select(Expr),
 }
+

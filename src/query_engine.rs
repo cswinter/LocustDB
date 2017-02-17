@@ -8,6 +8,7 @@ use std::ops::Add;
 use value::ValueType;
 use expression::*;
 use aggregator::*;
+use limit::*;
 use util::fmt_table;
 use columns::Column;
 use columns::ColIter;
@@ -18,6 +19,7 @@ use columns::Batch;
 pub struct Query {
     pub select: Vec<Expr>,
     pub filter: Expr,
+    pub limit: Option<LimitClause>,
     pub aggregate: Vec<(Aggregator, Expr)>,
 }
 
@@ -138,6 +140,7 @@ fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &mut Vec<ColIter>
     let mut result = Vec::new();
     let mut record = Vec::with_capacity(source.len());
     let mut rows_touched = 0;
+    let mut result_count = 0;
     if source.len() == 0 { return (result, rows_touched) }
     loop {
         record.clear();
@@ -149,8 +152,15 @@ fn run_select_query(select: &Vec<Expr>, filter: &Expr, source: &mut Vec<ColIter>
         }
         if filter.eval(&record) == ValueType::Bool(true) {
             result.push(select.iter().map(|expr| expr.eval(&record)).collect());
+            result_count += 1;
         }
         rows_touched += 1
+        //TODO(limit)
+        //if self.limit != None {
+        //    if result_count > self.limit.limit {
+        //        break;
+        //    }
+        //}
     }
 }
 
@@ -222,37 +232,54 @@ pub fn test(source: &Batch) {
                            Expr::func(LT, Expr::col("loadtime"), Const(Integer(1000))),
                            Expr::func(GT, Expr::col("timestamp"), Const(Timestamp(1000)))),
         aggregate: vec![],
+        limit: None,
     };
     let query2 = Query {
         select: vec![Expr::col("timestamp"), Expr::col("loadtime")],
         filter: Expr::func(Equals, Expr::col("url"), Const(Str(Rc::new("/".to_string())))),
         aggregate: vec![],
+        limit: None,
     };
     let count_query = Query {
         select: vec![Expr::col("url")],
         filter: Const(Bool(true)),
         aggregate: vec![(Aggregator::Count, Const(Integer(0)))],
+        limit: None,
     };
     let sum_query = Query {
         select: vec![Expr::col("url")],
         filter: Const(Bool(true)),
         aggregate: vec![(Aggregator::Sum, Expr::col("loadtime"))],
+        limit: None,
     };
     let missing_col_query = Query {
         select: vec![],
         filter: Const(Bool(true)),
         aggregate: vec![(Aggregator::Sum, Expr::col("doesntexist"))],
+        limit: None,
     } ;
+
+    //TODO(limit)
+    //let limited_query = Query {
+    //    select: vec![Expr::col("url")],
+    //    filter: Expr::func(And,
+    //                       Expr::func(LT, Expr::col("loadtime"), Const(Integer(1000))),
+    //                       Expr::func(GT, Expr::col("timestamp"), Const(Timestamp(1000)))),
+    //    aggregate: vec![],
+    //    limit: LimitClause{ limit:3, offset:0 },
+    //} ;
 
     let result1 = query1.run(source);
     let result2 = query2.run(source);
     let count_result = count_query.run(source);
     let sum_result = sum_query.run(source);
     let missing_col_result = missing_col_query.run(source);
+    //let limited_result = limited_query.run(source);
 
     print_query_result(&result1);
     print_query_result(&result2);
     print_query_result(&count_result);
     print_query_result(&sum_result);
     print_query_result(&missing_col_result);
+    //print_query_result(&limited_result);
 }
