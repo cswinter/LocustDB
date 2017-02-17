@@ -204,7 +204,7 @@ impl<'a> Query<'a> {
 
     fn compile_for_batch(&'a self, source: &'a Batch) -> CompiledSingleBatchQuery<'a> {
         let referenced_cols = self.find_referenced_cols();
-        let efficient_source: Vec<&Box<Column>> = source.cols.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
+        let efficient_source: Vec<&Column> = source.cols.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
         let coliter = efficient_source.iter().map(|col| col.iter()).collect();
         let column_indices = create_colname_map(&efficient_source);
         let compiled_selects = self.select.iter().map(|expr| expr.compile(&column_indices)).collect();
@@ -256,7 +256,7 @@ impl<'a> Query<'a> {
     }
 }
 
-fn create_colname_map(source: &Vec<&Box<Column>>) -> HashMap<String, usize> {
+fn create_colname_map(source: &Vec<&Column>) -> HashMap<String, usize> {
     let mut columns = HashMap::new();
     for (i, col) in source.iter().enumerate() {
         columns.insert(col.get_name().to_string(), i as usize);
@@ -276,7 +276,7 @@ pub fn print_query_result(results: &QueryResult) {
         format!("{}s", rt / 1_000_000_000)
     };
 
-    println!("Scanned {} rows in {} ({}ns per row)!\n", results.stats.rows_scanned, fmt_time, rt / results.stats.rows_scanned);
+    println!("Scanned {} rows in {} ({}ns per row)!\n", results.stats.rows_scanned, fmt_time, rt.checked_div(results.stats.rows_scanned).unwrap_or(0));
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 

@@ -13,11 +13,35 @@ use self::integers::IntegerColumn;
 use std::i64;
 
 pub struct Batch {
-    pub cols: Vec<Box<Column>>,
+    pub cols: Vec<Column>,
 }
 
-pub trait Column : HeapSizeOf {
-    fn get_name(&self) -> &str;
+pub struct Column {
+    name: String,
+    data: Box<ColumnData>,
+}
+
+impl Column {
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn iter<'a>(&'a self) -> ColIter<'a> {
+        self.data.iter()
+    }
+
+    fn new(name: String, data: Box<ColumnData>) -> Column {
+        Column { name: name, data: data }
+    }
+}
+
+impl HeapSizeOf for Column {
+    fn heap_size_of_children(&self) -> usize {
+        self.name.heap_size_of_children() + self.data.heap_size_of_children()
+    }
+}
+
+pub trait ColumnData : HeapSizeOf {
     fn iter<'a>(&'a self) -> ColIter<'a>;
 }
 
@@ -34,24 +58,18 @@ impl<'a> Iterator for ColIter<'a> {
 }
 
 struct NullColumn {
-    name: String,
     length: usize,
 }
 
 impl NullColumn {
-    fn new(name: String, length: usize) -> NullColumn {
+    fn new(length: usize) -> NullColumn {
         NullColumn {
-            name: name,
             length: length,
         }
     }
 }
 
-impl Column for NullColumn {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
+impl ColumnData for NullColumn {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let iter = iter::repeat(ValueType::Null).take(self.length);
         ColIter{iter: Box::new(iter)}
@@ -60,24 +78,18 @@ impl Column for NullColumn {
 
 
 struct TimestampColumn {
-    name: String,
     values: Vec<u64>
 }
 
 impl TimestampColumn {
-    fn new(name: String, values: Vec<u64>) -> TimestampColumn {
+    fn new(values: Vec<u64>) -> TimestampColumn {
         TimestampColumn {
-            name: name,
             values: values
         }
     }
 }
 
-impl Column for TimestampColumn {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
+impl ColumnData for TimestampColumn {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let iter = self.values.iter().map(|&t| ValueType::Timestamp(t));
         ColIter{iter: Box::new(iter)}
@@ -85,24 +97,18 @@ impl Column for TimestampColumn {
 }
 
 struct StringColumn {
-    name: String,
     values: StringPacker,
 }
 
 impl StringColumn {
-    fn new(name: String, values: Vec<Option<Rc<String>>>) -> StringColumn {
+    fn new(values: Vec<Option<Rc<String>>>) -> StringColumn {
         StringColumn {
-            name: name,
             values: StringPacker::from_strings(&values),
         }
     }
 }
 
-impl Column for StringColumn {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
+impl ColumnData for StringColumn {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let iter = self.values.iter().map(|s| ValueType::Str(s));
         ColIter{iter: Box::new(iter)}
@@ -110,24 +116,18 @@ impl Column for StringColumn {
 }
 
 struct SetColumn {
-    name: String,
     values: Vec<Vec<String>>
 }
 
 impl SetColumn {
-    fn new(name: String, values: Vec<Vec<String>>) -> SetColumn {
+    fn new(values: Vec<Vec<String>>) -> SetColumn {
         SetColumn {
-            name: name,
             values: values
         }
     }
 }
 
-impl Column for SetColumn {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
+impl ColumnData for SetColumn {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let iter = self.values.iter().map(|s| ValueType::Set(Rc::new(s.clone())));
         ColIter{iter: Box::new(iter)}
@@ -135,25 +135,19 @@ impl Column for SetColumn {
 }
 
 struct MixedColumn {
-    name: String,
     values: Vec<InpVal>,
 }
 
 impl MixedColumn {
-    fn new(name: String, mut values: Vec<InpVal>) -> MixedColumn {
+    fn new(mut values: Vec<InpVal>) -> MixedColumn {
         values.shrink_to_fit();
         MixedColumn {
-            name: name,
             values: values,
         }
     }
 }
 
-impl Column for MixedColumn {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
+impl ColumnData for MixedColumn {
     fn iter(&self) -> ColIter {
         let iter = self.values.iter().map(|val| val.to_val());
         ColIter{iter: Box::new(iter)}
@@ -169,31 +163,31 @@ impl HeapSizeOf for Batch {
 
 impl HeapSizeOf for NullColumn {
     fn heap_size_of_children(&self) -> usize {
-        self.name.heap_size_of_children()
+        0
     }
 }
 
 impl HeapSizeOf for TimestampColumn {
     fn heap_size_of_children(&self) -> usize {
-        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+        self.values.heap_size_of_children()
     }
 }
 
 impl HeapSizeOf for StringColumn {
     fn heap_size_of_children(&self) -> usize {
-        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+        self.values.heap_size_of_children()
     }
 }
 
 impl HeapSizeOf for SetColumn {
     fn heap_size_of_children(&self) -> usize {
-        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+        self.values.heap_size_of_children()
     }
 }
 
 impl HeapSizeOf for MixedColumn {
     fn heap_size_of_children(&self) -> usize {
-        self.name.heap_size_of_children() + self.values.heap_size_of_children()
+        self.values.heap_size_of_children()
     }
 }
 
@@ -289,14 +283,14 @@ impl VecType {
         }
     }
 
-    fn to_column(self, name: String) -> Box<Column> {
+    fn to_column_data(self) -> Box<ColumnData> {
         match self {
-            VecType::NullVec(n)      => Box::new(NullColumn::new(name, n)),
-            VecType::TimestampVec(v) => Box::new(TimestampColumn::new(name, v)),
-            VecType::IntegerVec(v, min, max) => IntegerColumn::new(name, v, min, max),
-            VecType::StringVec(v)    => Box::new(StringColumn::new(name, v)),
-            VecType::SetVec(v)       => Box::new(SetColumn::new(name, v)),
-            VecType::MixedVec(v)     => Box::new(MixedColumn::new(name, v)),
+            VecType::NullVec(n)      => Box::new(NullColumn::new(n)),
+            VecType::TimestampVec(v) => Box::new(TimestampColumn::new(v)),
+            VecType::IntegerVec(v, min, max) => IntegerColumn::new(v, min, max),
+            VecType::StringVec(v)    => Box::new(StringColumn::new(v)),
+            VecType::SetVec(v)       => Box::new(SetColumn::new(v)),
+            VecType::MixedVec(v)     => Box::new(MixedColumn::new(v)),
         }
     }
 }
@@ -328,7 +322,7 @@ pub fn columnarize(records: Vec<InpRecordType>) -> Batch {
 
     let mut columns = Vec::new();
     for (name, values) in field_map {
-        columns.push(values.to_column(name.to_string()))
+        columns.push(Column::new(name.to_string(), values.to_column_data()));
     }
 
     Batch { cols: columns }
@@ -391,7 +385,7 @@ pub fn fused_csvload_columnarize(filename: &str, batch_size: usize) -> Vec<Batch
 fn create_batch(cols: Vec<VecType>, colnames: &Vec<String>) -> Batch {
     let mut columns = Vec::new();
     for (i, col) in cols.into_iter().enumerate() {
-        columns.push(col.to_column(colnames[i].clone()));
+        columns.push(Column::new(colnames[i].clone(), col.to_column_data()));
     }
     Batch { cols: columns}
 }
