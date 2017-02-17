@@ -376,14 +376,22 @@ pub fn fused_csvload_columnarize(filename: &str, batch_size: usize) -> Vec<Batch
         }
 
         if rownumber % batch_size == batch_size - 1 {
-            let mut columns = Vec::new();
-            for (i, col) in partial_columns.into_iter().enumerate() {
-                columns.push(col.to_column(colnames[i].clone()));
-            }
+            batches.push(create_batch(partial_columns, &colnames));
             partial_columns = Vec::new();
-            batches.push(Batch { cols: columns});
         }
     }
 
+    if partial_columns.len() > 0 {
+        batches.push(create_batch(partial_columns, &colnames));
+    }
+
     batches
+}
+
+fn create_batch(cols: Vec<VecType>, colnames: &Vec<String>) -> Batch {
+    let mut columns = Vec::new();
+    for (i, col) in cols.into_iter().enumerate() {
+        columns.push(col.to_column(colnames[i].clone()));
+    }
+    Batch { cols: columns}
 }

@@ -23,7 +23,6 @@ use std::env;
 use std::collections::HashMap;
 use heapsize::HeapSizeOf;
 use time::precise_time_s;
-use itertools::Itertools;
 
 const LOAD_CHUNK_SIZE: usize = 100_000;
 
