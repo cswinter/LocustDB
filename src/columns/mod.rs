@@ -90,11 +90,11 @@ struct IntegerColumn {
 impl IntegerColumn {
     fn new(name: String, mut values: Vec<i64>, min: i64, max: i64) -> Box<Column> {
         if max - min <= u8::MAX as i64 {
-            Box::new(IntegerColumn1B::new(name, values, max - min))
+            Box::new(IntegerColumn1B::new(name, values, min))
         } else if max - min <= u16::MAX as i64 {
-            Box::new(IntegerColumn2B::new(name, values, max - min))
+            Box::new(IntegerColumn2B::new(name, values, min))
         } else if max - min <= u32::MAX as i64 {
-            Box::new(IntegerColumn4B::new(name, values, max - min))
+            Box::new(IntegerColumn4B::new(name, values, min))
         } else {
             values.shrink_to_fit();
             Box::new(IntegerColumn {
