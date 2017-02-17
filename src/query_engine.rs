@@ -276,8 +276,8 @@ pub fn print_query_result(results: &QueryResult) {
         format!("{}s", rt / 1_000_000_000)
     };
 
-    println!("Scanned {} rows in {}!\n", results.stats.rows_scanned, fmt_time);
-    println!("{}", format_results(&results.colnames, &results.rows));
+    println!("Scanned {} rows in {} ({}ns per row)!\n", results.stats.rows_scanned, fmt_time, rt / results.stats.rows_scanned);
+    println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 
 fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<ValueType>>) -> String {
@@ -289,4 +289,3 @@ fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<ValueType>>) -> Str
 
     fmt_table(&strcolnames, &strrows)
 }
-
