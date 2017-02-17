@@ -9,35 +9,41 @@ use value::InpVal;
 use value::InpRecordType;
 
 pub struct CSVIter<'a> {
-    iter: Box<Iterator<Item=InpRecordType> + 'a>,
+    iter: Box<Iterator<Item=InpRecordType<'a>> + 'a>,
 }
 
 impl<'a> Iterator for CSVIter<'a> {
-    type Item = InpRecordType;
+    type Item = InpRecordType<'a>;
 
-    fn next(&mut self) -> Option<InpRecordType> {
+    fn next(&mut self) -> Option<InpRecordType<'a>> {
         self.iter.next()
     }
 }
 
-pub fn load_csv_file(filename: &str) -> CSVIter {
+pub fn load_headers(filename: &str) -> Vec<String> {
+    let mut file = BufReader::new(File::open(filename).unwrap());
+    let mut lines_iter = file.lines();
+    let first_line = lines_iter.next().unwrap().unwrap();
+    first_line.split(",").map(|s| s.to_owned()).collect()
+}
+
+pub fn load_csv_file<'a>(filename: &str, headers: &'a Vec<String>) -> CSVIter<'a> {
     let mut file = BufReader::new(File::open(filename).unwrap());
     let mut lines_iter = file.lines();
 
     let first_line = lines_iter.next().unwrap().unwrap();
-    let headers: Vec<String> = first_line.split(",").map(|s| s.to_owned()).collect();
 
     let iter = lines_iter.map(move |line| {
-        let record = line.unwrap().split(",")
+        line.unwrap().split(",")
             .zip(headers.iter())
             .map(|(val, col)| parse_value(col, val))
-            .collect();
-        record
+            .collect()
     });
+
     CSVIter { iter: Box::new(iter) }
 }
 
-fn parse_value(colname: &str, value: &str) -> (String, InpVal) {
+fn parse_value<'a>(colname: &'a str, value: &str) -> (&'a str, InpVal) {
     let val = if value == "" {
         InpVal::Null
     } else {
@@ -46,5 +52,5 @@ fn parse_value(colname: &str, value: &str) -> (String, InpVal) {
             Err(_) => InpVal::Str(Rc::new(value.to_string())),
         }
     };
-    (colname.to_string(), val)
+    (colname, val)
 }

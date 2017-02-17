@@ -22,7 +22,7 @@ pub enum InpVal {
     Set(Rc<Vec<String>>),
 }
 
-pub type InpRecordType = Vec<(String, InpVal)>;
+pub type InpRecordType<'a> = Vec<(&'a str, InpVal)>;
 
 impl InpVal {
     pub fn to_val<'a>(&'a self) -> ValueType<'a> {

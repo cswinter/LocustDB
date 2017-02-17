@@ -32,7 +32,9 @@ const LOAD_CHUNK_SIZE: usize = 100_000;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let data_iter = csv_loader::load_csv_file(&args[1]);
+    let filename = &args[1];
+    let headers = csv_loader::load_headers(filename);
+    let data_iter = csv_loader::load_csv_file(filename, &headers);
     let columnarization_start_time = precise_time_s();
     let batches: Vec<Batch> = data_iter.chunks(LOAD_CHUNK_SIZE).into_iter()
         .map(|chunk| columnarize(chunk.collect()))

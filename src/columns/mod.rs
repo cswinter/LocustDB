@@ -330,7 +330,7 @@ impl VecType {
 }
 
 pub fn columnarize(records: Vec<InpRecordType>) -> Batch {
-    let mut field_map: BTreeMap<String, VecType> = BTreeMap::new();
+    let mut field_map: BTreeMap<&str, VecType> = BTreeMap::new();
     let mut count = 0;
     for record in records {
         for (name, value) in record {
@@ -357,7 +357,7 @@ pub fn columnarize(records: Vec<InpRecordType>) -> Batch {
 
     let mut columns = Vec::new();
     for (name, values) in field_map {
-        columns.push(values.to_column(name))
+        columns.push(values.to_column(name.to_string()))
     }
 
     Batch { cols: columns }
