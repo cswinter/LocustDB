@@ -64,8 +64,7 @@ fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {
 fn repl(datasource: &Vec<Batch>) {
     let mut rl = rustyline::Editor::<()>::new();
     rl.load_history(".ruba_history").ok();
-    loop {
-        let mut s = rl.readline("ruba> ").expect("Did not enter a correct string");
+    while let Ok(mut s) = rl.readline("ruba> ") {
         if let Some('\n')=s.chars().next_back() {
             s.pop();
         }
