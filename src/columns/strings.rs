@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::str;
 use std::{u8, u16};
 
-pub const MAX_UNIQUE_STRINGS: usize = 3000;
+pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
 pub struct StringColumn {
     values: StringPacker,
