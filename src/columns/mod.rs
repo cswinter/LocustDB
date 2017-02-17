@@ -369,7 +369,10 @@ pub fn fused_csvload_columnarize(filename: &str, batch_size: usize) -> Vec<Batch
                     else {
                         match val.parse::<i64>() {
                             Ok(int) => InpVal::Integer(int),
-                            Err(_) => InpVal::Str(Rc::new(val.to_string())),
+                            Err(_) => match val.parse::<f64>() {
+                                Ok(float) => InpVal::Integer((float * 10000.) as i64),
+                                Err(_) => InpVal::Str(Rc::new(val.to_string())),
+                            }
                         }
                     }
                 ));
@@ -379,7 +382,10 @@ pub fn fused_csvload_columnarize(filename: &str, batch_size: usize) -> Vec<Batch
                     else {
                         match val.parse::<i64>() {
                             Ok(int) => partial_columns[i].push_int(int),
-                            Err(_) => partial_columns[i].push_str(val),
+                            Err(_) => match val.parse::<f64>() {
+                                Ok(float) => partial_columns[i].push_int((float * 1000.) as i64),
+                                Err(_) => partial_columns[i].push_str(val),
+                            }
                         }
                     }
                 } {
