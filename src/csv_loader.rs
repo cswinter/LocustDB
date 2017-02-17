@@ -28,7 +28,8 @@ pub fn load_headers(filename: &str) -> Vec<String> {
 
 pub fn load_csv_file<'a>(filename: &str, headers: &'a Vec<String>) -> CSVIter<'a> {
     let file = BufReader::new(File::open(filename).unwrap());
-    let lines_iter = file.lines();
+    let mut lines_iter = file.lines();
+    lines_iter.next();
 
     let iter = lines_iter.map(move |line| {
         line.unwrap().split(",")
