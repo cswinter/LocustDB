@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use value::ValueType;
+use regex::Regex;
 
 
 #[derive(Debug)]
@@ -11,6 +12,7 @@ pub enum Expr<'a> {
     ColIndex(usize),
     Func(FuncType, Box<Expr<'a>>, Box<Expr<'a>>),
     Const(ValueType<'a>),
+    CompiledRegex(Regex, Box<Expr<'a>>),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -19,7 +21,8 @@ pub enum FuncType {
     LT,
     GT,
     And,
-    Or
+    Or,
+    RegexMatch,
 }
 
 use self::Expr::*;
@@ -43,6 +46,12 @@ impl<'a> Expr<'a> {
                     (&GT,     Integer(i),    Timestamp(t))  if i >= 0 => Bool(i as u64 > t),
                     (functype, v1, v2) => panic!("Type error: function {:?} not defined for values {:?} and {:?}", functype, v1, v2),
                 },
+            &CompiledRegex(ref regex, ref expr) => {
+                match expr.eval(record) {
+                    Str(string) => Bool(regex.is_match(string)),
+                    val => panic!("Type error: Regex cannot be evaluated for {:?}", val),
+                }
+            },
             &ColIndex(col) => record[col].clone(),
             &Const(ref value) => value.clone(),
             &ColName(_) => panic!("Trying to evaluate ColumnName expression. Compile this expression before evaluating.")
@@ -52,10 +61,22 @@ impl<'a> Expr<'a> {
     pub fn compile(&self, column_names: &HashMap<String, usize>) -> Expr {
         use self::Expr::*;
         match self {
-            &ColName(ref name) => column_names.get(name.as_ref()).map(|&index| ColIndex(index)).unwrap_or(Const(Null)),
+            &ColName(ref name) =>
+                column_names.get(name.as_ref()).map(|&index| ColIndex(index)).unwrap_or(Const(Null)),
             &Const(ref v) => Const(v.clone()),
-            &Func(ref ftype, ref expr1, ref expr2) => Expr::func(*ftype, expr1.compile(column_names), expr2.compile(column_names)),
+            &Func(RegexMatch, ref regex, ref expr) =>
+                Expr::CompiledRegex(regex.compile_regex(), Box::new(expr.compile(column_names))),
+            &Func(ref ftype, ref expr1, ref expr2) =>
+                Expr::func(*ftype, expr1.compile(column_names), expr2.compile(column_names)),
             &ColIndex(_) => panic!("Uncompiled Expr should not contain ColumnIndex."),
+            &CompiledRegex(..) => panic!("Uncompiled Expr should not contain CompiledRegex."),
+        }
+    }
+
+    fn compile_regex(&self) -> Regex {
+        match self {
+            &Const(Str(string)) => Regex::new(string).expect(&format!("Error compiling regex /{}/", string)),
+            _ => panic!("First argument to regex function must be a string constant!"),
         }
     }
 

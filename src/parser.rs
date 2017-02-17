@@ -93,7 +93,6 @@ named!(sum<&[u8], Aggregator>,
     map!( tag_no_case!("sum"), |_| Aggregator::Sum )
 );
 
-
 named!(expr<&[u8], Expr>, 
     do_parse!(
         opt!(multispace) >>
@@ -163,7 +162,7 @@ named!(colname<&[u8], Expr>,
 );
 
 named!(function_name<&[u8], FuncType>,
-    alt!( equals | and | greater | less )
+    alt!( equals | and | greater | less | regex )
 );
 
 named!(equals<&[u8], FuncType>,
@@ -180,6 +179,10 @@ named!(less<&[u8], FuncType>,
 
 named!(and<&[u8], FuncType>,
     map!( tag_no_case!("and"), |_| FuncType::And)
+);
+
+named!(regex<&[u8], FuncType>,
+    map!( tag_no_case!("regex"), |_| FuncType::RegexMatch)
 );
 
 
