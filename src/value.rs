@@ -107,3 +107,11 @@ impl<'a> From<Vec<String>> for ValueType<'a> {
     }
 }
 
+impl<'a, T> From<Option<T>> for ValueType<'a> where ValueType<'a>: From<T> {
+    fn from(o: Option<T>) -> ValueType<'a> {
+        match o {
+            None => ValueType::Null,
+            Some(v) => ValueType::from(v)
+        }
+    }
+}

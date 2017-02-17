@@ -2,15 +2,17 @@ mod integers;
 mod strings;
 use value::{ValueType, InpVal, InpRecordType};
 use std::boxed::Box;
-use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
+use std::collections::HashMap;
+use std::collections::hash_set::HashSet;
+use std::collections::hash_map::Entry;
 use std::rc::Rc;
 use std::iter;
 use std::cmp;
 use heapsize::HeapSizeOf;
 use self::integers::IntegerColumn;
-use self::strings::StringColumn;
+use self::strings::{StringColumn, MAX_UNIQUE_STRINGS};
 use std::i64;
+use std::hash::Hash;
 
 pub struct Batch {
     pub cols: Vec<Column>,
@@ -166,12 +168,41 @@ impl HeapSizeOf for MixedColumn {
     }
 }
 
+pub struct UniqueValues<T> {
+    max_count: usize,
+    values: HashSet<T>,
+}
+
+impl<T: cmp::Eq + Hash> UniqueValues<T> {
+    fn new(max_count: usize) -> UniqueValues<T> {
+        UniqueValues { max_count: max_count, values: HashSet::new() }
+    }
+
+    fn new_with(values: Vec<T>, max_count: usize) -> UniqueValues<T> {
+        // Intended for a small number of elements and does not obey max_count
+        UniqueValues { max_count: max_count, values: values.into_iter().collect() }
+    }
+
+    fn insert(&mut self, value: T) {
+        if self.values.len() < self.max_count {
+            self.values.insert(value);
+        }
+    }
+
+    pub fn get_values(self) -> Option<HashSet<T>> {
+        if self.values.len() < self.max_count {
+            Some(self.values)
+        } else {
+            None
+        }
+    }
+}
 
 enum VecType {
     NullVec(usize),
     TimestampVec(Vec<u64>),
     IntegerVec(Vec<i64>, i64, i64),
-    StringVec(Vec<Option<Rc<String>>>),
+    StringVec(Vec<Option<Rc<String>>>, UniqueValues<Option<Rc<String>>>),
     SetVec(Vec<Vec<String>>),
     MixedVec(Vec<InpVal>),
 }
@@ -183,7 +214,7 @@ impl VecType {
             InpVal::Null => NullVec(1),
             InpVal::Timestamp(t) => TimestampVec(vec![t]),
             InpVal::Integer(i) => IntegerVec(vec![i], i64::MAX, i64::MIN),
-            InpVal::Str(s) => StringVec(vec![Some(s)]),
+            InpVal::Str(s) => StringVec(vec![Some(s.clone())], UniqueValues::new_with(vec![Some(s)], MAX_UNIQUE_STRINGS)),
             InpVal::Set(s) => SetVec(vec![Rc::try_unwrap(s).unwrap()]),
         }
     }
@@ -192,9 +223,9 @@ impl VecType {
         match (self, value) {
             (&mut VecType::NullVec(ref mut n), InpVal::Null) => *n += 1,
             (&mut VecType::NullVec(ref n), InpVal::Str(ref s)) => {
-                let mut string_vec = iter::repeat(None).take(*n).collect::<Vec<Option<Rc<String>>>>();
+                let mut string_vec: Vec<Option<Rc<String>>> = iter::repeat(None).take(*n).collect();
                 string_vec.push(Some(s.clone()));
-                return Some(VecType::StringVec(string_vec))
+                return Some(VecType::StringVec(string_vec, UniqueValues::new_with(vec![None, Some(s.clone())], MAX_UNIQUE_STRINGS)))
             },
             (&mut VecType::TimestampVec(ref mut v), InpVal::Timestamp(t)) => v.push(t),
             (&mut VecType::IntegerVec(ref mut v, ref mut min, ref mut max), InpVal::Integer(i)) => {
@@ -202,8 +233,14 @@ impl VecType {
                 *max = cmp::max(i, *max);
                 v.push(i)
             },
-            (&mut VecType::StringVec(ref mut v), InpVal::Str(ref s)) => v.push(Some(s.clone())),
-            (&mut VecType::StringVec(ref mut v), InpVal::Null) => v.push(None),
+            (&mut VecType::StringVec(ref mut v, ref mut u), InpVal::Str(ref s)) => {
+                v.push(Some(s.clone()));
+                u.insert(Some(s.clone()));
+            },
+            (&mut VecType::StringVec(ref mut v, ref mut u), InpVal::Null) => {
+                v.push(None);
+                u.insert(None);
+            },
             (&mut VecType::SetVec(ref mut v), InpVal::Set(ref s)) => v.push(Rc::try_unwrap(s.clone()).unwrap()),
             (&mut VecType::MixedVec(ref mut v), ref anyval) => v.push(anyval.clone()),
             (slf, anyval) => {
@@ -218,7 +255,10 @@ impl VecType {
     fn push_null(&mut self) -> Option<VecType> {
         match self {
             &mut VecType::NullVec(ref mut n) => *n += 1,
-            &mut VecType::StringVec(ref mut v) => v.push(None),
+            &mut VecType::StringVec(ref mut v, ref mut u) => {
+                v.push(None);
+                u.insert(None);
+            },
             slf => return slf.push(InpVal::Null),
         }
         None
@@ -238,7 +278,11 @@ impl VecType {
 
     fn push_str(&mut self, s: &str) -> Option<VecType> {
         match self {
-            &mut VecType::StringVec(ref mut v) => v.push(Some(Rc::new(s.to_string()))),
+            &mut VecType::StringVec(ref mut v, ref mut u) =>  {
+                let r = Rc::new(s.to_string());
+                v.push(Some(r.clone()));
+                u.insert(Some(r));
+            }
             slf => return slf.push(InpVal::Str(Rc::new(s.to_string()))),
         }
         None
@@ -249,7 +293,7 @@ impl VecType {
             &VecType::NullVec(ref n)      => VecType::MixedVec(iter::repeat(InpVal::Null).take(*n).collect()),
             &VecType::TimestampVec(ref v) => VecType::MixedVec(v.iter().map(|t| InpVal::Timestamp(*t)).collect()),
             &VecType::IntegerVec(ref v, ..)   => VecType::MixedVec(v.iter().map(|i| InpVal::Integer(*i)).collect()),
-            &VecType::StringVec(ref v)    => VecType::MixedVec(v.iter().map(|s| match s {
+            &VecType::StringVec(ref v, ..)    => VecType::MixedVec(v.iter().map(|s| match s {
                 &Some(ref string) => InpVal::Str(string.clone()),
                 &None => InpVal::Null,
             }).collect()),
@@ -263,7 +307,7 @@ impl VecType {
             VecType::NullVec(n)      => Box::new(NullColumn::new(n)),
             VecType::TimestampVec(v) => Box::new(TimestampColumn::new(v)),
             VecType::IntegerVec(v, min, max) => IntegerColumn::new(v, min, max),
-            VecType::StringVec(v)    => Box::new(StringColumn::new(v)),
+            VecType::StringVec(v, u)    => StringColumn::new(v, u),
             VecType::SetVec(v)       => Box::new(SetColumn::new(v)),
             VecType::MixedVec(v)     => Box::new(MixedColumn::new(v)),
         }
@@ -271,7 +315,7 @@ impl VecType {
 }
 
 pub fn columnarize(records: Vec<InpRecordType>) -> Batch {
-    let mut field_map: BTreeMap<&str, VecType> = BTreeMap::new();
+    let mut field_map: HashMap<&str, VecType> = HashMap::new();
     for record in records {
         for (name, value) in record {
             let to_insert = match field_map.entry(name) {
