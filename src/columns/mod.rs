@@ -213,7 +213,7 @@ impl VecType {
         match value {
             InpVal::Null => NullVec(1),
             InpVal::Timestamp(t) => TimestampVec(vec![t]),
-            InpVal::Integer(i) => IntegerVec(vec![i], i64::MAX, i64::MIN),
+            InpVal::Integer(i) => IntegerVec(vec![i], i, i),
             InpVal::Str(s) => StringVec(vec![Some(s.clone())], UniqueValues::new_with(vec![Some(s)], MAX_UNIQUE_STRINGS)),
             InpVal::Set(s) => SetVec(vec![Rc::try_unwrap(s).unwrap()]),
         }
@@ -228,6 +228,11 @@ impl VecType {
                 return Some(VecType::StringVec(string_vec, UniqueValues::new_with(vec![None, Some(s.clone())], MAX_UNIQUE_STRINGS)))
             },
             (&mut VecType::TimestampVec(ref mut v), InpVal::Timestamp(t)) => v.push(t),
+            (&mut VecType::StringVec(ref mut v, ref mut u), InpVal::Integer(i)) => {
+                let s = Rc::new(format!("{}", i));
+                v.push(Some(s.clone()));
+                u.insert(Some(s.clone()));
+            },
             (&mut VecType::IntegerVec(ref mut v, ref mut min, ref mut max), InpVal::Integer(i)) => {
                 *min = cmp::min(i, *min);
                 *max = cmp::max(i, *max);
@@ -266,6 +271,11 @@ impl VecType {
 
     fn push_int(&mut self, i: i64) -> Option<VecType> {
         match self {
+            &mut VecType::StringVec(ref mut v, ref mut u) => {
+                let s = Rc::new(format!("{}", i));
+                v.push(Some(s.clone()));
+                u.insert(Some(s.clone()));
+            },
             &mut VecType::IntegerVec(ref mut v, ref mut min, ref mut max) => {
                 *min = cmp::min(i, *min);
                 *max = cmp::max(i, *max);
@@ -278,6 +288,11 @@ impl VecType {
 
     fn push_str(&mut self, s: &str) -> Option<VecType> {
         match self {
+            &mut VecType::IntegerVec(ref mut v, ref mut min, ref mut max) => {
+                let mut string_vec: Vec<Option<Rc<String>>> = v.iter().map(|i| Some(Rc::new(format!("{}", i)))).collect();
+                string_vec.push(Some(Rc::new(s.to_string())));
+                return Some(VecType::StringVec(string_vec.clone(), UniqueValues::new_with(string_vec, MAX_UNIQUE_STRINGS)))
+            },
             &mut VecType::StringVec(ref mut v, ref mut u) =>  {
                 let r = Rc::new(s.to_string());
                 v.push(Some(r.clone()));
@@ -383,7 +398,7 @@ pub fn fused_csvload_columnarize(filename: &str, batch_size: usize) -> Vec<Batch
                         match val.parse::<i64>() {
                             Ok(int) => partial_columns[i].push_int(int),
                             Err(_) => match val.parse::<f64>() {
-                                Ok(float) => partial_columns[i].push_int((float * 1000.) as i64),
+                                Ok(float) => partial_columns[i].push_int((float * 10000.) as i64),
                                 Err(_) => partial_columns[i].push_str(val),
                             }
                         }

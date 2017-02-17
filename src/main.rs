@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use heapsize::HeapSizeOf;
 use time::precise_time_s;
 
-const LOAD_CHUNK_SIZE: usize = 100_000;
+const LOAD_CHUNK_SIZE: usize = 200_000;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
