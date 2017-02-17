@@ -96,6 +96,14 @@ named!(sum<&[u8], Aggregator>,
 named!(expr<&[u8], Expr>, 
     do_parse!(
         opt!(multispace) >>
+        result: alt!(infix_expr | expr_no_left_recur) >>
+        (result)
+    )
+);
+
+named!(expr_no_left_recur<&[u8], Expr>, 
+    do_parse!(
+        opt!(multispace) >>
         result: alt!(function | negation | colname | constant) >>
         (result)
     )
@@ -111,6 +119,16 @@ named!(function<&[u8], Expr>,
         e2: expr >>
         opt!(multispace) >>
         char!(')') >>
+        (Expr::func(ft, e1, e2))
+    )
+);
+
+named!(infix_expr<&[u8], Expr>,
+    do_parse!(
+        e1: expr_no_left_recur >>
+        opt!(multispace) >>
+        ft: infix_function_name >>
+        e2: expr >>
         (Expr::func(ft, e1, e2))
     )
 );
@@ -172,7 +190,11 @@ named!(colname<&[u8], Expr>,
 );
 
 named!(function_name<&[u8], FuncType>,
-    alt!( equals | and | greater | less | regex )
+    alt!( infix_function_name | regex )
+);
+
+named!(infix_function_name<&[u8], FuncType>,
+    alt!( equals | and | greater | less )
 );
 
 named!(equals<&[u8], FuncType>,
