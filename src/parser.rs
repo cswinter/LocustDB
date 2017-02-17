@@ -203,7 +203,20 @@ named!(limit_clause<&[u8], LimitClause>,
         tag_no_case!("limit") >>
         multispace >>
         limit_val: number >>
-        (LimitClause{limit: limit_val, offset:0})
+        offset_val: opt!(
+            do_parse!(
+                multispace >>
+                tag_no_case!("offset") >>
+                multispace >>
+                val: number >>
+                (val)
+            )) >>
+        (LimitClause{limit: limit_val,
+                     offset: match offset_val {
+                                 Some(inner) => inner,
+                                 None => 0,
+                             }
+                    })
     )
 );
 

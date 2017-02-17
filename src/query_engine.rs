@@ -119,7 +119,9 @@ impl<'a> CompiledQuery<'a> {
             (result, combined_results.stats)
         };
         let limited_result_rows = match &self.limit {
-            &Some(ref limit) => result_rows.into_iter().take(limit.limit as usize).collect(),
+            &Some(ref limit) => result_rows.into_iter()
+                                     .skip(limit.offset as usize)
+                                     .take(limit.limit as usize).collect(),
             &None => result_rows,
         };
 
@@ -289,19 +291,3 @@ fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<ValueType>>) -> Str
     fmt_table(&strcolnames, &strrows)
 }
 
-    // former test() function - just to show how LIMIT would work
-    // DELETE ME once we fixe / figure out LIMIT
-
-    //TODO(limit)
-    //let limited_query = Query {
-    //    select: vec![Expr::col("url")],
-    //    filter: Expr::func(And,
-    //                       Expr::func(LT, Expr::col("loadtime"), Const(Integer(1000))),
-    //                       Expr::func(GT, Expr::col("timestamp"), Const(Timestamp(1000)))),
-    //    aggregate: vec![],
-    //    limit: LimitClause{ limit:3, offset:0 },
-    //} ;
-
-    //let limited_result = limited_query.run(source);
-
-    //print_query_result(&limited_result);
