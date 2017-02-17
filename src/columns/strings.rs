@@ -5,9 +5,9 @@ use std::collections::hash_set::HashSet;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::str;
-use std::u8;
+use std::{u8, u16};
 
-pub const MAX_UNIQUE_STRINGS: usize = u8::MAX as usize;
+pub const MAX_UNIQUE_STRINGS: usize = 3000;
 
 pub struct StringColumn {
     values: StringPacker,
@@ -107,18 +107,22 @@ impl<'a> Iterator for StringPackerIterator<'a> {
 
 struct DictEncodedStrings {
     mapping: Vec<Option<String>>,
-    encoded_values: Vec<u8>,
+    encoded_values: Vec<u16>,
 }
 
 impl DictEncodedStrings {
     pub fn from_strings(strings: &Vec<Option<Rc<String>>>, unique_values: HashSet<Option<Rc<String>>>) -> DictEncodedStrings {
-        assert!(unique_values.len() <= u8::MAX as usize);
+        assert!(unique_values.len() <= u16::MAX as usize);
 
         let mapping: Vec<Option<String>> = unique_values.into_iter().map(|o| o.map(|s| s.as_str().to_owned())).collect();
-        let encoded_values: Vec<u8> = {
-            let reverse_mapping: HashMap<Option<&String>, u8> = mapping.iter().map(Option::as_ref).zip(0..).collect();
+        let encoded_values: Vec<u16> = {
+            let reverse_mapping: HashMap<Option<&String>, u16> = mapping.iter().map(Option::as_ref).zip(0..).collect();
             strings.iter().map(|o| reverse_mapping[&o.as_ref().map(|x| &**x)]).collect()
         };
+
+        // println!("\tMapping: {}MB; values: {}MB",
+        //          mapping.heap_size_of_children() as f64 / 1024f64 / 1024f64,
+        //          encoded_values.heap_size_of_children() as f64 / 1024f64 / 1024f64);
 
         DictEncodedStrings { mapping: mapping, encoded_values: encoded_values }
     }
