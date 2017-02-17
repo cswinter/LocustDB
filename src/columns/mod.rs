@@ -54,30 +54,6 @@ impl Column for NullColumn {
     }
 }
 
-struct BoolColumn {
-    name: String,
-    values: Vec<bool>
-}
-
-impl BoolColumn {
-    fn new(name: String, values: Vec<bool>) -> BoolColumn {
-        BoolColumn {
-            name: name,
-            values: values
-        }
-    }
-}
-
-impl Column for BoolColumn {
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-
-    fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().map(|&b| ValueType::Bool(b));
-        ColIter{iter: Box::new(iter)}
-    }
-}
 
 struct TimestampColumn {
     name: String,
@@ -219,12 +195,6 @@ impl HeapSizeOf for NullColumn {
     }
 }
 
-impl HeapSizeOf for BoolColumn {
-    fn heap_size_of_children(&self) -> usize {
-        self.name.heap_size_of_children() + self.values.heap_size_of_children()
-    }
-}
-
 impl HeapSizeOf for IntegerColumn {
     fn heap_size_of_children(&self) -> usize {
         self.name.heap_size_of_children() + self.values.heap_size_of_children()
@@ -258,7 +228,6 @@ impl HeapSizeOf for MixedColumn {
 
 enum VecType {
     NullVec(usize),
-    BoolVec(Vec<bool>),
     TimestampVec(Vec<u64>),
     IntegerVec(Vec<i64>),
     StringVec(Vec<Option<Rc<String>>>),
@@ -304,7 +273,6 @@ impl VecType {
     fn to_mixed(&self) -> VecType {
         match self {
             &VecType::NullVec(ref n)      => VecType::MixedVec(iter::repeat(InpVal::Null).take(*n).collect()),
-            &VecType::BoolVec(_)          => panic!("Bool input columns not currently supported."),
             &VecType::TimestampVec(ref v) => VecType::MixedVec(v.iter().map(|t| InpVal::Timestamp(*t)).collect()),
             &VecType::IntegerVec(ref v)   => VecType::MixedVec(v.iter().map(|i| InpVal::Integer(*i)).collect()),
             &VecType::StringVec(ref v)    => VecType::MixedVec(v.iter().map(|s| match s {
@@ -319,7 +287,6 @@ impl VecType {
     fn to_column(self, name: String) -> Box<Column> {
         match self {
             VecType::NullVec(n)      => Box::new(NullColumn::new(name, n)),
-            VecType::BoolVec(v)      => Box::new(BoolColumn::new(name, v)),
             VecType::TimestampVec(v) => Box::new(TimestampColumn::new(name, v)),
             VecType::IntegerVec(v)   => Box::new(IntegerColumn::new(name, v)),
             VecType::StringVec(v)    => Box::new(StringColumn::new(name, v)),
@@ -331,7 +298,6 @@ impl VecType {
 
 pub fn columnarize(records: Vec<InpRecordType>) -> Batch {
     let mut field_map: BTreeMap<&str, VecType> = BTreeMap::new();
-    let mut count = 0;
     for record in records {
         for (name, value) in record {
             let to_insert = match field_map.entry(name) {

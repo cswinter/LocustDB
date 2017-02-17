@@ -59,12 +59,6 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn find_colnames(&self) -> HashSet<Rc<String>> {
-        let mut result = HashSet::new();
-        self.add_colnames(&mut result);
-        result
-    }
-
     pub fn add_colnames(&self, result: &mut HashSet<Rc<String>>) {
         match self {
             &ColName(ref name) => {
@@ -80,9 +74,5 @@ impl<'a> Expr<'a> {
 
     pub fn func(ftype: FuncType, expr1: Expr<'a>, expr2: Expr<'a>) -> Expr<'a> {
         Func(ftype, Box::new(expr1), Box::new(expr2))
-    }
-
-    pub fn col(name: &str) -> Expr {
-        ColName(Rc::new(name.to_string()))
     }
 }

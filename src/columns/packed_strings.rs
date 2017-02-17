@@ -70,15 +70,3 @@ impl<'a> Iterator for StringPackerIterator<'a> {
         Some(result)
     }
 }
-
-
-pub fn test_string_packer() {
-    let mut sp = StringPacker::new();
-    sp.push("Hello");
-    sp.push("World");
-    sp.push("849jpw39fj80");
-
-    for string in sp.iter() {
-        println!("{}", string);
-    }
-}

@@ -1,7 +1,7 @@
 use std::str;
 use std::str::FromStr;
 use std::rc::Rc;
-use nom::{digit, alphanumeric, is_alphabetic, multispace};
+use nom::{digit, is_alphabetic, multispace};
 
 use value::*;
 use expression::*;
@@ -9,14 +9,6 @@ use query_engine::*;
 use aggregator::Aggregator;
 use limit::LimitClause;
 
-
-
-pub fn test() {
-    let qstring = "select 1 where 2";
-    let res = parse_query(qstring.as_bytes());
-    println!("{:?}", res);
-    println!("{:?}", res.unwrap().1);
-}
 
 named!(pub parse_query<&[u8], Query>, alt_complete!(full_query | simple_query));
 

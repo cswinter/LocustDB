@@ -1,7 +1,6 @@
 use std::iter::Iterator;
 use std::rc::Rc;
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use time::precise_time_ns;
 use std::ops::Add;
@@ -196,7 +195,7 @@ impl<'a> Query<'a> {
         CompiledQuery {
             subqueries: subqueries,
             output_colnames: self.result_column_names(),
-            aggregate: self.aggregate.iter().map(|&(aggregate, ref expr)| aggregate).collect(),
+            aggregate: self.aggregate.iter().map(|&(aggregate, _)| aggregate).collect(),
             limit: limit,
         }
     }
@@ -204,7 +203,7 @@ impl<'a> Query<'a> {
     fn compile_for_batch(&'a self, source: &'a Batch) -> CompiledSingleBatchQuery<'a> {
         let referenced_cols = self.find_referenced_cols();
         let efficient_source: Vec<&Box<Column>> = source.cols.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
-        let mut coliter = efficient_source.iter().map(|col| col.iter()).collect();
+        let coliter = efficient_source.iter().map(|col| col.iter()).collect();
         let column_indices = create_colname_map(&efficient_source);
         let compiled_selects = self.select.iter().map(|expr| expr.compile(&column_indices)).collect();
         let compiled_filter = self.filter.compile(&column_indices);
