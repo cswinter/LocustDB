@@ -23,6 +23,7 @@ pub enum FuncType {
     And,
     Or,
     RegexMatch,
+    Negate,
 }
 
 use self::Expr::*;
@@ -35,6 +36,7 @@ impl<'a> Expr<'a> {
             &Func(ref functype, ref exp1, ref exp2) =>
                 match (functype, exp1.eval(record), exp2.eval(record)) {
                     (&Equals, v1,            v2)            => Bool(v1 == v2),
+                    (&Negate, Integer(i), _)                => Integer(-i),
                     (_,       Null,          _)             => Null,
                     (_,       _,             Null)          => Null,
                     (&And,    Bool(b1),      Bool(b2))      => Bool(b1 && b2),

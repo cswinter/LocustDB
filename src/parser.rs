@@ -96,7 +96,7 @@ named!(sum<&[u8], Aggregator>,
 named!(expr<&[u8], Expr>, 
     do_parse!(
         opt!(multispace) >>
-        result: alt!(function | colname | constant) >>
+        result: alt!(function | negation | colname | constant) >>
         (result)
     )
 );
@@ -115,12 +115,22 @@ named!(function<&[u8], Expr>,
     )
 );
 
+named!(negation<&[u8], Expr>,
+    do_parse!(
+        char!('-') >>
+        opt!(multispace) >>
+        e: expr >>
+        (Expr::func(FuncType::Negate, e, Expr::Const(ValueType::Null)))
+    )
+);
+
 named!(constant<&[u8], Expr>,
     map!(
         alt!(integer |  string),
         Expr::Const
     )
 );
+
 
 named!(integer<&[u8], ValueType>,
     map!(
