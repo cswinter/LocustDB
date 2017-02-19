@@ -3,7 +3,7 @@ use std::fmt;
 use heapsize::HeapSizeOf;
 use std::convert::From;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Clone, Hash)]
 pub enum ValueType<'a> {
     Null,
     Bool(bool),

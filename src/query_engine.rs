@@ -20,6 +20,7 @@ pub struct Query<'a> {
     pub select: Vec<Expr<'a>>,
     pub filter: Expr<'a>,
     pub aggregate: Vec<(Aggregator, Expr<'a>)>,
+    pub order_by: Option<Expr<'a>>,
     pub limit: Option<LimitClause>,
 }
 
@@ -27,6 +28,7 @@ pub struct CompiledQuery<'a> {
     subqueries: Vec<CompiledSingleBatchQuery<'a>>,
     output_colnames: Vec<Rc<String>>,
     aggregate: Vec<Aggregator>,
+    compiled_order_by: Expr<'a>,
     limit: Option<LimitClause>,
 }
 
@@ -85,7 +87,7 @@ impl Add for QueryStats {
 impl<'a> CompiledQuery<'a> {
     pub fn run(&mut self) -> QueryResult {
         let colnames = self.output_colnames.clone();
-        let (result_rows, stats) = if self.aggregate.len() == 0 {
+        let (mut result_rows, stats) = if self.aggregate.len() == 0 {
             let mut combined_results = SelectSubqueryResult { rows: Vec::new(), stats: QueryStats::new(0, 0) };
             for single_batch_query in &mut self.subqueries {
                 let batch_result = single_batch_query.run_select_query();
@@ -117,13 +119,16 @@ impl<'a> CompiledQuery<'a> {
             }
             (result, combined_results.stats)
         };
+
+        let compiled_order_by = &mut self.compiled_order_by;
+        result_rows.sort_by_key(|record| compiled_order_by.eval(record));
+
         let limited_result_rows = match &self.limit {
             &Some(ref limit) => result_rows.into_iter()
                                      .skip(limit.offset as usize)
                                      .take(limit.limit as usize).collect(),
             &None => result_rows,
         };
-
 
         QueryResult {
             colnames: colnames,
@@ -194,10 +199,25 @@ impl<'a> Query<'a> {
     pub fn compile(&'a self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
         let subqueries = source.iter().map(|batch| self.compile_for_batch(batch)).collect();
         let limit = self.limit.clone();
+
+        // Compile the order_by
+        let output_colnames = self.result_column_names();    // Prevent moving of `self.order_by`
+        let mut output_colmap = HashMap::new();
+        for (i, output_colname) in output_colnames.iter().enumerate() {
+            output_colmap.insert(output_colname.to_string(), i);
+        }
+
+        // Insert a placeholder sorter if ordering isn't specified
+        let compiled_order_by = match self.order_by {
+            Some(ref order_by) => order_by.compile(&output_colmap),
+            None => Expr::Const(ValueType::Null),
+        };
+
         CompiledQuery {
             subqueries: subqueries,
-            output_colnames: self.result_column_names(),
+            output_colnames: output_colnames,
             aggregate: self.aggregate.iter().map(|&(aggregate, _)| aggregate).collect(),
+            compiled_order_by: compiled_order_by,
             limit: limit,
         }
     }
