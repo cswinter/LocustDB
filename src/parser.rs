@@ -1,7 +1,7 @@
 use std::str;
 use std::str::FromStr;
 use std::rc::Rc;
-use nom::{digit, is_alphabetic, multispace};
+use nom::{digit, is_alphabetic, is_alphanumeric, multispace};
 
 use value::*;
 use expression::*;
@@ -234,10 +234,26 @@ named!(regex<&[u8], FuncType>,
 
 named!(identifier<&[u8], &str>,
     map_res!(
-        take_while1!(is_sql_identifier),
-        str::from_utf8
+        take_while1!(is_ident_char),
+        create_sql_identifier
     )
 );
+
+fn create_sql_identifier(bytes: &[u8]) -> Result<&str, String> {
+    if is_ident_start_char(bytes[0]) {
+        str::from_utf8(bytes).map_err(|_| "UTF8Error".to_string())
+    } else {
+        Err("Identifier must not start with number.".to_string())
+    }
+}
+
+fn is_ident_start_char(chr: u8) -> bool {
+    is_alphabetic(chr) || chr == '_' as u8
+}
+
+fn is_ident_char(chr: u8) -> bool {
+    is_alphanumeric(chr) || chr == '_' as u8
+}
 
 named!(limit_clause<&[u8], LimitClause>,
     do_parse!(
@@ -269,10 +285,6 @@ named!(order_by_clause<&[u8], Expr>,
         (order_by)
     )
 );
-
-fn is_sql_identifier(chr: u8) -> bool {
-    is_alphabetic(chr) || chr == '_' as u8
-}
 
 enum AggregateOrSelect<'a> {
     Aggregate((Aggregator, Expr<'a>)),
