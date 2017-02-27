@@ -7,6 +7,7 @@ extern crate rustyline;
 extern crate itertools;
 extern crate num;
 extern crate regex;
+extern crate csv;
 
 mod util;
 mod value;
@@ -15,10 +16,9 @@ mod aggregator;
 mod limit;
 mod columns;
 mod query_engine;
-mod csv_loader;
 mod parser;
 use value::ValueType;
-use columns::{fused_csvload_columnarize, Batch};
+use columns::{auto_ingest, Batch};
 
 use std::env;
 use std::panic;
@@ -31,8 +31,13 @@ const LOAD_CHUNK_SIZE: usize = 200_000;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
+    let mut reader = csv::Reader::from_file(filename)
+        .unwrap()
+        .has_headers(true);
+    let headers = reader.headers().unwrap();
+    println!("{:?}", headers);
     let columnarization_start_time = precise_time_s();
-    let batches = fused_csvload_columnarize(filename, LOAD_CHUNK_SIZE);
+    let batches = auto_ingest(reader.records().map(|r| r.unwrap()), headers, LOAD_CHUNK_SIZE);
     print_ingestion_stats(&batches, columnarization_start_time);
 
     repl(&batches);
