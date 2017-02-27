@@ -35,7 +35,6 @@ fn main() {
         .unwrap()
         .has_headers(true);
     let headers = reader.headers().unwrap();
-    println!("{:?}", headers);
     let columnarization_start_time = precise_time_s();
     let batches = auto_ingest(reader.records().map(|r| r.unwrap()), headers, LOAD_CHUNK_SIZE);
     print_ingestion_stats(&batches, columnarization_start_time);

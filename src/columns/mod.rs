@@ -347,7 +347,7 @@ pub fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T, colnames: Vec<Stri
         row_num += 1;
     }
 
-    if row_num % batch_size != batch_size - 1 {
+    if row_num % batch_size != 0 {
         batches.push(create_batch(partial_columns, &colnames));
     }
 
