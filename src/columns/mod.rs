@@ -340,14 +340,14 @@ pub fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T, colnames: Vec<Stri
             }
         }
 
-        if row_num % batch_size == batch_size - 1 {
+        if batch_size != 0 && row_num % batch_size == batch_size - 1 {
             batches.push(create_batch(partial_columns, &colnames));
             partial_columns = (0..row_len).map(|_| VecType::new()).collect::<Vec<_>>();
         }
         row_num += 1;
     }
 
-    if row_num % batch_size != 0 {
+    if batch_size == 0 || row_num % batch_size != 0 {
         batches.push(create_batch(partial_columns, &colnames));
     }
 

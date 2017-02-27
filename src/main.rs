@@ -1,3 +1,5 @@
+#![feature(test)]
+
 extern crate serde_json;
 extern crate time;
 #[macro_use]
@@ -17,6 +19,10 @@ mod limit;
 mod columns;
 mod query_engine;
 mod parser;
+
+#[cfg(test)]
+mod tests;
+
 use value::ValueType;
 use columns::{auto_ingest, Batch};
 
@@ -31,15 +37,19 @@ const LOAD_CHUNK_SIZE: usize = 200_000;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
+    let columnarization_start_time = precise_time_s();
+    let batches = ingest_file(filename, LOAD_CHUNK_SIZE);
+    print_ingestion_stats(&batches, columnarization_start_time);
+
+    repl(&batches);
+}
+
+fn ingest_file(filename: &str, chunk_size: usize) -> Vec<Batch> {
     let mut reader = csv::Reader::from_file(filename)
         .unwrap()
         .has_headers(true);
     let headers = reader.headers().unwrap();
-    let columnarization_start_time = precise_time_s();
-    let batches = auto_ingest(reader.records().map(|r| r.unwrap()), headers, LOAD_CHUNK_SIZE);
-    print_ingestion_stats(&batches, columnarization_start_time);
-
-    repl(&batches);
+    auto_ingest(reader.records().map(|r| r.unwrap()), headers, chunk_size)
 }
 
 fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {

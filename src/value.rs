@@ -51,7 +51,7 @@ impl<'a> fmt::Display for ValueType<'a> {
 
 impl<'a> HeapSizeOf for ValueType<'a> {
     fn heap_size_of_children(&self) -> usize {
-        use ValueType::*;
+        use self::ValueType::*;
         match self {
             &Null | &Bool(_) | &Timestamp(_) | &Integer(_) => 0,
             &Str(ref r) => r.heap_size_of_children(),
