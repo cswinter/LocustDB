@@ -1,4 +1,4 @@
-#![feature(test)]
+#![cfg_attr(test, feature(test))]
 
 extern crate serde_json;
 extern crate time;
