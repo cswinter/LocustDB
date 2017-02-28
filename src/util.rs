@@ -21,7 +21,9 @@ pub fn fmt_table(headings: &Vec<&str>, rows: &Vec<Vec<&str>>) -> String {
     result.push_str("\n");
     for (i, width) in col_width.iter().enumerate() {
         result.push_str(&String::from_utf8(vec![b'-'; *width]).unwrap());
-        if i < ncols - 1 { result.push_str("+-"); }
+        if i < ncols - 1 {
+            result.push_str("+-");
+        }
     }
 
     for row in rows {
@@ -36,6 +38,8 @@ fn append_row(string: &mut String, row: &[&str], col_width: &Vec<usize>) {
     let imax = col_width.len() - 1;
     for (i, entry) in row.iter().enumerate() {
         string.push_str(&format!("{:1$}", entry, col_width[i]));
-        if i < imax { string.push_str("| "); }
+        if i < imax {
+            string.push_str("| ");
+        }
     }
 }

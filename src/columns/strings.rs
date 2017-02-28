@@ -9,7 +9,9 @@ use std::{u8, u16};
 
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
-pub fn build_string_column(values: Vec<Option<Rc<String>>>, unique_values: UniqueValues<Option<Rc<String>>>) -> Box<ColumnData> {
+pub fn build_string_column(values: Vec<Option<Rc<String>>>,
+                           unique_values: UniqueValues<Option<Rc<String>>>)
+                           -> Box<ColumnData> {
     if let Some(u) = unique_values.get_values() {
         Box::new(DictEncodedStrings::from_strings(&values, u))
     } else {
@@ -51,14 +53,17 @@ impl StringPacker {
     }
 
     pub fn iter(&self) -> StringPackerIterator {
-        StringPackerIterator { data: &self.data, curr_index: 0 }
+        StringPackerIterator {
+            data: &self.data,
+            curr_index: 0,
+        }
     }
 }
 
 impl ColumnData for StringPacker {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let iter = self.iter().map(|s| ValueType::Str(s));
-        ColIter{iter: Box::new(iter)}
+        ColIter { iter: Box::new(iter) }
     }
 }
 
@@ -77,15 +82,15 @@ impl<'a> Iterator for StringPackerIterator<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<&'a str> {
-        if self.curr_index >= self.data.len() { return None }
+        if self.curr_index >= self.data.len() {
+            return None;
+        }
 
         let mut index = self.curr_index;
         while self.data[index] != 0 {
             index += 1;
         }
-        let result = unsafe {
-            str::from_utf8_unchecked(&self.data[self.curr_index..index])
-        };
+        let result = unsafe { str::from_utf8_unchecked(&self.data[self.curr_index..index]) };
         self.curr_index = index + 1;
         Some(result)
     }
@@ -97,12 +102,16 @@ struct DictEncodedStrings {
 }
 
 impl DictEncodedStrings {
-    pub fn from_strings(strings: &Vec<Option<Rc<String>>>, unique_values: HashSet<Option<Rc<String>>>) -> DictEncodedStrings {
+    pub fn from_strings(strings: &Vec<Option<Rc<String>>>,
+                        unique_values: HashSet<Option<Rc<String>>>)
+                        -> DictEncodedStrings {
         assert!(unique_values.len() <= u16::MAX as usize);
 
-        let mapping: Vec<Option<String>> = unique_values.into_iter().map(|o| o.map(|s| s.as_str().to_owned())).collect();
+        let mapping: Vec<Option<String>> =
+            unique_values.into_iter().map(|o| o.map(|s| s.as_str().to_owned())).collect();
         let encoded_values: Vec<u16> = {
-            let reverse_mapping: HashMap<Option<&String>, u16> = mapping.iter().map(Option::as_ref).zip(0..).collect();
+            let reverse_mapping: HashMap<Option<&String>, u16> =
+                mapping.iter().map(Option::as_ref).zip(0..).collect();
             strings.iter().map(|o| reverse_mapping[&o.as_ref().map(|x| &**x)]).collect()
         };
 
@@ -110,7 +119,10 @@ impl DictEncodedStrings {
         //          mapping.heap_size_of_children() as f64 / 1024f64 / 1024f64,
         //          encoded_values.heap_size_of_children() as f64 / 1024f64 / 1024f64);
 
-        DictEncodedStrings { mapping: mapping, encoded_values: encoded_values }
+        DictEncodedStrings {
+            mapping: mapping,
+            encoded_values: encoded_values,
+        }
     }
 }
 
@@ -123,7 +135,9 @@ impl<'a> Iterator for DictEncodedStringsIterator<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Option<&'a str>> {
-        if self.i >= self.data.encoded_values.len() { return None }
+        if self.i >= self.data.encoded_values.len() {
+            return None;
+        }
         let encoded_value = &self.data.encoded_values[self.i];
         let value = &self.data.mapping[*encoded_value as usize];
 
@@ -134,9 +148,8 @@ impl<'a> Iterator for DictEncodedStringsIterator<'a> {
 
 impl ColumnData for DictEncodedStrings {
     fn iter<'a>(&'a self) -> ColIter<'a> {
-        // let iter = self.encoded_values.iter().map(|i| &self.mapping[*i as usize]).map(|o| o.as_ref().map(|x| &**x)).map(ValueType::from); 
         let iter = DictEncodedStringsIterator { data: self, i: 0 }.map(ValueType::from);
-        ColIter{iter: Box::new(iter)}
+        ColIter { iter: Box::new(iter) }
     }
 }
 
@@ -145,4 +158,3 @@ impl HeapSizeOf for DictEncodedStrings {
         self.mapping.heap_size_of_children() + self.encoded_values.heap_size_of_children()
     }
 }
-

@@ -46,12 +46,23 @@ named!(simple_query<&[u8], Query>,
     )
 );
 
-fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect<'a>>, filter: Expr<'a>, order_by: Option<Expr<'a>>, limit: Option<LimitClause>) -> Query<'a> {
+fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect<'a>>,
+                       filter: Expr<'a>,
+                       order_by: Option<Expr<'a>>,
+                       limit: Option<LimitClause>)
+                       -> Query<'a> {
     let (select, aggregate) = partition(select_clauses);
-    Query { select: select, filter: filter, aggregate: aggregate, order_by: order_by, limit: limit }
+    Query {
+        select: select,
+        filter: filter,
+        aggregate: aggregate,
+        order_by: order_by,
+        limit: limit,
+    }
 }
 
-fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect<'a>>) -> (Vec<Expr<'a>>, Vec<(Aggregator, Expr<'a>)>) {
+fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect<'a>>)
+                 -> (Vec<Expr<'a>>, Vec<(Aggregator, Expr<'a>)>) {
     let (selects, aggregates): (Vec<AggregateOrSelect>, Vec<AggregateOrSelect>) =
         select_or_aggregates.into_iter()
             .partition(|x| match x {
@@ -59,10 +70,18 @@ fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect<'a>>) -> (Vec<Expr<
                 _ => false,
             });
 
-    (
-        selects.into_iter().filter_map(|x| match x { AggregateOrSelect::Select(expr) => Some(expr), _ => None }).collect(),
-        aggregates.into_iter().filter_map(|x| match x { AggregateOrSelect::Aggregate(agg) => Some(agg), _ => None }).collect(),
-    )
+    (selects.into_iter()
+         .filter_map(|x| match x {
+             AggregateOrSelect::Select(expr) => Some(expr),
+             _ => None,
+         })
+         .collect(),
+     aggregates.into_iter()
+         .filter_map(|x| match x {
+             AggregateOrSelect::Aggregate(agg) => Some(agg),
+             _ => None,
+         })
+         .collect())
 }
 
 

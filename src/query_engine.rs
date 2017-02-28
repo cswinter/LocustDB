@@ -64,11 +64,15 @@ pub struct QueryStats {
 
 impl QueryStats {
     fn new(runtime_ns: u64, rows_scanned: u64) -> QueryStats {
-        QueryStats { runtime_ns: runtime_ns, rows_scanned: rows_scanned }
+        QueryStats {
+            runtime_ns: runtime_ns,
+            rows_scanned: rows_scanned,
+        }
     }
 
     fn combine(&self, other: &QueryStats) -> QueryStats {
-        QueryStats::new(self.runtime_ns + other.runtime_ns, self.rows_scanned + other.rows_scanned)
+        QueryStats::new(self.runtime_ns + other.runtime_ns,
+                        self.rows_scanned + other.rows_scanned)
     }
 }
 
@@ -76,7 +80,7 @@ impl Add for QueryStats {
     type Output = QueryStats;
 
     fn add(self, other: QueryStats) -> QueryStats {
-        QueryStats{
+        QueryStats {
             runtime_ns: self.runtime_ns + other.runtime_ns,
             rows_scanned: self.rows_scanned + other.rows_scanned,
         }
@@ -88,7 +92,10 @@ impl<'a> CompiledQuery<'a> {
     pub fn run(&mut self) -> QueryResult {
         let colnames = self.output_colnames.clone();
         let (mut result_rows, stats) = if self.aggregate.len() == 0 {
-            let mut combined_results = SelectSubqueryResult { rows: Vec::new(), stats: QueryStats::new(0, 0) };
+            let mut combined_results = SelectSubqueryResult {
+                rows: Vec::new(),
+                stats: QueryStats::new(0, 0),
+            };
             for single_batch_query in &mut self.subqueries {
                 let batch_result = single_batch_query.run_select_query();
                 combined_results.rows.extend(batch_result.rows);
@@ -96,7 +103,10 @@ impl<'a> CompiledQuery<'a> {
             }
             (combined_results.rows, combined_results.stats)
         } else {
-            let mut combined_results = AggregateSubqueryResult { groups: HashMap::new(), stats: QueryStats::new(0, 0) };
+            let mut combined_results = AggregateSubqueryResult {
+                groups: HashMap::new(),
+                stats: QueryStats::new(0, 0),
+            };
             for single_batch_query in &mut self.subqueries {
                 let batch_result = single_batch_query.run_aggregation_query();
                 combined_results.stats = combined_results.stats.combine(&batch_result.stats);
@@ -124,9 +134,12 @@ impl<'a> CompiledQuery<'a> {
         result_rows.sort_by_key(|record| compiled_order_by.eval(record));
 
         let limited_result_rows = match &self.limit {
-            &Some(ref limit) => result_rows.into_iter()
-                                     .skip(limit.offset as usize)
-                                     .take(limit.limit as usize).collect(),
+            &Some(ref limit) => {
+                result_rows.into_iter()
+                    .skip(limit.offset as usize)
+                    .take(limit.limit as usize)
+                    .collect()
+            }
             &None => result_rows,
         };
 
@@ -145,17 +158,22 @@ impl<'a> CompiledSingleBatchQuery<'a> {
         let start_time_ns = precise_time_ns();
         let mut rows_touched = 0;
         if self.coliter.len() == 0 {
-            return SelectSubqueryResult { rows: Vec::new(), stats: QueryStats::new(0, 0) }
+            return SelectSubqueryResult {
+                rows: Vec::new(),
+                stats: QueryStats::new(0, 0),
+            };
         }
         loop {
             record.clear();
             for i in 0..self.coliter.len() {
                 match self.coliter[i].next() {
                     Some(item) => record.push(item),
-                    None => return SelectSubqueryResult {
-                        rows: result,
-                        stats: QueryStats::new(precise_time_ns() - start_time_ns, rows_touched),
-                    },
+                    None => {
+                        return SelectSubqueryResult {
+                            rows: result,
+                            stats: QueryStats::new(precise_time_ns() - start_time_ns, rows_touched),
+                        }
+                    }
                 }
             }
             if self.filter.eval(&record) == ValueType::Bool(true) {
@@ -179,13 +197,17 @@ impl<'a> CompiledSingleBatchQuery<'a> {
                 }
             }
             if self.filter.eval(&record) == ValueType::Bool(true) {
-                let group: Vec<ValueType> = self.select.iter().map(|expr| expr.eval(&record)).collect();
-                let accumulator = groups.entry(group).or_insert(self.aggregate.iter().map(|x| x.0.zero()).collect());
+                let group: Vec<ValueType> =
+                    self.select.iter().map(|expr| expr.eval(&record)).collect();
+                let accumulator = groups.entry(group)
+                    .or_insert(self.aggregate.iter().map(|x| x.0.zero()).collect());
                 for (i, &(ref agg_func, ref expr)) in self.aggregate.iter().enumerate() {
                     accumulator[i] = agg_func.reduce(&accumulator[i], &expr.eval(&record));
                 }
             }
-            if self.coliter.len() == 0 { break }
+            if self.coliter.len() == 0 {
+                break;
+            }
             rows_touched += 1;
         }
         AggregateSubqueryResult {
@@ -201,7 +223,7 @@ impl<'a> Query<'a> {
         let limit = self.limit.clone();
 
         // Compile the order_by
-        let output_colnames = self.result_column_names();    // Prevent moving of `self.order_by`
+        let output_colnames = self.result_column_names(); // Prevent moving of `self.order_by`
         let mut output_colmap = HashMap::new();
         for (i, output_colname) in output_colnames.iter().enumerate() {
             output_colmap.insert(output_colname.to_string(), i);
@@ -224,12 +246,19 @@ impl<'a> Query<'a> {
 
     fn compile_for_batch(&'a self, source: &'a Batch) -> CompiledSingleBatchQuery<'a> {
         let referenced_cols = self.find_referenced_cols();
-        let efficient_source: Vec<&Column> = source.cols.iter().filter(|col| referenced_cols.contains(&col.get_name().to_string())).collect();
+        let efficient_source: Vec<&Column> = source.cols
+            .iter()
+            .filter(|col| referenced_cols.contains(&col.get_name().to_string()))
+            .collect();
         let coliter = efficient_source.iter().map(|col| col.iter()).collect();
         let column_indices = create_colname_map(&efficient_source);
-        let compiled_selects = self.select.iter().map(|expr| expr.compile(&column_indices)).collect();
+        let compiled_selects =
+            self.select.iter().map(|expr| expr.compile(&column_indices)).collect();
         let compiled_filter = self.filter.compile(&column_indices);
-        let compiled_aggregate = self.aggregate.iter().map(|&(agg, ref expr)| (agg, expr.compile(&column_indices))).collect();
+        let compiled_aggregate = self.aggregate
+            .iter()
+            .map(|&(agg, ref expr)| (agg, expr.compile(&column_indices)))
+            .collect();
         CompiledSingleBatchQuery {
             select: compiled_selects,
             filter: compiled_filter,
@@ -247,7 +276,7 @@ impl<'a> Query<'a> {
                 _ => {
                     anon_columns += 1;
                     Rc::new(format!("col_{}", anon_columns))
-                },
+                }
             });
         let mut anon_aggregates = -1;
         let aggregate_cols = self.aggregate
@@ -296,16 +325,24 @@ pub fn print_query_result(results: &QueryResult) {
         format!("{}s", rt / 1_000_000_000)
     };
 
-    println!("Scanned {} rows in {} ({}ns per row)!\n", results.stats.rows_scanned, fmt_time, rt.checked_div(results.stats.rows_scanned).unwrap_or(0));
+    println!("Scanned {} rows in {} ({}ns per row)!\n",
+             results.stats.rows_scanned,
+             fmt_time,
+             rt.checked_div(results.stats.rows_scanned).unwrap_or(0));
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 
 fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<ValueType>>) -> String {
     let strcolnames: Vec<&str> = colnames.iter().map(|ref s| s.clone() as &str).collect();
-    let formattedrows: Vec<Vec<String>> = rows.iter().map(
-        |row| row.iter().map(
-            |val| format!("{}", val)).collect()).collect();
-    let strrows = formattedrows.iter().map(|row| row.iter().map(|val| val as &str).collect()).collect();
+    let formattedrows: Vec<Vec<String>> = rows.iter()
+        .map(|row| {
+            row.iter()
+                .map(|val| format!("{}", val))
+                .collect()
+        })
+        .collect();
+    let strrows =
+        formattedrows.iter().map(|row| row.iter().map(|val| val as &str).collect()).collect();
 
     fmt_table(&strcolnames, &strrows)
 }

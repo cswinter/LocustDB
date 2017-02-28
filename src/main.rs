@@ -56,13 +56,15 @@ fn repl(datasource: &Vec<Batch>) {
     let mut rl = rustyline::Editor::<()>::new();
     rl.load_history(".ruba_history").ok();
     while let Ok(mut s) = rl.readline("ruba> ") {
-        if let Some('\n')=s.chars().next_back() {
+        if let Some('\n') = s.chars().next_back() {
             s.pop();
         }
-        if let Some('\r')=s.chars().next_back() {
+        if let Some('\r') = s.chars().next_back() {
             s.pop();
         }
-        if s == "exit" { break }
+        if s == "exit" {
+            break;
+        }
         if s.chars().next_back() != Some(';') {
             s.push(';');
         }
@@ -74,12 +76,13 @@ fn repl(datasource: &Vec<Batch>) {
                     let result = compiled_query.run();
                     query_engine::print_query_result(&result);
                 }));
-            },
+            }
             err => {
                 println!("Failed to parse query! {:?}", err);
                 println!("Example for supported query:");
-                println!("select url, count(1), app_name, sum(events) where and( >(timestamp, 1000), =(version, \"1.5.3\") )\n");
-            },
+                println!("select url, count(1), app_name, sum(events) where and( >(timestamp, \
+                          1000), =(version, \"1.5.3\") )\n");
+            }
         }
     }
     rl.save_history(".ruba_history").ok();

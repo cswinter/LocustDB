@@ -5,7 +5,7 @@ use std::{u8, u16, u32, i64};
 use num::traits::NumCast;
 
 pub struct IntegerColumn {
-    values: Vec<i64>
+    values: Vec<i64>,
 }
 
 impl IntegerColumn {
@@ -18,9 +18,7 @@ impl IntegerColumn {
             Box::new(IntegerOffsetColumn::<u32>::new(values, min))
         } else {
             values.shrink_to_fit();
-            Box::new(IntegerColumn {
-                values: values,
-            })
+            Box::new(IntegerColumn { values: values })
         }
     }
 }
@@ -28,11 +26,11 @@ impl IntegerColumn {
 impl ColumnData for IntegerColumn {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let iter = self.values.iter().map(|&i| ValueType::Integer(i));
-        ColIter{iter: Box::new(iter)}
+        ColIter { iter: Box::new(iter) }
     }
 }
 
-trait IntLike : NumCast + HeapSizeOf {  }
+trait IntLike: NumCast + HeapSizeOf {}
 impl IntLike for u8 {}
 impl IntLike for u16 {}
 impl IntLike for u32 {}
@@ -48,7 +46,10 @@ impl<T: IntLike> IntegerOffsetColumn<T> {
         for v in values {
             encoded_vals.push(T::from(v - offset).unwrap());
         }
-        IntegerOffsetColumn { values: encoded_vals, offset: offset, }
+        IntegerOffsetColumn {
+            values: encoded_vals,
+            offset: offset,
+        }
     }
 }
 
