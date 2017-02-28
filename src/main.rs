@@ -1,30 +1,9 @@
-#![cfg_attr(test, feature(test))]
+extern crate ruba;
 
-extern crate serde_json;
-extern crate time;
-#[macro_use]
-extern crate nom;
-extern crate heapsize;
 extern crate rustyline;
-extern crate itertools;
-extern crate num;
-extern crate regex;
-extern crate csv;
-
-mod util;
-mod value;
-mod expression;
-mod aggregator;
-mod limit;
-mod columns;
-mod query_engine;
-mod parser;
-
-#[cfg(test)]
-mod tests;
-
-use value::ValueType;
-use columns::{auto_ingest, Batch};
+extern crate heapsize;
+extern crate time;
+extern crate nom;
 
 use std::env;
 use std::panic;
@@ -32,24 +11,20 @@ use std::collections::HashMap;
 use heapsize::HeapSizeOf;
 use time::precise_time_s;
 
+use ruba::columns::Batch;
+use ruba::query_engine;
+use ruba::parser;
+
 const LOAD_CHUNK_SIZE: usize = 200_000;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args[1];
     let columnarization_start_time = precise_time_s();
-    let batches = ingest_file(filename, LOAD_CHUNK_SIZE);
+    let batches = ruba::ingest_file(filename, LOAD_CHUNK_SIZE);
     print_ingestion_stats(&batches, columnarization_start_time);
 
     repl(&batches);
-}
-
-fn ingest_file(filename: &str, chunk_size: usize) -> Vec<Batch> {
-    let mut reader = csv::Reader::from_file(filename)
-        .unwrap()
-        .has_headers(true);
-    let headers = reader.headers().unwrap();
-    auto_ingest(reader.records().map(|r| r.unwrap()), headers, chunk_size)
 }
 
 fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {
@@ -109,38 +84,3 @@ fn repl(datasource: &Vec<Batch>) {
     }
     rl.save_history(".ruba_history").ok();
 }
-
-/*
-fn read_data<'a>(filename: &str) -> Vec<RecordType<'a>> {
-    let file = BufReader::new(File::open(filename).unwrap());
-    let json = serde_json::from_reader(file).unwrap();
-    if let Value::Array(data) = json {
-        data.into_iter().map(|v| json_to_record(v)).collect()
-    } else {
-        panic!("Unexpected JSON contents.")
-    }
-}
-
-fn json_to_record<'a>(json: Value) -> RecordType<'a> {
-    if let Value::Object(object) = json {
-        object.into_iter().map(|(k, v)| (k, json_to_value(v))).collect()
-    } else {
-        panic!("Non-record object: {:?}", json)
-    }
-}
-
-fn json_to_value(json: Value) -> ValueType {
-    match json {
-        Value::Null => ValueType::Null,
-        Value::Bool(b) => ValueType::Integer(b as i64),
-        Value::Number(n) => n.as_i64().map(ValueType::Integer)
-                            .or(n.as_f64().map(|f| ValueType::Integer((1000.0 * f) as i64)))
-                            .unwrap(),
-        Value::String(s) => ValueType::Str(Rc::new(s)),
-        Value::Array(arr) => ValueType::Set(Rc::new(arr.into_iter()
-                                                    .map(|v| match v { Value::String(s) => s, _ => panic!("Expected list of strings") })
-                                                    .collect())),
-        o => panic!("Objects not supported: {:?}", o)
-    }
-}
-*/

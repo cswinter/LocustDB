@@ -1,8 +1,10 @@
+#![feature(test)]
+extern crate ruba;
 extern crate test;
 
-use ingest_file;
-use parser::parse_query;
-use query_engine;
+use ruba::ingest_file;
+use ruba::parser::parse_query;
+use ruba::query_engine;
 
 #[bench]
 fn bench_ingest_2mb_1_chunk(b: &mut test::Bencher) {
