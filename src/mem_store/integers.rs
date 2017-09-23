@@ -1,5 +1,5 @@
-use value::ValueType;
-use columns::{ColumnData, ColIter};
+use value::Val;
+use mem_store::column::{ColumnData, ColIter};
 use heapsize::HeapSizeOf;
 use std::{u8, u16, u32, i64};
 use num::traits::NumCast;
@@ -25,8 +25,8 @@ impl IntegerColumn {
 
 impl ColumnData for IntegerColumn {
     fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.values.iter().map(|&i| ValueType::Integer(i));
-        ColIter { iter: Box::new(iter) }
+        let iter = self.values.iter().map(|&i| Val::Integer(i));
+        ColIter::new(iter)
     }
 }
 
@@ -53,11 +53,11 @@ impl<T: IntLike> IntegerOffsetColumn<T> {
     }
 }
 
-impl<T: IntLike> ColumnData for IntegerOffsetColumn<T> {
+impl<T: IntLike + Send + Sync> ColumnData for IntegerOffsetColumn<T> {
     fn iter<'a>(&'a self) -> ColIter<'a> {
         let offset = self.offset;
-        let iter = self.values.iter().map(move |i| ValueType::Integer(i.to_i64().unwrap() + offset));
-        ColIter { iter: Box::new(iter) }
+        let iter = self.values.iter().map(move |i| Val::Integer(i.to_i64().unwrap() + offset));
+        ColIter::new(iter)
     }
 }
 

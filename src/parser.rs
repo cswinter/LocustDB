@@ -8,6 +8,9 @@ use expression::*;
 use query_engine::*;
 use aggregator::Aggregator;
 use limit::LimitClause;
+use mem_store::ingest::RawVal;
+use std::boxed::Box;
+use time;
 
 
 named!(pub parse_query<&[u8], Query>, alt_complete!(full_query | simple_query));
@@ -17,6 +20,8 @@ named!(full_query<&[u8], Query>,
         tag_no_case!("select") >>
         multispace >>
         select: select_clauses >>
+        opt!(multispace) >>
+        table: from_clause >>
         multispace >>
         tag_no_case!("where") >>
         multispace >>
@@ -27,9 +32,10 @@ named!(full_query<&[u8], Query>,
         limit: opt!(limit_clause) >>
         opt!(multispace) >>
         char!(';') >>
-        (construct_query(select, filter, order_by, limit))
+        (construct_query(select, table, filter, order_by, limit))
     )
 );
+
 
 named!(simple_query<&[u8], Query>,
     do_parse!(
@@ -37,32 +43,36 @@ named!(simple_query<&[u8], Query>,
         multispace >>
         select: select_clauses >>
         opt!(multispace) >>
+        table: from_clause >>
+        opt!(multispace) >>
         order_by: opt!(order_by_clause) >>
         opt!(multispace) >>
         limit: opt!(limit_clause) >>
         opt!(multispace) >>
         opt!(char!(';')) >>
-        (construct_query(select, Expr::Const(ValueType::Bool(true)), order_by, limit))
+        (construct_query(select, table,Expr::Func(FuncType::Equals, Box::new(Expr::Const(RawVal::Int(0))), Box::new(Expr::Const(RawVal::Int(0)))), order_by, limit))
     )
 );
 
-fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect<'a>>,
-                       filter: Expr<'a>,
-                       order_by: Option<Expr<'a>>,
+fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect>,
+                       table: &'a str,
+                       filter: Expr,
+                       order_by: Option<Expr>,
                        limit: Option<LimitClause>)
-                       -> Query<'a> {
+                       -> Query {
     let (select, aggregate) = partition(select_clauses);
     Query {
         select: select,
+        table: table.to_string(),
         filter: filter,
         aggregate: aggregate,
         order_by: order_by,
-        limit: limit,
+        limit: limit.unwrap_or(LimitClause { limit: 1000, offset: 0 }),
     }
 }
 
-fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect<'a>>)
-                 -> (Vec<Expr<'a>>, Vec<(Aggregator, Expr<'a>)>) {
+fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect>)
+                 -> (Vec<Expr>, Vec<(Aggregator, Expr)>) {
     let (selects, aggregates): (Vec<AggregateOrSelect>, Vec<AggregateOrSelect>) =
         select_or_aggregates.into_iter()
             .partition(|x| match x {
@@ -84,11 +94,27 @@ fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect<'a>>)
          .collect())
 }
 
+named!(from_clause<&[u8], &str>,
+    do_parse!(
+        tag_no_case!("from") >>
+        multispace >>
+        from: identifier >>
+        (from)
+    )
+);
 
 named!(select_clauses<&[u8], Vec<AggregateOrSelect>>,
-    separated_list!(
-        tag!(","),
-        alt_complete!(aggregate_clause | select_clause)
+    alt!(
+        do_parse!(
+            opt!(multispace) >>
+            tag!("*") >>
+            opt!(multispace) >>
+            (vec![AggregateOrSelect::Select(Expr::ColName(Rc::new("*".to_string())))])
+        ) |
+        separated_list!(
+            tag!(","),
+            alt_complete!(aggregate_clause | select_clause)
+        )
     )
 );
 
@@ -127,7 +153,7 @@ named!(expr<&[u8], Expr>,
 named!(expr_no_left_recur<&[u8], Expr>,
     do_parse!(
         opt!(multispace) >>
-        result: alt!(parentheses | function | negation | colname | constant) >>
+        result: alt!(parentheses | template | function | negation | colname | constant) >>
         (result)
     )
 );
@@ -139,6 +165,32 @@ named!(parentheses<&[u8], Expr>,
         opt!(multispace) >>
         char!(')') >>
         (e1)
+    )
+);
+
+named!(template<&[u8], Expr>,
+    alt!( last_hour | last_day )
+);
+
+named!(last_hour<&[u8], Expr>,
+    map!(
+        tag_no_case!("$LAST_HOUR"),
+        |_| Expr::Func(
+                FuncType::GT,
+                Box::new(Expr::ColName(Rc::new("timestamp".to_string()))),
+                Box::new(Expr::Const(RawVal::Int(time::now().to_timespec().sec - 3600)))
+        )
+    )
+);
+
+named!(last_day<&[u8], Expr>,
+    map!(
+        tag_no_case!("$LAST_DAY"),
+        |_| Expr::Func(
+                FuncType::GT,
+                Box::new(Expr::ColName(Rc::new("timestamp".to_string()))),
+                Box::new(Expr::Const(RawVal::Int(time::now().to_timespec().sec - 86400)))
+        )
     )
 );
 
@@ -171,7 +223,7 @@ named!(negation<&[u8], Expr>,
         char!('-') >>
         opt!(multispace) >>
         e: expr >>
-        (Expr::func(FuncType::Negate, e, Expr::Const(ValueType::Null)))
+        (Expr::func(FuncType::Negate, e, Expr::Const(RawVal::Null)))
     )
 );
 
@@ -183,7 +235,7 @@ named!(constant<&[u8], Expr>,
 );
 
 
-named!(integer<&[u8], ValueType>,
+named!(integer<&[u8], RawVal>,
     map!(
         map_res!(
             map_res!(
@@ -192,7 +244,7 @@ named!(integer<&[u8], ValueType>,
             ),
             FromStr::from_str
         ),
-        |int| ValueType::Integer(int)
+        |int| RawVal::Int(int)
     )
 );
 
@@ -206,12 +258,12 @@ named!(number<&[u8], u64>,
     )
 );
 
-named!(string<&[u8], ValueType>,
+named!(string<&[u8], RawVal>,
     do_parse!(
         char!('"') >>
         s: is_not!("\"") >>
         char!('"') >>
-        (ValueType::Str(str::from_utf8(s).unwrap()))
+        (RawVal::Str(str::from_utf8(s).unwrap().to_string()))
     )
 );
 
@@ -227,7 +279,23 @@ named!(function_name<&[u8], FuncType>,
 );
 
 named!(infix_function_name<&[u8], FuncType>,
-    alt!( equals | and | greater | less )
+    alt!( equals | and | greater | less | add | subtract | divide | multiply )
+);
+
+named!(divide<&[u8], FuncType>,
+    map!( tag!("/"), |_| FuncType::Divide)
+);
+
+named!(add<&[u8], FuncType>,
+    map!( tag!("+"), |_| FuncType::Add)
+);
+
+named!(multiply<&[u8], FuncType>,
+    map!( tag!("*"), |_| FuncType::Multiply)
+);
+
+named!(subtract<&[u8], FuncType>,
+    map!( tag!("-"), |_| FuncType::Subtract)
 );
 
 named!(equals<&[u8], FuncType>,
@@ -305,7 +373,28 @@ named!(order_by_clause<&[u8], Expr>,
     )
 );
 
-enum AggregateOrSelect<'a> {
-    Aggregate((Aggregator, Expr<'a>)),
-    Select(Expr<'a>),
+enum AggregateOrSelect {
+    Aggregate((Aggregator, Expr)),
+    Select(Expr),
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_select_star() {
+        assert_eq!(
+            format!("{:?}", parse_query("select * from default;".as_bytes())),
+            "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func(Equals, Const(Int(0)), Const(Int(0))), aggregate: [], order_by: None, limit: LimitClause { limit: 1000, offset: 0 } })");
+    }
+
+    #[test]
+    fn test_last_hour() {
+        assert!(
+            format!("{:?}", parse_query("select * from default where $LAST_HOUR;".as_bytes())).starts_with(
+                "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func(GT, ColName(\"timestamp\"), Const(Int(")
+        )
+    }
 }

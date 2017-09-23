@@ -1,5 +1,6 @@
-use value::ValueType;
-use columns::{ColumnData, ColIter, UniqueValues};
+use value::Val;
+use mem_store::column::{ColumnData, ColIter};
+use mem_store::column_builder::UniqueValues;
 use heapsize::HeapSizeOf;
 use std::collections::hash_set::HashSet;
 use std::collections::HashMap;
@@ -23,7 +24,7 @@ struct StringPacker {
     data: Vec<u8>,
 }
 
-// TODO: encode using variable size length + special value to represent null
+// TODO(clemens): encode using variable size length + special value to represent null
 impl StringPacker {
     pub fn new() -> StringPacker {
         StringPacker { data: Vec::new() }
@@ -62,8 +63,8 @@ impl StringPacker {
 
 impl ColumnData for StringPacker {
     fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = self.iter().map(|s| ValueType::Str(s));
-        ColIter { iter: Box::new(iter) }
+        let iter = self.iter().map(|s| Val::Str(s));
+        ColIter::new(iter)
     }
 }
 
@@ -148,8 +149,8 @@ impl<'a> Iterator for DictEncodedStringsIterator<'a> {
 
 impl ColumnData for DictEncodedStrings {
     fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = DictEncodedStringsIterator { data: self, i: 0 }.map(ValueType::from);
-        ColIter { iter: Box::new(iter) }
+        let iter = DictEncodedStringsIterator { data: self, i: 0 }.map(Val::from);
+        ColIter::new(iter)
     }
 }
 

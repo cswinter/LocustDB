@@ -2,17 +2,18 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use value::ValueType;
+use value::Val;
+use mem_store::ingest::RawVal;
 use regex::Regex;
 
 
 #[derive(Debug)]
-pub enum Expr<'a> {
+pub enum Expr {
     ColName(Rc<String>),
     ColIndex(usize),
-    Func(FuncType, Box<Expr<'a>>, Box<Expr<'a>>),
-    Const(ValueType<'a>),
-    CompiledRegex(Regex, Box<Expr<'a>>),
+    Func(FuncType, Box<Expr>, Box<Expr>),
+    Const(RawVal),
+    CompiledRegex(Regex, Box<Expr>),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -22,30 +23,35 @@ pub enum FuncType {
     GT,
     And,
     Or,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
     RegexMatch,
     Negate,
 }
 
 use self::Expr::*;
-use self::ValueType::*;
+use self::Val::*;
 use self::FuncType::*;
 
-impl<'a> Expr<'a> {
-    pub fn eval(&self, record: &Vec<ValueType<'a>>) -> ValueType<'a> {
+impl Expr {
+    pub fn eval<'a>(&'a self, record: &Vec<Val<'a>>) -> Val<'a> {
         match self {
             &Func(ref functype, ref exp1, ref exp2) => {
                 match (functype, exp1.eval(record), exp2.eval(record)) {
-                    (&Equals, v1,            v2)            => Bool(v1 == v2),
-                    (&Negate, Integer(i), _)                => Integer(-i),
-                    (_,       Null,          _)             => Null,
-                    (_,       _,             Null)          => Null,
-                    (&And,    Bool(b1),      Bool(b2))      => Bool(b1 && b2),
-                    (&Or,     Bool(b1),      Bool(b2))      => Bool(b1 || b2),
-                    (&LT,     Integer(i1),   Integer(i2))   => Bool(i1 < i2),
-                    (&LT,     Timestamp(t1), Timestamp(t2)) => Bool(t1 < t2),
-                    (&GT,     Integer(i1),   Integer(i2))   => Bool(i1 > i2),
-                    (&GT,     Timestamp(t1), Timestamp(t2)) => Bool(t1 > t2),
-                    (&GT,     Integer(i),    Timestamp(t))  if i >= 0 => Bool(i as u64 > t),
+                    (&Equals,   v1,            v2)            => Bool(v1 == v2),
+                    (&Negate,   Integer(i), _)                => Integer(-i),
+                    (_,         Null,          _)             => Null,
+                    (_,         _,             Null)          => Null,
+                    (&And,      Bool(b1),      Bool(b2))      => Bool(b1 && b2),
+                    (&Or,       Bool(b1),      Bool(b2))      => Bool(b1 || b2),
+                    (&LT,       Integer(i1),   Integer(i2))   => Bool(i1 < i2),
+                    (&GT,       Integer(i1),   Integer(i2))   => Bool(i1 > i2),
+                    (&Add,      Integer(i1),   Integer(i2))   => Integer(i1 + i2),
+                    (&Subtract, Integer(i1),   Integer(i2))   => Integer(i1 - i2),
+                    (&Multiply, Integer(i1),   Integer(i2))   => Integer(i1 * i2),
+                    (&Divide,   Integer(i1),   Integer(i2))   => if i2 == 0 { Null } else { Integer(i1 / i2) },
                     (functype, v1, v2) => panic!("Type error: function {:?} not defined for values {:?} and {:?}", functype, v1, v2),
                 }
             }
@@ -56,7 +62,7 @@ impl<'a> Expr<'a> {
                 }
             }
             &ColIndex(col) => record[col].clone(),
-            &Const(ref value) => value.clone(),
+            &Const(ref value) => raw_to_val(value),
             &ColName(_) => {
                 panic!("Trying to evaluate ColumnName expression. Compile this expression before evaluating.")
             }
@@ -67,7 +73,7 @@ impl<'a> Expr<'a> {
         use self::Expr::*;
         match self {
             &ColName(ref name) => {
-                column_names.get(name.as_ref()).map(|&index| ColIndex(index)).unwrap_or(Const(Null))
+                column_names.get(name.as_ref()).map(|&index| ColIndex(index)).unwrap_or(Const(RawVal::Null))
             }
             &Const(ref v) => Const(v.clone()),
             &Func(RegexMatch, ref regex, ref expr) => {
@@ -85,7 +91,7 @@ impl<'a> Expr<'a> {
 
     fn compile_regex(&self) -> Regex {
         match self {
-            &Const(Str(string)) => {
+            &Const(RawVal::Str(ref string)) => {
                 Regex::new(string).expect(&format!("Error compiling regex /{}/", string))
             }
             _ => panic!("First argument to regex function must be a string constant!"),
@@ -105,7 +111,15 @@ impl<'a> Expr<'a> {
         }
     }
 
-    pub fn func(ftype: FuncType, expr1: Expr<'a>, expr2: Expr<'a>) -> Expr<'a> {
+    pub fn func(ftype: FuncType, expr1: Expr, expr2: Expr) -> Expr {
         Func(ftype, Box::new(expr1), Box::new(expr2))
+    }
+}
+
+fn raw_to_val(raw: &RawVal) -> Val {
+    match raw {
+        &RawVal::Int(i) => Val::Integer(i),
+        &RawVal::Str(ref s) => Val::Str(&s),
+        &RawVal::Null => Val::Null,
     }
 }

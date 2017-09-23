@@ -1,119 +1,80 @@
-use std::rc::Rc;
 use std::fmt;
 use heapsize::HeapSizeOf;
 use std::convert::From;
+use mem_store::ingest::RawVal;
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Clone, Hash)]
-pub enum ValueType<'a> {
+pub enum Val<'a> {
     Null,
     Bool(bool),
-    Timestamp(u64),
     Integer(i64),
     Str(&'a str),
-    Set(Rc<Vec<String>>),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub enum InpVal {
-    Null,
-    Timestamp(u64),
-    Integer(i64),
-    Str(Rc<String>),
-    Set(Rc<Vec<String>>),
-}
 
-pub type InpRecordType<'a> = Vec<(&'a str, InpVal)>;
-
-impl InpVal {
-    pub fn to_val<'a>(&'a self) -> ValueType<'a> {
-        match self {
-            &InpVal::Null => ValueType::Null,
-            &InpVal::Timestamp(t) => ValueType::Timestamp(t),
-            &InpVal::Integer(i) => ValueType::Integer(i),
-            &InpVal::Str(ref string) => ValueType::Str(string),
-            &InpVal::Set(ref set) => ValueType::Set(set.clone()),
-        }
-    }
-}
-
-impl<'a> fmt::Display for ValueType<'a> {
+impl<'a> fmt::Display for Val<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &ValueType::Null => write!(f, "null"),
-            &ValueType::Bool(b) => write!(f, "{}", b),
-            &ValueType::Timestamp(t) => write!(f, "t{}", t),
-            &ValueType::Integer(i) => write!(f, "{}", i),
-            &ValueType::Str(ref s) => write!(f, "\"{}\"", s),
-            &ValueType::Set(ref vec) => write!(f, "{:?}", vec),
+            &Val::Null => write!(f, "null"),
+            &Val::Bool(b) => write!(f, "{}", b),
+            &Val::Integer(i) => write!(f, "{}", i),
+            &Val::Str(ref s) => write!(f, "\"{}\"", s),
         }
     }
 }
 
-impl<'a> HeapSizeOf for ValueType<'a> {
+impl<'a> HeapSizeOf for Val<'a> {
     fn heap_size_of_children(&self) -> usize {
-        use self::ValueType::*;
+        use self::Val::*;
         match self {
-            &Null | &Bool(_) | &Timestamp(_) | &Integer(_) => 0,
+            &Null | &Bool(_) | &Integer(_) => 0,
             &Str(ref r) => r.heap_size_of_children(),
-            &Set(ref r) => r.heap_size_of_children(),
         }
     }
 }
 
-impl HeapSizeOf for InpVal {
-    fn heap_size_of_children(&self) -> usize {
-        use self::InpVal::*;
-        match self {
-            &Null | &Timestamp(_) | &Integer(_) => 0,
-            &Str(ref r) => r.heap_size_of_children(),
-            &Set(ref r) => r.heap_size_of_children(),
-        }
+impl<'a> From<()> for Val<'a> {
+    fn from(_: ()) -> Val<'a> {
+        Val::Null
     }
 }
 
-impl<'a> From<()> for ValueType<'a> {
-    fn from(_: ()) -> ValueType<'a> {
-        ValueType::Null
+impl<'a> From<bool> for Val<'a> {
+    fn from(b: bool) -> Val<'a> {
+        Val::Bool(b)
     }
 }
 
-impl<'a> From<bool> for ValueType<'a> {
-    fn from(b: bool) -> ValueType<'a> {
-        ValueType::Bool(b)
+impl<'a> From<i64> for Val<'a> {
+    fn from(t: i64) -> Val<'a> {
+        Val::Integer(t)
     }
 }
 
-impl<'a> From<u64> for ValueType<'a> {
-    fn from(t: u64) -> ValueType<'a> {
-        ValueType::Timestamp(t)
+impl<'a> From<&'a str> for Val<'a> {
+    fn from(s: &'a str) -> Val<'a> {
+        Val::Str(s)
     }
 }
 
-impl<'a> From<i64> for ValueType<'a> {
-    fn from(t: i64) -> ValueType<'a> {
-        ValueType::Integer(t)
-    }
-}
-
-impl<'a> From<&'a str> for ValueType<'a> {
-    fn from(s: &'a str) -> ValueType<'a> {
-        ValueType::Str(s)
-    }
-}
-
-impl<'a> From<Vec<String>> for ValueType<'a> {
-    fn from(s: Vec<String>) -> ValueType<'a> {
-        ValueType::Set(Rc::new(s))
-    }
-}
-
-impl<'a, T> From<Option<T>> for ValueType<'a>
-    where ValueType<'a>: From<T>
+impl<'a, T> From<Option<T>> for Val<'a>
+    where Val<'a>: From<T>
 {
-    fn from(o: Option<T>) -> ValueType<'a> {
+    fn from(o: Option<T>) -> Val<'a> {
         match o {
-            None => ValueType::Null,
-            Some(v) => ValueType::from(v),
+            None => Val::Null,
+            Some(v) => Val::from(v),
+        }
+    }
+}
+
+impl<'a, 'b> From<&'a Val<'b>> for RawVal {
+    fn from(val: &Val) -> RawVal {
+        match val {
+            &Val::Integer(b) => RawVal::Int(b),
+            &Val::Str(s) => RawVal::Str(s.to_string()),
+            &Val::Null => RawVal::Null,
+            &Val::Bool(_) => RawVal::Null,
         }
     }
 }
