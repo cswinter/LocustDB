@@ -1,6 +1,5 @@
 extern crate csv;
 
-use heapsize::HeapSizeOf;
 use mem_store::batch::Batch;
 use mem_store::column::*;
 use mem_store::column_builder::*;

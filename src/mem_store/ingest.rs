@@ -82,7 +82,7 @@ impl RawCol {
            let mut builder = IntColBuilder::new();
            for v in self.data {
                 match v {
-                    RawVal::Str(s) => panic!("Unexpected string in int column!"),
+                    RawVal::Str(_) => panic!("Unexpected string in int column!"),
                     RawVal::Int(i) => builder.push(&i),
                     RawVal::Null => builder.push(&0),
                 }

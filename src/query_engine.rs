@@ -233,7 +233,7 @@ impl Query {
         let limit = self.limit.clone();
 
         // Compile the order_by
-        let output_colnames = self.result_column_names(source);
+        let output_colnames = self.result_column_names();
         let mut output_colmap = HashMap::new();
         for (i, output_colname) in output_colnames.iter().enumerate() {
             output_colmap.insert(output_colname.to_string(), i);
@@ -286,7 +286,7 @@ impl Query {
             false
         }
     }
-    fn result_column_names(&self, source: &Vec<Batch>) -> Vec<Rc<String>> {
+    fn result_column_names(&self) -> Vec<Rc<String>> {
         let mut anon_columns = -1;
         let select_cols = self.select
             .iter()

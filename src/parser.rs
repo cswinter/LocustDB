@@ -1,9 +1,9 @@
+#![allow(unused_parens)]
 use std::str;
 use std::str::FromStr;
 use std::rc::Rc;
 use nom::{digit, is_alphabetic, is_alphanumeric, multispace};
 
-use value::*;
 use expression::*;
 use query_engine::*;
 use aggregator::Aggregator;

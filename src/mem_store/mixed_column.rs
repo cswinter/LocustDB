@@ -1,7 +1,6 @@
 use mem_store::column::*;
 use mem_store::ingest::RawVal;
 use value::Val;
-use std::rc::Rc;
 use heapsize::HeapSizeOf;
 
 

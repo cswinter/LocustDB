@@ -8,8 +8,8 @@ extern crate num;
 extern crate regex;
 extern crate time;
 extern crate seahash;
-extern crate rocksdb;
-extern crate tempdir;
+extern crate serde;
+// extern crate tempdir;
 
 pub mod parser;
 pub mod mem_store;
@@ -25,17 +25,13 @@ mod limit;
 use heapsize::HeapSizeOf;
 use mem_store::batch::Batch;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
-use std::ops::{Deref, DerefMut};
-use std::panic;
+use std::sync::{Mutex, RwLock};
+use std::ops::DerefMut;
 use std::str;
-use std::thread;
-use std::time as stdtime;
 use mem_store::ingest::RawCol;
 use query_engine::{Query, QueryResult};
-use rocksdb::{DB, Options, WriteBatch, IteratorMode, Direction};
-use bincode::{serialize, deserialize, Infinite};
-use tempdir::TempDir;
+// use rocksdb::{DB, Options, WriteBatch, IteratorMode, Direction};
+// use tempdir::TempDir;
 
 pub use mem_store::ingest::RawVal as InputValue;
 use mem_store::ingest::RawVal;
@@ -46,17 +42,16 @@ pub enum InputColumn {
     Null(usize),
 }
 
-pub struct Ruba {
+pub struct Ruba<T: DB + Clone> {
     tables: RwLock<HashMap<String, Table>>,
-    storage: Arc<DB>,
+    storage: Box<T>,
 }
 
-impl Ruba {
-    pub fn new(db_path: &str, load_tabledata: bool) -> Ruba {
-        let storage = Arc::new(DB::open_default(db_path).unwrap());
+impl <T: DB + Clone> Ruba<T> {
+    pub fn new(storage: Box<T>, load_tabledata: bool) -> Ruba<T> {
         let existing_tables =
-            if load_tabledata { Table::restore_from_db(20_000, storage.clone()) }
-            else { Table::load_table_metadata(20_000, storage.clone()) };
+            if load_tabledata { Table::restore_from_db(20_000, &storage) }
+            else { Table::load_table_metadata(20_000, &storage) };
 
         Ruba {
             tables: RwLock::new(existing_tables),
@@ -66,7 +61,7 @@ impl Ruba {
 
     pub fn run_query(&self, query: &str) -> Result<QueryResult, String> {
         match parser::parse_query(query.as_bytes()) {
-            nom::IResult::Done(remaining, query) => {
+            nom::IResult::Done(_remaining, query) => {
                 let tables = self.tables.read().unwrap();
                 // TODO(clemens): extend query language with from clause
                 match tables.get(&query.table) {
@@ -81,7 +76,7 @@ impl Ruba {
     pub fn load_table_data(&self) {
         let tables = self.tables.read().unwrap();
         for (_, table) in tables.iter() {
-            table.load_table_data();
+            table.load_table_data(&self.storage);
             println!("Finished loading {}", &table.name);
         }
         println!("Finished loading all table data!");
@@ -121,7 +116,7 @@ impl Ruba {
         if !exists {
             {
                 let mut tables = self.tables.write().unwrap();
-                tables.insert(table.to_string(), Table::new(10_000, table, self.storage.clone(), Metadata { batch_count: 0 }));
+                tables.insert(table.to_string(), Table::new(10_000, table, Metadata { batch_count: 0, name: table.to_string() }));
             }
             self.ingest("_meta_tables", vec![
                 ("timestamp".to_string(), RawVal::Int(time::now().to_timespec().sec)),
@@ -137,55 +132,57 @@ pub struct Table {
     metadata: RwLock<Metadata>,
     batches: RwLock<Vec<Batch>>,
     buffer: Mutex<Buffer>,
-    storage: Arc<DB>,
 }
 
 impl Table {
-    pub fn new(batch_size: usize, name: &str, storage: Arc<DB>, metadata: Metadata) -> Table {
+    pub fn new(batch_size: usize, name: &str, metadata: Metadata) -> Table {
         Table {
             name: name.to_string(),
             batch_size: batch_size_override(batch_size, name),
             batches: RwLock::new(Vec::new()),
             buffer: Mutex::new(Buffer::new()),
-            storage: storage,
             metadata: RwLock::new(metadata),
         }
     }
 
-    pub fn restore_from_db(batch_size: usize, storage: Arc<DB>) -> HashMap<String, Table> {
+    pub fn restore_from_db<T: DB + Clone>(batch_size: usize, storage: &Box<T>) -> HashMap<String, Table> {
         let mut tables = Table::load_table_metadata(batch_size, storage);
         // populate tables
         for (_, table) in tables.iter_mut() {
-            table.load_table_data();
+            table.load_table_data(storage);
         }
 
         tables
     }
 
 
-    pub fn load_table_metadata(batch_size: usize, storage: Arc<DB>) -> HashMap<String, Table> {
+    pub fn load_table_metadata<T: DB + Clone>(batch_size: usize, storage: &Box<T>) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
+        for md in storage.metadata() {
+            tables.insert(md.name.to_string(), Table::new(batch_size, &md.name, md.clone()));
+        }
+        tables
 
         // load metadata
-        let metadata_prefix = "METADATA$".as_bytes();
+        /*let metadata_prefix = "METADATA$".as_bytes();
         let iter = storage.iterator(IteratorMode::From(metadata_prefix, Direction::Forward));
         for (key, val) in iter {
             if !key.starts_with(metadata_prefix) { break; }
             let table_name = str::from_utf8(&key[metadata_prefix.len()..]).unwrap();
             let metadata = deserialize::<Metadata>(&val).unwrap();
-            tables.insert(table_name.to_string(), Table::new(batch_size, table_name, storage.clone(), metadata));
-        }
-
-        tables
+        }*/
     }
 
-    pub fn load_table_data(&self) {
-        let tabledata_prefix = format!("BATCHES${}", &self.name);
+    pub fn load_table_data<T: DB + Clone>(&self, storage: &Box<T>) {
+        /*let tabledata_prefix = format!("BATCHES${}", &self.name);
         let iter = self.storage.iterator(IteratorMode::From(tabledata_prefix.as_bytes(), Direction::Forward));
         for (key, val) in iter {
             if !key.starts_with(tabledata_prefix.as_bytes()) { break; }
             let batch = deserialize::<Buffer>(&val).unwrap();
             self.load_batch(batch);
+        }*/
+        for buffer in storage.data(&self.name) {
+            self.load_batch(buffer);
         }
     }
 
@@ -279,15 +276,15 @@ impl Table {
         println!("Loaded batch for {}", self.name)
     }
 
-    fn persist_batch(&self, batch: &Buffer) {
-        let encoded = serialize(batch, Infinite).unwrap();
+    fn persist_batch(&self, _batch: &Buffer) {
+        /*let encoded = serialize(batch, Infinite).unwrap();
         let mut metadata = self.metadata.write().unwrap();
         metadata.batch_count = metadata.batch_count + 1;
 
         let mut transaction = WriteBatch::default();
         transaction.put(format!("METADATA${}", self.name).as_bytes(), &serialize(metadata.deref(), Infinite).unwrap());
         transaction.put(format!("BATCHES${}{}", self.name, metadata.batch_count).as_bytes(), &encoded);
-        self.storage.write(transaction);
+        self.storage.write(transaction);*/
     }
 
     pub fn stats(&self) -> TableStats {
@@ -323,17 +320,22 @@ impl HeapSizeOf for Table {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub trait DB {
+    fn metadata(&self) -> Vec<&Metadata>;
+    fn data(&self, table_name: &str) -> Vec<Buffer>;
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Metadata {
-    pub batch_count: u64
+    pub name: String,
+    pub batch_count: u64,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-struct Buffer {
+pub struct Buffer {
     buffer: HashMap<String, RawCol>,
     length: usize,
 }
-
 
 impl Buffer {
     fn new() -> Buffer {

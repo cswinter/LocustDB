@@ -4,3 +4,6 @@
 /data/
 **/node_modules/
 **/.ruba_history
+
+# IntelliJ
+.idea
