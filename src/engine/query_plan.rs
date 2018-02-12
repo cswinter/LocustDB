@@ -1,8 +1,6 @@
-use bit_vec::BitVec;
 use mem_store::column::Column;
 use mem_store::ingest::RawVal;
 use engine::types::Type;
-use engine::typed_vec::TypedVec;
 use engine::vector_operator::*;
 
 
@@ -19,7 +17,7 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
         QueryPlan::Constant(ref c) => Box::new(Constant::new(c.clone())),
         QueryPlan::LessThanVSi64(lhs, rhs) => {
             if let RawVal::Int(i) = get_const(*rhs) {
-                Box::new(LessThanVi64S::new(prepare(*lhs), i))
+                Box::new(LessThanVSi64::new(prepare(*lhs), i))
             } else {
                 panic!("Wrong type")
             }

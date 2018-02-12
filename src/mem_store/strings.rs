@@ -177,7 +177,6 @@ impl ColumnData for DictEncodedStrings {
     }
 
     fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
-        // TODO(clemens): optimize for filter?
         let mut result = Vec::<&'a str>::with_capacity(self.encoded_values.len());
         match filter {
             &None => {
@@ -186,10 +185,9 @@ impl ColumnData for DictEncodedStrings {
                 }
             }
             &Some(ref bv) => {
-                for i in 0..bv.len() {
-                    if bv.get(i) == Some(true) {
-                        let encoded_value = self.encoded_values[i];
-                        result.push(self.mapping[encoded_value as usize].as_ref().unwrap());
+                for (encoded_value, selected) in self.encoded_values.iter().zip(bv) {
+                    if selected {
+                        result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
                     }
                 }
             }

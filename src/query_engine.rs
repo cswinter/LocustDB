@@ -58,12 +58,6 @@ struct SelectSubqueryResult<'a> {
 }
 
 #[derive(Debug)]
-struct AggregateSubqueryResult<'a> {
-    groups: HashMap<Vec<Val<'a>>, Vec<Val<'a>>, BuildSeaHasher>,
-    stats: QueryStats,
-}
-
-#[derive(Debug)]
 pub struct QueryStats {
     pub runtime_ns: u64,
     pub rows_scanned: u64,
@@ -178,23 +172,17 @@ impl<'a> CompiledQuery<'a> {
 
 impl<'a> CompiledSingleBatchQuery<'a> {
     fn run_select_query(&mut self) -> Vec<TypedVec> {
-        let mut f = TypedVec::Empty;
-        self.filter.execute(&None);
-        let (count, filter) = match f {
-            TypedVec::Boolean(b) => (4000, Some(b)),//(b.iter().filter(|x| *x).count(), Some(b)),
-            _ => (4000, None),
+        let filter = match self.filter.execute(&None) {
+            TypedVec::Boolean(b) => Some(b),//(b.iter().filter(|x| *x).count(), Some(b)),
+            _ => None,
         };
         // TODO(clemens): chunk size, stats
         // let start_time_ns = precise_time_ns();
-        self.select.iter_mut().map(|op| {
-            let mut result = TypedVec::Empty;
-            op.execute(&filter);
-            result
-        }).collect()
+        self.select.iter_mut().map(|op| op.execute(&filter)).collect()
     }
 
-    fn run_aggregation_query(&mut self) -> AggregateSubqueryResult {
-        /*let mut groups = HashMap::<Vec<Val>, Vec<Val>, BuildSeaHasher>::default();
+    /*fn run_aggregation_query(&mut self) -> AggregateSubqueryResult {
+        let mut groups = HashMap::<Vec<Val>, Vec<Val>, BuildSeaHasher>::default();
         let mut record = Vec::with_capacity(self.coliter.len());
         let start_time_ns = precise_time_ns();
         let mut rows_touched = 0;
@@ -223,9 +211,8 @@ impl<'a> CompiledSingleBatchQuery<'a> {
         AggregateSubqueryResult {
             groups: groups,
             stats: QueryStats::new(precise_time_ns() - start_time_ns, rows_touched),
-        }*/
-        panic!(" not implemented")
-    }
+        }
+    }*/
 }
 
 impl Query {
@@ -268,11 +255,11 @@ impl Query {
         // let coliter = efficient_source.iter().map(|col| col.iter()).collect();
         let column_iter = create_coliter_map(&efficient_source);
         let compiled_selects = self.select.iter().map(|expr| {
-            let (plan, t) = expr.create_query_plan(&column_iter);
+            let (plan, _) = expr.create_query_plan(&column_iter);
             query_plan::prepare(plan)
         }).collect();
 
-        let (filter_plan, filter_t) = self.filter.create_query_plan(&column_iter);
+        let (filter_plan, _) = self.filter.create_query_plan(&column_iter);
         // TODO(clemens): type check
         let compiled_filter = query_plan::prepare(filter_plan);
 

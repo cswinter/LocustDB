@@ -23,7 +23,7 @@ impl ColumnData for NullColumn {
         ColIter::new(iter)
     }
 
-    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+    fn collect_decoded<'a>(&'a self, _: &Option<BitVec>) -> TypedVec {
         TypedVec::Empty
     }
 

@@ -1,9 +1,6 @@
-use std::marker::PhantomData;
 use bit_vec::BitVec;
 
-use mem_store::column::ColIter;
 use mem_store::ingest::RawVal;
-use value::Val;
 use mem_store::column::Column;
 use engine::typed_vec::TypedVec;
 
@@ -39,7 +36,7 @@ impl Constant {
 }
 
 impl VecOperator for Constant {
-    fn execute(&mut self, filter: &Option<BitVec>) -> TypedVec {
+    fn execute(&mut self, _filter: &Option<BitVec>) -> TypedVec {
         TypedVec::Constant(self.val.clone())
     }
 }

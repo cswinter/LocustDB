@@ -28,8 +28,19 @@ impl ColumnData for MixedColumn {
 
     fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
         let mut result = Vec::with_capacity(self.values.len());
-        for val in self.values.iter() {
-            result.push(val.to_val());
+        match filter {
+            &None => {
+                for val in self.values.iter() {
+                    result.push(val.to_val());
+                }
+            }
+            &Some(ref bv) => {
+                for (val, selected) in self.values.iter().zip(bv) {
+                    if selected {
+                        result.push(val.to_val());
+                    }
+                }
+            }
         }
         TypedVec::Mixed(result)
     }
