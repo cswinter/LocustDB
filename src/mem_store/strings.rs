@@ -9,6 +9,8 @@ use std::rc::Rc;
 use std::str;
 use std::{u8, u16};
 use engine::types::Type;
+use engine::typed_vec::TypedVec;
+
 
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
@@ -69,29 +71,21 @@ impl ColumnData for StringPacker {
         ColIter::new(iter)
     }
 
-    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
-        // TODO(clemens): Statefull offset
-        for s in self.iter().skip(offset).take(count) {
-            buffer.push(Val::Str(s));
-        }
-    }
-
-    fn collect_str<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<&'a str>) {
+    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+        // TODO(clemens): at length method to StringPacker
         match filter {
-            &None => {
-                // TODO(clemens): Statefull offset
-                for s in self.iter().skip(offset).take(count) {
-                    buffer.push(s);
-                }
-            }
+            &None => TypedVec::String(self.iter().collect()),
             &Some(ref bv) => {
+                let mut result = Vec::new();
                 for (s, select) in self.iter().zip(bv.iter()) {
                     if select {
-                        buffer.push(s);
+                        result.push(s);
                     }
                 }
+                TypedVec::String(result)
             }
         }
+
     }
 
     fn decoded_type(&self) -> Type { Type::String }
@@ -182,31 +176,25 @@ impl ColumnData for DictEncodedStrings {
         ColIter::new(iter)
     }
 
-    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
-        for i in offset..(offset + count) {
-            let encoded_value = self.encoded_values[i];
-            let value = &self.mapping[encoded_value as usize];
-            buffer.push(Val::from(value.as_ref().map(|s| &**s)));
-        }
-    }
-
-    fn collect_str<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<&'a str>) {
+    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+        // TODO(clemens): optimize for filter?
+        let mut result = Vec::<&'a str>::with_capacity(self.encoded_values.len());
         match filter {
             &None => {
-                for i in offset..(offset + count) {
-                    let encoded_value = self.encoded_values[i];
-                    buffer.push(self.mapping[encoded_value as usize].as_ref().unwrap());
+                for encoded_value in self.encoded_values.iter() {
+                    result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
                 }
             }
             &Some(ref bv) => {
                 for i in 0..bv.len() {
                     if bv.get(i) == Some(true) {
                         let encoded_value = self.encoded_values[i];
-                        buffer.push(self.mapping[encoded_value as usize].as_ref().unwrap());
+                        result.push(self.mapping[encoded_value as usize].as_ref().unwrap());
                     }
                 }
             }
         }
+        TypedVec::String(result)
     }
 
     fn decoded_type(&self) -> Type { Type::String }

@@ -3,6 +3,7 @@ use heapsize::HeapSizeOf;
 use value::Val;
 use engine::types::Type;
 use std::fmt;
+use engine::typed_vec::TypedVec;
 
 
 pub struct Column {
@@ -19,16 +20,8 @@ impl Column {
         self.data.iter()
     }
 
-    pub fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
-        self.data.dump_untyped(count, offset, buffer);
-    }
-
-    pub fn collect_str<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<&'a str>) {
-        self.data.collect_str(count, offset, filter, buffer);
-    }
-
-    pub fn collect_int<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<i64>) {
-        self.data.collect_int(count, offset, filter, buffer);
+    pub fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+        self.data.collect_decoded(filter)
     }
 
     pub fn decoded_type(&self) -> Type {
@@ -57,18 +50,7 @@ impl HeapSizeOf for Column {
 
 pub trait ColumnData: HeapSizeOf + Send + Sync {
     fn iter<'a>(&'a self) -> ColIter<'a>;
-    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>);
-
-    #[allow(unused_variables)]
-    fn collect_str<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<&'a str>) {
-        panic!("Not supported");
-    }
-
-    #[allow(unused_variables)]
-    fn collect_int<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<i64>) {
-        panic!("Not supported");
-    }
-
+    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec;
     fn decoded_type(&self) -> Type;
 }
 

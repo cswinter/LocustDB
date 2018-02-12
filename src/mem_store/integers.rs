@@ -5,6 +5,7 @@ use heapsize::HeapSizeOf;
 use std::{u8, u16, u32, i64};
 use num::traits::NumCast;
 use engine::types::Type;
+use engine::typed_vec::TypedVec;
 
 
 pub struct IntegerColumn {
@@ -32,27 +33,23 @@ impl ColumnData for IntegerColumn {
         ColIter::new(iter)
     }
 
-    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
-        for i in offset..(offset + count) {
-            buffer.push(Val::from(self.values[i + offset]));
-        }
-    }
-
-    fn collect_int<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<i64>) {
+    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+        let mut results = Vec::with_capacity(self.values.len());
         match filter {
             &None => {
-                for i in offset..(offset + count) {
-                    buffer.push(self.values[i + offset]);
+                for i in self.values.iter() {
+                    results.push(*i);
                 }
             }
             &Some(ref bv) => {
                 for (i, select) in bv.iter().enumerate() {
                     if select {
-                        buffer.push(self.values[i + offset]);
+                        results.push(self.values[i]);
                     }
                 }
             }
         }
+        TypedVec::Integer(results)
     }
 
     fn decoded_type(&self) -> Type { Type::I64 }
@@ -91,27 +88,23 @@ impl<T: IntLike + Send + Sync> ColumnData for IntegerOffsetColumn<T> {
         ColIter::new(iter)
     }
 
-    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
-        for i in offset..(offset + count) {
-            buffer.push(Val::from(self.values[i + offset].to_i64().unwrap() + self.offset));
-        }
-    }
-
-    fn collect_int<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<i64>) {
+    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+        let mut result = Vec::with_capacity(self.values.len());
         match filter {
             &None => {
-                for i in offset..(offset + count) {
-                    buffer.push(self.values[i + offset].to_i64().unwrap() + self.offset);
+                for value in self.values.iter () {
+                    result.push(value.to_i64().unwrap() + self.offset);
                 }
             }
             &Some(ref bv) => {
                 for (i, select) in bv.iter().enumerate() {
                     if select {
-                        buffer.push(self.values[i + offset].to_i64().unwrap() + self.offset);
+                        result.push(self.values[i].to_i64().unwrap() + self.offset);
                     }
                 }
             }
         }
+        TypedVec::Integer(result)
     }
 
     fn decoded_type(&self) -> Type { Type::I64 }

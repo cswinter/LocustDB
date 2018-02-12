@@ -1,8 +1,10 @@
+use bit_vec::BitVec;
 use mem_store::column::*;
 use mem_store::ingest::RawVal;
 use value::Val;
 use heapsize::HeapSizeOf;
 use engine::types::Type;
+use engine::typed_vec::TypedVec;
 
 
 #[allow(dead_code)]
@@ -24,10 +26,12 @@ impl ColumnData for MixedColumn {
         ColIter::new(iter)
     }
 
-    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
-        for i in offset..(offset + count) {
-            buffer.push(self.values[i].to_val());
+    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+        let mut result = Vec::with_capacity(self.values.len());
+        for val in self.values.iter() {
+            result.push(val.to_val());
         }
+        TypedVec::Mixed(result)
     }
 
     fn decoded_type(&self) -> Type { Type::Val }

@@ -8,7 +8,7 @@ use std::hash::BuildHasherDefault;
 use std::ops::Add;
 use std::cmp;
 
-use engine::vector_operator::VecOperator;
+use engine::vector_operator::BoxedOperator;
 use engine::query_plan;
 use engine::typed_vec::TypedVec;
 use value::Val;
@@ -39,11 +39,9 @@ pub struct CompiledQuery<'a> {
     limit: LimitClause,
 }
 
-type QueryOperator<'a> = Box<VecOperator<Output=TypedVec<'a>> + 'a>;
-
 struct CompiledSingleBatchQuery<'a> {
-    select: Vec<QueryOperator<'a>>,
-    filter: QueryOperator<'a>,
+    select: Vec<BoxedOperator<'a>>,
+    filter: BoxedOperator<'a>,
     // .aggregate: Vec<(Aggregator, Expr)>,
     // coliter: Vec<ColIter<'a>>,
 }
@@ -181,7 +179,7 @@ impl<'a> CompiledQuery<'a> {
 impl<'a> CompiledSingleBatchQuery<'a> {
     fn run_select_query(&mut self) -> Vec<TypedVec> {
         let mut f = TypedVec::Empty;
-        self.filter.execute(4000, &None, &mut f);
+        self.filter.execute(&None);
         let (count, filter) = match f {
             TypedVec::Boolean(b) => (4000, Some(b)),//(b.iter().filter(|x| *x).count(), Some(b)),
             _ => (4000, None),
@@ -190,7 +188,7 @@ impl<'a> CompiledSingleBatchQuery<'a> {
         // let start_time_ns = precise_time_ns();
         self.select.iter_mut().map(|op| {
             let mut result = TypedVec::Empty;
-            op.execute(4000, &filter, &mut result);
+            op.execute(&filter);
             result
         }).collect()
     }
@@ -271,12 +269,12 @@ impl Query {
         let column_iter = create_coliter_map(&efficient_source);
         let compiled_selects = self.select.iter().map(|expr| {
             let (plan, t) = expr.create_query_plan(&column_iter);
-            query_plan::prepare(plan, t)
+            query_plan::prepare(plan)
         }).collect();
 
         let (filter_plan, filter_t) = self.filter.create_query_plan(&column_iter);
         // TODO(clemens): type check
-        let compiled_filter = query_plan::prepare(filter_plan, filter_t);
+        let compiled_filter = query_plan::prepare(filter_plan);
 
         /*let compiled_aggregate = self.aggregate
             .iter()

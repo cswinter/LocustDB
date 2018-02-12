@@ -35,5 +35,12 @@ impl<'a> TypedVec<'a> {
             &TypedVec::Constant(ref r) => r.clone(),
         }
     }
+
+    pub fn cast_i64(&self) -> &[i64] {
+        match self {
+            &TypedVec::Integer(ref x) => x,
+            _ => panic!("type error"),
+        }
+    }
 }
 

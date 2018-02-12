@@ -96,13 +96,14 @@ impl Expr {
         use self::Expr::*;
         match self {
             &ColName(ref name) => match columns.get(name.as_ref()) {
-                Some(ref c) => (QueryPlan::CollectTyped(c), c.decoded_type()),
+                Some(ref c) => (QueryPlan::CollectDecoded(c), c.decoded_type()),
                 None => panic!("Not implemented")//VecOperator::Constant(VecValue::Constant(RawVal::Null)),
             }
             &Func(LT, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = lhs.create_query_plan(columns);
                 let (plan_rhs, type_rhs) = rhs.create_query_plan(columns);
-                (QueryPlan::LessThan(Box::new(plan_lhs), Box::new(plan_rhs), type_lhs, type_rhs), Type::Boolean)
+                // TODO(clemens): typecheck
+                (QueryPlan::LessThanVSi64(Box::new(plan_lhs), Box::new(plan_rhs)), Type::Boolean)
             }
             &Const(ref v) => (QueryPlan::Constant(v.clone()), Type::Scalar),
             x => panic!("{:?}.compile_vec() not implemented", x),

@@ -1,8 +1,11 @@
+use bit_vec::BitVec;
 use mem_store::column::*;
 use value::Val;
 use std::iter;
 use heapsize::HeapSizeOf;
 use engine::types::Type;
+use engine::typed_vec::TypedVec;
+
 
 pub struct NullColumn {
     length: usize,
@@ -20,11 +23,8 @@ impl ColumnData for NullColumn {
         ColIter::new(iter)
     }
 
-    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
-        // TODO(clemens): respect length field
-        for _ in offset..(offset + count) {
-            buffer.push(Val::Null);
-        }
+    fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
+        TypedVec::Empty
     }
 
     fn decoded_type(&self) -> Type { Type::Null }

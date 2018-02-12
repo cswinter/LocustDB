@@ -8,32 +8,22 @@ use engine::vector_operator::*;
 
 #[derive(Debug)]
 pub enum QueryPlan<'a> {
-    CollectTyped(&'a Column),
-    LessThan(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>, Type, Type),
+    CollectDecoded(&'a Column),
+    LessThanVSi64(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     Constant(RawVal),
 }
 
-pub fn prepare(plan: QueryPlan, t: Type) -> BoxedOperator<TypedVec> {
-    match t {
-        Type::String => Box::new(TagStr::new(prepare_str(plan))),
-        Type::I64 => Box::new(TagInt::new(prepare_int(plan))),
-        Type::Boolean => Box::new(TagBool::new(prepare_bool(plan))),
-        Type::Scalar => Box::new(TagConst::new(get_const(plan))),
-        x => panic!("prepare for {:?} not implemented", x),
-    }
-}
-
-pub fn prepare_str<'a>(plan: QueryPlan<'a>) -> Box<VecOperator<Output=Vec<&'a str>> + 'a> {
+pub fn prepare(plan: QueryPlan) -> BoxedOperator {
     match plan {
-        QueryPlan::CollectTyped(col) => Box::new(CollectStr::new(col)),
-        x => panic!("{:?} not implemented for type string", x),
-    }
-}
-
-pub fn prepare_int<'a>(plan: QueryPlan<'a>) -> Box<VecOperator<Output=Vec<i64>> + 'a> {
-    match plan {
-        QueryPlan::CollectTyped(col) => Box::new(CollectInt::new(col)),
-        x => panic!("{:?} not implemented for type integer", x),
+        QueryPlan::CollectDecoded(col) => Box::new(CollectDecoded::new(col)),
+        QueryPlan::Constant(ref c) => Box::new(Constant::new(c.clone())),
+        QueryPlan::LessThanVSi64(lhs, rhs) => {
+            if let RawVal::Int(i) = get_const(*rhs) {
+                Box::new(LessThanVi64S::new(prepare(*lhs), i))
+            } else {
+                panic!("Wrong type")
+            }
+        }
     }
 }
 
@@ -44,20 +34,3 @@ pub fn get_const<'a>(plan: QueryPlan<'a>) -> RawVal {
     }
 }
 
-pub fn prepare_bool<'a>(plan: QueryPlan<'a>) -> BoxedOperator<BitVec> {
-    match plan {
-        QueryPlan::LessThan(lhs, rhs, lt, rt) => {
-            match (lt, rt) {
-                (Type::I64, Type::Scalar) => {
-                    if let RawVal::Int(i) = get_const(*rhs) {
-                        Box::new(LessThanVi64S::new(prepare_int(*lhs), i))
-                    } else {
-                        panic!("Wrong type")
-                    }
-                }
-                _ => panic!(" not implemented"),
-            }
-        }
-        x => panic!("{:?} not implemented for type bool", x),
-    }
-}
