@@ -5,9 +5,12 @@ use std::collections::HashSet;
 use value::Val;
 use mem_store::ingest::RawVal;
 use regex::Regex;
+use engine::query_plan::*;
+use engine::types::*;
+use mem_store::column::Column;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     ColName(Rc<String>),
     ColIndex(usize),
@@ -40,18 +43,18 @@ impl Expr {
         match self {
             &Func(ref functype, ref exp1, ref exp2) => {
                 match (functype, exp1.eval(record), exp2.eval(record)) {
-                    (&Equals,   v1,            v2)            => Bool(v1 == v2),
-                    (&Negate,   Integer(i), _)                => Integer(-i),
-                    (_,         Null,          _)             => Null,
-                    (_,         _,             Null)          => Null,
-                    (&And,      Bool(b1),      Bool(b2))      => Bool(b1 && b2),
-                    (&Or,       Bool(b1),      Bool(b2))      => Bool(b1 || b2),
-                    (&LT,       Integer(i1),   Integer(i2))   => Bool(i1 < i2),
-                    (&GT,       Integer(i1),   Integer(i2))   => Bool(i1 > i2),
-                    (&Add,      Integer(i1),   Integer(i2))   => Integer(i1 + i2),
-                    (&Subtract, Integer(i1),   Integer(i2))   => Integer(i1 - i2),
-                    (&Multiply, Integer(i1),   Integer(i2))   => Integer(i1 * i2),
-                    (&Divide,   Integer(i1),   Integer(i2))   => if i2 == 0 { Null } else { Integer(i1 / i2) },
+                    (&Equals, v1, v2) => Bool(v1 == v2),
+                    (&Negate, Integer(i), _) => Integer(-i),
+                    (_, Null, _) => Null,
+                    (_, _, Null) => Null,
+                    (&And, Bool(b1), Bool(b2)) => Bool(b1 && b2),
+                    (&Or, Bool(b1), Bool(b2)) => Bool(b1 || b2),
+                    (&LT, Integer(i1), Integer(i2)) => Bool(i1 < i2),
+                    (&GT, Integer(i1), Integer(i2)) => Bool(i1 > i2),
+                    (&Add, Integer(i1), Integer(i2)) => Integer(i1 + i2),
+                    (&Subtract, Integer(i1), Integer(i2)) => Integer(i1 - i2),
+                    (&Multiply, Integer(i1), Integer(i2)) => Integer(i1 * i2),
+                    (&Divide, Integer(i1), Integer(i2)) => if i2 == 0 { Null } else { Integer(i1 / i2) },
                     (functype, v1, v2) => panic!("Type error: function {:?} not defined for values {:?} and {:?}", functype, v1, v2),
                 }
             }
@@ -89,6 +92,23 @@ impl Expr {
         }
     }
 
+    pub fn create_query_plan<'a>(&self, columns: &HashMap<String, &'a Column>) -> (QueryPlan<'a>, Type) {
+        use self::Expr::*;
+        match self {
+            &ColName(ref name) => match columns.get(name.as_ref()) {
+                Some(ref c) => (QueryPlan::CollectTyped(c), c.decoded_type()),
+                None => panic!("Not implemented")//VecOperator::Constant(VecValue::Constant(RawVal::Null)),
+            }
+            &Func(LT, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = lhs.create_query_plan(columns);
+                let (plan_rhs, type_rhs) = rhs.create_query_plan(columns);
+                (QueryPlan::LessThan(Box::new(plan_lhs), Box::new(plan_rhs), type_lhs, type_rhs), Type::Boolean)
+            }
+            &Const(ref v) => (QueryPlan::Constant(v.clone()), Type::Scalar),
+            x => panic!("{:?}.compile_vec() not implemented", x),
+        }
+    }
+
     fn compile_regex(&self) -> Regex {
         match self {
             &Const(RawVal::Str(ref string)) => {
@@ -123,3 +143,4 @@ fn raw_to_val(raw: &RawVal) -> Val {
         &RawVal::Null => Val::Null,
     }
 }
+

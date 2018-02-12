@@ -1,8 +1,11 @@
+use bit_vec::BitVec;
 use value::Val;
 use mem_store::column::{ColumnData, ColIter};
 use heapsize::HeapSizeOf;
 use std::{u8, u16, u32, i64};
 use num::traits::NumCast;
+use engine::types::Type;
+
 
 pub struct IntegerColumn {
     values: Vec<i64>,
@@ -28,11 +31,39 @@ impl ColumnData for IntegerColumn {
         let iter = self.values.iter().map(|&i| Val::Integer(i));
         ColIter::new(iter)
     }
+
+    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
+        for i in offset..(offset + count) {
+            buffer.push(Val::from(self.values[i + offset]));
+        }
+    }
+
+    fn collect_int<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<i64>) {
+        match filter {
+            &None => {
+                for i in offset..(offset + count) {
+                    buffer.push(self.values[i + offset]);
+                }
+            }
+            &Some(ref bv) => {
+                for (i, select) in bv.iter().enumerate() {
+                    if select {
+                        buffer.push(self.values[i + offset]);
+                    }
+                }
+            }
+        }
+    }
+
+    fn decoded_type(&self) -> Type { Type::I64 }
 }
 
 trait IntLike: NumCast + HeapSizeOf {}
+
 impl IntLike for u8 {}
+
 impl IntLike for u16 {}
+
 impl IntLike for u32 {}
 
 struct IntegerOffsetColumn<T: IntLike> {
@@ -59,6 +90,31 @@ impl<T: IntLike + Send + Sync> ColumnData for IntegerOffsetColumn<T> {
         let iter = self.values.iter().map(move |i| Val::Integer(i.to_i64().unwrap() + offset));
         ColIter::new(iter)
     }
+
+    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
+        for i in offset..(offset + count) {
+            buffer.push(Val::from(self.values[i + offset].to_i64().unwrap() + self.offset));
+        }
+    }
+
+    fn collect_int<'a>(&'a self, count: usize, offset: usize, filter: &Option<BitVec>, buffer: &mut Vec<i64>) {
+        match filter {
+            &None => {
+                for i in offset..(offset + count) {
+                    buffer.push(self.values[i + offset].to_i64().unwrap() + self.offset);
+                }
+            }
+            &Some(ref bv) => {
+                for (i, select) in bv.iter().enumerate() {
+                    if select {
+                        buffer.push(self.values[i + offset].to_i64().unwrap() + self.offset);
+                    }
+                }
+            }
+        }
+    }
+
+    fn decoded_type(&self) -> Type { Type::I64 }
 }
 
 impl HeapSizeOf for IntegerColumn {

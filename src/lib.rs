@@ -9,12 +9,14 @@ extern crate regex;
 extern crate time;
 extern crate seahash;
 extern crate serde;
+extern crate bit_vec;
 // extern crate tempdir;
 
 pub mod parser;
 pub mod mem_store;
 pub mod query_engine;
 
+mod engine;
 mod util;
 mod value;
 mod expression;
@@ -129,6 +131,7 @@ impl <T: DB + Clone> Ruba<T> {
 pub struct Table {
     name: String,
     batch_size: usize,
+    #[allow(dead_code)]
     metadata: RwLock<Metadata>,
     batches: RwLock<Vec<Batch>>,
     buffer: Mutex<Buffer>,
@@ -377,7 +380,7 @@ pub struct TableStats {
 }
 
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -450,4 +453,4 @@ mod tests {
         let result = ruba.run_query("select * from _meta_tables;").unwrap();
         assert_eq!(result.stats.rows_scanned, 2);
     }
-}
+}*/

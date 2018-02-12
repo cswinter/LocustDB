@@ -50,7 +50,7 @@ named!(simple_query<&[u8], Query>,
         limit: opt!(limit_clause) >>
         opt!(multispace) >>
         opt!(char!(';')) >>
-        (construct_query(select, table,Expr::Func(FuncType::Equals, Box::new(Expr::Const(RawVal::Int(0))), Box::new(Expr::Const(RawVal::Int(0)))), order_by, limit))
+        (construct_query(select, table, Expr::Const(RawVal::Int(1)), order_by, limit))
     )
 );
 

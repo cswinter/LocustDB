@@ -2,13 +2,16 @@ use mem_store::column::*;
 use mem_store::ingest::RawVal;
 use value::Val;
 use heapsize::HeapSizeOf;
+use engine::types::Type;
 
 
+#[allow(dead_code)]
 struct MixedColumn {
     values: Vec<RawVal>,
 }
 
 impl MixedColumn {
+    #[allow(dead_code)]
     fn new(mut values: Vec<RawVal>) -> MixedColumn {
         values.shrink_to_fit();
         MixedColumn { values: values }
@@ -20,6 +23,14 @@ impl ColumnData for MixedColumn {
         let iter = self.values.iter().map(|val| val.to_val());
         ColIter::new(iter)
     }
+
+    fn dump_untyped<'a>(&'a self, count: usize, offset: usize, buffer: &mut Vec<Val<'a>>) {
+        for i in offset..(offset + count) {
+            buffer.push(self.values[i].to_val());
+        }
+    }
+
+    fn decoded_type(&self) -> Type { Type::Val }
 }
 
 impl RawVal {
