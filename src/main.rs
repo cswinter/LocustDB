@@ -39,11 +39,11 @@ fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {
     for batch in batches {
         for col in &batch.cols {
             let heapsize = col.heap_size_of_children();
-            if let Some(size) = column_sizes.get_mut(col.get_name()) {
+            if let Some(size) = column_sizes.get_mut(col.name()) {
                 *size += heapsize;
             }
-            if !column_sizes.contains_key(col.get_name()) {
-                column_sizes.insert(col.get_name().to_string(), heapsize);
+            if !column_sizes.contains_key(col.name()) {
+                column_sizes.insert(col.name().to_string(), heapsize);
             }
         }
     }

@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Type {
     String,
     I64,
@@ -6,4 +6,10 @@ pub enum Type {
     Null,
     Boolean,
     Scalar,
+
+    U8,
+    U16,
+
+    RefU8,
+    RefU16,
 }

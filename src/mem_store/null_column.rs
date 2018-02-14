@@ -1,7 +1,5 @@
 use bit_vec::BitVec;
 use mem_store::column::*;
-use value::Val;
-use std::iter;
 use heapsize::HeapSizeOf;
 use engine::types::Type;
 use engine::typed_vec::TypedVec;
@@ -18,12 +16,11 @@ impl NullColumn {
 }
 
 impl ColumnData for NullColumn {
-    fn iter<'a>(&'a self) -> ColIter<'a> {
-        let iter = iter::repeat(Val::Null).take(self.length);
-        ColIter::new(iter)
+    fn collect_decoded(&self) -> TypedVec {
+        TypedVec::Empty
     }
 
-    fn collect_decoded<'a>(&'a self, _: &Option<BitVec>) -> TypedVec {
+    fn filter_decode(&self, _: &BitVec) -> TypedVec {
         TypedVec::Empty
     }
 

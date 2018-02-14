@@ -37,7 +37,7 @@ fn bench_2mb_select_name(b: &mut test::Bencher) {
     let batches = ingest_file("test_data/small.csv", 4000);
     let query = parse_query("select first_name from test limit 1;".as_bytes()).to_result().unwrap();
     b.iter(|| {
-        let mut compiled_query = query.clone().compile(&batches);
+        let mut compiled_query = query.compile(&batches);
         test::black_box(compiled_query.run());
     });
 }
@@ -47,7 +47,7 @@ fn bench_2mb_select_name_num(b: &mut test::Bencher) {
     let batches = ingest_file("test_data/small.csv", 4000);
     let query = parse_query("select first_name, num from test limit 1;".as_bytes()).to_result().unwrap();
     b.iter(|| {
-        let mut compiled_query = query.clone().compile(&batches);
+        let mut compiled_query = query.compile(&batches);
         test::black_box(compiled_query.run());
     });
 }
@@ -55,9 +55,9 @@ fn bench_2mb_select_name_num(b: &mut test::Bencher) {
 #[bench]
 fn bench_2mb_filter_select(b: &mut test::Bencher) {
     let batches = ingest_file("test_data/small.csv", 4000);
-    let query = parse_query("select first_name from test where num < 2 limit 1;".as_bytes()).to_result().unwrap();
+    let query = parse_query("select first_name from test where num < 2 limit 2;".as_bytes()).to_result().unwrap();
     b.iter(|| {
-        let mut compiled_query = query.clone().compile(&batches);
+        let mut compiled_query = query.compile(&batches);
         test::black_box(compiled_query.run());
     });
 }
@@ -67,7 +67,7 @@ fn bench_2mb_count_all(b: &mut test::Bencher) {
     let batches = ingest_file("test_data/small.csv", 4000);
     let query = parse_query("select count(first_name) from test;".as_bytes()).to_result().unwrap();
     b.iter(|| {
-        let mut compiled_query = query.clone().compile(&batches);
+        let mut compiled_query = query.compile(&batches);
         test::black_box(compiled_query.run());
     });
 }
@@ -77,7 +77,7 @@ fn bench_2mb_group_count(b: &mut test::Bencher) {
     let batches = ingest_file("test_data/small.csv", 4000);
     let query = parse_query("select num, count(1) from test;".as_bytes()).to_result().unwrap();
     b.iter(|| {
-        let mut compiled_query = query.clone().compile(&batches);
+        let mut compiled_query = query.compile(&batches);
         test::black_box(compiled_query.run());
     });
 }
@@ -87,7 +87,7 @@ fn bench_2mb_group_filter_count(b: &mut test::Bencher) {
     let batches = ingest_file("test_data/small.csv", 4000);
     let query = parse_query("select num, count(1) from test where num > 3;".as_bytes()).to_result().unwrap();
     b.iter(|| {
-        let mut compiled_query = query.clone().compile(&batches);
+        let mut compiled_query = query.compile(&batches);
         test::black_box(compiled_query.run());
     });
 }

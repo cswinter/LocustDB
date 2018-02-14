@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use bit_vec::BitVec;
 use value::Val;
 use mem_store::ingest::RawVal;
 use regex::Regex;
@@ -92,18 +93,30 @@ impl Expr {
         }
     }
 
-    pub fn create_query_plan<'a>(&self, columns: &HashMap<String, &'a Column>) -> (QueryPlan<'a>, Type) {
+    pub fn create_query_plan<'a>(&self, columns: &HashMap<String, &'a Column>, filter: Option<Rc<BitVec>>) -> (QueryPlan<'a>, Type) {
         use self::Expr::*;
         match self {
             &ColName(ref name) => match columns.get(name.as_ref()) {
-                Some(ref c) => (QueryPlan::CollectDecoded(c), c.decoded_type()),
+                Some(ref c) => match (c.data().to_codec(), filter) {
+                    (Some(c), Some(f)) => (QueryPlan::FilterEncoded(c, f), c.encoded_type()),
+                    (Some(c), None) => (QueryPlan::GetEncoded(c), c.ref_encoded_type()),
+                    (None, Some(f)) => (QueryPlan::FilterDecode(c.data(), f), c.data().decoded_type()),
+                    (None, None) => (QueryPlan::Decode(c.data()), c.data().decoded_type()),
+                }
                 None => panic!("Not implemented")//VecOperator::Constant(VecValue::Constant(RawVal::Null)),
             }
             &Func(LT, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = lhs.create_query_plan(columns);
-                let (plan_rhs, type_rhs) = rhs.create_query_plan(columns);
-                // TODO(clemens): typecheck
-                (QueryPlan::LessThanVSi64(Box::new(plan_lhs), Box::new(plan_rhs)), Type::Boolean)
+                let (plan_lhs, type_lhs) = lhs.create_query_plan(columns, filter.clone());
+                let (plan_rhs, type_rhs) = rhs.create_query_plan(columns, filter);
+                match (type_lhs, type_rhs) {
+                    (Type::I64, Type::Scalar) => {
+                        (QueryPlan::LessThanVSi64(Box::new(plan_lhs), Box::new(plan_rhs)), Type::Boolean)
+                    }
+                    (Type::RefU8, Type::Scalar) => {
+                        (QueryPlan::LessThanVSu8(Box::new(plan_lhs), Box::new(plan_rhs)), Type::Boolean)
+                    }
+                    _ => panic!("type error: {:?} < {:?}", type_lhs, type_rhs)
+                }
             }
             &Const(ref v) => (QueryPlan::Constant(v.clone()), Type::Scalar),
             x => panic!("{:?}.compile_vec() not implemented", x),

@@ -32,18 +32,10 @@ pub struct Query {
 }
 
 pub struct CompiledQuery<'a> {
-    subqueries: Vec<CompiledSingleBatchQuery<'a>>,
+    query: &'a Query,
+    batches: Vec<HashMap<String, &'a Column>>,
     output_colnames: Vec<Rc<String>>,
     aggregate: Vec<Aggregator>,
-    compiled_order_by: Option<Expr>,
-    limit: LimitClause,
-}
-
-struct CompiledSingleBatchQuery<'a> {
-    select: Vec<BoxedOperator<'a>>,
-    filter: BoxedOperator<'a>,
-    // .aggregate: Vec<(Aggregator, Expr)>,
-    // coliter: Vec<ColIter<'a>>,
 }
 
 pub struct QueryResult {
@@ -94,22 +86,18 @@ impl Add for QueryStats {
 impl<'a> CompiledQuery<'a> {
     pub fn run(&mut self) -> QueryResult {
         let colnames = self.output_colnames.clone();
-        let max_limit = self.limit.offset + self.limit.limit;
-        let limit = self.limit.limit;
-        let offset = self.limit.offset;
+        let limit = self.query.limit.limit;
+        let offset = self.query.limit.offset;
+        let max_limit = offset + limit;
         let (result_cols, stats) = if self.aggregate.len() == 0 {
-            let combined_results = SelectSubqueryResult {
-                cols: Vec::new(),
-                stats: QueryStats::new(0, 0),
-            };
             let mut columns = Vec::new();
-            for single_batch_query in &mut self.subqueries {
-                columns.push(single_batch_query.run_select_query());
-                if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
+            for batch in &self.batches {
+                columns.push(self.query.run(batch));
+                /*if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
                     break;
-                }
+                }*/
             }
-            (columns, combined_results.stats)
+            (columns, QueryStats::new(0, 0))
         } else {
             panic!("aggregates not implemented");
             /*let mut combined_results = AggregateSubqueryResult {
@@ -170,58 +158,15 @@ impl<'a> CompiledQuery<'a> {
     }
 }
 
-impl<'a> CompiledSingleBatchQuery<'a> {
-    fn run_select_query(&mut self) -> Vec<TypedVec> {
-        let filter = match self.filter.execute(&None) {
-            TypedVec::Boolean(b) => Some(b),//(b.iter().filter(|x| *x).count(), Some(b)),
-            _ => None,
-        };
-        // TODO(clemens): chunk size, stats
-        // let start_time_ns = precise_time_ns();
-        self.select.iter_mut().map(|op| op.execute(&filter)).collect()
-    }
-
-    /*fn run_aggregation_query(&mut self) -> AggregateSubqueryResult {
-        let mut groups = HashMap::<Vec<Val>, Vec<Val>, BuildSeaHasher>::default();
-        let mut record = Vec::with_capacity(self.coliter.len());
-        let start_time_ns = precise_time_ns();
-        let mut rows_touched = 0;
-        'outer: loop {
-            record.clear();
-            for i in 0..self.coliter.len() {
-                match self.coliter[i].next() {
-                    Some(item) => record.push(item),
-                    None => break 'outer,
-                }
-            }
-            if self.filter.eval(&record) == Val::Bool(true) {
-                let group: Vec<Val> =
-                    self.select.iter().map(|expr| expr.eval(&record)).collect();
-                let accumulator = groups.entry(group)
-                    .or_insert(self.aggregate.iter().map(|x| x.0.zero()).collect());
-                for (i, &(ref agg_func, ref expr)) in self.aggregate.iter().enumerate() {
-                    accumulator[i] = agg_func.reduce(&accumulator[i], &expr.eval(&record));
-                }
-            }
-            if self.coliter.len() == 0 {
-                break;
-            }
-            rows_touched += 1;
-        }
-        AggregateSubqueryResult {
-            groups: groups,
-            stats: QueryStats::new(precise_time_ns() - start_time_ns, rows_touched),
-        }
-    }*/
-}
 
 impl Query {
-    pub fn compile<'a>(&mut self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
-        if self.is_select_star() {
+    pub fn compile<'a>(&'a self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
+        // TODO(clemens): Reenable
+        /*if self.is_select_star() {
             self.select = find_all_cols(source).into_iter().map(Expr::ColName).collect();
-        }
+        }*/
 
-        let subqueries = source.iter().map(|batch| self.compile_for_batch(batch)).collect();
+        let batches = source.iter().map(|batch| self.prepare_batch(batch)).collect();
         let limit = self.limit.clone();
 
         // Compile the order_by
@@ -238,42 +183,41 @@ impl Query {
         };
 
         CompiledQuery {
-            subqueries: subqueries,
+            query: &self,
+            batches: batches,
             output_colnames: output_colnames,
             aggregate: self.aggregate.iter().map(|&(aggregate, _)| aggregate).collect(),
-            compiled_order_by: compiled_order_by,
-            limit: limit,
         }
     }
 
-    fn compile_for_batch<'a>(&self, source: &'a Batch) -> CompiledSingleBatchQuery<'a> {
+    fn prepare_batch<'a>(&self, source: &'a Batch) -> HashMap<String, &'a Column> {
         let referenced_cols = self.find_referenced_cols();
-        let efficient_source: Vec<&Column> = source.cols
-            .iter()
-            .filter(|col| referenced_cols.contains(&col.get_name().to_string()))
-            .collect();
-        // let coliter = efficient_source.iter().map(|col| col.iter()).collect();
-        let column_iter = create_coliter_map(&efficient_source);
-        let compiled_selects = self.select.iter().map(|expr| {
-            let (plan, _) = expr.create_query_plan(&column_iter);
-            query_plan::prepare(plan)
-        }).collect();
+        source.cols.iter()
+            .filter(|col| referenced_cols.contains(&col.name().to_string()))
+            .map(|col| (col.name().to_string(), col))
+            .collect()
+    }
 
-        let (filter_plan, _) = self.filter.create_query_plan(&column_iter);
+    fn run<'a>(&self, columns: &HashMap<String, &'a Column>) -> Vec<TypedVec<'a>> {
+        let (filter_plan, _) = self.filter.create_query_plan(columns, None);
+        //println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
-        let compiled_filter = query_plan::prepare(filter_plan);
+        let mut compiled_filter = query_plan::prepare(filter_plan);
+        let filter = match compiled_filter.execute() {
+            TypedVec::Boolean(b) => Some(Rc::new(b)), //(b.iter().filter(|x| *x).count(), Some(b)),
+            _ => None,
+        };
 
-        /*let compiled_aggregate = self.aggregate
-            .iter()
-            .map(|&(agg, ref expr)| (agg, expr.compile(&column_indices)))
-            .collect();*/
+        // TODO(clemens): stats
+        // let start_time_ns = precise_time_ns();
 
-        CompiledSingleBatchQuery {
-            select: compiled_selects,
-            filter: compiled_filter,
-            // aggregate: compiled_aggregate,
-            // coliter: coliter,
+        let mut result = Vec::new();
+        for expr in &self.select {
+            let (plan, _) = expr.create_query_plan(columns, filter.clone());
+            //println!("select: {:?}", plan);
+            result.push(query_plan::prepare(plan).execute())
         }
+        result
     }
 
     fn is_select_star(&self) -> bool {
@@ -329,20 +273,13 @@ fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
     let mut cols = HashSet::new();
     for batch in source {
         for column in &batch.cols {
-            cols.insert(column.get_name().to_string());
+            cols.insert(column.name().to_string());
         }
     }
 
     cols.into_iter().map(Rc::new).collect()
 }
 
-fn create_coliter_map<'a>(source: &Vec<&'a Column>) -> HashMap<String, &'a Column> {
-    let mut mem_store = HashMap::new();
-    for col in source.iter() {
-        mem_store.insert(col.get_name().to_string(), *col);
-    }
-    mem_store
-}
 
 pub fn print_query_result(results: &QueryResult) {
     let rt = results.stats.runtime_ns;

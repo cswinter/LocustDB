@@ -7,13 +7,12 @@ use engine::types::Type;
 use engine::typed_vec::TypedVec;
 
 
-#[allow(dead_code)]
+/*
 struct MixedColumn {
     values: Vec<RawVal>,
 }
 
 impl MixedColumn {
-    #[allow(dead_code)]
     fn new(mut values: Vec<RawVal>) -> MixedColumn {
         values.shrink_to_fit();
         MixedColumn { values: values }
@@ -21,11 +20,6 @@ impl MixedColumn {
 }
 
 impl ColumnData for MixedColumn {
-    fn iter(&self) -> ColIter {
-        let iter = self.values.iter().map(|val| val.to_val());
-        ColIter::new(iter)
-    }
-
     fn collect_decoded<'a>(&'a self, filter: &Option<BitVec>) -> TypedVec {
         let mut result = Vec::with_capacity(self.values.len());
         match filter {
@@ -48,6 +42,12 @@ impl ColumnData for MixedColumn {
     fn decoded_type(&self) -> Type { Type::Val }
 }
 
+impl HeapSizeOf for MixedColumn {
+    fn heap_size_of_children(&self) -> usize {
+        self.values.heap_size_of_children()
+    }
+}
+*/
 impl RawVal {
     pub fn to_val<'a>(&'a self) -> Val<'a> {
         match self {
@@ -67,8 +67,4 @@ impl HeapSizeOf for RawVal {
     }
 }
 
-impl HeapSizeOf for MixedColumn {
-    fn heap_size_of_children(&self) -> usize {
-        self.values.heap_size_of_children()
-    }
-}
+

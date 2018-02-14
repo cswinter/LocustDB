@@ -2,6 +2,7 @@ pub mod column;
 pub mod csv_loader;
 pub mod batch;
 pub mod ingest;
+pub mod point_codec;
 mod integers;
 mod strings;
 mod null_column;
