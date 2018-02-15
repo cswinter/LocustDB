@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use seahash::SeaHasher;
 use std::hash::BuildHasherDefault;
-// use time::precise_time_ns;
+use time::precise_time_ns;
 use std::ops::Add;
 use std::cmp;
 
@@ -36,6 +36,7 @@ pub struct CompiledQuery<'a> {
     batches: Vec<HashMap<String, &'a Column>>,
     output_colnames: Vec<Rc<String>>,
     aggregate: Vec<Aggregator>,
+    stats: QueryStats,
 }
 
 pub struct QueryResult {
@@ -49,55 +50,72 @@ struct SelectSubqueryResult<'a> {
     stats: QueryStats,
 }
 
-#[derive(Debug)]
+
+const ENABLE_DETAILED_STATS: bool = false;
+
+#[derive(Debug, Clone)]
 pub struct QueryStats {
     pub runtime_ns: u64,
     pub rows_scanned: u64,
+    start_time: u64,
+    breakdown: HashMap<&'static str, u64>,
+}
+
+impl QueryStats {
+    pub fn new() -> QueryStats {
+        QueryStats {
+            runtime_ns: 0,
+            rows_scanned: 0,
+            start_time: 0,
+            breakdown: HashMap::new(),
+        }
+    }
+
+    pub fn start(&mut self) {
+        if ENABLE_DETAILED_STATS {
+            self.start_time = precise_time_ns();
+        }
+    }
+
+    pub fn record(&mut self, label: &'static str) {
+        if ENABLE_DETAILED_STATS {
+            let elapsed = precise_time_ns() - self.start_time;
+            *self.breakdown.entry(label).or_insert(0) += elapsed;
+        }
+    }
+
+    pub fn print(&self) {
+        println!("Total runtime: {}ns", self.runtime_ns);
+        let mut total = 0_u64;
+        let mut sorted_breakdown = self.breakdown.iter().collect::<Vec<_>>();
+        sorted_breakdown.sort_by_key(|&(l, _)| l);
+        for (label, duration) in sorted_breakdown {
+            println!("  {}: {}ns ({}%)", label, duration, duration * 100 / self.runtime_ns);
+            total += *duration;
+        }
+        println!("  Unaccounted: {} ({}%)", self.runtime_ns - total, (self.runtime_ns - total) * 100 / self.runtime_ns)
+    }
 }
 
 type BuildSeaHasher = BuildHasherDefault<SeaHasher>;
 
-impl QueryStats {
-    fn new(runtime_ns: u64, rows_scanned: u64) -> QueryStats {
-        QueryStats {
-            runtime_ns: runtime_ns,
-            rows_scanned: rows_scanned,
-        }
-    }
-
-    fn combine(&self, other: &QueryStats) -> QueryStats {
-        QueryStats::new(self.runtime_ns + other.runtime_ns,
-                        self.rows_scanned + other.rows_scanned)
-    }
-}
-
-impl Add for QueryStats {
-    type Output = QueryStats;
-
-    fn add(self, other: QueryStats) -> QueryStats {
-        QueryStats {
-            runtime_ns: self.runtime_ns + other.runtime_ns,
-            rows_scanned: self.rows_scanned + other.rows_scanned,
-        }
-    }
-}
-
 
 impl<'a> CompiledQuery<'a> {
     pub fn run(&mut self) -> QueryResult {
+        let start_time = precise_time_ns();
         let colnames = self.output_colnames.clone();
         let limit = self.query.limit.limit;
         let offset = self.query.limit.offset;
         let max_limit = offset + limit;
-        let (result_cols, stats) = if self.aggregate.len() == 0 {
+        let result_cols = if self.aggregate.len() == 0 {
             let mut columns = Vec::new();
             for batch in &self.batches {
-                columns.push(self.query.run(batch));
+                columns.push(self.query.run(batch, &mut self.stats));
                 /*if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
                     break;
                 }*/
             }
-            (columns, QueryStats::new(0, 0))
+            columns
         } else {
             panic!("aggregates not implemented");
             /*let mut combined_results = AggregateSubqueryResult {
@@ -131,6 +149,7 @@ impl<'a> CompiledQuery<'a> {
             result_rows.sort_by_key(|record| order_by_expr.eval(record));
         }*/
 
+        self.stats.start();
         let mut result_rows = Vec::new();
         let mut o = offset as usize;
         for batch in result_cols.iter() {
@@ -149,11 +168,13 @@ impl<'a> CompiledQuery<'a> {
                 }
             }
         }
+        self.stats.record(&"limit_collect");
+        self.stats.runtime_ns += precise_time_ns() - start_time;
 
         QueryResult {
             colnames: colnames,
             rows: result_rows,
-            stats: stats,
+            stats: self.stats.clone(),
         }
     }
 }
@@ -161,12 +182,17 @@ impl<'a> CompiledQuery<'a> {
 
 impl Query {
     pub fn compile<'a>(&'a self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
+        let mut stats = QueryStats::new();
+        stats.start();
+        let start_time = precise_time_ns();
+
         // TODO(clemens): Reenable
         /*if self.is_select_star() {
             self.select = find_all_cols(source).into_iter().map(Expr::ColName).collect();
         }*/
 
-        let batches = source.iter().map(|batch| self.prepare_batch(batch)).collect();
+        let referenced_cols = self.find_referenced_cols();
+        let batches = source.iter().map(|batch| self.prepare_batch(&referenced_cols, batch)).collect();
         let limit = self.limit.clone();
 
         // Compile the order_by
@@ -177,33 +203,36 @@ impl Query {
         }
 
         // Insert a placeholder sorter if ordering isn't specified
-        let compiled_order_by = match self.order_by {
-            Some(ref order_by) => Some(order_by.compile(&output_colmap)),
-            None => None,
-        };
+        let mut compiled_order_by = self.order_by.as_ref()
+            .map(|order_by| order_by.compile(&output_colmap));
+        stats.record(&"prepare");
+        stats.runtime_ns = precise_time_ns() - start_time;
 
         CompiledQuery {
             query: &self,
             batches: batches,
             output_colnames: output_colnames,
             aggregate: self.aggregate.iter().map(|&(aggregate, _)| aggregate).collect(),
+            stats: stats,
         }
     }
 
-    fn prepare_batch<'a>(&self, source: &'a Batch) -> HashMap<String, &'a Column> {
-        let referenced_cols = self.find_referenced_cols();
+    fn prepare_batch<'a>(&self, referenced_cols: &HashSet<Rc<String>>, source: &'a Batch) -> HashMap<String, &'a Column> {
         source.cols.iter()
             .filter(|col| referenced_cols.contains(&col.name().to_string()))
             .map(|col| (col.name().to_string(), col))
             .collect()
     }
 
-    fn run<'a>(&self, columns: &HashMap<String, &'a Column>) -> Vec<TypedVec<'a>> {
+    fn run<'a>(&self, columns: &HashMap<String, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
+        stats.start();
         let (filter_plan, _) = self.filter.create_query_plan(columns, None);
         //println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
-        let filter = match compiled_filter.execute() {
+        stats.record(&"compile_filter");
+
+        let filter = match compiled_filter.execute(stats) {
             TypedVec::Boolean(b) => Some(Rc::new(b)), //(b.iter().filter(|x| *x).count(), Some(b)),
             _ => None,
         };
@@ -213,9 +242,12 @@ impl Query {
 
         let mut result = Vec::new();
         for expr in &self.select {
+            stats.start();
             let (plan, _) = expr.create_query_plan(columns, filter.clone());
             //println!("select: {:?}", plan);
-            result.push(query_plan::prepare(plan).execute())
+            let mut compiled = query_plan::prepare(plan);
+            stats.record(&"compile_select");
+            result.push(compiled.execute(stats));
         }
         result
     }
@@ -297,6 +329,7 @@ pub fn print_query_result(results: &QueryResult) {
              results.stats.rows_scanned,
              fmt_time,
              rt.checked_div(results.stats.rows_scanned).unwrap_or(0));
+    results.stats.print();
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 

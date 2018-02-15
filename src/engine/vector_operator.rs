@@ -3,23 +3,29 @@ use std::rc::Rc;
 use mem_store::ingest::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 use engine::typed_vec::TypedVec;
+use query_engine::QueryStats;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
 pub trait VecOperator<'a> {
-    fn execute(&mut self) -> TypedVec<'a>;
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a>;
 }
 
 
-pub struct Decode<'a> { col: &'a ColumnData}
+pub struct Decode<'a> { col: &'a ColumnData }
 
 impl<'a> Decode<'a> {
-    pub fn new(col: &'a ColumnData) ->Decode { Decode{ col: col } }
+    pub fn new(col: &'a ColumnData) -> Decode { Decode { col: col } }
 }
 
 impl<'a> VecOperator<'a> for Decode<'a> {
-    fn execute(&mut self) -> TypedVec<'a> { self.col.collect_decoded() }
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        stats.start();
+        let result = self.col.collect_decoded();
+        stats.record(&"decode");
+        result
+    }
 }
 
 pub struct FilterDecode<'a> {
@@ -29,16 +35,19 @@ pub struct FilterDecode<'a> {
 
 impl<'a> FilterDecode<'a> {
     pub fn new(col: &'a ColumnData, filter: Rc<BitVec>) -> FilterDecode<'a> {
-        FilterDecode{
-            col: col ,
+        FilterDecode {
+            col: col,
             filter: filter,
         }
     }
 }
 
 impl<'a> VecOperator<'a> for FilterDecode<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        self.col.filter_decode(self.filter.as_ref())
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        stats.start();
+        let result = self.col.filter_decode(self.filter.as_ref());
+        stats.record(&"filter_decode");
+        result
     }
 }
 
@@ -50,7 +59,12 @@ impl<'a> GetEncoded<'a> {
 }
 
 impl<'a> VecOperator<'a> for GetEncoded<'a> {
-    fn execute(&mut self) -> TypedVec<'a> { self.col.get_encoded() }
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        stats.start();
+        let result = self.col.get_encoded();
+        stats.record(&"get_encoded");
+        result
+    }
 }
 
 
@@ -62,15 +76,18 @@ pub struct FilterEncoded<'a> {
 impl<'a> FilterEncoded<'a> {
     pub fn new(col: &'a ColumnCodec, filter: Rc<BitVec>) -> FilterEncoded<'a> {
         FilterEncoded {
-            col: col ,
+            col: col,
             filter: filter,
         }
     }
 }
 
 impl<'a> VecOperator<'a> for FilterEncoded<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        self.col.filter_encoded(self.filter.as_ref())
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        stats.start();
+        let result = self.col.filter_encoded(self.filter.as_ref());
+        stats.record(&"filter_encoded");
+        result
     }
 }
 
@@ -84,8 +101,11 @@ impl Constant {
 }
 
 impl<'a> VecOperator<'a> for Constant {
-    fn execute(&mut self) -> TypedVec<'static> {
-        TypedVec::Constant(self.val.clone())
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'static> {
+        stats.start();
+        let result = TypedVec::Constant(self.val.clone());
+        stats.record(&"constant");
+        result
     }
 }
 
@@ -105,13 +125,15 @@ impl<'a> LessThanVSi64<'a> {
 }
 
 impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        let lhs = self.lhs.execute();
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        let lhs = self.lhs.execute(stats);
+        stats.start();
         let mut result = BitVec::with_capacity(lhs.len());
         let i = self.rhs;
         for l in lhs.cast_i64().iter() {
             result.push(*l < i);
         }
+        stats.record(&"less_than_vsi_64");
         TypedVec::Boolean(result)
     }
 }
@@ -132,13 +154,15 @@ impl<'a> LessThanVSu8<'a> {
 }
 
 impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        let lhs = self.lhs.execute();
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        let lhs = self.lhs.execute(stats);
+        stats.start();
         let mut result = BitVec::with_capacity(lhs.len());
         let i = self.rhs;
         for l in lhs.cast_ref_u8() {
             result.push(*l < i);
         }
+        stats.record(&"less_than_vs_u8");
         TypedVec::Boolean(result)
     }
 }
