@@ -70,7 +70,7 @@ impl<'a> FilterEncoded<'a> {
 
 impl<'a> VecOperator<'a> for FilterEncoded<'a> {
     fn execute(&mut self) -> TypedVec<'a> {
-        self.col.filter_decode(self.filter.as_ref())
+        self.col.filter_encoded(self.filter.as_ref())
     }
 }
 
