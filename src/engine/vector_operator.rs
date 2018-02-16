@@ -24,6 +24,7 @@ impl<'a> VecOperator<'a> for Decode<'a> {
         stats.start();
         let result = self.col.collect_decoded();
         stats.record(&"decode");
+        stats.ops += result.len();
         result
     }
 }
@@ -47,6 +48,7 @@ impl<'a> VecOperator<'a> for FilterDecode<'a> {
         stats.start();
         let result = self.col.filter_decode(self.filter.as_ref());
         stats.record(&"filter_decode");
+        stats.ops += self.filter.len();
         result
     }
 }
@@ -87,6 +89,7 @@ impl<'a> VecOperator<'a> for FilterEncoded<'a> {
         stats.start();
         let result = self.col.filter_encoded(self.filter.as_ref());
         stats.record(&"filter_encoded");
+        stats.ops += self.filter.len();
         result
     }
 }
@@ -128,12 +131,14 @@ impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         let lhs = self.lhs.execute(stats);
         stats.start();
+        let data = lhs.cast_i64();
         let mut result = BitVec::with_capacity(lhs.len());
         let i = self.rhs;
-        for l in lhs.cast_i64().iter() {
+        for l in data {
             result.push(*l < i);
         }
         stats.record(&"less_than_vsi_64");
+        stats.ops += data.len();
         TypedVec::Boolean(result)
     }
 }
@@ -157,12 +162,14 @@ impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         let lhs = self.lhs.execute(stats);
         stats.start();
-        let mut result = BitVec::with_capacity(lhs.len());
+        let data = lhs.cast_ref_u8();
+        let mut result = BitVec::with_capacity(data.len());
         let i = self.rhs;
-        for l in lhs.cast_ref_u8() {
+        for l in data {
             result.push(*l < i);
         }
         stats.record(&"less_than_vs_u8");
+        stats.ops += data.len();
         TypedVec::Boolean(result)
     }
 }

@@ -93,10 +93,10 @@ impl Expr {
         }
     }
 
-    pub fn create_query_plan<'a>(&self, columns: &HashMap<String, &'a Column>, filter: Option<Rc<BitVec>>) -> (QueryPlan<'a>, Type) {
+    pub fn create_query_plan<'a>(&self, columns: &HashMap<&'a str, &'a Column>, filter: Option<Rc<BitVec>>) -> (QueryPlan<'a>, Type) {
         use self::Expr::*;
         match self {
-            &ColName(ref name) => match columns.get(name.as_ref()) {
+            &ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(ref c) => match (c.data().to_codec(), filter) {
                     (Some(c), Some(f)) => (QueryPlan::FilterEncoded(c, f), c.encoded_type()),
                     (Some(c), None) => (QueryPlan::GetEncoded(c), c.ref_encoded_type()),
@@ -132,10 +132,10 @@ impl Expr {
         }
     }
 
-    pub fn add_colnames(&self, result: &mut HashSet<Rc<String>>) {
+    pub fn add_colnames<'a>(&'a self, result: &mut HashSet<&'a str>) {
         match self {
             &ColName(ref name) => {
-                result.insert(name.clone());
+                result.insert(name);
             }
             &Func(_, ref expr1, ref expr2) => {
                 expr1.add_colnames(result);

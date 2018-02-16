@@ -33,7 +33,7 @@ pub struct Query {
 
 pub struct CompiledQuery<'a> {
     query: &'a Query,
-    batches: Vec<HashMap<String, &'a Column>>,
+    batches: Vec<HashMap<&'a str, &'a Column>>,
     output_colnames: Vec<Rc<String>>,
     aggregate: Vec<Aggregator>,
     stats: QueryStats,
@@ -56,7 +56,7 @@ const ENABLE_DETAILED_STATS: bool = false;
 #[derive(Debug, Clone)]
 pub struct QueryStats {
     pub runtime_ns: u64,
-    pub rows_scanned: u64,
+    pub ops: usize,
     start_time: u64,
     breakdown: HashMap<&'static str, u64>,
 }
@@ -65,7 +65,7 @@ impl QueryStats {
     pub fn new() -> QueryStats {
         QueryStats {
             runtime_ns: 0,
-            rows_scanned: 0,
+            ops: 0,
             start_time: 0,
             breakdown: HashMap::new(),
         }
@@ -194,18 +194,22 @@ impl Query {
         let referenced_cols = self.find_referenced_cols();
         let batches = source.iter().map(|batch| self.prepare_batch(&referenced_cols, batch)).collect();
         let limit = self.limit.clone();
+        stats.record(&"prepare_batches");
 
+        stats.start();
         // Compile the order_by
         let output_colnames = self.result_column_names();
         let mut output_colmap = HashMap::new();
         for (i, output_colname) in output_colnames.iter().enumerate() {
             output_colmap.insert(output_colname.to_string(), i);
         }
+        stats.record(&"determine_output_colnames");
 
+        stats.start();
         // Insert a placeholder sorter if ordering isn't specified
         let mut compiled_order_by = self.order_by.as_ref()
             .map(|order_by| order_by.compile(&output_colmap));
-        stats.record(&"prepare");
+        stats.record(&"compile_order_by");
         stats.runtime_ns = precise_time_ns() - start_time;
 
         CompiledQuery {
@@ -217,14 +221,14 @@ impl Query {
         }
     }
 
-    fn prepare_batch<'a>(&self, referenced_cols: &HashSet<Rc<String>>, source: &'a Batch) -> HashMap<String, &'a Column> {
+    fn prepare_batch<'a>(&'a self, referenced_cols: &HashSet<&str>, source: &'a Batch) -> HashMap<&'a str, &'a Column> {
         source.cols.iter()
-            .filter(|col| referenced_cols.contains(&col.name().to_string()))
-            .map(|col| (col.name().to_string(), col))
+            .filter(|col| referenced_cols.contains(&col.name()))
+            .map(|col| (col.name(), col))
             .collect()
     }
 
-    fn run<'a>(&self, columns: &HashMap<String, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
+    fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
         stats.start();
         let (filter_plan, _) = self.filter.create_query_plan(columns, None);
         //println!("filter: {:?}", filter_plan);
@@ -236,9 +240,6 @@ impl Query {
             TypedVec::Boolean(b) => Some(Rc::new(b)), //(b.iter().filter(|x| *x).count(), Some(b)),
             _ => None,
         };
-
-        // TODO(clemens): stats
-        // let start_time_ns = precise_time_ns();
 
         let mut result = Vec::new();
         for expr in &self.select {
@@ -288,7 +289,7 @@ impl Query {
     }
 
 
-    fn find_referenced_cols(&self) -> HashSet<Rc<String>> {
+    fn find_referenced_cols(&self) -> HashSet<&str> {
         let mut colnames = HashSet::new();
         for expr in self.select.iter() {
             expr.add_colnames(&mut colnames);
@@ -325,11 +326,12 @@ pub fn print_query_result(results: &QueryResult) {
         format!("{}s", rt / 1_000_000_000)
     };
 
-    println!("Scanned {} rows in {} ({}ns per row)!\n",
-             results.stats.rows_scanned,
-             fmt_time,
-             rt.checked_div(results.stats.rows_scanned).unwrap_or(0));
     results.stats.print();
+    println!("Performed {} ops in {} ({}ns per op)!\n",
+             results.stats.ops,
+             fmt_time,
+             rt.checked_div(results.stats.ops as u64).unwrap_or(0));
+    println!("");
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 
