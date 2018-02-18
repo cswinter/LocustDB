@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::Hash;
 use query_engine::QueryStats;
 use engine::typed_vec::TypedVec;
 use engine::vector_operator::VecOperator;
@@ -9,19 +10,20 @@ use std::hash::BuildHasherDefault;
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 
+
 pub trait AggregationOperator<'a>: VecOperator<'a> {
     fn execute_all(&mut self, stats: &mut QueryStats) -> (TypedVec<'a>, TypedVec<'a>);
 }
 
-pub struct HTu16SummationCi64<'a, 'b> {
-    grouping: &'b [u16],
-    codec: &'a PointCodec<u16>,
+pub struct HTSummationCi64<'a, 'b, T: Number> {
+    grouping: &'b [T],
+    codec: &'a PointCodec<T>,
     constant: i64,
 }
 
-impl<'a, 'b> HTu16SummationCi64<'a, 'b> {
-    pub fn new(grouping: (&'b [u16], &'a PointCodec<u16>), constant: i64) -> HTu16SummationCi64<'a, 'b> {
-        HTu16SummationCi64 {
+impl<'a, 'b, T: Number> HTSummationCi64<'a, 'b, T> {
+    pub fn new(grouping: (&'b [T], &'a PointCodec<T>), constant: i64) -> HTSummationCi64<'a, 'b, T> {
+        HTSummationCi64 {
             grouping: grouping.0,
             codec: grouping.1,
             constant: constant,
@@ -29,7 +31,7 @@ impl<'a, 'b> HTu16SummationCi64<'a, 'b> {
     }
 }
 
-impl<'a, 'b> VecOperator<'a> for HTu16SummationCi64<'a, 'b> {
+impl<'a, 'b, T: Number> VecOperator<'a> for HTSummationCi64<'a, 'b, T> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let mut map = HashMapSea::default();
@@ -37,13 +39,14 @@ impl<'a, 'b> VecOperator<'a> for HTu16SummationCi64<'a, 'b> {
             *map.entry(i).or_insert(0) += self.constant;
         }
         let result = map.values().map(|i| *i).collect::<Vec<_>>();
-        stats.record(&"ht_u16_summation_ci61");
+        stats.record(&"ht_summation_ci64");
         stats.ops += result.len() + self.grouping.len();
         TypedVec::Integer(result)
     }
 }
 
-impl<'a, 'b> AggregationOperator<'a> for HTu16SummationCi64<'a, 'b> {
+impl<'a, 'b, T: Number> AggregationOperator<'a> for HTSummationCi64<'a, 'b, T> where
+    (Vec<T>, &'a PointCodec<T>): Into<TypedVec<'a>> {
     fn execute_all(&mut self, stats: &mut QueryStats) -> (TypedVec<'a>, TypedVec<'a>) {
         stats.start();
         let mut map = HashMapSea::default();
@@ -57,9 +60,17 @@ impl<'a, 'b> AggregationOperator<'a> for HTu16SummationCi64<'a, 'b> {
             result.push(v);
             grouping_result.push(k);
         }
-        stats.record(&"ht_u16_summation_ci61_all");
+        stats.record(&"ht_summation_ci64_all");
         stats.ops += count + self.grouping.len();
-        (TypedVec::EncodedU16(grouping_result, self.codec), TypedVec::Integer(result))
+        ((grouping_result, self.codec).into(), TypedVec::Integer(result))
     }
 }
 
+
+pub trait Number: Hash + Eq  + Copy + 'static {}
+
+impl Number for u32 {}
+
+impl Number for u16 {}
+
+impl Number for u8 {}

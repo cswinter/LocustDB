@@ -162,7 +162,7 @@ impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         let lhs = self.lhs.execute(stats);
         stats.start();
-        let data = lhs.cast_ref_u8();
+        let data = lhs.cast_ref_u8().0;
         let mut result = BitVec::with_capacity(data.len());
         let i = self.rhs;
         for l in data {

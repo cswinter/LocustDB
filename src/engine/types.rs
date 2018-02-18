@@ -9,7 +9,9 @@ pub enum Type {
 
     U8,
     U16,
+    U32,
 
     RefU8,
     RefU16,
+    RefU32,
 }

@@ -61,6 +61,15 @@ impl<'a> TypedVec<'a> {
         }
     }
 
+
+    pub fn cast_ref_u32<'b>(&'b self) -> (&'b [u32], &'a PointCodec<u32>) {
+        match self {
+            &TypedVec::BorrowedEncodedU32(data, codec) => (data, codec),
+            &TypedVec::EncodedU32(ref data, codec) => (data, codec),
+            _ => panic!("type error"),
+        }
+    }
+
     pub fn cast_ref_u16<'b>(&'b self) -> (&'b [u16], &'a PointCodec<u16>) {
         match self {
             &TypedVec::BorrowedEncodedU16(data, codec) => (data, codec),
@@ -69,12 +78,48 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn cast_ref_u8(&self) -> &[u8] {
+    pub fn cast_ref_u8<'b>(&'b self) -> (&'b [u8], &'a PointCodec<u8>) {
         match self {
-            &TypedVec::BorrowedEncodedU8(data, _) => data,
-            &TypedVec::EncodedU8(ref data, _) => data,
+            &TypedVec::BorrowedEncodedU8(data, codec) => (data, codec),
+            &TypedVec::EncodedU8(ref data, codec) => (data, codec),
             _ => panic!("type error"),
         }
     }
 }
 
+impl<'a> From<(&'a [u8], &'a PointCodec<u8>)> for TypedVec<'a> {
+    fn from(encoded: (&'a [u8], &'a PointCodec<u8>)) -> Self {
+        TypedVec::BorrowedEncodedU8(encoded.0, encoded.1)
+    }
+}
+
+impl<'a> From<(&'a [u16], &'a PointCodec<u16>)> for TypedVec<'a> {
+    fn from(encoded: (&'a [u16], &'a PointCodec<u16>)) -> Self {
+        TypedVec::BorrowedEncodedU16(encoded.0, encoded.1)
+    }
+}
+
+impl<'a> From<(&'a [u32], &'a PointCodec<u32>)> for TypedVec<'a> {
+    fn from(encoded: (&'a [u32], &'a PointCodec<u32>)) -> Self {
+        TypedVec::BorrowedEncodedU32(encoded.0, encoded.1)
+    }
+}
+
+
+impl<'a> From<(Vec<u8>, &'a PointCodec<u8>)> for TypedVec<'a> {
+    fn from(encoded: (Vec<u8>, &'a PointCodec<u8>)) -> Self {
+        TypedVec::EncodedU8(encoded.0, encoded.1)
+    }
+}
+
+impl<'a> From<(Vec<u16>, &'a PointCodec<u16>)> for TypedVec<'a> {
+    fn from(encoded: (Vec<u16>, &'a PointCodec<u16>)) -> Self {
+        TypedVec::EncodedU16(encoded.0, encoded.1)
+    }
+}
+
+impl<'a> From<(Vec<u32>, &'a PointCodec<u32>)> for TypedVec<'a> {
+    fn from(encoded: (Vec<u32>, &'a PointCodec<u32>)) -> Self {
+        TypedVec::EncodedU32(encoded.0, encoded.1)
+    }
+}

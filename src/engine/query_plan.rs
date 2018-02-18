@@ -50,9 +50,17 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                    grouping_key_type: Type,
                                    aggregator: Aggregator) -> Box<AggregationOperator<'a> + 'b> {
     match (grouping_key_type, aggregator, plan) {
+        (Type::U8, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) |
+        (Type::RefU8, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
+            Box::new(HTSummationCi64::new(grouping_key.cast_ref_u8(), i))
+        }
         (Type::U16, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) |
         (Type::RefU16, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
-            Box::new(HTu16SummationCi64::new(grouping_key.cast_ref_u16(), i))
+            Box::new(HTSummationCi64::new(grouping_key.cast_ref_u16(), i))
+        }
+        (Type::U32, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) |
+        (Type::RefU32, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
+            Box::new(HTSummationCi64::new(grouping_key.cast_ref_u32(), i))
         }
         (g, a, p) => panic!("prepare_aggregation not implemented for {:?}, {:?}, {:?}", &g, &a, &p)
     }
