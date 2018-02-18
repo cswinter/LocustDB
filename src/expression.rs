@@ -123,6 +123,13 @@ impl Expr {
         }
     }
 
+    pub fn compile_grouping_key<'a>(exprs: &Vec<Expr>,
+                                    columns: &HashMap<&'a str, &'a Column>,
+                                    filter: Option<Rc<BitVec>>) -> (QueryPlan<'a>, Type) {
+        assert!(exprs.len() == 1);
+        exprs[0].create_query_plan(columns, filter)
+    }
+
     fn compile_regex(&self) -> Regex {
         match self {
             &Const(RawVal::Str(ref string)) => {

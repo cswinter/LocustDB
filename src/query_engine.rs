@@ -2,8 +2,6 @@ use std::iter::Iterator;
 use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use seahash::SeaHasher;
-use std::hash::BuildHasherDefault;
 use time::precise_time_ns;
 use std::ops::Add;
 use std::cmp;
@@ -97,7 +95,6 @@ impl QueryStats {
     }
 }
 
-type BuildSeaHasher = BuildHasherDefault<SeaHasher>;
 
 
 impl<'a> CompiledQuery<'a> {
@@ -107,42 +104,19 @@ impl<'a> CompiledQuery<'a> {
         let limit = self.query.limit.limit;
         let offset = self.query.limit.offset;
         let max_limit = offset + limit;
-        let result_cols = if self.aggregate.len() == 0 {
-            let mut columns = Vec::new();
+
+        let mut result_cols = Vec::new();
+        if self.aggregate.len() == 0 {
             for batch in &self.batches {
-                columns.push(self.query.run(batch, &mut self.stats));
+                result_cols.push(self.query.run(batch, &mut self.stats));
                 /*if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
                     break;
                 }*/
             }
-            columns
         } else {
-            panic!("aggregates not implemented");
-            /*let mut combined_results = AggregateSubqueryResult {
-                groups: HashMap::default(),
-                stats: QueryStats::new(0, 0),
-            };
-            for single_batch_query in &mut self.subqueries {
-                let batch_result = single_batch_query.run_aggregation_query();
-                combined_results.stats = combined_results.stats.combine(&batch_result.stats);
-                for (group, accumulator1) in batch_result.groups.into_iter() {
-                    if let Some(mut accumulator2) = combined_results.groups.get_mut(&group) {
-                        for (i, agg_func) in self.aggregate.iter().enumerate() {
-                            accumulator2[i] = agg_func.combine(&accumulator1[i], &accumulator2[i]);
-                        }
-                    }
-                    if !combined_results.groups.contains_key(&group) {
-                        combined_results.groups.insert(group, accumulator1);
-                    }
-                }
+            for batch in &self.batches {
+                result_cols.push(self.query.run_aggregate(batch, &mut self.stats));
             }
-
-            let mut result: Vec<Vec<Val>> = Vec::new();
-            for (mut group, aggregate) in combined_results.groups {
-                group.extend(aggregate);
-                result.push(group);
-            }
-            (result, combined_results.stats)*/
         };
 
         /*if let Some(ref order_by_expr) = self.compiled_order_by {
@@ -253,6 +227,44 @@ impl Query {
         result
     }
 
+    fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
+        stats.start();
+        let (filter_plan, _) = self.filter.create_query_plan(columns, None);
+        //println!("filter: {:?}", filter_plan);
+        // TODO(clemens): type check
+        let mut compiled_filter = query_plan::prepare(filter_plan);
+        stats.record(&"compile_filter");
+
+        let filter = match compiled_filter.execute(stats) {
+            TypedVec::Boolean(b) => Some(Rc::new(b)), //(b.iter().filter(|x| *x).count(), Some(b)),
+            _ => None,
+        };
+
+        stats.start();
+        let (grouping_key_plan, grouping_key_type) = Expr::compile_grouping_key(&self.select, columns, filter.clone());
+        let mut compiled_gk = query_plan::prepare(grouping_key_plan);
+        stats.record(&"compile_grouping_key");
+        let grouping_key = compiled_gk.execute(stats);
+
+        let mut result = Vec::new();
+        let mut first_iteration = true;
+        for &(aggregator, ref expr) in &self.aggregate {
+            stats.start();
+            let (plan, _) = expr.create_query_plan(columns, filter.clone());
+            //println!("select: {:?}", plan);
+            let mut compiled = query_plan::prepare_aggregation(plan, &grouping_key, grouping_key_type, aggregator);
+            stats.record(&"compile_aggregate");
+            if first_iteration {
+                let (grouping, aggregate) = compiled.execute_all(stats);
+                result.push(grouping);
+                result.push(aggregate);
+            } else {
+                result.push(compiled.execute(stats));
+            }
+        }
+        result
+    }
+
     fn is_select_star(&self) -> bool {
         if self.select.len() == 1 {
             match self.select[0] {
@@ -263,6 +275,7 @@ impl Query {
             false
         }
     }
+
     fn result_column_names(&self) -> Vec<Rc<String>> {
         let mut anon_columns = -1;
         let select_cols = self.select

@@ -72,10 +72,10 @@ fn bench_2mb_count_all(b: &mut test::Bencher) {
     });
 }
 
-// #[bench]
+#[bench]
 fn bench_2mb_group_count(b: &mut test::Bencher) {
     let batches = ingest_file("test_data/small.csv", 4000);
-    let query = parse_query("select num, count(1) from test;".as_bytes()).to_result().unwrap();
+    let query = parse_query("select first_name, count(1) from test limit 2;".as_bytes()).to_result().unwrap();
     b.iter(|| {
         let mut compiled_query = query.compile(&batches);
         test::black_box(compiled_query.run());

@@ -54,9 +54,17 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn cast_i64(&self) -> &[i64] {
+    pub fn cast_ref_i64(&self) -> &[i64] {
         match self {
             &TypedVec::Integer(ref x) => x,
+            _ => panic!("type error"),
+        }
+    }
+
+    pub fn cast_ref_u16<'b>(&'b self) -> (&'b [u16], &'a PointCodec<u16>) {
+        match self {
+            &TypedVec::BorrowedEncodedU16(data, codec) => (data, codec),
+            &TypedVec::EncodedU16(ref data, codec) => (data, codec),
             _ => panic!("type error"),
         }
     }

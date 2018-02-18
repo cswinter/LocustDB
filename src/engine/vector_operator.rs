@@ -131,7 +131,7 @@ impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         let lhs = self.lhs.execute(stats);
         stats.start();
-        let data = lhs.cast_i64();
+        let data = lhs.cast_ref_i64();
         let mut result = BitVec::with_capacity(lhs.len());
         let i = self.rhs;
         for l in data {
