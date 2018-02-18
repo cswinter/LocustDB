@@ -3,13 +3,10 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use time::precise_time_ns;
-use std::ops::Add;
 use std::cmp;
 
-use engine::vector_operator::BoxedOperator;
 use engine::query_plan;
 use engine::typed_vec::TypedVec;
-use value::Val;
 use expression::*;
 use aggregator::*;
 use limit::*;
@@ -42,12 +39,6 @@ pub struct QueryResult {
     pub rows: Vec<Vec<RawVal>>,
     pub stats: QueryStats,
 }
-
-struct SelectSubqueryResult<'a> {
-    cols: Vec<Vec<Val<'a>>>,
-    stats: QueryStats,
-}
-
 
 const ENABLE_DETAILED_STATS: bool = false;
 
@@ -103,7 +94,6 @@ impl<'a> CompiledQuery<'a> {
         let colnames = self.output_colnames.clone();
         let limit = self.query.limit.limit;
         let offset = self.query.limit.offset;
-        let max_limit = offset + limit;
 
         let mut result_cols = Vec::new();
         if self.aggregate.len() == 0 {
@@ -160,14 +150,8 @@ impl Query {
         stats.start();
         let start_time = precise_time_ns();
 
-        // TODO(clemens): Reenable
-        /*if self.is_select_star() {
-            self.select = find_all_cols(source).into_iter().map(Expr::ColName).collect();
-        }*/
-
         let referenced_cols = self.find_referenced_cols();
         let batches = source.iter().map(|batch| self.prepare_batch(&referenced_cols, batch)).collect();
-        let limit = self.limit.clone();
         stats.record(&"prepare_batches");
 
         stats.start();
@@ -181,8 +165,8 @@ impl Query {
 
         stats.start();
         // Insert a placeholder sorter if ordering isn't specified
-        let mut compiled_order_by = self.order_by.as_ref()
-            .map(|order_by| order_by.compile(&output_colmap));
+        // let compiled_order_by = self.order_by.as_ref()
+            // .map(|order_by| order_by.compile(&output_colmap));
         stats.record(&"compile_order_by");
         stats.runtime_ns = precise_time_ns() - start_time;
 
@@ -247,7 +231,7 @@ impl Query {
         let grouping_key = compiled_gk.execute(stats);
 
         let mut result = Vec::new();
-        let mut first_iteration = true;
+        let first_iteration = true;
         for &(aggregator, ref expr) in &self.aggregate {
             stats.start();
             let (plan, _) = expr.create_query_plan(columns, filter.clone());
@@ -265,7 +249,7 @@ impl Query {
         result
     }
 
-    fn is_select_star(&self) -> bool {
+    /*fn is_select_star(&self) -> bool {
         if self.select.len() == 1 {
             match self.select[0] {
                 Expr::ColName(ref colname) if **colname == "*".to_string() => true,
@@ -274,7 +258,7 @@ impl Query {
         } else {
             false
         }
-    }
+    }*/
 
     fn result_column_names(&self) -> Vec<Rc<String>> {
         let mut anon_columns = -1;
@@ -315,7 +299,7 @@ impl Query {
     }
 }
 
-fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
+/*fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
     let mut cols = HashSet::new();
     for batch in source {
         for column in &batch.cols {
@@ -324,7 +308,7 @@ fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
     }
 
     cols.into_iter().map(Rc::new).collect()
-}
+}*/
 
 
 pub fn print_query_result(results: &QueryResult) {

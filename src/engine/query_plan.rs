@@ -4,7 +4,6 @@ use mem_store::ingest::RawVal;
 use engine::vector_operator::*;
 use engine::aggregation_operator::*;
 use std::rc::Rc;
-use std::cell::RefCell;
 use engine::types::Type;
 use engine::typed_vec::TypedVec;
 use aggregator::Aggregator;
@@ -19,7 +18,6 @@ pub enum QueryPlan<'a> {
     LessThanVSi64(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     LessThanVSu8(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     Constant(RawVal),
-    // Placeholder(Rc<RefCell<TypedVec<'a>>>),
 }
 
 pub fn prepare(plan: QueryPlan) -> BoxedOperator {

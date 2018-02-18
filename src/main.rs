@@ -70,7 +70,7 @@ fn repl(datasource: &Vec<Batch>) {
         }
         rl.add_history_entry(&s);
         match parser::parse_query(s.as_bytes()) {
-            nom::IResult::Done(_remaining, mut query) => {
+            nom::IResult::Done(_remaining, query) => {
                 panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut compiled_query = query.compile(datasource);
                     let result = compiled_query.run();

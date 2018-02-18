@@ -236,7 +236,7 @@ impl Table {
     }
 
 
-    pub fn run_query(&self, mut query: Query) -> Result<QueryResult, String> {
+    pub fn run_query(&self, query: Query) -> Result<QueryResult, String> {
         self.batch_if_nonzero();
         let batches = self.batches.read().unwrap();
         let mut compiled_query = query.compile(&batches);

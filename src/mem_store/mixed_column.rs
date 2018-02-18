@@ -1,10 +1,10 @@
-use bit_vec::BitVec;
-use mem_store::column::*;
+// use bit_vec::BitVec;
+// use mem_store::column::*;
 use mem_store::ingest::RawVal;
 use value::Val;
 use heapsize::HeapSizeOf;
-use engine::types::Type;
-use engine::typed_vec::TypedVec;
+// use engine::types::Type;
+// use engine::typed_vec::TypedVec;
 
 
 /*

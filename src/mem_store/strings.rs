@@ -166,7 +166,7 @@ impl ColumnData for DictEncodedStrings {
 impl PointCodec<u16> for DictEncodedStrings {
     fn decode(&self, data: &[u16]) -> TypedVec {
         let mut result = Vec::<&str>::with_capacity(self.encoded_values.len());
-        for encoded_value in self.encoded_values.iter() {
+        for encoded_value in data {
             result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
         }
         TypedVec::String(result)
