@@ -22,12 +22,13 @@ pub struct Query {
     pub table: String,
     pub filter: Expr,
     pub aggregate: Vec<(Aggregator, Expr)>,
-    pub order_by: Option<Expr>,
+    pub order_by: Option<String>,
     pub limit: LimitClause,
+    pub order_by_index: Option<usize>,
 }
 
 pub struct CompiledQuery<'a> {
-    query: &'a Query,
+    query: Query,
     batches: Vec<HashMap<&'a str, &'a Column>>,
     output_colnames: Vec<Rc<String>>,
     aggregate: Vec<Aggregator>,
@@ -87,7 +88,6 @@ impl QueryStats {
 }
 
 
-
 impl<'a> CompiledQuery<'a> {
     pub fn run(&mut self) -> QueryResult {
         let start_time = precise_time_ns();
@@ -145,41 +145,48 @@ impl<'a> CompiledQuery<'a> {
 
 
 impl Query {
-    pub fn compile<'a>(&'a self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
-        let mut stats = QueryStats::new();
-        stats.start();
+    pub fn compile<'a>(&self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
         let start_time = precise_time_ns();
+        let mut stats = QueryStats::new();
+        let mut query = self.clone();
 
-        let referenced_cols = self.find_referenced_cols();
-        let batches = source.iter().map(|batch| self.prepare_batch(&referenced_cols, batch)).collect();
-        stats.record(&"prepare_batches");
+        if query.is_select_star() {
+            query.select = find_all_cols(source).into_iter().map(Expr::ColName).collect();
+        }
 
         stats.start();
-        // Compile the order_by
-        let output_colnames = self.result_column_names();
-        let mut output_colmap = HashMap::new();
-        for (i, output_colname) in output_colnames.iter().enumerate() {
-            output_colmap.insert(output_colname.to_string(), i);
+        let output_colnames = query.result_column_names();
+        let mut order_by_index = None;
+        if let Some(ref col) = query.order_by {
+            for (i, name) in output_colnames.iter().enumerate() {
+                if name.as_ref() == col {
+                    order_by_index = Some(i);
+                }
+            }
         }
+        query.order_by_index = order_by_index;
         stats.record(&"determine_output_colnames");
 
         stats.start();
-        // Insert a placeholder sorter if ordering isn't specified
-        // let compiled_order_by = self.order_by.as_ref()
-            // .map(|order_by| order_by.compile(&output_colmap));
-        stats.record(&"compile_order_by");
+        let batches = source.iter()
+            .map(|batch| Query::prepare_batch(&query.find_referenced_cols(), batch))
+            .collect();
+        stats.record(&"prepare_batches");
+
+        let aggregate = query.aggregate.iter().map(|&(aggregate, _)| aggregate).collect();
+
         stats.runtime_ns = precise_time_ns() - start_time;
 
         CompiledQuery {
-            query: &self,
+            query: query,
             batches: batches,
             output_colnames: output_colnames,
-            aggregate: self.aggregate.iter().map(|&(aggregate, _)| aggregate).collect(),
+            aggregate: aggregate,
             stats: stats,
         }
     }
 
-    fn prepare_batch<'a>(&'a self, referenced_cols: &HashSet<&str>, source: &'a Batch) -> HashMap<&'a str, &'a Column> {
+    fn prepare_batch<'a>(referenced_cols: &HashSet<&str>, source: &'a Batch) -> HashMap<&'a str, &'a Column> {
         source.cols.iter()
             .filter(|col| referenced_cols.contains(&col.name()))
             .map(|col| (col.name(), col))
@@ -249,7 +256,7 @@ impl Query {
         result
     }
 
-    /*fn is_select_star(&self) -> bool {
+    fn is_select_star(&self) -> bool {
         if self.select.len() == 1 {
             match self.select[0] {
                 Expr::ColName(ref colname) if **colname == "*".to_string() => true,
@@ -258,7 +265,7 @@ impl Query {
         } else {
             false
         }
-    }*/
+    }
 
     fn result_column_names(&self) -> Vec<Rc<String>> {
         let mut anon_columns = -1;
@@ -299,7 +306,7 @@ impl Query {
     }
 }
 
-/*fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
+fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
     let mut cols = HashSet::new();
     for batch in source {
         for column in &batch.cols {
@@ -308,7 +315,7 @@ impl Query {
     }
 
     cols.into_iter().map(Rc::new).collect()
-}*/
+}
 
 
 pub fn print_query_result(results: &QueryResult) {

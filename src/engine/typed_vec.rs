@@ -45,12 +45,13 @@ impl<'a> TypedVec<'a> {
             &TypedVec::Mixed(ref v) => RawVal::from(&v[i]),
             &TypedVec::Boolean(_) => panic!("Boolean(BitVec).get_raw()"),
             &TypedVec::EncodedU8(ref v, codec) => codec.to_raw(v[i]),
-            &TypedVec::BorrowedEncodedU8(v, codec) => codec.to_raw(v[i]),
             &TypedVec::EncodedU16(ref v, codec) => codec.to_raw(v[i]),
+            &TypedVec::EncodedU32(ref v, codec) => codec.to_raw(v[i]),
+            &TypedVec::BorrowedEncodedU8(v, codec) => codec.to_raw(v[i]),
             &TypedVec::BorrowedEncodedU16(v, codec) => codec.to_raw(v[i]),
+            &TypedVec::BorrowedEncodedU32(v, codec) => codec.to_raw(v[i]),
             &TypedVec::Empty => RawVal::Null,
             &TypedVec::Constant(ref r) => r.clone(),
-            _ => panic!(" not implemented"),
         }
     }
 

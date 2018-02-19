@@ -1,4 +1,5 @@
 #![allow(unused_parens)]
+
 use std::str;
 use std::str::FromStr;
 use std::rc::Rc;
@@ -57,7 +58,7 @@ named!(simple_query<&[u8], Query>,
 fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect>,
                        table: &'a str,
                        filter: Expr,
-                       order_by: Option<Expr>,
+                       order_by: Option<String>,
                        limit: Option<LimitClause>)
                        -> Query {
     let (select, aggregate) = partition(select_clauses);
@@ -68,6 +69,7 @@ fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect>,
         aggregate: aggregate,
         order_by: order_by,
         limit: limit.unwrap_or(LimitClause { limit: 1000, offset: 0 }),
+        order_by_index: None,
     }
 }
 
@@ -364,12 +366,12 @@ named!(limit_clause<&[u8], LimitClause>,
     )
 );
 
-named!(order_by_clause<&[u8], Expr>,
+named!(order_by_clause<&[u8], String>,
     do_parse!(
-        tag_no_case!("order_by") >>
+        tag_no_case!("order by") >>
         multispace >>
-        order_by: expr >>
-        (order_by)
+        order_by: identifier >>
+        (order_by.to_string())
     )
 );
 
@@ -393,8 +395,8 @@ mod tests {
     #[test]
     fn test_last_hour() {
         assert!(
-            format!("{:?}", parse_query("select * from default where $LAST_HOUR;".as_bytes())).starts_with(
-                "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func(GT, ColName(\"timestamp\"), Const(Int(")
+        format!("{:?}", parse_query("select * from default where $LAST_HOUR;".as_bytes())).starts_with(
+            "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func(GT, ColName(\"timestamp\"), Const(Int(")
         )
     }
 }
