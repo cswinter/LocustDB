@@ -2,12 +2,12 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use bit_vec::BitVec;
 use value::Val;
 use mem_store::ingest::RawVal;
 use regex::Regex;
 use engine::query_plan::*;
 use engine::types::*;
+use engine::filter::Filter;
 use mem_store::column::Column;
 
 
@@ -93,15 +93,17 @@ impl Expr {
         }
     }
 
-    pub fn create_query_plan<'a>(&self, columns: &HashMap<&'a str, &'a Column>, filter: Option<Rc<BitVec>>) -> (QueryPlan<'a>, Type) {
+    pub fn create_query_plan<'a>(&self, columns: &HashMap<&'a str, &'a Column>, filter: Filter) -> (QueryPlan<'a>, Type) {
         use self::Expr::*;
         match self {
             &ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(ref c) => match (c.data().to_codec(), filter) {
-                    (Some(c), Some(f)) => (QueryPlan::FilterEncoded(c, f), c.encoded_type()),
-                    (Some(c), None) => (QueryPlan::GetEncoded(c), c.ref_encoded_type()),
-                    (None, Some(f)) => (QueryPlan::FilterDecode(c.data(), f), c.data().decoded_type()),
-                    (None, None) => (QueryPlan::Decode(c.data()), c.data().decoded_type()),
+                    (None, Filter::None) => (QueryPlan::Decode(c.data()), c.data().decoded_type()),
+                    (None, Filter::BitVec(f)) => (QueryPlan::FilterDecode(c.data(), f), c.data().decoded_type()),
+                    (None, Filter::Indices(f)) => (QueryPlan::IndexDecode(c.data(), f), c.data().decoded_type()),
+                    (Some(c), Filter::None) => (QueryPlan::GetEncoded(c), c.ref_encoded_type()),
+                    (Some(c), Filter::BitVec(f)) => (QueryPlan::FilterEncoded(c, f), c.encoded_type()),
+                    (Some(c), Filter::Indices(f)) => (QueryPlan::IndexEncoded(c, f), c.encoded_type()),
                 }
                 None => panic!("Not implemented")//VecOperator::Constant(VecValue::Constant(RawVal::Null)),
             }
@@ -125,7 +127,7 @@ impl Expr {
 
     pub fn compile_grouping_key<'a>(exprs: &Vec<Expr>,
                                     columns: &HashMap<&'a str, &'a Column>,
-                                    filter: Option<Rc<BitVec>>) -> (QueryPlan<'a>, Type) {
+                                    filter: Filter) -> (QueryPlan<'a>, Type) {
         assert!(exprs.len() == 1);
         exprs[0].create_query_plan(columns, filter)
     }

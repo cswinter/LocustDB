@@ -14,6 +14,7 @@ use util::fmt_table;
 use mem_store::column::Column;
 use mem_store::batch::Batch;
 use mem_store::ingest::RawVal;
+use engine::filter::Filter;
 
 
 #[derive(Debug, Clone)]
@@ -23,6 +24,7 @@ pub struct Query {
     pub filter: Expr,
     pub aggregate: Vec<(Aggregator, Expr)>,
     pub order_by: Option<String>,
+    pub order_desc: bool,
     pub limit: LimitClause,
     pub order_by_index: Option<usize>,
 }
@@ -195,18 +197,42 @@ impl Query {
 
     fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
         stats.start();
-        let (filter_plan, _) = self.filter.create_query_plan(columns, None);
+        let (filter_plan, _) = self.filter.create_query_plan(columns, Filter::None);
         //println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
         stats.record(&"compile_filter");
 
-        let filter = match compiled_filter.execute(stats) {
-            TypedVec::Boolean(b) => Some(Rc::new(b)), //(b.iter().filter(|x| *x).count(), Some(b)),
-            _ => None,
+        let mut filter = match compiled_filter.execute(stats) {
+            TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
+            _ => Filter::None,
         };
 
         let mut result = Vec::new();
+        println!("{:?}", self.order_by);
+        if let Some(index) = self.order_by_index {
+            // TODO(clemens): Reuse sort_column for result
+            // TODO(clemens): Optimization: sort directly if only single column selected
+            let (plan, _) = self.select[index].create_query_plan(columns, filter.clone());
+            let mut compiled = query_plan::prepare(plan);
+            let sort_column = compiled.execute(stats).order_preserving();
+            let mut sort_indices = match filter {
+                Filter::BitVec(vec) => vec.iter()
+                    .enumerate()
+                    .filter(|x| x.1)
+                    .map(|x| x.0)
+                    .collect(),
+                Filter::None => (0..sort_column.len()).collect(),
+                _ => panic!("surely this will never happen :)"),
+            };
+            if self.order_desc {
+                sort_column.sort_indices_desc(&mut sort_indices);
+            } else{
+                sort_column.sort_indices_asc(&mut sort_indices);
+            }
+            sort_indices.truncate((self.limit.limit + self.limit.offset) as usize);
+            filter = Filter::Indices(Rc::new(sort_indices));
+        }
         for expr in &self.select {
             stats.start();
             let (plan, _) = expr.create_query_plan(columns, filter.clone());
@@ -220,15 +246,15 @@ impl Query {
 
     fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
         stats.start();
-        let (filter_plan, _) = self.filter.create_query_plan(columns, None);
+        let (filter_plan, _) = self.filter.create_query_plan(columns, Filter::None);
         //println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
         stats.record(&"compile_filter");
 
         let filter = match compiled_filter.execute(stats) {
-            TypedVec::Boolean(b) => Some(Rc::new(b)), //(b.iter().filter(|x| *x).count(), Some(b)),
-            _ => None,
+            TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
+            _ => Filter::None,
         };
 
         stats.start();

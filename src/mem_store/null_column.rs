@@ -24,6 +24,10 @@ impl ColumnData for NullColumn {
         TypedVec::Empty
     }
 
+    fn index_decode(&self, _: &Vec<usize>) -> TypedVec {
+        TypedVec::Empty
+    }
+
     fn decoded_type(&self) -> Type { Type::Null }
 }
 

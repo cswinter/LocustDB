@@ -81,6 +81,15 @@ impl ColumnData for StringPacker {
         TypedVec::String(result)
     }
 
+    fn index_decode<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+        let decoded = self.iter().collect::<Vec<_>>();
+        let mut result = Vec::with_capacity(filter.len());
+        for &i in filter {
+            result.push(decoded[i]);
+        }
+        TypedVec::String(result)
+    }
+
     fn decoded_type(&self) -> Type { Type::String }
 }
 
@@ -158,6 +167,15 @@ impl ColumnData for DictEncodedStrings {
         TypedVec::String(result)
     }
 
+    fn index_decode(&self, filter: &Vec<usize>) -> TypedVec {
+        let mut result = Vec::<&str>::with_capacity(filter.len());
+        for &i in filter {
+            let encoded_value = self.encoded_values[i];
+            result.push(self.mapping[encoded_value as usize].as_ref().unwrap());
+        }
+        TypedVec::String(result)
+    }
+
     fn decoded_type(&self) -> Type { Type::String }
 
     fn to_codec(&self) -> Option<&ColumnCodec> { Some(self as &ColumnCodec) }
@@ -175,10 +193,14 @@ impl PointCodec<u16> for DictEncodedStrings {
     fn to_raw(&self, elem: u16) -> RawVal {
         RawVal::Str(self.mapping[elem as usize].as_ref().unwrap().to_string())
     }
+
+    // TODO(clemens): sort dictionary on creation to make encoding order preserving?
+    fn is_order_preserving(&self) -> bool { false }
 }
+
 impl ColumnCodec for DictEncodedStrings {
     fn get_encoded(&self) -> TypedVec {
-       TypedVec::BorrowedEncodedU16(&self.encoded_values, self as &PointCodec<u16>)
+        TypedVec::BorrowedEncodedU16(&self.encoded_values, self as &PointCodec<u16>)
     }
 
     fn filter_encoded(&self, filter: &BitVec) -> TypedVec {
@@ -192,6 +214,14 @@ impl ColumnCodec for DictEncodedStrings {
             if selected {
                 result.push(*encoded_value);
             }
+        }
+        TypedVec::EncodedU16(result, self as &PointCodec<u16>)
+    }
+
+    fn index_encoded(&self, filter: &Vec<usize>) -> TypedVec {
+        let mut result = Vec::with_capacity(filter.len());
+        for &i in filter {
+            result.push(self.encoded_values[i]);
         }
         TypedVec::EncodedU16(result, self as &PointCodec<u16>)
     }

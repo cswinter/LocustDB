@@ -91,3 +91,23 @@ fn bench_2mb_group_filter_count(b: &mut test::Bencher) {
         test::black_box(compiled_query.run());
     });
 }
+
+#[bench]
+fn bench_2mb_sort_strings(b: &mut test::Bencher) {
+    let batches = ingest_file("test_data/small.csv", 4000);
+    let query = parse_query("select first_name from test order by first_name limit 1;".as_bytes()).to_result().unwrap();
+    b.iter(|| {
+        let mut compiled_query = query.compile(&batches);
+        test::black_box(compiled_query.run());
+    });
+}
+
+#[bench]
+fn bench_2mb_sort_integers(b: &mut test::Bencher) {
+    let batches = ingest_file("test_data/small.csv", 4000);
+    let query = parse_query("select num from test order by num limit 1;".as_bytes()).to_result().unwrap();
+    b.iter(|| {
+        let mut compiled_query = query.compile(&batches);
+        test::black_box(compiled_query.run());
+    });
+}

@@ -35,6 +35,7 @@ impl HeapSizeOf for Column {
 pub trait ColumnData: HeapSizeOf + Send + Sync {
     fn collect_decoded(&self) -> TypedVec;
     fn filter_decode(&self, filter: &BitVec) -> TypedVec;
+    fn index_decode(&self, filter: &Vec<usize>) -> TypedVec;
     fn decoded_type(&self) -> Type;
     fn to_codec(&self) -> Option<&ColumnCodec> { None }
 }
@@ -49,6 +50,7 @@ impl<'a> fmt::Debug for &'a ColumnData {
 pub trait ColumnCodec: ColumnData {
     fn get_encoded(&self) -> TypedVec;
     fn filter_encoded(&self, filter: &BitVec) -> TypedVec;
+    fn index_encoded(&self, filter: &Vec<usize>) -> TypedVec;
     fn encoded_type(&self) -> Type;
     fn ref_encoded_type(&self) -> Type;
 }

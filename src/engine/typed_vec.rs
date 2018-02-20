@@ -1,5 +1,6 @@
 use bit_vec::BitVec;
 use mem_store::point_codec::PointCodec;
+use engine::types::Type;
 use value::Val;
 use mem_store::ingest::RawVal;
 
@@ -52,6 +53,79 @@ impl<'a> TypedVec<'a> {
             &TypedVec::BorrowedEncodedU32(v, codec) => codec.to_raw(v[i]),
             &TypedVec::Empty => RawVal::Null,
             &TypedVec::Constant(ref r) => r.clone(),
+        }
+    }
+
+    pub fn get_type(&self) -> Type {
+        match self {
+            &TypedVec::String(_) => Type::String,
+            &TypedVec::Integer(_) => Type::I64,
+            &TypedVec::Mixed(_) => Type::Val,
+            &TypedVec::Boolean(_) => Type::Boolean,
+            &TypedVec::Empty => Type::Null,
+            &TypedVec::EncodedU8(_, _) => Type::U8,
+            &TypedVec::EncodedU16(_, _) => Type::U16,
+            &TypedVec::EncodedU32(_, _) => Type::U32,
+            &TypedVec::BorrowedEncodedU8(_, _) => Type::RefU8,
+            &TypedVec::BorrowedEncodedU16(_, _) => Type::RefU16,
+            &TypedVec::BorrowedEncodedU32(_, _) => Type::RefU32,
+            _ => panic!("not implemented")
+        }
+    }
+
+    pub fn sort_indices_desc(&self, indices: &mut Vec<usize>) {
+        match self {
+            &TypedVec::String(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(data[*j]).reverse()),
+            &TypedVec::Integer(ref data) => indices.sort_unstable_by_key(|i| -data[*i]),
+            &TypedVec::Mixed(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            &TypedVec::Boolean(_) => panic!("cannot sort by boolean column"),
+            &TypedVec::EncodedU8(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            &TypedVec::EncodedU16(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            &TypedVec::EncodedU32(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            &TypedVec::BorrowedEncodedU8(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            &TypedVec::BorrowedEncodedU16(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            &TypedVec::BorrowedEncodedU32(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            &TypedVec::Empty | &TypedVec::Constant(_) => {}
+        }
+    }
+
+    pub fn sort_indices_asc(&self, indices: &mut Vec<usize>) {
+        match self {
+            &TypedVec::String(ref data) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::Integer(ref data) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::Mixed(ref data) => indices.sort_unstable_by_key(|i| &data[*i]),
+            &TypedVec::Boolean(_) => panic!("cannot sort by boolean column"),
+            &TypedVec::EncodedU8(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::EncodedU16(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::EncodedU32(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::BorrowedEncodedU8(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::BorrowedEncodedU16(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::BorrowedEncodedU32(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
+            &TypedVec::Empty | &TypedVec::Constant(_) => {}
+        }
+    }
+
+    pub fn order_preserving(self) -> Self {
+        match self {
+            TypedVec::BorrowedEncodedU8(data, codec)
+            if !codec.is_order_preserving() =>
+                codec.decode(data),
+            TypedVec::BorrowedEncodedU16(data, codec)
+            if !codec.is_order_preserving() =>
+                codec.decode(data),
+            TypedVec::BorrowedEncodedU32(data, codec)
+            if !codec.is_order_preserving() =>
+                codec.decode(data),
+            TypedVec::EncodedU8(ref data, codec)
+            if !codec.is_order_preserving() =>
+                codec.decode(data),
+            TypedVec::EncodedU16(ref data, codec)
+            if !codec.is_order_preserving() =>
+                codec.decode(data),
+            TypedVec::EncodedU32(ref data, codec)
+            if !codec.is_order_preserving() =>
+                codec.decode(data),
+            x => x,
         }
     }
 

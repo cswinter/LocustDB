@@ -44,6 +44,14 @@ impl ColumnData for IntegerColumn {
         TypedVec::Integer(results)
     }
 
+    fn index_decode<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+        let mut results = Vec::with_capacity(filter.len());
+        for &i in filter {
+            results.push(self.values[i]);
+        }
+        TypedVec::Integer(results)
+    }
+
     fn decoded_type(&self) -> Type { Type::I64 }
 }
 
@@ -81,6 +89,14 @@ impl<T: IntLike> ColumnData for IntegerOffsetColumn<T> {
         TypedVec::Integer(result)
     }
 
+    fn index_decode<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+        let mut result = Vec::with_capacity(filter.len());
+        for &i in filter {
+            result.push(self.values[i].to_i64().unwrap() + self.offset);
+        }
+        TypedVec::Integer(result)
+    }
+
     fn decoded_type(&self) -> Type { Type::I64 }
 
     fn to_codec(&self) -> Option<&ColumnCodec> { Some(self as &ColumnCodec) }
@@ -98,6 +114,8 @@ impl<T: IntLike> PointCodec<T> for IntegerOffsetColumn<T> {
     fn to_raw(&self, elem: T) -> RawVal {
         RawVal::Int(elem.to_i64().unwrap() + self.offset)
     }
+
+    fn is_order_preserving(&self) -> bool { true }
 }
 
 impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {
@@ -111,6 +129,14 @@ impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {
             .map(|(i, _)| *i)
             .collect();
         T::typed_vec(filtered_values, self as &PointCodec<T>)
+    }
+
+    fn index_encoded<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+        let mut result = Vec::with_capacity(filter.len());
+        for &i in filter {
+            result.push(self.values[i]);
+        }
+        T::typed_vec(result, self as &PointCodec<T>)
     }
 
     fn encoded_type(&self) -> Type { T::t() }

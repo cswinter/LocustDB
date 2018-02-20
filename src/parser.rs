@@ -58,17 +58,19 @@ named!(simple_query<&[u8], Query>,
 fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect>,
                        table: &'a str,
                        filter: Expr,
-                       order_by: Option<String>,
+                       order_by: Option<(String, bool)>,
                        limit: Option<LimitClause>)
                        -> Query {
     let (select, aggregate) = partition(select_clauses);
+    let order_desc = order_by.as_ref().map(|x| x.1).unwrap_or(false);
     Query {
         select: select,
         table: table.to_string(),
         filter: filter,
         aggregate: aggregate,
-        order_by: order_by,
-        limit: limit.unwrap_or(LimitClause { limit: 1000, offset: 0 }),
+        order_by: order_by.map(|x| x.0),
+        order_desc: order_desc,
+        limit: limit.unwrap_or(LimitClause { limit: 100, offset: 0 }),
         order_by_index: None,
     }
 }
@@ -366,12 +368,23 @@ named!(limit_clause<&[u8], LimitClause>,
     )
 );
 
-named!(order_by_clause<&[u8], String>,
-    do_parse!(
-        tag_no_case!("order by") >>
-        multispace >>
-        order_by: identifier >>
-        (order_by.to_string())
+named!(order_by_clause<&[u8], (String, bool)>,
+    alt!(
+        do_parse!(
+            tag_no_case!("order by") >>
+            multispace >>
+            order_by: identifier >>
+            multispace >>
+            tag_no_case!("desc") >>
+            (order_by.to_string(), true)
+        ) |
+        do_parse!(
+            tag_no_case!("order by") >>
+            multispace >>
+            order_by: identifier >>
+            opt!(preceded!(multispace, tag_no_case!("asc"))) >>
+            (order_by.to_string(), false)
+        )
     )
 );
 

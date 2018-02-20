@@ -13,8 +13,10 @@ use aggregator::Aggregator;
 pub enum QueryPlan<'a> {
     Decode(&'a ColumnData),
     FilterDecode(&'a ColumnData, Rc<BitVec>),
+    IndexDecode(&'a ColumnData, Rc<Vec<usize>>),
     GetEncoded(&'a ColumnCodec),
     FilterEncoded(&'a ColumnCodec, Rc<BitVec>),
+    IndexEncoded(&'a ColumnCodec, Rc<Vec<usize>>),
     LessThanVSi64(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     LessThanVSu8(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     Constant(RawVal),
@@ -24,8 +26,10 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
     match plan {
         QueryPlan::Decode(col) => Box::new(Decode::new(col)),
         QueryPlan::FilterDecode(col, filter) => Box::new(FilterDecode::new(col, filter)),
+        QueryPlan::IndexDecode(col, filter) => Box::new(IndexDecode::new(col, filter)),
         QueryPlan::GetEncoded(col) => Box::new(GetEncoded::new(col)),
         QueryPlan::FilterEncoded(col, filter) => Box::new(FilterEncoded::new(col, filter)),
+        QueryPlan::IndexEncoded(col, filter) => Box::new(IndexEncoded::new(col, filter)),
         QueryPlan::Constant(ref c) => Box::new(Constant::new(c.clone())),
         QueryPlan::LessThanVSi64(lhs, rhs) => {
             if let RawVal::Int(i) = rhs.get_const() {

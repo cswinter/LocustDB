@@ -53,6 +53,30 @@ impl<'a> VecOperator<'a> for FilterDecode<'a> {
     }
 }
 
+pub struct IndexDecode<'a> {
+    col: &'a ColumnData,
+    filter: Rc<Vec<usize>>,
+}
+
+impl<'a> IndexDecode<'a> {
+    pub fn new(col: &'a ColumnData, filter: Rc<Vec<usize>>) -> IndexDecode<'a> {
+        IndexDecode {
+            col: col,
+            filter: filter,
+        }
+    }
+}
+
+impl<'a> VecOperator<'a> for IndexDecode<'a> {
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        stats.start();
+        let result = self.col.index_decode(self.filter.as_ref());
+        stats.record(&"index_decode");
+        stats.ops += self.filter.len();
+        result
+    }
+}
+
 
 pub struct GetEncoded<'a> { col: &'a ColumnCodec }
 
@@ -94,6 +118,29 @@ impl<'a> VecOperator<'a> for FilterEncoded<'a> {
     }
 }
 
+pub struct IndexEncoded<'a> {
+    col: &'a ColumnCodec,
+    filter: Rc<Vec<usize>>,
+}
+
+impl<'a> IndexEncoded<'a> {
+    pub fn new(col: &'a ColumnCodec, filter: Rc<Vec<usize>>) -> IndexEncoded<'a> {
+        IndexEncoded {
+            col: col,
+            filter: filter,
+        }
+    }
+}
+
+impl<'a> VecOperator<'a> for IndexEncoded<'a> {
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        stats.start();
+        let result = self.col.index_encoded(self.filter.as_ref());
+        stats.record(&"index_encoded");
+        stats.ops += self.filter.len();
+        result
+    }
+}
 
 pub struct Constant { val: RawVal }
 
