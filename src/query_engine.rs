@@ -209,7 +209,6 @@ impl Query {
         };
 
         let mut result = Vec::new();
-        println!("{:?}", self.order_by);
         if let Some(index) = self.order_by_index {
             // TODO(clemens): Reuse sort_column for result
             // TODO(clemens): Optimization: sort directly if only single column selected
@@ -227,7 +226,7 @@ impl Query {
             };
             if self.order_desc {
                 sort_column.sort_indices_desc(&mut sort_indices);
-            } else{
+            } else {
                 sort_column.sort_indices_asc(&mut sort_indices);
             }
             sort_indices.truncate((self.limit.limit + self.limit.offset) as usize);
@@ -378,4 +377,67 @@ fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<RawVal>>) -> String
         formattedrows.iter().map(|row| row.iter().map(|val| val as &str).collect()).collect();
 
     fmt_table(&strcolnames, &strrows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mem_store::csv_loader::ingest_file;
+    use parser::parse_query;
+
+    fn test_query(query: &str, expected_rows: Vec<Vec<RawVal>>) {
+        let batches = ingest_file("test_data/tiny.csv", 100);
+        let query = parse_query(query.as_bytes()).to_result().unwrap();
+        let mut compiled_query = query.compile(&batches);
+        let result = compiled_query.run();
+        assert_eq!(result.rows, expected_rows);
+    }
+
+    #[test]
+    fn test_select_string() {
+        test_query(
+            &"select first_name from default limit 2;",
+            vec![vec!["Victor".into()],
+                 vec!["Catherine".into()]
+            ],
+        )
+    }
+
+    #[test]
+    fn test_select_string_integer() {
+        test_query(
+            &"select first_name, num from default limit 2;",
+            vec![vec!["Victor".into(), 1.into()],
+                 vec!["Catherine".into(), 1.into()]
+            ],
+        )
+    }
+
+    #[test]
+    fn test_sort_string() {
+        test_query(
+            &"select first_name from default order by first_name limit 2;",
+            vec![vec!["Adam".into()],
+                 vec!["Adam".into()],
+            ],
+        )
+    }
+
+    #[test]
+    fn test_sort_string_desc() {
+        test_query(
+            &"select first_name from default order by first_name desc limit 2;",
+            vec![vec!["Willie".into()],
+                 vec!["William".into()],
+            ],
+        )
+    }
+
+    #[test]
+    fn group_by_integer_filter_integer() {
+        test_query(
+            &"select num, count(1) from default where num < 1;",
+            vec![vec![0.into(), 8.into()]],
+        )
+    }
 }

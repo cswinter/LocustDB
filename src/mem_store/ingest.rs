@@ -79,14 +79,14 @@ impl RawCol {
             }
             builder.finalize()
         } else if self.types.contains_int {
-           let mut builder = IntColBuilder::new();
-           for v in self.data {
+            let mut builder = IntColBuilder::new();
+            for v in self.data {
                 match v {
                     RawVal::Str(_) => panic!("Unexpected string in int column!"),
                     RawVal::Int(i) => builder.push(&i),
                     RawVal::Null => builder.push(&0),
                 }
-           }
+            }
             builder.finalize()
         } else {
             Box::new(NullColumn::new(self.data.len()))
@@ -109,7 +109,7 @@ struct ColType {
 
 impl ColType {
     fn new(string: bool, int: bool, null: bool) -> ColType {
-        ColType {  contains_string: string, contains_int: int, contains_null: null }
+        ColType { contains_string: string, contains_int: int, contains_null: null }
     }
 
     fn string() -> ColType {
@@ -146,4 +146,13 @@ impl BitOr for ColType {
             contains_null: self.contains_null | rhs.contains_null,
         }
     }
+}
+
+
+impl<'a> From<&'a str> for RawVal {
+    fn from(val: &str) -> RawVal { RawVal::Str(val.to_string()) }
+}
+
+impl From<i64> for RawVal {
+    fn from(val: i64) -> RawVal { RawVal::Int(val) }
 }

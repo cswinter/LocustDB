@@ -402,7 +402,7 @@ mod tests {
     fn test_select_star() {
         assert_eq!(
             format!("{:?}", parse_query("select * from default;".as_bytes())),
-            "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func(Equals, Const(Int(0)), Const(Int(0))), aggregate: [], order_by: None, limit: LimitClause { limit: 1000, offset: 0 } })");
+            "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: None, order_desc: false, limit: LimitClause { limit: 100, offset: 0 }, order_by_index: None })");
     }
 
     #[test]
