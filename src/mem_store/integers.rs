@@ -5,7 +5,7 @@ use mem_store::point_codec::PointCodec;
 use heapsize::HeapSizeOf;
 use std::{u8, u16, u32, i64};
 use num::traits::NumCast;
-use engine::types::Type;
+use engine::types::*;
 use engine::typed_vec::TypedVec;
 
 
@@ -52,7 +52,7 @@ impl ColumnData for IntegerColumn {
         TypedVec::Integer(results)
     }
 
-    fn decoded_type(&self) -> Type { Type::I64 }
+    fn basic_type(&self) -> BasicType { BasicType::Integer }
 }
 
 
@@ -97,7 +97,9 @@ impl<T: IntLike> ColumnData for IntegerOffsetColumn<T> {
         TypedVec::Integer(result)
     }
 
-    fn decoded_type(&self) -> Type { Type::I64 }
+    fn basic_type(&self) -> BasicType {
+        BasicType::Integer
+    }
 
     fn to_codec(&self) -> Option<&ColumnCodec> { Some(self as &ColumnCodec) }
 }
@@ -139,8 +141,7 @@ impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {
         T::typed_vec(result, self as &PointCodec<T>)
     }
 
-    fn encoded_type(&self) -> Type { T::t() }
-    fn ref_encoded_type(&self) -> Type { T::t_ref() }
+    fn encoding_type(&self) -> EncodingType { T::t() }
 }
 
 impl HeapSizeOf for IntegerColumn {
@@ -152,8 +153,7 @@ impl HeapSizeOf for IntegerColumn {
 trait IntLike: NumCast + HeapSizeOf + Copy + Send + Sync {
     fn borrowed_typed_vec<'a>(values: &'a [Self], codec: &'a PointCodec<Self>) -> TypedVec<'a>;
     fn typed_vec<'a>(values: Vec<Self>, codec: &'a PointCodec<Self>) -> TypedVec<'a>;
-    fn t() -> Type;
-    fn t_ref() -> Type;
+    fn t() -> EncodingType;
 }
 
 impl IntLike for u8 {
@@ -165,8 +165,7 @@ impl IntLike for u8 {
         TypedVec::EncodedU8(values, codec)
     }
 
-    fn t() -> Type { Type::U8 }
-    fn t_ref() -> Type { Type::RefU8 }
+    fn t() -> EncodingType { EncodingType::U8 }
 }
 
 impl IntLike for u16 {
@@ -178,8 +177,7 @@ impl IntLike for u16 {
         TypedVec::EncodedU16(values, codec)
     }
 
-    fn t() -> Type { Type::U8 }
-    fn t_ref() -> Type { Type::RefU8 }
+    fn t() -> EncodingType { EncodingType::U16 }
 }
 
 impl IntLike for u32 {
@@ -191,8 +189,7 @@ impl IntLike for u32 {
         TypedVec::EncodedU32(values, codec)
     }
 
-    fn t() -> Type { Type::U8 }
-    fn t_ref() -> Type { Type::RefU8 }
+    fn t() -> EncodingType { EncodingType::U32 }
 }
 
 impl<T: IntLike> HeapSizeOf for IntegerOffsetColumn<T> {

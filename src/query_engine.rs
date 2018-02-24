@@ -268,7 +268,7 @@ impl Query {
             stats.start();
             let (plan, _) = expr.create_query_plan(columns, filter.clone());
             //println!("select: {:?}", plan);
-            let mut compiled = query_plan::prepare_aggregation(plan, &grouping_key, grouping_key_type, aggregator);
+            let mut compiled = query_plan::prepare_aggregation(plan, &grouping_key, &grouping_key_type, aggregator);
             stats.record(&"compile_aggregate");
             if first_iteration {
                 let (grouping, aggregate) = compiled.execute_all(stats);
@@ -434,10 +434,18 @@ mod tests {
     }
 
     #[test]
-    fn group_by_integer_filter_integer() {
+    fn group_by_integer_filter_integer_lt() {
         test_query(
             &"select num, count(1) from default where num < 1;",
             vec![vec![0.into(), 8.into()]],
+        )
+    }
+
+    #[test]
+    fn group_by_string_filter_string_eq() {
+        test_query(
+            &"select first_name, count(1) from default where first_name = \"Adam\";",
+            vec![vec!["Adam".into(), 2.into()]],
         )
     }
 }

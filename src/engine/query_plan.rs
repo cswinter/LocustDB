@@ -4,27 +4,32 @@ use mem_store::ingest::RawVal;
 use engine::vector_operator::*;
 use engine::aggregation_operator::*;
 use std::rc::Rc;
-use engine::types::Type;
+use engine::types::*;
 use engine::typed_vec::TypedVec;
 use aggregator::Aggregator;
 
 
 #[derive(Debug)]
 pub enum QueryPlan<'a> {
-    Decode(&'a ColumnData),
+    GetDecode(&'a ColumnData),
     FilterDecode(&'a ColumnData, Rc<BitVec>),
     IndexDecode(&'a ColumnData, Rc<Vec<usize>>),
     GetEncoded(&'a ColumnCodec),
     FilterEncoded(&'a ColumnCodec, Rc<BitVec>),
     IndexEncoded(&'a ColumnCodec, Rc<Vec<usize>>),
+
+    Decode(Box<QueryPlan<'a>>),
+
     LessThanVSi64(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     LessThanVSu8(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    EqualsVSString(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+
     Constant(RawVal),
 }
 
 pub fn prepare(plan: QueryPlan) -> BoxedOperator {
     match plan {
-        QueryPlan::Decode(col) => Box::new(Decode::new(col)),
+        QueryPlan::GetDecode(col) => Box::new(GetDecode::new(col)),
         QueryPlan::FilterDecode(col, filter) => Box::new(FilterDecode::new(col, filter)),
         QueryPlan::IndexDecode(col, filter) => Box::new(IndexDecode::new(col, filter)),
         QueryPlan::GetEncoded(col) => Box::new(GetEncoded::new(col)),
@@ -46,24 +51,29 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
                 panic!("Wrong type")
             }
         }
+        QueryPlan::Decode(plan) => Box::new(Decode::new(prepare(*plan))),
+        QueryPlan::EqualsVSString(lhs, rhs) => {
+            if let RawVal::Str(ref s) = rhs.get_const() {
+                Box::new(EqualsVSString::new(prepare(*lhs), s.to_string()))
+            } else {
+                panic!("Wrong type")
+            }
+        },
     }
 }
 
 pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                    grouping_key: &'b TypedVec<'a>,
-                                   grouping_key_type: Type,
+                                   grouping_key_type: &Type,
                                    aggregator: Aggregator) -> Box<AggregationOperator<'a> + 'b> {
-    match (grouping_key_type, aggregator, plan) {
-        (Type::U8, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) |
-        (Type::RefU8, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
+    match (grouping_key_type.encoding_type(), aggregator, plan) {
+        (EncodingType::U8, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
             Box::new(HTSummationCi64::new(grouping_key.cast_ref_u8(), i))
         }
-        (Type::U16, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) |
-        (Type::RefU16, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
+        (EncodingType::U16, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
             Box::new(HTSummationCi64::new(grouping_key.cast_ref_u16(), i))
         }
-        (Type::U32, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) |
-        (Type::RefU32, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
+        (EncodingType::U32, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
             Box::new(HTSummationCi64::new(grouping_key.cast_ref_u32(), i))
         }
         (g, a, p) => panic!("prepare_aggregation not implemented for {:?}, {:?}, {:?}", &g, &a, &p)

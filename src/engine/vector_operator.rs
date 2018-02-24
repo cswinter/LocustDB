@@ -13,13 +13,13 @@ pub trait VecOperator<'a> {
 }
 
 
-pub struct Decode<'a> { col: &'a ColumnData }
+pub struct GetDecode<'a> { col: &'a ColumnData }
 
-impl<'a> Decode<'a> {
-    pub fn new(col: &'a ColumnData) -> Decode { Decode { col: col } }
+impl<'a> GetDecode<'a> {
+    pub fn new(col: &'a ColumnData) -> GetDecode { GetDecode { col: col } }
 }
 
-impl<'a> VecOperator<'a> for Decode<'a> {
+impl<'a> VecOperator<'a> for GetDecode<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let result = self.col.collect_decoded();
@@ -142,6 +142,25 @@ impl<'a> VecOperator<'a> for IndexEncoded<'a> {
     }
 }
 
+pub struct Decode<'a> { plan: BoxedOperator<'a> }
+
+impl<'a> Decode<'a> {
+    pub fn new(plan: BoxedOperator<'a>) -> Decode<'a> {
+        Decode { plan: plan }
+    }
+}
+
+impl<'a> VecOperator<'a> for Decode<'a> {
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        let encoded = self.plan.execute(stats);
+        stats.start();
+        let result = encoded.decode();
+        stats.record(&"decode");
+        result
+    }
+}
+
+
 pub struct Constant { val: RawVal }
 
 impl Constant {
@@ -216,6 +235,37 @@ impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
             result.push(*l < i);
         }
         stats.record(&"less_than_vs_u8");
+        stats.ops += data.len();
+        TypedVec::Boolean(result)
+    }
+}
+
+
+pub struct EqualsVSString<'a> {
+    lhs: BoxedOperator<'a>,
+    rhs: String,
+}
+
+impl<'a> EqualsVSString<'a> {
+    pub fn new(lhs: BoxedOperator, rhs: String) -> EqualsVSString {
+        EqualsVSString {
+            lhs: lhs,
+            rhs: rhs,
+        }
+    }
+}
+
+impl<'a> VecOperator<'a> for EqualsVSString<'a> {
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        let lhs = self.lhs.execute(stats);
+        stats.start();
+        let data = lhs.cast_ref_str();
+        let mut result = BitVec::with_capacity(data.len());
+        let s = &self.rhs;
+        for l in data {
+            result.push(*l == s);
+        }
+        stats.record(&"equals_vs_str");
         stats.ops += data.len();
         TypedVec::Boolean(result)
     }

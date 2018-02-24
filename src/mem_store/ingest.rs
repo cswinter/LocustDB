@@ -5,12 +5,23 @@ use mem_store::null_column::NullColumn;
 use std::ops::BitOr;
 use std::iter::repeat;
 use std::fmt;
+use engine::types::BasicType;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 pub enum RawVal {
     Int(i64),
     Str(String),
     Null,
+}
+
+impl RawVal {
+    pub fn get_type(&self) -> BasicType {
+        match self {
+            &RawVal::Int(_) => BasicType::Integer,
+            &RawVal::Str(_) => BasicType::String,
+            &RawVal::Null => BasicType::Null,
+        }
+    }
 }
 
 impl fmt::Display for RawVal {

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::str;
 use std::{u8, u16};
-use engine::types::Type;
+use engine::types::*;
 use engine::typed_vec::TypedVec;
 
 
@@ -90,7 +90,7 @@ impl ColumnData for StringPacker {
         TypedVec::String(result)
     }
 
-    fn decoded_type(&self) -> Type { Type::String }
+    fn basic_type(&self) -> BasicType { BasicType::String }
 }
 
 impl HeapSizeOf for StringPacker {
@@ -176,8 +176,7 @@ impl ColumnData for DictEncodedStrings {
         TypedVec::String(result)
     }
 
-    fn decoded_type(&self) -> Type { Type::String }
-
+    fn basic_type(&self) -> BasicType { BasicType::String }
     fn to_codec(&self) -> Option<&ColumnCodec> { Some(self as &ColumnCodec) }
 }
 
@@ -226,8 +225,7 @@ impl ColumnCodec for DictEncodedStrings {
         TypedVec::EncodedU16(result, self as &PointCodec<u16>)
     }
 
-    fn encoded_type(&self) -> Type { Type::U16 }
-    fn ref_encoded_type(&self) -> Type { Type::RefU16 }
+    fn encoding_type(&self) -> EncodingType { EncodingType::U16 }
 }
 
 impl HeapSizeOf for DictEncodedStrings {

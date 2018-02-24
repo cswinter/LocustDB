@@ -1,6 +1,6 @@
 use bit_vec::BitVec;
 use mem_store::point_codec::PointCodec;
-use engine::types::Type;
+use engine::types::*;
 use value::Val;
 use mem_store::ingest::RawVal;
 
@@ -56,19 +56,31 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn get_type(&self) -> Type {
+    pub fn decode(self) -> TypedVec<'a> {
         match self {
-            &TypedVec::String(_) => Type::String,
-            &TypedVec::Integer(_) => Type::I64,
-            &TypedVec::Mixed(_) => Type::Val,
-            &TypedVec::Boolean(_) => Type::Boolean,
-            &TypedVec::Empty => Type::Null,
-            &TypedVec::EncodedU8(_, _) => Type::U8,
-            &TypedVec::EncodedU16(_, _) => Type::U16,
-            &TypedVec::EncodedU32(_, _) => Type::U32,
-            &TypedVec::BorrowedEncodedU8(_, _) => Type::RefU8,
-            &TypedVec::BorrowedEncodedU16(_, _) => Type::RefU16,
-            &TypedVec::BorrowedEncodedU32(_, _) => Type::RefU32,
+            TypedVec::EncodedU8(ref v, codec) => codec.decode(v),
+            TypedVec::EncodedU16(ref v, codec) => codec.decode(v),
+            TypedVec::EncodedU32(ref v, codec) => codec.decode(v),
+            TypedVec::BorrowedEncodedU8(v, codec) => codec.decode(v),
+            TypedVec::BorrowedEncodedU16(v, codec) => codec.decode(v),
+            TypedVec::BorrowedEncodedU32(v, codec) => codec.decode(v),
+            x => x,
+        }
+    }
+
+    pub fn get_type(&self) -> EncodingType {
+        match self {
+            &TypedVec::String(_) => EncodingType::Str,
+            &TypedVec::Integer(_) => EncodingType::I64,
+            &TypedVec::Mixed(_) => EncodingType::Val,
+            &TypedVec::Boolean(_) => EncodingType::BitVec,
+            &TypedVec::Empty => EncodingType::Null,
+            &TypedVec::EncodedU8(_, _) => EncodingType::U8,
+            &TypedVec::EncodedU16(_, _) => EncodingType::U16,
+            &TypedVec::EncodedU32(_, _) => EncodingType::U32,
+            &TypedVec::BorrowedEncodedU8(_, _) => EncodingType::U8,
+            &TypedVec::BorrowedEncodedU16(_, _) => EncodingType::U16,
+            &TypedVec::BorrowedEncodedU32(_, _) => EncodingType::U32,
             _ => panic!("not implemented")
         }
     }
@@ -129,10 +141,17 @@ impl<'a> TypedVec<'a> {
         }
     }
 
+    pub fn cast_ref_str(&self) -> &[&str] {
+        match self {
+            &TypedVec::String(ref x) => x,
+            _ => panic!("type error: {:?}", self.get_type()),
+        }
+    }
+
     pub fn cast_ref_i64(&self) -> &[i64] {
         match self {
             &TypedVec::Integer(ref x) => x,
-            _ => panic!("type error"),
+            _ => panic!("type error: {:?}", self.get_type()),
         }
     }
 
@@ -141,7 +160,7 @@ impl<'a> TypedVec<'a> {
         match self {
             &TypedVec::BorrowedEncodedU32(data, codec) => (data, codec),
             &TypedVec::EncodedU32(ref data, codec) => (data, codec),
-            _ => panic!("type error"),
+            _ => panic!("type error: {:?}", self.get_type()),
         }
     }
 
@@ -149,7 +168,7 @@ impl<'a> TypedVec<'a> {
         match self {
             &TypedVec::BorrowedEncodedU16(data, codec) => (data, codec),
             &TypedVec::EncodedU16(ref data, codec) => (data, codec),
-            _ => panic!("type error"),
+            _ => panic!("type error: {:?}", self.get_type()),
         }
     }
 
@@ -157,7 +176,7 @@ impl<'a> TypedVec<'a> {
         match self {
             &TypedVec::BorrowedEncodedU8(data, codec) => (data, codec),
             &TypedVec::EncodedU8(ref data, codec) => (data, codec),
-            _ => panic!("type error"),
+            _ => panic!("type error: {:?}", self.get_type()),
         }
     }
 }

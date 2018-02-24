@@ -1,7 +1,7 @@
 use bit_vec::BitVec;
 use mem_store::column::*;
 use heapsize::HeapSizeOf;
-use engine::types::Type;
+use engine::types::*;
 use engine::typed_vec::TypedVec;
 
 
@@ -28,7 +28,7 @@ impl ColumnData for NullColumn {
         TypedVec::Empty
     }
 
-    fn decoded_type(&self) -> Type { Type::Null }
+    fn basic_type(&self) -> BasicType { BasicType::Null }
 }
 
 impl HeapSizeOf for NullColumn {
