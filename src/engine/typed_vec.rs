@@ -179,6 +179,20 @@ impl<'a> TypedVec<'a> {
             _ => panic!("type error: {:?}", self.get_type()),
         }
     }
+
+    pub fn cast_str_const(&self) -> &str {
+        match self {
+            &TypedVec::Constant(RawVal::Str(ref s)) => s,
+            _ => panic!("type error: {:?}", self.get_type()),
+        }
+    }
+
+    pub fn cast_int_const(&self) -> i64 {
+        match self {
+            &TypedVec::Constant(RawVal::Int(i)) => i,
+            _ => panic!("type error: {:?}", self.get_type()),
+        }
+    }
 }
 
 impl<'a> From<(&'a [u8], &'a PointCodec<u8>)> for TypedVec<'a> {

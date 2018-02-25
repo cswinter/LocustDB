@@ -20,9 +20,12 @@ pub enum QueryPlan<'a> {
 
     Decode(Box<QueryPlan<'a>>),
 
+    EncodeStrConstant(Box<QueryPlan<'a>>, &'a ColumnCodec),
+
     LessThanVSi64(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     LessThanVSu8(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     EqualsVSString(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    EqualsVSU16(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
 
     Constant(RawVal),
 }
@@ -52,13 +55,12 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
             }
         }
         QueryPlan::Decode(plan) => Box::new(Decode::new(prepare(*plan))),
-        QueryPlan::EqualsVSString(lhs, rhs) => {
-            if let RawVal::Str(ref s) = rhs.get_const() {
-                Box::new(EqualsVSString::new(prepare(*lhs), s.to_string()))
-            } else {
-                panic!("Wrong type")
-            }
-        },
+        QueryPlan::EncodeStrConstant(plan, codec) =>
+            Box::new(EncodeStrConstant::new(prepare(*plan), codec)),
+        QueryPlan::EqualsVSString(lhs, rhs) =>
+            Box::new(EqualsVSString::new(prepare(*lhs), prepare(*rhs))),
+        QueryPlan::EqualsVSU16(lhs, rhs) =>
+            Box::new(EqualsVSU16::new(prepare(*lhs), prepare(*rhs))),
     }
 }
 

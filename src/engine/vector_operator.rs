@@ -243,11 +243,11 @@ impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
 
 pub struct EqualsVSString<'a> {
     lhs: BoxedOperator<'a>,
-    rhs: String,
+    rhs: BoxedOperator<'a>,
 }
 
 impl<'a> EqualsVSString<'a> {
-    pub fn new(lhs: BoxedOperator, rhs: String) -> EqualsVSString {
+    pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> EqualsVSString<'a> {
         EqualsVSString {
             lhs: lhs,
             rhs: rhs,
@@ -258,15 +258,77 @@ impl<'a> EqualsVSString<'a> {
 impl<'a> VecOperator<'a> for EqualsVSString<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         let lhs = self.lhs.execute(stats);
+        let rhs = self.rhs.execute(stats);
         stats.start();
         let data = lhs.cast_ref_str();
+        let s = rhs.cast_str_const();
         let mut result = BitVec::with_capacity(data.len());
-        let s = &self.rhs;
         for l in data {
             result.push(*l == s);
         }
         stats.record(&"equals_vs_str");
         stats.ops += data.len();
         TypedVec::Boolean(result)
+    }
+}
+
+
+pub struct EqualsVSU16<'a> {
+    lhs: BoxedOperator<'a>,
+    rhs: BoxedOperator<'a>,
+}
+
+impl<'a> EqualsVSU16<'a> {
+    pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> EqualsVSU16<'a> {
+        EqualsVSU16 {
+            lhs: lhs,
+            rhs: rhs,
+        }
+    }
+}
+
+impl<'a> VecOperator<'a> for EqualsVSU16<'a> {
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        let lhs = self.lhs.execute(stats);
+        let rhs = self.rhs.execute(stats);
+        stats.start();
+        let data = lhs.cast_ref_u16().0;
+        // TODO(clemens): range check
+        let s = rhs.cast_int_const() as u16;
+        let mut result = BitVec::with_capacity(data.len());
+        for l in data {
+            result.push(*l == s);
+        }
+        stats.record(&"equals_vs_u16");
+        stats.ops += data.len();
+        TypedVec::Boolean(result)
+    }
+}
+
+
+pub struct EncodeStrConstant<'a> {
+    constant: BoxedOperator<'a>,
+    codec: &'a ColumnCodec,
+}
+
+impl<'a> EncodeStrConstant<'a> {
+    pub fn new(constant: BoxedOperator<'a>, codec: &'a ColumnCodec) -> EncodeStrConstant<'a> {
+        EncodeStrConstant {
+            constant: constant,
+            codec: codec,
+        }
+    }
+}
+
+impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        let constant = self.constant.execute(stats);
+
+        stats.start();
+        let s = constant.cast_str_const();
+        let result = self.codec.encode_str(s);
+        stats.record(&"encode_str_const");
+        
+        TypedVec::Constant(result)
     }
 }

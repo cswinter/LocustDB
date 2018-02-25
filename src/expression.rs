@@ -141,12 +141,21 @@ impl Expr {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let decoded = QueryPlan::Decode(Box::new(plan_lhs));
-                                QueryPlan::EqualsVSString(Box::new(decoded), Box::new(plan_rhs))
+                                match type_lhs.encoding_type() {
+                                    EncodingType::U16 => {
+                                        let encoded = QueryPlan::EncodeStrConstant(
+                                            Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                        QueryPlan::EqualsVSU16(Box::new(plan_lhs), Box::new(encoded))
+                                    }
+                                    _ => {
+                                        let decoded = QueryPlan::Decode(Box::new(plan_lhs));
+                                        QueryPlan::EqualsVSString(Box::new(decoded), Box::new(plan_rhs))
+                                    }
+                                }
                             } else {
                                 unimplemented!()
                             }
-                        }else {
+                        } else {
                             unimplemented!()
                         };
                         (plan, Type::new(BasicType::Boolean, None).mutable())

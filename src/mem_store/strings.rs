@@ -226,6 +226,15 @@ impl ColumnCodec for DictEncodedStrings {
     }
 
     fn encoding_type(&self) -> EncodingType { EncodingType::U16 }
+
+    fn encode_str(&self, s: &str) -> RawVal {
+        for (i, val) in self.mapping.iter().enumerate() {
+            if val.as_ref().unwrap() == s {
+                return RawVal::Int(i as i64)
+            }
+        }
+        RawVal::Int(-1)
+    }
 }
 
 impl HeapSizeOf for DictEncodedStrings {

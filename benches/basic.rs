@@ -57,7 +57,7 @@ fn bench_2mb_filter_select(b: &mut test::Bencher) {
 }
 
 #[bench]
-fn bench_2mb_stringy_equality(b: &mut test::Bencher) {
+fn bench_2mb_string_equality(b: &mut test::Bencher) {
     bench_query_2mb(b, "select first_name from test where first_name = \"Adam\" limit 2;");
 }
 

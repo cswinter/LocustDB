@@ -3,6 +3,7 @@ use heapsize::HeapSizeOf;
 use engine::types::*;
 use std::fmt;
 use engine::typed_vec::TypedVec;
+use mem_store::ingest::RawVal;
 
 
 pub struct Column {
@@ -56,6 +57,10 @@ pub trait ColumnCodec: ColumnData {
     fn filter_encoded(&self, filter: &BitVec) -> TypedVec;
     fn index_encoded(&self, filter: &Vec<usize>) -> TypedVec;
     fn encoding_type(&self) -> EncodingType;
+
+    fn encode_str(&self, string: &str) -> RawVal {
+        panic!("encode_str not supported")
+    }
 }
 
 impl<'a> fmt::Debug for &'a ColumnCodec {
