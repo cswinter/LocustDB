@@ -163,6 +163,18 @@ impl Expr {
                     _ => panic!("type error: {:?} = {:?}", type_lhs, type_rhs)
                 }
             }
+            &Func(Or, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = lhs.create_query_plan(columns, filter.clone());
+                let (plan_rhs, type_rhs) = rhs.create_query_plan(columns, filter);
+                assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
+                (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
+            }
+            &Func(And, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = lhs.create_query_plan(columns, filter.clone());
+                let (plan_rhs, type_rhs) = rhs.create_query_plan(columns, filter);
+                assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
+                (QueryPlan::And(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
+            }
             &Const(ref v) => (QueryPlan::Constant(v.clone()), Type::scalar(v.get_type())),
             x => panic!("{:?}.compile_vec() not implemented", x),
         }

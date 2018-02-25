@@ -58,7 +58,7 @@ pub trait ColumnCodec: ColumnData {
     fn index_encoded(&self, filter: &Vec<usize>) -> TypedVec;
     fn encoding_type(&self) -> EncodingType;
 
-    fn encode_str(&self, string: &str) -> RawVal {
+    fn encode_str(&self, _: &str) -> RawVal {
         panic!("encode_str not supported")
     }
 }

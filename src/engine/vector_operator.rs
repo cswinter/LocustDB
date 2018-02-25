@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use bit_vec::BitVec;
 use std::rc::Rc;
 use mem_store::ingest::RawVal;
@@ -306,6 +307,69 @@ impl<'a> VecOperator<'a> for EqualsVSU16<'a> {
 }
 
 
+struct BooleanOperator<'a, T> {
+    lhs: BoxedOperator<'a>,
+    rhs: BoxedOperator<'a>,
+    op: PhantomData<T>,
+}
+
+impl<'a, T: BooleanOp + 'a> BooleanOperator<'a, T> {
+    fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
+        Box::new(BooleanOperator::<'a, T> {
+            lhs: lhs,
+            rhs: rhs,
+            op: PhantomData,
+        })
+    }
+}
+
+pub struct Boolean;
+
+impl Boolean {
+    pub fn or<'a>(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
+        BooleanOperator::<BooleanOr>::new(lhs, rhs)
+    }
+
+    pub fn and<'a>(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
+        BooleanOperator::<BooleanAnd>::new(lhs, rhs)
+    }
+}
+
+impl<'a, T: BooleanOp> VecOperator<'a> for BooleanOperator<'a, T> {
+    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
+        let _lhs = self.lhs.execute(stats);
+        let _rhs = self.rhs.execute(stats);
+
+        stats.start();
+        let mut result = _lhs.cast_bit_vec();
+        let rhs = _rhs.cast_bit_vec();
+        T::evaluate(&mut result, &rhs);
+        stats.record(T::name());
+
+        TypedVec::Boolean(result)
+    }
+}
+
+trait BooleanOp {
+    fn evaluate(lhs: &mut BitVec, rhs: &BitVec);
+    fn name() -> &'static str;
+}
+
+struct BooleanOr;
+
+struct BooleanAnd;
+
+impl BooleanOp for BooleanOr {
+    fn evaluate(lhs: &mut BitVec, rhs: &BitVec) { lhs.union(rhs); }
+    fn name() -> &'static str { &"bit_vec_or" }
+}
+
+impl BooleanOp for BooleanAnd {
+    fn evaluate(lhs: &mut BitVec, rhs: &BitVec) { lhs.intersect(rhs); }
+    fn name() -> &'static str { &"bit_vec_and" }
+}
+
+
 pub struct EncodeStrConstant<'a> {
     constant: BoxedOperator<'a>,
     codec: &'a ColumnCodec,
@@ -328,7 +392,7 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
         let s = constant.cast_str_const();
         let result = self.codec.encode_str(s);
         stats.record(&"encode_str_const");
-        
+
         TypedVec::Constant(result)
     }
 }

@@ -448,4 +448,12 @@ mod tests {
             vec![vec!["Adam".into(), 2.into()]],
         )
     }
+
+    #[test]
+    fn test_and_or() {
+        test_query(
+            &"select first_name, last_name from default where ((first_name = \"Adam\") OR (first_name = \"Catherine\")) AND (last_name = \"Cox\");",
+            vec![vec!["Adam".into(), "Cox".into()]],
+        )
+    }
 }

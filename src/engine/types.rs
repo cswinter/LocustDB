@@ -14,7 +14,7 @@ pub enum EncodingType {
     U32,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BasicType {
     String,
     Integer,
@@ -51,6 +51,10 @@ impl<'a> Type<'a> {
             is_scalar: false,
             is_borrowed: false,
         }
+    }
+
+    pub fn bit_vec() -> Type<'static> {
+        Type::new(BasicType::Boolean, None).mutable()
     }
 
     pub fn is_encoded(&self) -> bool {

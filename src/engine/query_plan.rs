@@ -26,6 +26,8 @@ pub enum QueryPlan<'a> {
     LessThanVSu8(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     EqualsVSString(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     EqualsVSU16(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    And(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    Or(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
 
     Constant(RawVal),
 }
@@ -61,6 +63,8 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
             Box::new(EqualsVSString::new(prepare(*lhs), prepare(*rhs))),
         QueryPlan::EqualsVSU16(lhs, rhs) =>
             Box::new(EqualsVSU16::new(prepare(*lhs), prepare(*rhs))),
+        QueryPlan::Or(lhs, rhs) => Boolean::or(prepare(*lhs), prepare(*rhs)),
+        QueryPlan::And(lhs, rhs) => Boolean::and(prepare(*lhs), prepare(*rhs)),
     }
 }
 

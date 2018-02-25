@@ -193,6 +193,13 @@ impl<'a> TypedVec<'a> {
             _ => panic!("type error: {:?}", self.get_type()),
         }
     }
+
+    pub fn cast_bit_vec(self) -> BitVec {
+        match self {
+            TypedVec::Boolean(v) => v,
+            _ => panic!("type error: {:?}", self.get_type()),
+        }
+    }
 }
 
 impl<'a> From<(&'a [u8], &'a PointCodec<u8>)> for TypedVec<'a> {

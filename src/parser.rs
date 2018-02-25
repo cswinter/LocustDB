@@ -283,7 +283,7 @@ named!(function_name<&[u8], FuncType>,
 );
 
 named!(infix_function_name<&[u8], FuncType>,
-    alt!( equals | and | greater | less | add | subtract | divide | multiply )
+    alt!( equals | and | or | greater | less | add | subtract | divide | multiply )
 );
 
 named!(divide<&[u8], FuncType>,
@@ -316,6 +316,10 @@ named!(less<&[u8], FuncType>,
 
 named!(and<&[u8], FuncType>,
     map!( tag_no_case!("and"), |_| FuncType::And)
+);
+
+named!(or<&[u8], FuncType>,
+    map!( tag_no_case!("or"), |_| FuncType::Or)
 );
 
 named!(regex<&[u8], FuncType>,
