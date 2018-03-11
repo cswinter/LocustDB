@@ -90,11 +90,7 @@ impl<T: IntLike> ColumnData for IntegerOffsetColumn<T> {
     }
 
     fn index_decode<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
-        let mut result = Vec::with_capacity(filter.len());
-        for &i in filter {
-            result.push(self.values[i].to_i64().unwrap() + self.offset);
-        }
-        TypedVec::Integer(result)
+        PointCodec::index_decode(self, &self.values, filter)
     }
 
     fn basic_type(&self) -> BasicType {
@@ -109,6 +105,14 @@ impl<T: IntLike> PointCodec<T> for IntegerOffsetColumn<T> {
         let mut result = Vec::with_capacity(self.values.len());
         for value in data {
             result.push(value.to_i64().unwrap() + self.offset);
+        }
+        TypedVec::Integer(result)
+    }
+
+    fn index_decode<'a>(&'a self, data: &[T], filter: &[usize]) -> TypedVec {
+        let mut result = Vec::with_capacity(filter.len());
+        for &i in filter {
+            result.push(data[i].to_i64().unwrap() + self.offset);
         }
         TypedVec::Integer(result)
     }

@@ -168,12 +168,7 @@ impl ColumnData for DictEncodedStrings {
     }
 
     fn index_decode(&self, filter: &Vec<usize>) -> TypedVec {
-        let mut result = Vec::<&str>::with_capacity(filter.len());
-        for &i in filter {
-            let encoded_value = self.encoded_values[i];
-            result.push(self.mapping[encoded_value as usize].as_ref().unwrap());
-        }
-        TypedVec::String(result)
+        PointCodec::index_decode(self, &self.encoded_values, filter)
     }
 
     fn basic_type(&self) -> BasicType { BasicType::String }
@@ -185,6 +180,15 @@ impl PointCodec<u16> for DictEncodedStrings {
         let mut result = Vec::<&str>::with_capacity(self.encoded_values.len());
         for encoded_value in data {
             result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
+        }
+        TypedVec::String(result)
+    }
+
+    fn index_decode(&self, data: &[u16], filter: &[usize]) -> TypedVec {
+        let mut result = Vec::<&str>::with_capacity(filter.len());
+        for &i in filter {
+            let encoded_value = data[i];
+            result.push(self.mapping[encoded_value as usize].as_ref().unwrap());
         }
         TypedVec::String(result)
     }

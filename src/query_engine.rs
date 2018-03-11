@@ -6,6 +6,8 @@ use time::precise_time_ns;
 use std::cmp;
 
 use engine::query_plan;
+use engine::batch_merging::*;
+use engine::aggregation_operator::*;
 use engine::typed_vec::TypedVec;
 use expression::*;
 use aggregator::*;
@@ -94,22 +96,27 @@ impl<'a> CompiledQuery<'a> {
     pub fn run(&mut self) -> QueryResult {
         let start_time = precise_time_ns();
         let colnames = self.output_colnames.clone();
-        let limit = self.query.limit.limit;
-        let offset = self.query.limit.offset;
+        let limit = self.query.limit.limit as usize;
+        let offset = self.query.limit.offset as usize;
 
-        let mut result_cols = Vec::new();
-        if self.aggregate.len() == 0 {
-            for batch in &self.batches {
-                result_cols.push(self.query.run(batch, &mut self.stats));
-                /*if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
-                    break;
-                }*/
-            }
-        } else {
-            for batch in &self.batches {
-                result_cols.push(self.query.run_aggregate(batch, &mut self.stats));
-            }
-        };
+        // let mut result_cols = Vec::new();
+        let mut result = None;
+        for batch in &self.batches {
+            let batch_result = if self.aggregate.len() == 0 {
+                self.query.run(batch, &mut self.stats)
+            } else {
+                self.query.run_aggregate(batch, &mut self.stats)
+            };
+            // TODO(clemens): O(n^2)
+            result = match result {
+                None => Some(batch_result),
+                Some(partial_result) => Some(combine(partial_result, batch_result)),
+            };
+            /*if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
+                break;
+            }*/
+        }
+        let result = result.unwrap();
 
         /*if let Some(ref order_by_expr) = self.compiled_order_by {
             result_rows.sort_by_key(|record| order_by_expr.eval(record));
@@ -117,22 +124,16 @@ impl<'a> CompiledQuery<'a> {
 
         self.stats.start();
         let mut result_rows = Vec::new();
-        let mut o = offset as usize;
-        for batch in result_cols.iter() {
-            let n = batch[0].len();
-            if n <= o {
-                o = o - n;
-                continue;
-            } else {
-                let count = cmp::min(n - o, limit as usize - result_rows.len());
-                for i in o..(count + o) {
-                    let mut record = Vec::with_capacity(colnames.len());
-                    for col in batch.iter() {
-                        record.push(col.get_raw(i));
-                    }
-                    result_rows.push(record);
-                }
+        let count = cmp::min(limit, result.len() - offset);
+        for i in offset..(count + offset) {
+            let mut record = Vec::with_capacity(colnames.len());
+            if let Some(ref g) = result.group_by {
+                record.push(g.get_raw(i));
             }
+            for col in result.select.iter() {
+                record.push(col.get_raw(i));
+            }
+            result_rows.push(record);
         }
         self.stats.record(&"limit_collect");
         self.stats.runtime_ns += precise_time_ns() - start_time;
@@ -195,7 +196,7 @@ impl Query {
             .collect()
     }
 
-    fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
+    fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> BatchResult<'a> {
         stats.start();
         let (filter_plan, _) = self.filter.create_query_plan(columns, Filter::None);
         //println!("filter: {:?}", filter_plan);
@@ -238,15 +239,20 @@ impl Query {
             //println!("select: {:?}", plan);
             let mut compiled = query_plan::prepare(plan);
             stats.record(&"compile_select");
-            result.push(compiled.execute(stats));
+            result.push(compiled.execute(stats).decode());
         }
-        result
+
+        BatchResult {
+            group_by: None,
+            sort_by: self.order_by_index,
+            select: result,
+            aggregators: Vec::with_capacity(0),
+        }
     }
 
-    fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> Vec<TypedVec<'a>> {
+    fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> BatchResult<'a> {
         stats.start();
         let (filter_plan, _) = self.filter.create_query_plan(columns, Filter::None);
-        //println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
         stats.record(&"compile_filter");
@@ -257,28 +263,30 @@ impl Query {
         };
 
         stats.start();
-        let (grouping_key_plan, grouping_key_type) = Expr::compile_grouping_key(&self.select, columns, filter.clone());
+        let (grouping_key_plan, _) = Expr::compile_grouping_key(&self.select, columns, filter.clone());
         let mut compiled_gk = query_plan::prepare(grouping_key_plan);
         stats.record(&"compile_grouping_key");
         let grouping_key = compiled_gk.execute(stats);
+        let (grouping, max_index, groups) = grouping(grouping_key);
+        let groups = groups.order_preserving();
+        let mut grouping_sort_indices = (0..groups.len()).collect();
+        groups.sort_indices_asc(&mut grouping_sort_indices);
 
         let mut result = Vec::new();
-        let first_iteration = true;
         for &(aggregator, ref expr) in &self.aggregate {
             stats.start();
             let (plan, _) = expr.create_query_plan(columns, filter.clone());
-            //println!("select: {:?}", plan);
-            let mut compiled = query_plan::prepare_aggregation(plan, &grouping_key, &grouping_key_type, aggregator);
+            let mut compiled = query_plan::prepare_aggregation(plan, &grouping, max_index, aggregator);
             stats.record(&"compile_aggregate");
-            if first_iteration {
-                let (grouping, aggregate) = compiled.execute_all(stats);
-                result.push(grouping);
-                result.push(aggregate);
-            } else {
-                result.push(compiled.execute(stats));
-            }
+            result.push(compiled.execute(stats).index_decode(&grouping_sort_indices));
         }
-        result
+
+        BatchResult {
+            group_by: Some(groups.index_decode(&grouping_sort_indices)),
+            sort_by: None,
+            select: result,
+            aggregators: self.aggregate.iter().map(|x| x.0).collect(),
+        }
     }
 
     fn is_select_star(&self) -> bool {
@@ -360,7 +368,7 @@ pub fn print_query_result(results: &QueryResult) {
              results.stats.ops,
              fmt_time,
              rt.checked_div(results.stats.ops as u64).unwrap_or(0));
-    println!("");
+    println!();
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 
@@ -386,7 +394,7 @@ mod tests {
     use parser::parse_query;
 
     fn test_query(query: &str, expected_rows: Vec<Vec<RawVal>>) {
-        let batches = ingest_file("test_data/tiny.csv", 100);
+        let batches = ingest_file("test_data/tiny.csv", 20);
         let query = parse_query(query.as_bytes()).to_result().unwrap();
         let mut compiled_query = query.compile(&batches);
         let result = compiled_query.run();
@@ -423,6 +431,7 @@ mod tests {
         )
     }
 
+    /*
     #[test]
     fn test_sort_string_desc() {
         test_query(
@@ -431,13 +440,18 @@ mod tests {
                  vec!["William".into()],
             ],
         )
-    }
+    }*/
 
     #[test]
     fn group_by_integer_filter_integer_lt() {
         test_query(
-            &"select num, count(1) from default where num < 1;",
-            vec![vec![0.into(), 8.into()]],
+            &"select num, count(1) from default where num < 8;",
+            vec![vec![0.into(), 8.into()],
+                 vec![1.into(), 49.into()],
+                 vec![2.into(), 24.into()],
+                 vec![3.into(), 11.into()],
+                 vec![4.into(), 5.into()],
+                 vec![5.into(), 2.into()]],
         )
     }
 

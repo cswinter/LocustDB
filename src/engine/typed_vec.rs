@@ -68,6 +68,48 @@ impl<'a> TypedVec<'a> {
         }
     }
 
+    pub fn index_decode(self, indices: &[usize]) -> TypedVec<'a> {
+        match self {
+            TypedVec::EncodedU8(ref v, codec) => codec.index_decode(v, indices),
+            TypedVec::EncodedU16(ref v, codec) => codec.index_decode(v, indices),
+            TypedVec::EncodedU32(ref v, codec) => codec.index_decode(v, indices),
+            TypedVec::BorrowedEncodedU8(v, codec) => codec.index_decode(v, indices),
+            TypedVec::BorrowedEncodedU16(v, codec) => codec.index_decode(v, indices),
+            TypedVec::BorrowedEncodedU32(v, codec) => codec.index_decode(v, indices),
+            TypedVec::Integer(data) => {
+                let mut permuted = Vec::with_capacity(data.len());
+                for i in indices {
+                    permuted.push(data[*i]);
+                }
+                TypedVec::Integer(permuted)
+            }
+            TypedVec::String(data) => {
+                let mut permuted = Vec::with_capacity(data.len());
+                for i in indices {
+                    permuted.push(data[*i]);
+                }
+                TypedVec::String(permuted)
+            }
+            TypedVec::Empty => TypedVec::Empty,
+            TypedVec::Constant(c) => TypedVec::Constant(c),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn extend(self, other: TypedVec<'a>) -> TypedVec<'a> {
+        match (self, other) {
+            (TypedVec::Integer(mut data), TypedVec::Integer(mut other_data)) => {
+                data.append(&mut other_data);
+                TypedVec::Integer(data)
+            }
+            (TypedVec::String(mut data), TypedVec::String(mut other_data)) => {
+                data.append(&mut other_data);
+                TypedVec::String(data)
+            }
+            _ => panic!("not implemented")
+        }
+    }
+
     pub fn get_type(&self) -> EncodingType {
         match self {
             &TypedVec::String(_) => EncodingType::Str,
@@ -141,14 +183,14 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn cast_ref_str(&self) -> &[&str] {
+    pub fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] {
         match self {
             &TypedVec::String(ref x) => x,
             _ => panic!("type error: {:?}", self.get_type()),
         }
     }
 
-    pub fn cast_ref_i64(&self) -> &[i64] {
+    pub fn cast_ref_i64<'b>(&'b self) -> &'b [i64] {
         match self {
             &TypedVec::Integer(ref x) => x,
             _ => panic!("type error: {:?}", self.get_type()),
@@ -236,5 +278,17 @@ impl<'a> From<(Vec<u16>, &'a PointCodec<u16>)> for TypedVec<'a> {
 impl<'a> From<(Vec<u32>, &'a PointCodec<u32>)> for TypedVec<'a> {
     fn from(encoded: (Vec<u32>, &'a PointCodec<u32>)) -> Self {
         TypedVec::EncodedU32(encoded.0, encoded.1)
+    }
+}
+
+impl<'a> From<(Vec<i64>)> for TypedVec<'a> {
+    fn from(data: Vec<i64>) -> Self {
+        TypedVec::Integer(data)
+    }
+}
+
+impl<'a> From<(Vec<&'a str>)> for TypedVec<'a> {
+    fn from(data: Vec<&'a str>) -> Self {
+        TypedVec::String(data)
     }
 }

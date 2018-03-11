@@ -4,8 +4,6 @@ use mem_store::ingest::RawVal;
 use engine::vector_operator::*;
 use engine::aggregation_operator::*;
 use std::rc::Rc;
-use engine::types::*;
-use engine::typed_vec::TypedVec;
 use aggregator::Aggregator;
 
 
@@ -68,21 +66,16 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
     }
 }
 
+// TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
 pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
-                                   grouping_key: &'b TypedVec<'a>,
-                                   grouping_key_type: &Type,
-                                   aggregator: Aggregator) -> Box<AggregationOperator<'a> + 'b> {
-    match (grouping_key_type.encoding_type(), aggregator, plan) {
-        (EncodingType::U8, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
-            Box::new(HTSummationCi64::new(grouping_key.cast_ref_u8(), i))
+                                   grouping: &'b Vec<usize>,
+                                   max_index: usize,
+                                   aggregator: Aggregator) -> Box<VecOperator<'a> + 'b> {
+    match (aggregator, plan) {
+        (Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
+            Box::new(HTSummationCi64::new(grouping, max_index, i))
         }
-        (EncodingType::U16, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
-            Box::new(HTSummationCi64::new(grouping_key.cast_ref_u16(), i))
-        }
-        (EncodingType::U32, Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
-            Box::new(HTSummationCi64::new(grouping_key.cast_ref_u32(), i))
-        }
-        (g, a, p) => panic!("prepare_aggregation not implemented for {:?}, {:?}, {:?}", &g, &a, &p)
+        (a, p) => panic!("prepare_aggregation not implemented for {:?}, {:?}", &a, &p)
     }
 }
 
