@@ -6,14 +6,14 @@ use ruba::mem_store::csv_loader::ingest_file;
 use ruba::parser::parse_query;
 
 
-#[bench]
+//#[bench]
 fn bench_ingest_2mb_1_chunk(b: &mut test::Bencher) {
     b.iter(|| {
         ingest_file("test_data/small.csv", 4000)
     });
 }
 
-#[bench]
+//#[bench]
 fn bench_ingest_2mb_10_chunks(b: &mut test::Bencher) {
     b.iter(|| {
         ingest_file("test_data/small.csv", 400)
@@ -34,6 +34,15 @@ fn bench_sum_4000(b: &mut test::Bencher) {
 
 fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
     let batches = ingest_file("test_data/small.csv", 4000);
+    let query = parse_query(query_str.as_bytes()).to_result().unwrap();
+    b.iter(|| {
+        let mut compiled_query = query.compile(&batches);
+        test::black_box(compiled_query.run());
+    });
+}
+
+fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
+    let batches = ingest_file("test_data/green_tripdata_2017-06.csv", 16_384);
     let query = parse_query(query_str.as_bytes()).to_result().unwrap();
     b.iter(|| {
         let mut compiled_query = query.compile(&batches);
@@ -84,4 +93,14 @@ fn bench_2mb_sort_strings(b: &mut test::Bencher) {
 #[bench]
 fn bench_2mb_sort_integers(b: &mut test::Bencher) {
     bench_query_2mb(b, "select num from test order by num limit 1;");
+}
+
+#[bench]
+fn gt_1m_select_passenger_count_count(b: &mut test::Bencher) {
+    bench_query_gtd_1m(b, "select passenger_count, count(1) from test;");
+}
+
+#[bench]
+fn  gt_1m_int_sort(b: &mut test::Bencher) {
+    bench_query_gtd_1m(b, "select total_amount from rest order by total_amount limit 10000;");
 }

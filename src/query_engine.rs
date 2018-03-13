@@ -99,24 +99,35 @@ impl<'a> CompiledQuery<'a> {
         let limit = self.query.limit.limit as usize;
         let offset = self.query.limit.offset as usize;
 
-        // let mut result_cols = Vec::new();
-        let mut result = None;
+        let mut batch_results = Vec::<BatchResult>::new();
         for batch in &self.batches {
-            let batch_result = if self.aggregate.len() == 0 {
+            let mut batch_result = if self.aggregate.len() == 0 {
                 self.query.run(batch, &mut self.stats)
             } else {
                 self.query.run_aggregate(batch, &mut self.stats)
             };
-            // TODO(clemens): O(n^2)
-            result = match result {
-                None => Some(batch_result),
-                Some(partial_result) => Some(combine(partial_result, batch_result)),
-            };
+            // Merge only with previous batch results of same level to get O(n log n) complexity
+            loop {
+                if !batch_results.is_empty() && batch_results.last().unwrap().level == batch_result.level {
+                    // TODO(clemens): apply limit during combine when possible
+                    batch_result = combine(batch_results.pop().unwrap(), batch_result);
+                } else { break; }
+            }
+            batch_results.push(batch_result)
             /*if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
                 break;
             }*/
         }
-        let result = result.unwrap();
+        let mut full_result = None;
+        for batch_result in batch_results.into_iter() {
+            if let Some(partial) = full_result {
+                full_result = Some(combine(partial, batch_result));
+            } else {
+                full_result = Some(batch_result);
+            }
+        }
+        // TODO(clemens): empty table
+        let full_result = full_result.unwrap();
 
         /*if let Some(ref order_by_expr) = self.compiled_order_by {
             result_rows.sort_by_key(|record| order_by_expr.eval(record));
@@ -124,13 +135,13 @@ impl<'a> CompiledQuery<'a> {
 
         self.stats.start();
         let mut result_rows = Vec::new();
-        let count = cmp::min(limit, result.len() - offset);
+        let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
             let mut record = Vec::with_capacity(colnames.len());
-            if let Some(ref g) = result.group_by {
+            if let Some(ref g) = full_result.group_by {
                 record.push(g.get_raw(i));
             }
-            for col in result.select.iter() {
+            for col in full_result.select.iter() {
                 record.push(col.get_raw(i));
             }
             result_rows.push(record);
@@ -247,6 +258,7 @@ impl Query {
             sort_by: self.order_by_index,
             select: result,
             aggregators: Vec::with_capacity(0),
+            level: 0,
         }
     }
 
@@ -286,6 +298,7 @@ impl Query {
             sort_by: None,
             select: result,
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
+            level: 0,
         }
     }
 

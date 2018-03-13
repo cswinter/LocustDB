@@ -31,11 +31,12 @@ impl<'a> TypedVec<'a> {
             &TypedVec::Boolean(ref v) => v.len(),
             &TypedVec::Empty => 0,
             &TypedVec::Constant(_) => panic!(" cannot get length of constant"),
-            &TypedVec::BorrowedEncodedU8(v, _) => v.len(),
             &TypedVec::EncodedU8(ref v, _) => v.len(),
-            &TypedVec::BorrowedEncodedU16(v, _) => v.len(),
             &TypedVec::EncodedU16(ref v, _) => v.len(),
-            _ => panic!(" not implemented"),
+            &TypedVec::EncodedU32(ref v, _) => v.len(),
+            &TypedVec::BorrowedEncodedU8(v, _) => v.len(),
+            &TypedVec::BorrowedEncodedU16(v, _) => v.len(),
+            &TypedVec::BorrowedEncodedU32(v, _) => v.len(),
         }
     }
 

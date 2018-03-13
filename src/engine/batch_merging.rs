@@ -10,6 +10,7 @@ pub struct BatchResult<'a> {
     pub sort_by: Option<usize>,
     pub select: Vec<TypedVec<'a>>,
     pub aggregators: Vec<Aggregator>,
+    pub level: i32,
 }
 
 impl<'a> BatchResult<'a> {
@@ -54,6 +55,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>) -> BatchRes
                 sort_by: None,
                 select: aggregates,
                 aggregators: batch1.aggregators,
+                level: batch1.level + 1,
             }
         }
         (None, None) => {
@@ -93,6 +95,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>) -> BatchRes
                         sort_by: Some(index),
                         select: result,
                         aggregators: Vec::new(),
+                        level: batch1.level + 1,
                     }
                 }
                 None => {
@@ -106,6 +109,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>) -> BatchRes
                         sort_by: None,
                         select: result,
                         aggregators: Vec::new(),
+                        level: batch1.level + 1,
                     }
                 }
             }
