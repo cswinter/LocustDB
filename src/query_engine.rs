@@ -207,6 +207,7 @@ impl Query {
             .collect()
     }
 
+    #[inline(never)] // produces more useful profiles
     fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> BatchResult<'a> {
         stats.start();
         let (filter_plan, _) = self.filter.create_query_plan(columns, Filter::None);
@@ -262,6 +263,7 @@ impl Query {
         }
     }
 
+    #[inline(never)] // produces more useful profiles
     fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> BatchResult<'a> {
         stats.start();
         let (filter_plan, _) = self.filter.create_query_plan(columns, Filter::None);
