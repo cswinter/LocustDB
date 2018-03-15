@@ -6,6 +6,10 @@ use mem_store::column_builder::*;
 use mem_store::null_column::NullColumn;
 use std::boxed::Box;
 use std::ops::BitOr;
+use std::sync::Arc;
+use task::Task;
+use shared_sender::SharedSender;
+use Ruba;
 
 
 pub fn ingest_file(filename: &str, chunk_size: usize) -> Vec<Batch> {
@@ -16,10 +20,10 @@ pub fn ingest_file(filename: &str, chunk_size: usize) -> Vec<Batch> {
     auto_ingest(reader.records().map(|r| r.unwrap()), headers, chunk_size)
 }
 
-fn auto_ingest<T: Iterator<Item = Vec<String>>>(records: T,
-                                                    colnames: Vec<String>,
-                                                    batch_size: usize)
-                                                    -> Vec<Batch> {
+fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T,
+                                              colnames: Vec<String>,
+                                              batch_size: usize)
+                                              -> Vec<Batch> {
     let num_columns = colnames.len();
     let mut batches = Vec::new();
 
@@ -52,6 +56,40 @@ fn create_batch(cols: Vec<RawCol>, colnames: &Vec<String>) -> Batch {
     Batch { cols: mem_store }
 }
 
+pub struct CSVIngestionTask {
+    filename: String,
+    table: String,
+    chunk_size: usize,
+    ruba: Arc<Ruba>,
+    sender: SharedSender<()>,
+}
+
+impl CSVIngestionTask {
+    pub fn new(filename: String,
+               table: String,
+               chunk_size: usize,
+               ruba: Arc<Ruba>,
+               sender: SharedSender<()>) -> CSVIngestionTask {
+        CSVIngestionTask {
+            filename: filename,
+            table: table,
+            chunk_size: chunk_size,
+            ruba: ruba,
+            sender: sender,
+        }
+    }
+}
+
+impl Task for CSVIngestionTask {
+    fn execute(&self) {
+        let batches = ingest_file(&self.filename, self.chunk_size);
+        self.ruba.load_batches(&self.table, batches);
+        self.sender.send(());
+    }
+    fn completed(&self) -> bool { false }
+    fn multithreaded(&self) -> bool { false }
+}
+
 
 struct RawCol {
     types: ColType,
@@ -79,7 +117,7 @@ impl RawCol {
             }
             builder.finalize()
         } else if self.types.contains_int {
-           let mut builder = IntColBuilder::new();
+            let mut builder = IntColBuilder::new();
             for s in self.data {
                 let int = if s.is_empty() {
                     0
@@ -109,7 +147,7 @@ struct ColType {
 
 impl ColType {
     fn new(string: bool, int: bool, null: bool) -> ColType {
-        ColType {  contains_string: string, contains_int: int, contains_null: null }
+        ColType { contains_string: string, contains_int: int, contains_null: null }
     }
 
     fn string() -> ColType {

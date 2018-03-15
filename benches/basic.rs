@@ -1,28 +1,38 @@
 #![feature(test)]
 extern crate ruba;
 extern crate test;
+extern crate futures;
 
 use ruba::mem_store::csv_loader::ingest_file;
 use ruba::parser::parse_query;
+use ruba::Ruba;
+use futures::executor::block_on;
+use futures::future;
+use futures::FutureExt;
 
 
-//#[bench]
-fn bench_ingest_2mb_1_chunk(b: &mut test::Bencher) {
+// #[bench]
+fn bench_ingest_2mb_once(b: &mut test::Bencher) {
+    let ruba = Ruba::memory_only();
     b.iter(|| {
-        ingest_file("test_data/small.csv", 4000)
+        let load_finished = Ruba::load_csv(ruba.clone(), &"test_data/small.csv", &"test", 4000);
+        let _ = block_on(load_finished);
     });
 }
 
-//#[bench]
-fn bench_ingest_2mb_10_chunks(b: &mut test::Bencher) {
+// #[bench]
+fn bench_ingest_2mb_twice(b: &mut test::Bencher) {
+    let ruba = Ruba::memory_only();
     b.iter(|| {
-        ingest_file("test_data/small.csv", 400)
+        let f1 = Ruba::load_csv(ruba.clone(), &"test_data/small.csv", &"test", 4000);
+        let f2 = f1.join(Ruba::load_csv(ruba.clone(), &"test_data/small.csv", &"test", 4000));
+        let _ = block_on(f2);
     });
 }
 
 #[bench]
 fn bench_sum_4000(b: &mut test::Bencher) {
-    let data = ( 0..4000).collect::<Vec<_>>();
+    let data = (0..4000).collect::<Vec<_>>();
     b.iter(|| {
         let mut sum = 0;
         for i in 0..4000 {
@@ -101,6 +111,6 @@ fn gt_1m_select_passenger_count_count(b: &mut test::Bencher) {
 }
 
 #[bench]
-fn  gt_1m_int_sort(b: &mut test::Bencher) {
+fn gt_1m_int_sort(b: &mut test::Bencher) {
     bench_query_gtd_1m(b, "select total_amount from rest order by total_amount limit 10000;");
 }

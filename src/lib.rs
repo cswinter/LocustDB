@@ -1,5 +1,8 @@
-#[macro_use] extern crate nom;
-#[macro_use] extern crate serde_derive;
+#![feature(conservative_impl_trait)]
+#[macro_use]
+extern crate nom;
+#[macro_use]
+extern crate serde_derive;
 
 extern crate bincode;
 extern crate heapsize;
@@ -10,6 +13,9 @@ extern crate time;
 extern crate seahash;
 extern crate serde;
 extern crate bit_vec;
+extern crate num_cpus;
+extern crate futures;
+extern crate futures_channel;
 // extern crate tempdir;
 
 pub mod parser;
@@ -22,15 +28,21 @@ mod value;
 mod expression;
 mod aggregator;
 mod limit;
+mod task;
+mod shared_sender;
 
 
 use heapsize::HeapSizeOf;
 use mem_store::batch::Batch;
-use std::collections::HashMap;
-use std::sync::{Mutex, RwLock};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex, RwLock, Condvar};
 use std::ops::DerefMut;
 use std::str;
+use std::thread;
+use futures_channel::oneshot;
+use futures::*;
 use mem_store::ingest::RawCol;
+use mem_store::csv_loader::CSVIngestionTask;
 use query_engine::{Query, QueryResult};
 // use rocksdb::{DB, Options, WriteBatch, IteratorMode, Direction};
 // use tempdir::TempDir;
@@ -44,21 +56,39 @@ pub enum InputColumn {
     Null(usize),
 }
 
-pub struct Ruba<T: DB + Clone> {
+pub struct Ruba {
     tables: RwLock<HashMap<String, Table>>,
-    storage: Box<T>,
+    idle_queue: (Mutex<bool>, Condvar),
+    task_queue: RwLock<VecDeque<Arc<task::Task>>>,
+    storage: Box<DB>,
 }
 
-impl <T: DB + Clone> Ruba<T> {
-    pub fn new(storage: Box<T>, load_tabledata: bool) -> Ruba<T> {
-        let existing_tables =
-            if load_tabledata { Table::restore_from_db(20_000, &storage) }
-            else { Table::load_table_metadata(20_000, &storage) };
 
-        Ruba {
+impl Ruba {
+    pub fn memory_only() -> Arc<Ruba> {
+        Ruba::new(Box::new(NoopStorage), false)
+    }
+
+    pub fn new(storage: Box<DB>, load_tabledata: bool) -> Arc<Ruba> {
+        let existing_tables =
+            if load_tabledata {
+                Table::restore_from_db(20_000, storage.as_ref())
+            } else {
+                Table::load_table_metadata(20_000, storage.as_ref())
+            };
+
+        let ruba = Arc::new(Ruba {
             tables: RwLock::new(existing_tables),
+            idle_queue: (Mutex::new(false), Condvar::new()),
+            task_queue: RwLock::new(VecDeque::new()),
             storage: storage,
+        });
+        for _ in 0..num_cpus::get() {
+            let cloned = ruba.clone();
+            thread::spawn(move || Ruba::worker_loop(cloned));
         }
+
+        return ruba;
     }
 
     pub fn run_query(&self, query: &str) -> Result<QueryResult, String> {
@@ -70,7 +100,7 @@ impl <T: DB + Clone> Ruba<T> {
                     Some(table) => table.run_query(query),
                     None => Err(format!("Table `{}` not found!", query.table).to_string()),
                 }
-            },
+            }
             err => Err(format!("Failed to parse query! {:?}", err).to_string()),
         }
     }
@@ -78,10 +108,34 @@ impl <T: DB + Clone> Ruba<T> {
     pub fn load_table_data(&self) {
         let tables = self.tables.read().unwrap();
         for (_, table) in tables.iter() {
-            table.load_table_data(&self.storage);
+            table.load_table_data(self.storage.as_ref());
             println!("Finished loading {}", &table.name);
         }
         println!("Finished loading all table data!");
+    }
+
+    pub fn load_csv(ruba: Arc<Ruba>,
+                    path: &str,
+                    table_name: &str,
+                    chunk_size: usize) -> impl Future<Item=(), Error=oneshot::Canceled> {
+        let (sender, receiver) = oneshot::channel();
+        let task = CSVIngestionTask::new(
+            path.to_string(),
+            table_name.to_string(),
+            chunk_size,
+            ruba.clone(),
+            shared_sender::SharedSender::new(sender));
+        ruba.schedule(Arc::new(task));
+        receiver
+    }
+
+    pub ( crate ) fn load_batches(&self, table: &str, batches: Vec<Batch>) {
+        self.create_if_empty(table);
+        let tables = self.tables.read().unwrap();
+        let table = tables.get(table).unwrap();
+        for batch in batches.into_iter() {
+            table.load_batch(batch);
+        }
     }
 
     pub fn ingest(&self, table: &str, row: Vec<(String, InputValue)>) {
@@ -126,6 +180,46 @@ impl <T: DB + Clone> Ruba<T> {
             ]);
         }
     }
+
+    fn worker_loop(ruba: Arc<Ruba>) {
+        loop {
+            if let Some(task) = ruba.await_task() {
+                task.execute();
+            }
+        }
+    }
+
+    fn await_task(&self) -> Option<Arc<task::Task>> {
+        let &(ref lock, ref cvar) = &self.idle_queue;
+        let mut task_available = lock.lock().unwrap();
+        while !*task_available {
+            task_available = cvar.wait(task_available).unwrap();
+        }
+        let mut task_queue_guard = self.task_queue.write().unwrap();
+        let task_queue = task_queue_guard.deref_mut();
+        while let Some(task) = task_queue.pop_front() {
+            if task.completed() { continue; }
+            if task.multithreaded() {
+                task_queue.push_front(task.clone());
+            }
+            *task_available = task_queue.len() > 0;
+            if *task_available {
+                cvar.notify_one();
+            }
+            return Some(task);
+        }
+        None
+    }
+
+    fn schedule(&self, task: Arc<task::Task>) {
+        let &(ref lock, ref cvar) = &self.idle_queue;
+        let mut task_available = lock.lock().unwrap();
+        let mut task_queue_guard = self.task_queue.write().unwrap();
+        let task_queue = task_queue_guard.deref_mut();
+        task_queue.push_back(task);
+        *task_available = true;
+        cvar.notify_one();
+    }
 }
 
 pub struct Table {
@@ -148,7 +242,7 @@ impl Table {
         }
     }
 
-    pub fn restore_from_db<T: DB + Clone>(batch_size: usize, storage: &Box<T>) -> HashMap<String, Table> {
+    pub fn restore_from_db(batch_size: usize, storage: &DB) -> HashMap<String, Table> {
         let mut tables = Table::load_table_metadata(batch_size, storage);
         // populate tables
         for (_, table) in tables.iter_mut() {
@@ -159,7 +253,7 @@ impl Table {
     }
 
 
-    pub fn load_table_metadata<T: DB + Clone>(batch_size: usize, storage: &Box<T>) -> HashMap<String, Table> {
+    pub fn load_table_metadata(batch_size: usize, storage: &DB) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
         for md in storage.metadata() {
             tables.insert(md.name.to_string(), Table::new(batch_size, &md.name, md.clone()));
@@ -176,7 +270,7 @@ impl Table {
         }*/
     }
 
-    pub fn load_table_data<T: DB + Clone>(&self, storage: &Box<T>) {
+    pub fn load_table_data(&self, storage: &DB) {
         /*let tabledata_prefix = format!("BATCHES${}", &self.name);
         let iter = self.storage.iterator(IteratorMode::From(tabledata_prefix.as_bytes(), Direction::Forward));
         for (key, val) in iter {
@@ -185,7 +279,7 @@ impl Table {
             self.load_batch(batch);
         }*/
         for buffer in storage.data(&self.name) {
-            self.load_batch(buffer);
+            self.load_buffer(buffer);
         }
     }
 
@@ -244,39 +338,42 @@ impl Table {
         Ok(result)
     }
 
+    pub fn load_batch(&self, batch: Batch) {
+        let mut batches = self.batches.write().unwrap();
+        batches.push(batch);
+        // println!("Loaded batch for {}", self.name)
+    }
+
     fn batch_if_needed(&self, buffer: &mut Buffer) {
-        if buffer.length < self.batch_size { return }
+        if buffer.length < self.batch_size { return; }
         self.batch(buffer);
     }
 
     fn batch_if_nonzero(&self) {
         let mut buffer = self.buffer.lock().unwrap();
-        if buffer.length == 0 { return }
+        if buffer.length == 0 { return; }
         self.batch(&mut buffer);
     }
 
     fn batch(&self, buffer: &mut Buffer) {
-        let length = buffer.length;
+        // let length = buffer.length;
         let buffer = std::mem::replace(buffer, Buffer::new());
         self.persist_batch(&buffer);
         let new_batch = Batch::new(buffer.buffer.into_iter()
-                                   .map(|(name, raw_col)| (name, raw_col.finalize()))
-                                   .collect());
+            .map(|(name, raw_col)| (name, raw_col.finalize()))
+            .collect());
 
         let mut batches = self.batches.write().unwrap();
         batches.push(new_batch);
 
-        println!("Created size {} batch for {}!", length, self.name);
+        // println!("Created size {} batch for {}!", length, self.name);
     }
 
-    fn load_batch(&self, buffer: Buffer) {
+    fn load_buffer(&self, buffer: Buffer) {
         let new_batch = Batch::new(buffer.buffer.into_iter()
-                                   .map(|(name, raw_col)| (name, raw_col.finalize()))
-                                   .collect());
-
-        let mut batches = self.batches.write().unwrap();
-        batches.push(new_batch);
-        println!("Loaded batch for {}", self.name)
+            .map(|(name, raw_col)| (name, raw_col.finalize()))
+            .collect());
+        self.load_batch(new_batch);
     }
 
     fn persist_batch(&self, _batch: &Buffer) {
@@ -304,9 +401,7 @@ impl Table {
 }
 
 fn batch_size_override(batch_size: usize, tablename: &str) -> usize {
-    if tablename == "_meta_tables" { 1 }
-    else if tablename == "_meta_queries" { 10 }
-    else { batch_size }
+    if tablename == "_meta_tables" { 1 } else if tablename == "_meta_queries" { 10 } else { batch_size }
 }
 
 impl HeapSizeOf for Table {
@@ -323,9 +418,16 @@ impl HeapSizeOf for Table {
     }
 }
 
-pub trait DB {
+pub trait DB: Sync + Send + 'static {
     fn metadata(&self) -> Vec<&Metadata>;
     fn data(&self, table_name: &str) -> Vec<Buffer>;
+}
+
+struct NoopStorage;
+
+impl DB for NoopStorage {
+    fn metadata(&self) -> Vec<&Metadata> { Vec::new() }
+    fn data(&self, _: &str) -> Vec<Buffer> { Vec::new() }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
