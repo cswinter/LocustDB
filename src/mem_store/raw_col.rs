@@ -1,38 +1,10 @@
 use heapsize::HeapSizeOf;
 use mem_store::column::ColumnData;
 use mem_store::column_builder::*;
-use mem_store::null_column::NullColumn;
 use std::ops::BitOr;
 use std::iter::repeat;
-use std::fmt;
-use engine::types::BasicType;
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
-pub enum RawVal {
-    Int(i64),
-    Str(String),
-    Null,
-}
-
-impl RawVal {
-    pub fn get_type(&self) -> BasicType {
-        match self {
-            &RawVal::Int(_) => BasicType::Integer,
-            &RawVal::Str(_) => BasicType::String,
-            &RawVal::Null => BasicType::Null,
-        }
-    }
-}
-
-impl fmt::Display for RawVal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &RawVal::Null => write!(f, "null"),
-            &RawVal::Int(i) => write!(f, "{}", i),
-            &RawVal::Str(ref s) => write!(f, "\"{}\"", s),
-        }
-    }
-}
+use ingest::raw_val::RawVal;
+use mem_store::null_column::NullColumn;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RawCol {

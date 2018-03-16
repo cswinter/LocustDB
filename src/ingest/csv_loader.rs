@@ -7,9 +7,7 @@ use mem_store::null_column::NullColumn;
 use std::boxed::Box;
 use std::ops::BitOr;
 use std::sync::Arc;
-use task::Task;
-use shared_sender::SharedSender;
-use Ruba;
+use scheduler::*;
 
 
 pub fn ingest_file(filename: &str, chunk_size: usize) -> Vec<Batch> {
@@ -60,7 +58,7 @@ pub struct CSVIngestionTask {
     filename: String,
     table: String,
     chunk_size: usize,
-    ruba: Arc<Ruba>,
+    ruba: Arc<InnerRuba>,
     sender: SharedSender<()>,
 }
 
@@ -68,7 +66,7 @@ impl CSVIngestionTask {
     pub fn new(filename: String,
                table: String,
                chunk_size: usize,
-               ruba: Arc<Ruba>,
+               ruba: Arc<InnerRuba>,
                sender: SharedSender<()>) -> CSVIngestionTask {
         CSVIngestionTask {
             filename: filename,

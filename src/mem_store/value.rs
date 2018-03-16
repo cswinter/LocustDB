@@ -1,7 +1,7 @@
 use std::fmt;
 use heapsize::HeapSizeOf;
 use std::convert::From;
-use mem_store::ingest::RawVal;
+use ingest::raw_val::RawVal;
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Clone, Hash)]
 pub enum Val<'a> {

@@ -9,13 +9,12 @@ use engine::query_plan;
 use engine::batch_merging::*;
 use engine::aggregation_operator::*;
 use engine::typed_vec::TypedVec;
-use expression::*;
-use aggregator::*;
-use limit::*;
-use util::fmt_table;
+use parser::expression::*;
+use engine::aggregator::*;
+use parser::limit::*;
 use mem_store::column::Column;
 use mem_store::batch::Batch;
-use mem_store::ingest::RawVal;
+use ingest::raw_val::RawVal;
 use engine::filter::Filter;
 
 
@@ -363,43 +362,6 @@ fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
     }
 
     cols.into_iter().map(Rc::new).collect()
-}
-
-
-pub fn print_query_result(results: &QueryResult) {
-    let rt = results.stats.runtime_ns;
-    let fmt_time = if rt < 10_000 {
-        format!("{}ns", rt)
-    } else if rt < 10_000_000 {
-        format!("{}μs", rt / 1000)
-    } else if rt < 10_000_000_000 {
-        format!("{}ms", rt / 1_000_000)
-    } else {
-        format!("{}s", rt / 1_000_000_000)
-    };
-
-    results.stats.print();
-    println!("Performed {} ops in {} ({}ns per op)!\n",
-             results.stats.ops,
-             fmt_time,
-             rt.checked_div(results.stats.ops as u64).unwrap_or(0));
-    println!();
-    println!("{}\n", format_results(&results.colnames, &results.rows));
-}
-
-fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<RawVal>>) -> String {
-    let strcolnames: Vec<&str> = colnames.iter().map(|ref s| s.clone() as &str).collect();
-    let formattedrows: Vec<Vec<String>> = rows.iter()
-        .map(|row| {
-            row.iter()
-                .map(|val| format!("{}", val))
-                .collect()
-        })
-        .collect();
-    let strrows =
-        formattedrows.iter().map(|row| row.iter().map(|val| val as &str).collect()).collect();
-
-    fmt_table(&strcolnames, &strrows)
 }
 
 #[cfg(test)]

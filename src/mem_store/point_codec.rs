@@ -1,5 +1,5 @@
 use engine::typed_vec::TypedVec;
-use mem_store::ingest::RawVal;
+use ingest::raw_val::RawVal;
 
 
 pub trait PointCodec<T> {

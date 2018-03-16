@@ -1,10 +1,10 @@
 use bit_vec::BitVec;
 use mem_store::column::{ColumnData, ColumnCodec};
-use mem_store::ingest::RawVal;
+use ingest::raw_val::RawVal;
 use engine::vector_operator::*;
 use engine::aggregation_operator::*;
 use std::rc::Rc;
-use aggregator::Aggregator;
+use engine::aggregator::Aggregator;
 
 
 #[derive(Debug)]

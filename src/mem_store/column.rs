@@ -3,7 +3,7 @@ use heapsize::HeapSizeOf;
 use engine::types::*;
 use std::fmt;
 use engine::typed_vec::TypedVec;
-use mem_store::ingest::RawVal;
+use ingest::raw_val::RawVal;
 
 
 pub struct Column {

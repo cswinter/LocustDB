@@ -5,11 +5,11 @@ use std::str::FromStr;
 use std::rc::Rc;
 use nom::{digit, is_alphabetic, is_alphanumeric, multispace};
 
-use expression::*;
-use query_engine::*;
-use aggregator::Aggregator;
-use limit::LimitClause;
-use mem_store::ingest::RawVal;
+use parser::expression::*;
+use parser::limit::LimitClause;
+use engine::query::*;
+use engine::aggregator::Aggregator;
+use ingest::raw_val::RawVal;
 use std::boxed::Box;
 use time;
 

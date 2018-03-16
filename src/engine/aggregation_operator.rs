@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use query_engine::QueryStats;
+use engine::query::QueryStats;
 use engine::typed_vec::TypedVec;
 use engine::vector_operator::VecOperator;
 use engine::types::*;

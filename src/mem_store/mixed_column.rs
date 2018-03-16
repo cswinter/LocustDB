@@ -1,7 +1,7 @@
 // use bit_vec::BitVec;
 // use mem_store::column::*;
-use mem_store::ingest::RawVal;
-use value::Val;
+use ingest::raw_val::RawVal;
+use mem_store::value::Val;
 use heapsize::HeapSizeOf;
 // use engine::types::Type;
 // use engine::typed_vec::TypedVec;

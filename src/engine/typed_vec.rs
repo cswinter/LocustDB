@@ -1,8 +1,8 @@
 use bit_vec::BitVec;
 use mem_store::point_codec::PointCodec;
 use engine::types::*;
-use value::Val;
-use mem_store::ingest::RawVal;
+use mem_store::value::Val;
+use ingest::raw_val::RawVal;
 
 
 pub enum TypedVec<'a> {

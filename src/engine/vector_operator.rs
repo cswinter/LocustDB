@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 use bit_vec::BitVec;
 use std::rc::Rc;
-use mem_store::ingest::RawVal;
+use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 use engine::typed_vec::TypedVec;
-use query_engine::QueryStats;
+use engine::query::QueryStats;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;

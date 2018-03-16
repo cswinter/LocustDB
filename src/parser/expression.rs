@@ -2,8 +2,8 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use value::Val;
-use mem_store::ingest::RawVal;
+use mem_store::value::Val;
+use ingest::raw_val::RawVal;
 use regex::Regex;
 use engine::query_plan::*;
 use engine::types::*;

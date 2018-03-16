@@ -1,10 +1,11 @@
 pub mod column;
-pub mod csv_loader;
 pub mod batch;
-pub mod ingest;
 pub mod point_codec;
+pub mod value;
+pub mod column_builder;
+pub mod table;
+pub mod null_column;
+pub mod raw_col;
 mod integers;
 mod strings;
-mod null_column;
 mod mixed_column;
-mod column_builder;

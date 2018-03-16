@@ -1,4 +1,4 @@
-use value::Val;
+use mem_store::value::Val;
 
 
 #[derive(Debug, Clone, Copy)]

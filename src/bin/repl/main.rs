@@ -5,15 +5,17 @@ extern crate heapsize;
 extern crate time;
 extern crate nom;
 
+mod print_results;
+mod fmt_table;
+
+use std::collections::HashMap;
 use std::env;
 use std::panic;
-use std::collections::HashMap;
-use heapsize::HeapSizeOf;
-use time::precise_time_s;
 
+use heapsize::HeapSizeOf;
 use ruba::mem_store::batch::Batch;
-use ruba::query_engine;
-use ruba::parser;
+use ruba::parser::parser;
+use time::precise_time_s;
 
 const LOAD_CHUNK_SIZE: usize = 200_000;
 
@@ -21,7 +23,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
     let columnarization_start_time = precise_time_s();
-    let batches = ruba::mem_store::csv_loader::ingest_file(filename, LOAD_CHUNK_SIZE);
+    let batches = ruba::ingest::csv_loader::ingest_file(filename, LOAD_CHUNK_SIZE);
     print_ingestion_stats(&batches, columnarization_start_time);
 
     repl(&batches);
@@ -74,7 +76,7 @@ fn repl(datasource: &Vec<Batch>) {
                 panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut compiled_query = query.compile(datasource);
                     let result = compiled_query.run();
-                    query_engine::print_query_result(&result);
+                    print_results::print_query_result(&result);
                 })).expect("fatal error");
             }
             err => {

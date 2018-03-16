@@ -5,3 +5,5 @@ pub mod query_plan;
 pub mod typed_vec;
 pub mod filter;
 pub mod batch_merging;
+pub mod query;
+pub mod aggregator;

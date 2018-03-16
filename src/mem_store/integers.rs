@@ -1,5 +1,5 @@
 use bit_vec::BitVec;
-use mem_store::ingest::RawVal;
+use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 use mem_store::point_codec::PointCodec;
 use heapsize::HeapSizeOf;
