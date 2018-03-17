@@ -1,0 +1,39 @@
+
+running 8 tests
+test parser::tests::test_last_hour ... ignored
+test parser::tests::test_select_star ... ignored
+test query_engine::tests::group_by_integer_filter_integer_lt ... ignored
+test query_engine::tests::group_by_string_filter_string_eq ... ignored
+test query_engine::tests::test_and_or ... ignored
+test query_engine::tests::test_select_string ... ignored
+test query_engine::tests::test_select_string_integer ... ignored
+test query_engine::tests::test_sort_string ... ignored
+
+test result: ok. 0 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 11 tests
+test bench_2mb_filter_select            ... bench:      43,640 ns/iter (+/- 639)
+test bench_2mb_group_count              ... bench:     115,196 ns/iter (+/- 2,611)
+test bench_2mb_group_filter_count       ... bench:      62,520 ns/iter (+/- 1,129)
+test bench_2mb_select_name              ... bench:      10,262 ns/iter (+/- 167)
+test bench_2mb_select_name_num          ... bench:      18,711 ns/iter (+/- 219)
+test bench_2mb_sort_integers            ... bench:      28,972 ns/iter (+/- 200)
+test bench_2mb_sort_strings             ... bench:     506,459 ns/iter (+/- 9,603)
+test bench_2mb_string_equality          ... bench:      23,604 ns/iter (+/- 409)
+test bench_sum_4000                     ... bench:       1,174 ns/iter (+/- 26)
+test gt_1m_int_sort                     ... bench:  45,326,533 ns/iter (+/- 614,774)
+test gt_1m_select_passenger_count_count ... bench:  11,525,064 ns/iter (+/- 72,665)
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 11 measured; 0 filtered out
+
