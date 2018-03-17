@@ -5,14 +5,11 @@ use std::sync::{Arc, Mutex, RwLock, Condvar};
 use std::thread;
 
 use disk_store::db::*;
-use engine::query::QueryResult;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
 use mem_store::batch::Batch;
 use mem_store::table::*;
-use nom;
 use num_cpus;
-use parser::parser;
 use scheduler::*;
 use time;
 
@@ -50,19 +47,9 @@ impl InnerRuba {
         }
     }
 
-    // TODO(clemens): make a synchronous and move to Ruba
-    pub fn run_query(&self, query: &str) -> Result<QueryResult, String> {
-        match parser::parse_query(query.as_bytes()) {
-            nom::IResult::Done(_remaining, query) => {
-                let tables = self.tables.read().unwrap();
-                // TODO(clemens): extend query language with from clause
-                match tables.get(&query.table) {
-                    Some(table) => table.run_query(query),
-                    None => Err(format!("Table `{}` not found!", query.table).to_string()),
-                }
-            }
-            err => Err(format!("Failed to parse query! {:?}", err).to_string()),
-        }
+    pub fn snapshot(&self, table: &str) -> Option<Vec<Batch>> {
+        let tables = self.tables.read().unwrap();
+        tables.get(table).map(|t| t.snapshot())
     }
 
     fn worker_loop(ruba: Arc<InnerRuba>) {
@@ -82,7 +69,9 @@ impl InnerRuba {
         let mut task_queue_guard = self.task_queue.write().unwrap();
         let task_queue = task_queue_guard.deref_mut();
         while let Some(task) = task_queue.pop_front() {
-            if task.completed() { continue; }
+            if task.completed() {
+                continue;
+            }
             if task.multithreaded() {
                 task_queue.push_front(task.clone());
             }
@@ -91,7 +80,8 @@ impl InnerRuba {
                 cvar.notify_one();
             }
             return Some(task);
-        }
+        };
+        *task_available = false;
         None
     }
 

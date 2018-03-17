@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use heapsize::HeapSizeOf;
 use mem_store::column::{Column, ColumnData};
 
+#[derive(Clone)]
 pub struct Batch {
-    pub cols: Vec<Column>,
+    cols: Arc<Vec<Column>>,
 }
 
 
@@ -12,7 +15,17 @@ impl Batch {
         for (name, col) in cols {
             mem_store.push(Column::new(name, col));
         }
-        Batch { cols: mem_store }
+        Batch { cols: Arc::new(mem_store) }
+    }
+
+    pub fn cols(&self) -> &Vec<Column> {
+        self.cols.as_ref()
+    }
+}
+
+impl From<Vec<Column>> for Batch {
+    fn from(cols: Vec<Column>) -> Batch {
+        Batch { cols: Arc::new(cols) }
     }
 }
 

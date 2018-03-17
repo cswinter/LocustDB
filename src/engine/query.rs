@@ -1,21 +1,25 @@
-use std::iter::Iterator;
-use std::rc::Rc;
+use std::cmp;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::iter::Iterator;
+use std::mem;
+use std::rc::Rc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use time::precise_time_ns;
-use std::cmp;
 
-use engine::query_plan;
-use engine::batch_merging::*;
 use engine::aggregation_operator::*;
-use engine::typed_vec::TypedVec;
-use parser::expression::*;
 use engine::aggregator::*;
-use parser::limit::*;
-use mem_store::column::Column;
-use mem_store::batch::Batch;
-use ingest::raw_val::RawVal;
+use engine::batch_merging::*;
 use engine::filter::Filter;
+use engine::query_plan;
+use engine::typed_vec::TypedVec;
+use ingest::raw_val::RawVal;
+use mem_store::batch::Batch;
+use mem_store::column::Column;
+use parser::expression::*;
+use parser::limit::*;
+use scheduler::*;
 
 
 #[derive(Debug, Clone)]
@@ -30,16 +34,30 @@ pub struct Query {
     pub order_by_index: Option<usize>,
 }
 
-pub struct CompiledQuery<'a> {
+pub struct QueryTask {
     query: Query,
-    batches: Vec<HashMap<&'a str, &'a Column>>,
-    output_colnames: Vec<Rc<String>>,
+    batches: Vec<Batch>,
+    referenced_cols: HashSet<String>,
+    output_colnames: Vec<String>,
     aggregate: Vec<Aggregator>,
+
+    // Lifetime is not actually static, but tied to the lifetime of this struct.
+    // There is currently no good way to express this constraint in Rust.
+    // Accessing pointers derived from unsafe_state after it has been dropped violates memory safety.
+    // TODO(clemens): better encapsulate unsafety using some abstraction such as the refstruct crate.
+    unsafe_state: Mutex<QueryState<'static>>,
+    batch_index: AtomicUsize,
+    sender: SharedSender<QueryResult>,
+}
+
+pub struct QueryState<'a> {
+    completed_batches: usize,
+    partial_results: Vec<BatchResult<'a>>,
     stats: QueryStats,
 }
 
 pub struct QueryResult {
-    pub colnames: Vec<Rc<String>>,
+    pub colnames: Vec<String>,
     pub rows: Vec<Vec<RawVal>>,
     pub stats: QueryStats,
 }
@@ -91,19 +109,64 @@ impl QueryStats {
 }
 
 
-impl<'a> CompiledQuery<'a> {
-    pub fn run(&mut self) -> QueryResult {
+impl QueryTask {
+    pub fn new(mut query: Query, source: Vec<Batch>, sender: SharedSender<QueryResult>) -> QueryTask {
         let start_time = precise_time_ns();
-        let colnames = self.output_colnames.clone();
-        let limit = self.query.limit.limit as usize;
-        let offset = self.query.limit.offset as usize;
+        let mut stats = QueryStats::new();
+
+        if query.is_select_star() {
+            query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
+        }
+
+        stats.start();
+        let output_colnames = query.result_column_names();
+        let mut order_by_index = None;
+        if let Some(ref col) = query.order_by {
+            for (i, name) in output_colnames.iter().enumerate() {
+                if name == col {
+                    order_by_index = Some(i);
+                }
+            }
+        }
+        query.order_by_index = order_by_index;
+        stats.record(&"determine_output_colnames");
+
+        stats.start();
+        let referenced_cols = query.find_referenced_cols();
+        stats.record(&"find_referenced_cols");
+
+        let aggregate = query.aggregate.iter().map(|&(aggregate, _)| aggregate).collect();
+
+        stats.runtime_ns = precise_time_ns() - start_time;
+
+        QueryTask {
+            query: query,
+            batches: source,
+            referenced_cols: referenced_cols,
+            output_colnames: output_colnames,
+            aggregate: aggregate,
+
+            unsafe_state: Mutex::new(QueryState {
+                partial_results: Vec::new(),
+                completed_batches: 0,
+                stats: stats,
+            }),
+            batch_index: AtomicUsize::new(0),
+            sender: sender,
+        }
+    }
+
+    pub fn run(&self) {
+        let start_time = precise_time_ns();
+        let mut stats = QueryStats::new();
 
         let mut batch_results = Vec::<BatchResult>::new();
-        for batch in &self.batches {
+        while let Some(batch) = self.next_batch() {
+            let batch = Query::prepare_batch(&self.referenced_cols, batch);
             let mut batch_result = if self.aggregate.len() == 0 {
-                self.query.run(batch, &mut self.stats)
+                self.query.run(&batch, &mut stats)
             } else {
-                self.query.run_aggregate(batch, &mut self.stats)
+                self.query.run_aggregate(&batch, &mut stats)
             };
             // Merge only with previous batch results of same level to get O(n log n) complexity
             loop {
@@ -117,6 +180,14 @@ impl<'a> CompiledQuery<'a> {
                 break;
             }*/
         }
+
+        if let Some(result) = QueryTask::combine_results(batch_results) {
+            self.push_result(result);
+        }
+        stats.runtime_ns += precise_time_ns() - start_time;
+    }
+
+    fn combine_results(batch_results: Vec<BatchResult>) -> Option<BatchResult> {
         let mut full_result = None;
         for batch_result in batch_results.into_iter() {
             if let Some(partial) = full_result {
@@ -125,18 +196,41 @@ impl<'a> CompiledQuery<'a> {
                 full_result = Some(batch_result);
             }
         }
-        // TODO(clemens): empty table
-        let full_result = full_result.unwrap();
+        full_result
+    }
 
-        /*if let Some(ref order_by_expr) = self.compiled_order_by {
-            result_rows.sort_by_key(|record| order_by_expr.eval(record));
-        }*/
+    fn push_result(&self, result: BatchResult) {
+        let mut state = self.unsafe_state.lock().unwrap();
+        state.completed_batches += result.batch_count;
+        unsafe {
+            let result = mem::transmute::<_, BatchResult<'static>>(result);
+            state.partial_results.push(result);
+        }
+        if state.completed_batches == self.batches.len() {
+            let mut owned_results = Vec::with_capacity(0);
+            mem::swap(&mut owned_results, &mut state.partial_results);
+            // TODO(clemens): Handle empty table
+            let full_result = QueryTask::combine_results(owned_results).unwrap();
+            let final_result = self.convert_to_output_format(full_result, &mut state.stats);
+            self.sender.send(final_result);
+        }
+    }
 
-        self.stats.start();
+    fn next_batch(&self) -> Option<&Batch> {
+        let index = self.batch_index.fetch_add(1, Ordering::SeqCst);
+        self.batches.get(index)
+    }
+
+    fn convert_to_output_format(&self,
+                                full_result: BatchResult,
+                                stats: &mut QueryStats) -> QueryResult {
+        let limit = self.query.limit.limit as usize;
+        let offset = self.query.limit.offset as usize;
+        stats.start();
         let mut result_rows = Vec::new();
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
-            let mut record = Vec::with_capacity(colnames.len());
+            let mut record = Vec::with_capacity(self.output_colnames.len());
             if let Some(ref g) = full_result.group_by {
                 record.push(g.get_raw(i));
             }
@@ -145,63 +239,28 @@ impl<'a> CompiledQuery<'a> {
             }
             result_rows.push(record);
         }
-        self.stats.record(&"limit_collect");
-        self.stats.runtime_ns += precise_time_ns() - start_time;
-
+        stats.record(&"limit_collect");
         QueryResult {
-            colnames: colnames,
+            colnames: self.output_colnames.clone(),
             rows: result_rows,
-            stats: self.stats.clone(),
+            stats: stats.clone(),
         }
     }
 }
 
+impl Task for QueryTask {
+    fn execute(&self) { self.run(); }
+    fn completed(&self) -> bool {
+        let batch_index = self.batch_index.load(Ordering::SeqCst);
+        batch_index >= self.batches.len()
+    }
+    fn multithreaded(&self) -> bool { true }
+}
 
 impl Query {
-    pub fn compile<'a>(&self, source: &'a Vec<Batch>) -> CompiledQuery<'a> {
-        let start_time = precise_time_ns();
-        let mut stats = QueryStats::new();
-        let mut query = self.clone();
-
-        if query.is_select_star() {
-            query.select = find_all_cols(source).into_iter().map(Expr::ColName).collect();
-        }
-
-        stats.start();
-        let output_colnames = query.result_column_names();
-        let mut order_by_index = None;
-        if let Some(ref col) = query.order_by {
-            for (i, name) in output_colnames.iter().enumerate() {
-                if name.as_ref() == col {
-                    order_by_index = Some(i);
-                }
-            }
-        }
-        query.order_by_index = order_by_index;
-        stats.record(&"determine_output_colnames");
-
-        stats.start();
-        let batches = source.iter()
-            .map(|batch| Query::prepare_batch(&query.find_referenced_cols(), batch))
-            .collect();
-        stats.record(&"prepare_batches");
-
-        let aggregate = query.aggregate.iter().map(|&(aggregate, _)| aggregate).collect();
-
-        stats.runtime_ns = precise_time_ns() - start_time;
-
-        CompiledQuery {
-            query: query,
-            batches: batches,
-            output_colnames: output_colnames,
-            aggregate: aggregate,
-            stats: stats,
-        }
-    }
-
-    fn prepare_batch<'a>(referenced_cols: &HashSet<&str>, source: &'a Batch) -> HashMap<&'a str, &'a Column> {
-        source.cols.iter()
-            .filter(|col| referenced_cols.contains(&col.name()))
+    fn prepare_batch<'a>(referenced_cols: &'a HashSet<String>, source: &'a Batch) -> HashMap<&'a str, &'a Column> {
+        source.cols().iter()
+            .filter(|col| referenced_cols.contains(col.name()))
             .map(|col| (col.name(), col))
             .collect()
     }
@@ -259,6 +318,7 @@ impl Query {
             select: result,
             aggregators: Vec::with_capacity(0),
             level: 0,
+            batch_count: 1,
         }
     }
 
@@ -300,6 +360,7 @@ impl Query {
             select: result,
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
             level: 0,
+            batch_count: 1,
         }
     }
 
@@ -314,7 +375,7 @@ impl Query {
         }
     }
 
-    fn result_column_names(&self) -> Vec<Rc<String>> {
+    fn result_column_names(&self) -> Vec<String> {
         let mut anon_columns = -1;
         let select_cols = self.select
             .iter()
@@ -322,7 +383,7 @@ impl Query {
                 &Expr::ColName(ref name) => name.clone(),
                 _ => {
                     anon_columns += 1;
-                    Rc::new(format!("col_{}", anon_columns))
+                    format!("col_{}", anon_columns)
                 }
             });
         let mut anon_aggregates = -1;
@@ -331,8 +392,8 @@ impl Query {
             .map(|&(agg, _)| {
                 anon_aggregates += 1;
                 match agg {
-                    Aggregator::Count => Rc::new(format!("count_{}", anon_aggregates)),
-                    Aggregator::Sum => Rc::new(format!("sum_{}", anon_aggregates)),
+                    Aggregator::Count => format!("count_{}", anon_aggregates),
+                    Aggregator::Sum => format!("sum_{}", anon_aggregates),
                 }
             });
 
@@ -340,7 +401,7 @@ impl Query {
     }
 
 
-    fn find_referenced_cols(&self) -> HashSet<&str> {
+    fn find_referenced_cols(&self) -> HashSet<String> {
         let mut colnames = HashSet::new();
         for expr in self.select.iter() {
             expr.add_colnames(&mut colnames);
@@ -353,17 +414,17 @@ impl Query {
     }
 }
 
-fn find_all_cols(source: &Vec<Batch>) -> Vec<Rc<String>> {
+fn find_all_cols(source: &Vec<Batch>) -> Vec<String> {
     let mut cols = HashSet::new();
     for batch in source {
-        for column in &batch.cols {
+        for column in batch.cols() {
             cols.insert(column.name().to_string());
         }
     }
 
-    cols.into_iter().map(Rc::new).collect()
+    cols.into_iter().collect()
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,3 +509,4 @@ mod tests {
         )
     }
 }
+*/

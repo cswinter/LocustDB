@@ -3,11 +3,8 @@ extern crate ruba;
 extern crate test;
 extern crate futures;
 
-use ruba::mem_store::csv_loader::ingest_file;
-use ruba::parser::parse_query;
 use ruba::Ruba;
 use futures::executor::block_on;
-use futures::future;
 use futures::FutureExt;
 
 
@@ -15,7 +12,7 @@ use futures::FutureExt;
 fn bench_ingest_2mb_once(b: &mut test::Bencher) {
     let ruba = Ruba::memory_only();
     b.iter(|| {
-        let load_finished = Ruba::load_csv(ruba.clone(), &"test_data/small.csv", &"test", 4000);
+        let load_finished = ruba.load_csv(&"test_data/small.csv", &"test", 4000);
         let _ = block_on(load_finished);
     });
 }
@@ -24,8 +21,8 @@ fn bench_ingest_2mb_once(b: &mut test::Bencher) {
 fn bench_ingest_2mb_twice(b: &mut test::Bencher) {
     let ruba = Ruba::memory_only();
     b.iter(|| {
-        let f1 = Ruba::load_csv(ruba.clone(), &"test_data/small.csv", &"test", 4000);
-        let f2 = f1.join(Ruba::load_csv(ruba.clone(), &"test_data/small.csv", &"test", 4000));
+        let f1 = ruba.load_csv(&"test_data/small.csv", &"test", 4000);
+        let f2 = f1.join(ruba.load_csv(&"test_data/small.csv", &"test", 4000));
         let _ = block_on(f2);
     });
 }
@@ -43,20 +40,22 @@ fn bench_sum_4000(b: &mut test::Bencher) {
 }
 
 fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
-    let batches = ingest_file("test_data/small.csv", 4000);
-    let query = parse_query(query_str.as_bytes()).to_result().unwrap();
+    let ruba = Ruba::memory_only();
+    let load = ruba.load_csv(&"test_data/small.csv", &"test", 4000);
+    let _ = block_on(load);
     b.iter(|| {
-        let mut compiled_query = query.compile(&batches);
-        test::black_box(compiled_query.run());
+        let query = ruba.run_query(query_str);
+        let _ = block_on(query);
     });
 }
 
 fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
-    let batches = ingest_file("test_data/green_tripdata_2017-06.csv", 16_384);
-    let query = parse_query(query_str.as_bytes()).to_result().unwrap();
+    let ruba = Ruba::memory_only();
+    let load = ruba.load_csv(&"test_data/green_tripdata_2017-06.csv", &"test", 16_384);
+    let _ = block_on(load);
     b.iter(|| {
-        let mut compiled_query = query.compile(&batches);
-        test::black_box(compiled_query.run());
+        let query = ruba.run_query(query_str);
+        let _ = block_on(query);
     });
 }
 
@@ -112,5 +111,5 @@ fn gt_1m_select_passenger_count_count(b: &mut test::Bencher) {
 
 #[bench]
 fn gt_1m_int_sort(b: &mut test::Bencher) {
-    bench_query_gtd_1m(b, "select total_amount from rest order by total_amount limit 10000;");
+    bench_query_gtd_1m(b, "select total_amount from test order by total_amount limit 10000;");
 }

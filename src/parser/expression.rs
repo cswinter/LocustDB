@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -13,7 +12,7 @@ use mem_store::column::Column;
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    ColName(Rc<String>),
+    ColName(String),
     ColIndex(usize),
     Func(FuncType, Box<Expr>, Box<Expr>),
     Const(RawVal),
@@ -77,7 +76,7 @@ impl Expr {
         use self::Expr::*;
         match self {
             &ColName(ref name) => {
-                column_names.get(name.as_ref()).map(|&index| ColIndex(index)).unwrap_or(Const(RawVal::Null))
+                column_names.get(name).map(|&index| ColIndex(index)).unwrap_or(Const(RawVal::Null))
             }
             &Const(ref v) => Const(v.clone()),
             &Func(RegexMatch, ref regex, ref expr) => {
@@ -196,10 +195,10 @@ impl Expr {
         }
     }
 
-    pub fn add_colnames<'a>(&'a self, result: &mut HashSet<&'a str>) {
+    pub fn add_colnames<'a>(&'a self, result: &mut HashSet<String>) {
         match self {
             &ColName(ref name) => {
-                result.insert(name);
+                result.insert(name.to_string());
             }
             &Func(_, ref expr1, ref expr2) => {
                 expr1.add_colnames(result);

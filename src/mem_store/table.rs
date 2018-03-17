@@ -5,7 +5,6 @@ use std::sync::{Mutex, RwLock};
 use std;
 
 use disk_store::db::DB;
-use engine::query::{Query, QueryResult};
 use heapsize::HeapSizeOf;
 use ingest::buffer::Buffer;
 use ingest::input_column::InputColumn;
@@ -35,6 +34,11 @@ impl Table {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn snapshot(&self) ->Vec<Batch> {
+        let batches = self.batches.read().unwrap();
+        batches.clone()
     }
 
     pub fn restore_from_db(batch_size: usize, storage: &DB) -> HashMap<String, Table> {
@@ -95,14 +99,6 @@ impl Table {
         self.batch_if_needed(&mut buffer);
     }
 
-    pub fn run_query(&self, query: Query) -> Result<QueryResult, String> {
-        self.batch_if_nonzero();
-        let batches = self.batches.read().unwrap();
-        let mut compiled_query = query.compile(&batches);
-        let result = compiled_query.run();
-        Ok(result)
-    }
-
     pub fn load_batch(&self, batch: Batch) {
         let mut batches = self.batches.write().unwrap();
         batches.push(batch);
@@ -112,12 +108,6 @@ impl Table {
     fn batch_if_needed(&self, buffer: &mut Buffer) {
         if buffer.len() < self.batch_size { return; }
         self.batch(buffer);
-    }
-
-    fn batch_if_nonzero(&self) {
-        let mut buffer = self.buffer.lock().unwrap();
-        if buffer.len() == 0 { return; }
-        self.batch(&mut buffer);
     }
 
     fn batch(&self, buffer: &mut Buffer) {

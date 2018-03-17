@@ -5,10 +5,12 @@ use std::sync::Arc;
 // use tempdir::TempDir;
 use disk_store::db::*;
 use disk_store::noop_storage::NoopStorage;
-use engine::query::QueryResult;
+use engine::query::{QueryResult, QueryTask};
 use futures::*;
 use futures_channel::oneshot;
 use ingest::csv_loader::CSVIngestionTask;
+use nom;
+use parser::parser;
 use scheduler::*;
 
 
@@ -27,9 +29,27 @@ impl Ruba {
         Ruba { inner_ruba: ruba }
     }
 
-    // TODO(clemens): make asynchronous
-    pub fn run_query(&self, query: &str) -> Result<QueryResult, String> {
-        self.inner_ruba.run_query(query)
+    // TODO(clemens): proper error handling throughout query stack. panics! panics everywhere!
+    pub fn run_query(&self, query: &str) -> impl Future<Item=QueryResult, Error=oneshot::Canceled> {
+        let (sender, receiver) = oneshot::channel();
+
+        // TODO(clemens): perform compilation and table snapshot in asynchronous task?
+        let query = match parser::parse_query(query.as_bytes()) {
+            nom::IResult::Done(remaining, query) => {
+                if remaining.len() > 0 {
+                    panic!("Error parsing query. Bytes remaining: {:?}", &remaining);
+                }
+                query
+            }
+            err => panic!("Failed to parse query! {:?}", err),
+        };
+
+        // TODO(clemens): A table may not exist on all nodes, so querying empty table is valid and should return empty result.
+        let data = self.inner_ruba.snapshot(&query.table)
+            .expect(&format!("Table {} does not exist!", &query.table));
+        let task = QueryTask::new(query, data, SharedSender::new(sender));
+        self.schedule(task);
+        receiver
     }
 
     pub fn load_csv(&self,

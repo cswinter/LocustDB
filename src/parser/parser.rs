@@ -2,7 +2,6 @@
 
 use std::str;
 use std::str::FromStr;
-use std::rc::Rc;
 use nom::{digit, is_alphabetic, is_alphanumeric, multispace};
 
 use parser::expression::*;
@@ -113,7 +112,7 @@ named!(select_clauses<&[u8], Vec<AggregateOrSelect>>,
             opt!(multispace) >>
             tag!("*") >>
             opt!(multispace) >>
-            (vec![AggregateOrSelect::Select(Expr::ColName(Rc::new("*".to_string())))])
+            (vec![AggregateOrSelect::Select(Expr::ColName("*".to_string()))])
         ) |
         separated_list!(
             tag!(","),
@@ -181,7 +180,7 @@ named!(last_hour<&[u8], Expr>,
         tag_no_case!("$LAST_HOUR"),
         |_| Expr::Func(
                 FuncType::GT,
-                Box::new(Expr::ColName(Rc::new("timestamp".to_string()))),
+                Box::new(Expr::ColName("timestamp".to_string())),
                 Box::new(Expr::Const(RawVal::Int(time::now().to_timespec().sec - 3600)))
         )
     )
@@ -192,7 +191,7 @@ named!(last_day<&[u8], Expr>,
         tag_no_case!("$LAST_DAY"),
         |_| Expr::Func(
                 FuncType::GT,
-                Box::new(Expr::ColName(Rc::new("timestamp".to_string()))),
+                Box::new(Expr::ColName("timestamp".to_string())),
                 Box::new(Expr::Const(RawVal::Int(time::now().to_timespec().sec - 86400)))
         )
     )
@@ -274,7 +273,7 @@ named!(string<&[u8], RawVal>,
 named!(colname<&[u8], Expr>,
     map!(
         identifier,
-        |ident: &str| Expr::ColName(Rc::new(ident.to_string()))
+        |ident: &str| Expr::ColName(ident.to_string())
     )
 );
 

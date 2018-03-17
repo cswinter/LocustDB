@@ -1,7 +1,5 @@
-use std::rc::Rc;
-
-use ruba::*;
 use fmt_table::fmt_table;
+use ruba::*;
 
 pub fn print_query_result(results: &QueryResult) {
     let rt = results.stats.runtime_ns;
@@ -24,7 +22,7 @@ pub fn print_query_result(results: &QueryResult) {
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 
-fn format_results(colnames: &Vec<Rc<String>>, rows: &Vec<Vec<Value>>) -> String {
+fn format_results(colnames: &Vec<String>, rows: &Vec<Vec<Value>>) -> String {
     let strcolnames: Vec<&str> = colnames.iter().map(|ref s| s.clone() as &str).collect();
     let formattedrows: Vec<Vec<String>> = rows.iter()
         .map(|row| {

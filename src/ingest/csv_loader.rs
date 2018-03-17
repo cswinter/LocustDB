@@ -51,7 +51,7 @@ fn create_batch(cols: Vec<RawCol>, colnames: &Vec<String>) -> Batch {
     for (i, col) in cols.into_iter().enumerate() {
         mem_store.push(Column::new(colnames[i].clone(), col.finalize()));
     }
-    Batch { cols: mem_store }
+    Batch::from(mem_store)
 }
 
 pub struct CSVIngestionTask {
