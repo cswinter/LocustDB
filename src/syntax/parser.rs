@@ -4,8 +4,8 @@ use std::str;
 use std::str::FromStr;
 use nom::{digit, is_alphabetic, is_alphanumeric, multispace};
 
-use parser::expression::*;
-use parser::limit::LimitClause;
+use syntax::expression::*;
+use syntax::limit::LimitClause;
 use engine::query::*;
 use engine::aggregator::Aggregator;
 use ingest::raw_val::RawVal;
@@ -54,8 +54,8 @@ named!(simple_query<&[u8], Query>,
     )
 );
 
-fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect>,
-                       table: &'a str,
+fn construct_query(select_clauses: Vec<AggregateOrSelect>,
+                       table: &str,
                        filter: Expr,
                        order_by: Option<(String, bool)>,
                        limit: Option<LimitClause>)
@@ -63,23 +63,23 @@ fn construct_query<'a>(select_clauses: Vec<AggregateOrSelect>,
     let (select, aggregate) = partition(select_clauses);
     let order_desc = order_by.as_ref().map(|x| x.1).unwrap_or(false);
     Query {
-        select: select,
+        select,
         table: table.to_string(),
-        filter: filter,
-        aggregate: aggregate,
+        filter,
+        aggregate,
         order_by: order_by.map(|x| x.0),
-        order_desc: order_desc,
+        order_desc,
         limit: limit.unwrap_or(LimitClause { limit: 100, offset: 0 }),
         order_by_index: None,
     }
 }
 
-fn partition<'a>(select_or_aggregates: Vec<AggregateOrSelect>)
+fn partition(select_or_aggregates: Vec<AggregateOrSelect>)
                  -> (Vec<Expr>, Vec<(Aggregator, Expr)>) {
     let (selects, aggregates): (Vec<AggregateOrSelect>, Vec<AggregateOrSelect>) =
         select_or_aggregates.into_iter()
-            .partition(|x| match x {
-                &AggregateOrSelect::Select(_) => true,
+            .partition(|x| match *x {
+                AggregateOrSelect::Select(_) => true,
                 _ => false,
             });
 
@@ -247,7 +247,7 @@ named!(integer<&[u8], RawVal>,
             ),
             FromStr::from_str
         ),
-        |int| RawVal::Int(int)
+        RawVal::Int
     )
 );
 
@@ -342,11 +342,11 @@ fn create_sql_identifier(bytes: &[u8]) -> Result<&str, String> {
 }
 
 fn is_ident_start_char(chr: u8) -> bool {
-    is_alphabetic(chr) || chr == '_' as u8
+    is_alphabetic(chr) || chr == b'_'
 }
 
 fn is_ident_char(chr: u8) -> bool {
-    is_alphanumeric(chr) || chr == '_' as u8
+    is_alphanumeric(chr) || chr == b'_'
 }
 
 named!(limit_clause<&[u8], LimitClause>,

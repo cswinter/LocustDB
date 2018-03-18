@@ -36,7 +36,7 @@ impl ColumnBuilder<str> for StringColBuilder {
     }
 
     fn finalize(self) -> Box<ColumnData> {
-        build_string_column(self.data, self.uniques)
+        build_string_column(&self.data, self.uniques)
     }
 }
 
@@ -66,7 +66,7 @@ impl ColumnBuilder<i64> for IntColBuilder {
     }
 
     fn finalize(self) -> Box<ColumnData> {
-        IntegerColumn::new(self.data, self.min, self.max)
+        IntegerColumn::new_boxed(self.data, self.min, self.max)
     }
 }
 
@@ -79,7 +79,7 @@ pub struct UniqueValues<T> {
 impl<T: cmp::Eq + Hash> UniqueValues<T> {
     fn new(max_count: usize) -> UniqueValues<T> {
         UniqueValues {
-            max_count: max_count,
+            max_count,
             values: HashSet::new(),
         }
     }

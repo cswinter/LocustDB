@@ -28,12 +28,12 @@ pub enum FuncType {
 use self::Expr::*;
 
 impl Expr {
-    pub fn add_colnames<'a>(&'a self, result: &mut HashSet<String>) {
-        match self {
-            &ColName(ref name) => {
+    pub fn add_colnames(&self, result: &mut HashSet<String>) {
+        match *self {
+            ColName(ref name) => {
                 result.insert(name.to_string());
             }
-            &Func(_, ref expr1, ref expr2) => {
+            Func(_, ref expr1, ref expr2) => {
                 expr1.add_colnames(result);
                 expr2.add_colnames(result);
             }

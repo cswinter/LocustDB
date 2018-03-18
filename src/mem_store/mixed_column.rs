@@ -49,20 +49,20 @@ impl HeapSizeOf for MixedColumn {
 }
 */
 impl RawVal {
-    pub fn to_val<'a>(&'a self) -> Val<'a> {
-        match self {
-            &RawVal::Null => Val::Null,
-            &RawVal::Int(i) => Val::Integer(i),
-            &RawVal::Str(ref string) => Val::Str(string),
+    pub fn to_val(&self) -> Val {
+        match *self {
+            RawVal::Null => Val::Null,
+            RawVal::Int(i) => Val::Integer(i),
+            RawVal::Str(ref string) => Val::Str(string),
         }
     }
 }
 
 impl HeapSizeOf for RawVal {
     fn heap_size_of_children(&self) -> usize {
-        match self {
-            &RawVal::Null | &RawVal::Int(_) => 0,
-            &RawVal::Str(ref r) => r.heap_size_of_children(),
+        match *self {
+            RawVal::Null | RawVal::Int(_) => 0,
+            RawVal::Str(ref r) => r.heap_size_of_children(),
         }
     }
 }

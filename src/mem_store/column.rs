@@ -20,8 +20,8 @@ impl Column {
 
     pub fn new(name: String, data: Box<ColumnData>) -> Column {
         Column {
-            name: name,
-            data: data,
+            name,
+            data,
         }
     }
 }
@@ -36,7 +36,7 @@ impl HeapSizeOf for Column {
 pub trait ColumnData: HeapSizeOf + Send + Sync {
     fn collect_decoded(&self) -> TypedVec;
     fn filter_decode(&self, filter: &BitVec) -> TypedVec;
-    fn index_decode(&self, filter: &Vec<usize>) -> TypedVec;
+    fn index_decode(&self, filter: &[usize]) -> TypedVec;
     fn basic_type(&self) -> BasicType;
     fn to_codec(&self) -> Option<&ColumnCodec> { None }
 
@@ -55,7 +55,7 @@ impl<'a> fmt::Debug for &'a ColumnData {
 pub trait ColumnCodec: ColumnData {
     fn get_encoded(&self) -> TypedVec;
     fn filter_encoded(&self, filter: &BitVec) -> TypedVec;
-    fn index_encoded(&self, filter: &Vec<usize>) -> TypedVec;
+    fn index_encoded(&self, filter: &[usize]) -> TypedVec;
     fn encoding_type(&self) -> EncodingType;
 
     fn encode_str(&self, _: &str) -> RawVal {

@@ -10,7 +10,7 @@ use std::hash::BuildHasherDefault;
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 
-pub fn grouping<'a>(grouping_key: TypedVec<'a>) -> (Vec<usize>, usize, TypedVec<'a>) {
+pub fn grouping<'a>(grouping_key: &TypedVec<'a>) -> (Vec<usize>, usize, TypedVec<'a>) {
     match grouping_key.get_type() {
         EncodingType::U8 => {
             let (data, encoding) = grouping_key.cast_ref_u8();
@@ -43,17 +43,17 @@ fn ht_grouping<T: Number>(grouping_key: &[T]) -> (Vec<usize>, usize, Vec<T>) {
 }
 
 pub struct HTSummationCi64<'b> {
-    grouping: &'b Vec<usize>,
+    grouping: &'b [usize],
     max_index: usize,
     constant: i64,
 }
 
 impl<'b> HTSummationCi64<'b> {
-    pub fn new(grouping: &'b Vec<usize>, max_index: usize, constant: i64) -> HTSummationCi64 {
+    pub fn new(grouping: &'b [usize], max_index: usize, constant: i64) -> HTSummationCi64 {
         HTSummationCi64 {
-            grouping: grouping,
-            max_index: max_index,
-            constant: constant,
+            grouping,
+            max_index,
+            constant,
         }
     }
 }
@@ -65,7 +65,7 @@ impl<'a, 'b> VecOperator<'a> for HTSummationCi64<'b> {
         for i in self.grouping {
             result[*i] += self.constant;
         }
-        stats.record(&"ht_summation_ci64");
+        stats.record("ht_summation_ci64");
         stats.ops += result.len() + self.grouping.len();
         TypedVec::Integer(result)
     }

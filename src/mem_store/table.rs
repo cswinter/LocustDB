@@ -27,7 +27,7 @@ impl Table {
             name: name.to_string(),
             batch_size: batch_size_override(batch_size, name),
             batches: RwLock::new(Vec::new()),
-            buffer: Mutex::new(Buffer::new()),
+            buffer: Mutex::new(Buffer::default()),
             metadata: RwLock::new(metadata),
         }
     }
@@ -42,8 +42,8 @@ impl Table {
     }
 
     pub fn restore_from_db(batch_size: usize, storage: &DB) -> HashMap<String, Table> {
-        let mut tables = Table::load_table_metadata(batch_size, storage);
-        for (_, table) in tables.iter_mut() {
+        let tables = Table::load_table_metadata(batch_size, storage);
+        for table in tables.values() {
             table.load_table_data(storage);
         }
         tables
@@ -92,7 +92,7 @@ impl Table {
     }
 
     fn batch(&self, buffer: &mut Buffer) {
-        let buffer = std::mem::replace(buffer, Buffer::new());
+        let buffer = std::mem::replace(buffer, Buffer::default());
         self.persist_batch(&buffer);
         let new_batch = buffer.into();
         let mut batches = self.batches.write().unwrap();

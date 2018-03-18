@@ -1,8 +1,8 @@
 use bit_vec::BitVec;
-use mem_store::column::*;
-use heapsize::HeapSizeOf;
-use engine::types::*;
 use engine::typed_vec::TypedVec;
+use engine::types::*;
+use heapsize::HeapSizeOf;
+use mem_store::column::*;
 
 
 pub struct NullColumn {
@@ -11,21 +11,21 @@ pub struct NullColumn {
 
 impl NullColumn {
     pub fn new(length: usize) -> NullColumn {
-        NullColumn { length: length }
+        NullColumn { length }
     }
 }
 
 impl ColumnData for NullColumn {
     fn collect_decoded(&self) -> TypedVec {
-        TypedVec::Empty
+        TypedVec::Empty(self.length)
     }
 
-    fn filter_decode(&self, _: &BitVec) -> TypedVec {
-        TypedVec::Empty
+    fn filter_decode(&self, filter: &BitVec) -> TypedVec {
+        TypedVec::Empty(filter.iter().filter(|b| *b).count())
     }
 
-    fn index_decode(&self, _: &Vec<usize>) -> TypedVec {
-        TypedVec::Empty
+    fn index_decode(&self, indices: &[usize]) -> TypedVec {
+        TypedVec::Empty(indices.len())
     }
 
     fn basic_type(&self) -> BasicType { BasicType::Null }

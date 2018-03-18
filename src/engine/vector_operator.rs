@@ -17,14 +17,14 @@ pub trait VecOperator<'a> {
 pub struct GetDecode<'a> { col: &'a ColumnData }
 
 impl<'a> GetDecode<'a> {
-    pub fn new(col: &'a ColumnData) -> GetDecode { GetDecode { col: col } }
+    pub fn new(col: &'a ColumnData) -> GetDecode { GetDecode { col } }
 }
 
 impl<'a> VecOperator<'a> for GetDecode<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let result = self.col.collect_decoded();
-        stats.record(&"decode");
+        stats.record("decode");
         stats.ops += result.len();
         result
     }
@@ -38,8 +38,8 @@ pub struct FilterDecode<'a> {
 impl<'a> FilterDecode<'a> {
     pub fn new(col: &'a ColumnData, filter: Rc<BitVec>) -> FilterDecode<'a> {
         FilterDecode {
-            col: col,
-            filter: filter,
+            col,
+            filter,
         }
     }
 }
@@ -48,7 +48,7 @@ impl<'a> VecOperator<'a> for FilterDecode<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let result = self.col.filter_decode(self.filter.as_ref());
-        stats.record(&"filter_decode");
+        stats.record("filter_decode");
         stats.ops += self.filter.len();
         result
     }
@@ -62,8 +62,8 @@ pub struct IndexDecode<'a> {
 impl<'a> IndexDecode<'a> {
     pub fn new(col: &'a ColumnData, filter: Rc<Vec<usize>>) -> IndexDecode<'a> {
         IndexDecode {
-            col: col,
-            filter: filter,
+            col,
+            filter,
         }
     }
 }
@@ -72,7 +72,7 @@ impl<'a> VecOperator<'a> for IndexDecode<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let result = self.col.index_decode(self.filter.as_ref());
-        stats.record(&"index_decode");
+        stats.record("index_decode");
         stats.ops += self.filter.len();
         result
     }
@@ -82,14 +82,14 @@ impl<'a> VecOperator<'a> for IndexDecode<'a> {
 pub struct GetEncoded<'a> { col: &'a ColumnCodec }
 
 impl<'a> GetEncoded<'a> {
-    pub fn new(col: &'a ColumnCodec) -> GetEncoded { GetEncoded { col: col } }
+    pub fn new(col: &'a ColumnCodec) -> GetEncoded { GetEncoded { col } }
 }
 
 impl<'a> VecOperator<'a> for GetEncoded<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let result = self.col.get_encoded();
-        stats.record(&"get_encoded");
+        stats.record("get_encoded");
         result
     }
 }
@@ -103,8 +103,8 @@ pub struct FilterEncoded<'a> {
 impl<'a> FilterEncoded<'a> {
     pub fn new(col: &'a ColumnCodec, filter: Rc<BitVec>) -> FilterEncoded<'a> {
         FilterEncoded {
-            col: col,
-            filter: filter,
+            col,
+            filter,
         }
     }
 }
@@ -113,7 +113,7 @@ impl<'a> VecOperator<'a> for FilterEncoded<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let result = self.col.filter_encoded(self.filter.as_ref());
-        stats.record(&"filter_encoded");
+        stats.record("filter_encoded");
         stats.ops += self.filter.len();
         result
     }
@@ -127,8 +127,8 @@ pub struct IndexEncoded<'a> {
 impl<'a> IndexEncoded<'a> {
     pub fn new(col: &'a ColumnCodec, filter: Rc<Vec<usize>>) -> IndexEncoded<'a> {
         IndexEncoded {
-            col: col,
-            filter: filter,
+            col,
+            filter,
         }
     }
 }
@@ -137,7 +137,7 @@ impl<'a> VecOperator<'a> for IndexEncoded<'a> {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
         stats.start();
         let result = self.col.index_encoded(self.filter.as_ref());
-        stats.record(&"index_encoded");
+        stats.record("index_encoded");
         stats.ops += self.filter.len();
         result
     }
@@ -147,7 +147,7 @@ pub struct Decode<'a> { plan: BoxedOperator<'a> }
 
 impl<'a> Decode<'a> {
     pub fn new(plan: BoxedOperator<'a>) -> Decode<'a> {
-        Decode { plan: plan }
+        Decode { plan }
     }
 }
 
@@ -156,7 +156,7 @@ impl<'a> VecOperator<'a> for Decode<'a> {
         let encoded = self.plan.execute(stats);
         stats.start();
         let result = encoded.decode();
-        stats.record(&"decode");
+        stats.record("decode");
         result
     }
 }
@@ -166,7 +166,7 @@ pub struct Constant { val: RawVal }
 
 impl Constant {
     pub fn new(val: RawVal) -> Constant {
-        Constant { val: val }
+        Constant { val }
     }
 }
 
@@ -174,7 +174,7 @@ impl<'a> VecOperator<'a> for Constant {
     fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'static> {
         stats.start();
         let result = TypedVec::Constant(self.val.clone());
-        stats.record(&"constant");
+        stats.record("constant");
         result
     }
 }
@@ -188,8 +188,8 @@ pub struct LessThanVSi64<'a> {
 impl<'a> LessThanVSi64<'a> {
     pub fn new(lhs: BoxedOperator, rhs: i64) -> LessThanVSi64 {
         LessThanVSi64 {
-            lhs: lhs,
-            rhs: rhs,
+            lhs,
+            rhs,
         }
     }
 }
@@ -204,7 +204,7 @@ impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
         for l in data {
             result.push(*l < i);
         }
-        stats.record(&"less_than_vsi_64");
+        stats.record("less_than_vsi_64");
         stats.ops += data.len();
         TypedVec::Boolean(result)
     }
@@ -219,8 +219,8 @@ pub struct LessThanVSu8<'a> {
 impl<'a> LessThanVSu8<'a> {
     pub fn new(lhs: BoxedOperator, rhs: u8) -> LessThanVSu8 {
         LessThanVSu8 {
-            lhs: lhs,
-            rhs: rhs,
+            lhs,
+            rhs,
         }
     }
 }
@@ -235,7 +235,7 @@ impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
         for l in data {
             result.push(*l < i);
         }
-        stats.record(&"less_than_vs_u8");
+        stats.record("less_than_vs_u8");
         stats.ops += data.len();
         TypedVec::Boolean(result)
     }
@@ -250,8 +250,8 @@ pub struct EqualsVSString<'a> {
 impl<'a> EqualsVSString<'a> {
     pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> EqualsVSString<'a> {
         EqualsVSString {
-            lhs: lhs,
-            rhs: rhs,
+            lhs,
+            rhs,
         }
     }
 }
@@ -267,7 +267,7 @@ impl<'a> VecOperator<'a> for EqualsVSString<'a> {
         for l in data {
             result.push(*l == s);
         }
-        stats.record(&"equals_vs_str");
+        stats.record("equals_vs_str");
         stats.ops += data.len();
         TypedVec::Boolean(result)
     }
@@ -282,8 +282,8 @@ pub struct EqualsVSU16<'a> {
 impl<'a> EqualsVSU16<'a> {
     pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> EqualsVSU16<'a> {
         EqualsVSU16 {
-            lhs: lhs,
-            rhs: rhs,
+            lhs,
+            rhs,
         }
     }
 }
@@ -300,7 +300,7 @@ impl<'a> VecOperator<'a> for EqualsVSU16<'a> {
         for l in data {
             result.push(*l == s);
         }
-        stats.record(&"equals_vs_u16");
+        stats.record("equals_vs_u16");
         stats.ops += data.len();
         TypedVec::Boolean(result)
     }
@@ -314,10 +314,10 @@ struct BooleanOperator<'a, T> {
 }
 
 impl<'a, T: BooleanOp + 'a> BooleanOperator<'a, T> {
-    fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
+    fn compare(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
         Box::new(BooleanOperator::<'a, T> {
-            lhs: lhs,
-            rhs: rhs,
+            lhs,
+            rhs,
             op: PhantomData,
         })
     }
@@ -327,11 +327,11 @@ pub struct Boolean;
 
 impl Boolean {
     pub fn or<'a>(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
-        BooleanOperator::<BooleanOr>::new(lhs, rhs)
+        BooleanOperator::<BooleanOr>::compare(lhs, rhs)
     }
 
     pub fn and<'a>(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
-        BooleanOperator::<BooleanAnd>::new(lhs, rhs)
+        BooleanOperator::<BooleanAnd>::compare(lhs, rhs)
     }
 }
 
@@ -361,12 +361,12 @@ struct BooleanAnd;
 
 impl BooleanOp for BooleanOr {
     fn evaluate(lhs: &mut BitVec, rhs: &BitVec) { lhs.union(rhs); }
-    fn name() -> &'static str { &"bit_vec_or" }
+    fn name() -> &'static str { "bit_vec_or" }
 }
 
 impl BooleanOp for BooleanAnd {
     fn evaluate(lhs: &mut BitVec, rhs: &BitVec) { lhs.intersect(rhs); }
-    fn name() -> &'static str { &"bit_vec_and" }
+    fn name() -> &'static str { "bit_vec_and" }
 }
 
 
@@ -378,8 +378,8 @@ pub struct EncodeStrConstant<'a> {
 impl<'a> EncodeStrConstant<'a> {
     pub fn new(constant: BoxedOperator<'a>, codec: &'a ColumnCodec) -> EncodeStrConstant<'a> {
         EncodeStrConstant {
-            constant: constant,
-            codec: codec,
+            constant,
+            codec,
         }
     }
 }
@@ -391,7 +391,7 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
         stats.start();
         let s = constant.cast_str_const();
         let result = self.codec.encode_str(s);
-        stats.record(&"encode_str_const");
+        stats.record("encode_str_const");
 
         TypedVec::Constant(result)
     }

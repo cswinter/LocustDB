@@ -25,12 +25,12 @@ pub enum BasicType {
 
 impl BasicType {
     fn to_encoded(&self) -> EncodingType {
-        match self {
-            &BasicType::String => EncodingType::Str,
-            &BasicType::Integer => EncodingType::I64,
-            &BasicType::Val => EncodingType::Val,
-            &BasicType::Null => EncodingType::Null,
-            &BasicType::Boolean => EncodingType::BitVec,
+        match *self {
+            BasicType::String => EncodingType::Str,
+            BasicType::Integer => EncodingType::I64,
+            BasicType::Val => EncodingType::Val,
+            BasicType::Null => EncodingType::Null,
+            BasicType::Boolean => EncodingType::BitVec,
         }
     }
 }
@@ -47,7 +47,7 @@ impl<'a> Type<'a> {
     pub fn new(basic: BasicType, codec: Option<&'a ColumnCodec>) -> Type {
         Type {
             decoded: basic,
-            codec: codec,
+            codec,
             is_scalar: false,
             is_borrowed: false,
         }

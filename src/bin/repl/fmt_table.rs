@@ -1,5 +1,5 @@
 
-pub fn fmt_table(headings: &Vec<&str>, rows: &Vec<Vec<&str>>) -> String {
+pub fn fmt_table(headings: &[&str], rows: &[Vec<&str>]) -> String {
     let ncols = headings.len();
     let mut col_width = Vec::<usize>::with_capacity(ncols);
     for heading in headings {
@@ -34,7 +34,7 @@ pub fn fmt_table(headings: &Vec<&str>, rows: &Vec<Vec<&str>>) -> String {
     result
 }
 
-fn append_row(string: &mut String, row: &[&str], col_width: &Vec<usize>) {
+fn append_row(string: &mut String, row: &[&str], col_width: &[usize]) {
     let imax = col_width.len() - 1;
     for (i, entry) in row.iter().enumerate() {
         string.push_str(&format!("{:1$}", entry, col_width[i]));

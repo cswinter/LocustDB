@@ -82,7 +82,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     let mut result = Vec::with_capacity(batch1.select.len());
                     for (i, (col1, col2)) in batch1.select.into_iter().zip(batch2.select).enumerate() {
                         if i == index {
-                            result.push(TypedVec::Empty);
+                            result.push(TypedVec::Empty(0));
                         } else {
                             let merged = match (col1.get_type(), col2.get_type()) {
                                 (EncodingType::Str, EncodingType::Str) =>
@@ -201,7 +201,7 @@ fn merge_sort<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], li
     (result.into(), ops)
 }
 
-fn merge_aggregate(left: &[i64], right: &[i64], ops: &Vec<MergeOp>, aggregator: Aggregator) -> TypedVec<'static> {
+fn merge_aggregate(left: &[i64], right: &[i64], ops: &[MergeOp], aggregator: Aggregator) -> TypedVec<'static> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;
@@ -226,7 +226,7 @@ fn merge_aggregate(left: &[i64], right: &[i64], ops: &Vec<MergeOp>, aggregator: 
     result.into()
 }
 
-fn merge<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], ops: &Vec<bool>) -> TypedVec<'a>
+fn merge<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], ops: &[bool]) -> TypedVec<'a>
     where Vec<T>: Into<TypedVec<'a>> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;

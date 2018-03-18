@@ -18,7 +18,7 @@ extern crate futures;
 extern crate futures_channel;
 // extern crate tempdir;
 
-mod parser;
+mod syntax;
 mod mem_store;
 mod ingest;
 mod engine;

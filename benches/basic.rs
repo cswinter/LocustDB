@@ -5,35 +5,15 @@ extern crate futures;
 
 use ruba::Ruba;
 use futures::executor::block_on;
-use futures::FutureExt;
 
-
-// #[bench]
-fn bench_ingest_2mb_once(b: &mut test::Bencher) {
-    let ruba = Ruba::memory_only();
-    b.iter(|| {
-        let load_finished = ruba.load_csv(&"test_data/small.csv", &"test", 4000);
-        let _ = block_on(load_finished);
-    });
-}
-
-// #[bench]
-fn bench_ingest_2mb_twice(b: &mut test::Bencher) {
-    let ruba = Ruba::memory_only();
-    b.iter(|| {
-        let f1 = ruba.load_csv(&"test_data/small.csv", &"test", 4000);
-        let f2 = f1.join(ruba.load_csv(&"test_data/small.csv", &"test", 4000));
-        let _ = block_on(f2);
-    });
-}
 
 #[bench]
 fn bench_sum_4000(b: &mut test::Bencher) {
     let data = (0..4000).collect::<Vec<_>>();
     b.iter(|| {
         let mut sum = 0;
-        for i in 0..4000 {
-            sum = sum + data[i]
+        for i in &data {
+            sum += i
         }
         test::black_box(sum)
     });
@@ -41,7 +21,7 @@ fn bench_sum_4000(b: &mut test::Bencher) {
 
 fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
     let ruba = Ruba::memory_only();
-    let load = ruba.load_csv(&"test_data/small.csv", &"test", 4000);
+    let load = ruba.load_csv("test_data/small.csv", "test", 4000);
     let _ = block_on(load);
     b.iter(|| {
         let query = ruba.run_query(query_str);
@@ -51,7 +31,7 @@ fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
 
 fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
     let ruba = Ruba::memory_only();
-    let load = ruba.load_csv(&"test_data/green_tripdata_2017-06.csv", &"test", 16_384);
+    let load = ruba.load_csv("test_data/green_tripdata_2017-06.csv", "test", 16_384);
     let _ = block_on(load);
     b.iter(|| {
         let query = ruba.run_query(query_str);
@@ -77,11 +57,6 @@ fn bench_2mb_filter_select(b: &mut test::Bencher) {
 #[bench]
 fn bench_2mb_string_equality(b: &mut test::Bencher) {
     bench_query_2mb(b, "select first_name from test where first_name = \"Adam\" limit 2;");
-}
-
-// #[bench]
-fn bench_2mb_count_all(b: &mut test::Bencher) {
-    bench_query_2mb(b, "select count(first_name) from test;");
 }
 
 #[bench]

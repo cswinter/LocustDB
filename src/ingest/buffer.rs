@@ -12,14 +12,16 @@ pub struct Buffer {
     length: usize,
 }
 
-impl Buffer {
-    pub fn new() -> Buffer {
+impl Default for Buffer {
+    fn default() -> Buffer {
         Buffer {
             buffer: HashMap::new(),
             length: 0,
         }
     }
+}
 
+impl Buffer {
     pub fn push_row(&mut self, row: Vec<(String, RawVal)>) {
         let len = self.len();
         for (name, input_val) in row {

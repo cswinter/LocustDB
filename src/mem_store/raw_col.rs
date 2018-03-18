@@ -33,12 +33,12 @@ impl RawCol {
 
     pub fn push_ints(&mut self, ints: Vec<i64>) {
         self.types = self.types | ColType::int();
-        self.data.extend(ints.into_iter().map(|i| RawVal::Int(i)));
+        self.data.extend(ints.into_iter().map(RawVal::Int));
     }
 
     pub fn push_strings(&mut self, strs: Vec<String>) {
         self.types = self.types | ColType::string();
-        self.data.extend(strs.into_iter().map(|s| RawVal::Str(s)));
+        self.data.extend(strs.into_iter().map(RawVal::Str));
     }
 
     pub fn push_nulls(&mut self, count: usize) {
@@ -112,10 +112,10 @@ impl ColType {
     }
 
     fn determine(v: &RawVal) -> ColType {
-        match v {
-            &RawVal::Null => ColType::null(),
-            &RawVal::Str(_) => ColType::string(),
-            &RawVal::Int(_) => ColType::int()
+        match *v {
+            RawVal::Null => ColType::null(),
+            RawVal::Str(_) => ColType::string(),
+            RawVal::Int(_) => ColType::int()
         }
     }
 }

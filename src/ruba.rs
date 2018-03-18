@@ -10,7 +10,7 @@ use futures::*;
 use futures_channel::oneshot;
 use ingest::csv_loader::CSVIngestionTask;
 use nom;
-use parser::parser;
+use syntax::parser;
 use scheduler::*;
 use mem_store::table::TableStats;
 
@@ -26,7 +26,7 @@ impl Ruba {
 
     pub fn new(storage: Box<DB>, load_tabledata: bool) -> Ruba {
         let ruba = Arc::new(InnerRuba::new(storage, load_tabledata));
-        InnerRuba::start_worker_threads(ruba.clone());
+        InnerRuba::start_worker_threads(&ruba);
         Ruba { inner_ruba: ruba }
     }
 
@@ -37,7 +37,7 @@ impl Ruba {
         // TODO(clemens): perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query.as_bytes()) {
             nom::IResult::Done(remaining, query) => {
-                if remaining.len() > 0 {
+                if !remaining.is_empty() {
                     panic!("Error parsing query. Bytes remaining: {:?}", &remaining);
                 }
                 query

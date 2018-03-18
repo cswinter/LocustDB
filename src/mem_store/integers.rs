@@ -1,12 +1,14 @@
+use std::convert::From;
+use std::{u8, u16, u32};
+
 use bit_vec::BitVec;
+use engine::typed_vec::TypedVec;
+use engine::types::*;
+use heapsize::HeapSizeOf;
 use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 use mem_store::point_codec::PointCodec;
-use heapsize::HeapSizeOf;
-use std::{u8, u16, u32, i64};
 use num::traits::NumCast;
-use engine::types::*;
-use engine::typed_vec::TypedVec;
 
 
 pub struct IntegerColumn {
@@ -15,16 +17,16 @@ pub struct IntegerColumn {
 
 impl IntegerColumn {
     // TODO(clemens): do not subtract offset if it does not change encoding size
-    pub fn new(mut values: Vec<i64>, min: i64, max: i64) -> Box<ColumnData> {
-        if max - min <= u8::MAX as i64 {
+    pub fn new_boxed(mut values: Vec<i64>, min: i64, max: i64) -> Box<ColumnData> {
+        if max - min <= From::from(u8::MAX) {
             Box::new(IntegerOffsetColumn::<u8>::new(values, min))
-        } else if max - min <= u16::MAX as i64 {
+        } else if max - min <= From::from(u16::MAX) {
             Box::new(IntegerOffsetColumn::<u16>::new(values, min))
-        } else if max - min <= u32::MAX as i64 {
+        } else if max - min <= From::from(u32::MAX) {
             Box::new(IntegerOffsetColumn::<u32>::new(values, min))
         } else {
             values.shrink_to_fit();
-            Box::new(IntegerColumn { values: values })
+            Box::new(IntegerColumn { values })
         }
     }
 }
@@ -44,7 +46,7 @@ impl ColumnData for IntegerColumn {
         TypedVec::Integer(results)
     }
 
-    fn index_decode<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+    fn index_decode<'a>(&'a self, filter: &[usize]) -> TypedVec {
         let mut results = Vec::with_capacity(filter.len());
         for &i in filter {
             results.push(self.values[i]);
@@ -69,7 +71,7 @@ impl<T: IntLike> IntegerOffsetColumn<T> {
         }
         IntegerOffsetColumn {
             values: encoded_vals,
-            offset: offset,
+            offset,
         }
     }
 }
@@ -89,7 +91,7 @@ impl<T: IntLike> ColumnData for IntegerOffsetColumn<T> {
         TypedVec::Integer(result)
     }
 
-    fn index_decode<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+    fn index_decode<'a>(&'a self, filter: &[usize]) -> TypedVec {
         PointCodec::index_decode(self, &self.values, filter)
     }
 
@@ -137,7 +139,7 @@ impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {
         T::typed_vec(filtered_values, self as &PointCodec<T>)
     }
 
-    fn index_encoded<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+    fn index_encoded<'a>(&'a self, filter: &[usize]) -> TypedVec {
         let mut result = Vec::with_capacity(filter.len());
         for &i in filter {
             result.push(self.values[i]);
@@ -156,7 +158,7 @@ impl HeapSizeOf for IntegerColumn {
 
 trait IntLike: NumCast + HeapSizeOf + Copy + Send + Sync {
     fn borrowed_typed_vec<'a>(values: &'a [Self], codec: &'a PointCodec<Self>) -> TypedVec<'a>;
-    fn typed_vec<'a>(values: Vec<Self>, codec: &'a PointCodec<Self>) -> TypedVec<'a>;
+    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec;
     fn t() -> EncodingType;
 }
 
@@ -165,7 +167,7 @@ impl IntLike for u8 {
         TypedVec::BorrowedEncodedU8(values, codec)
     }
 
-    fn typed_vec<'a>(values: Vec<Self>, codec: &'a PointCodec<Self>) -> TypedVec<'a> {
+    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec {
         TypedVec::EncodedU8(values, codec)
     }
 
@@ -177,7 +179,7 @@ impl IntLike for u16 {
         TypedVec::BorrowedEncodedU16(values, codec)
     }
 
-    fn typed_vec<'a>(values: Vec<Self>, codec: &'a PointCodec<Self>) -> TypedVec<'a> {
+    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec {
         TypedVec::EncodedU16(values, codec)
     }
 
@@ -189,7 +191,7 @@ impl IntLike for u32 {
         TypedVec::BorrowedEncodedU32(values, codec)
     }
 
-    fn typed_vec<'a>(values: Vec<Self>, codec: &'a PointCodec<Self>) -> TypedVec<'a> {
+    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec {
         TypedVec::EncodedU32(values, codec)
     }
 

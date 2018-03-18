@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
-use std::ops::DerefMut;
 use std::str;
 use std::sync::{Arc, Mutex, RwLock, Condvar};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use disk_store::db::*;
@@ -16,9 +16,11 @@ use time;
 
 pub struct InnerRuba {
     tables: RwLock<HashMap<String, Table>>,
-    idle_queue: (Mutex<bool>, Condvar),
-    task_queue: RwLock<VecDeque<Arc<Task>>>,
     storage: Box<DB>,
+
+    running: AtomicBool,
+    idle_queue: Condvar,
+    task_queue: Mutex<VecDeque<Arc<Task>>>,
 }
 
 impl InnerRuba {
@@ -29,17 +31,16 @@ impl InnerRuba {
             Table::restore_from_db(20_000, storage.as_ref())
         };
 
-        let ruba = InnerRuba {
+        InnerRuba {
             tables: RwLock::new(existing_tables),
-            idle_queue: (Mutex::new(false), Condvar::new()),
-            task_queue: RwLock::new(VecDeque::new()),
-            storage: storage,
-        };
-
-        return ruba;
+            storage,
+            running: AtomicBool::new(true),
+            idle_queue: Condvar::new(),
+            task_queue: Mutex::new(VecDeque::new()),
+        }
     }
 
-    pub fn start_worker_threads(ruba: Arc<InnerRuba>) {
+    pub fn start_worker_threads(ruba: &Arc<InnerRuba>) {
         for _ in 0..num_cpus::get() {
             let cloned = ruba.clone();
             thread::spawn(move || InnerRuba::worker_loop(cloned));
@@ -52,21 +53,19 @@ impl InnerRuba {
     }
 
     fn worker_loop(ruba: Arc<InnerRuba>) {
-        loop {
+        while ruba.running.load(Ordering::SeqCst) {
             if let Some(task) = ruba.await_task() {
                 task.execute();
             }
         }
+        drop(ruba) // Make clippy happy
     }
 
     fn await_task(&self) -> Option<Arc<Task>> {
-        let &(ref lock, ref cvar) = &self.idle_queue;
-        let mut task_available = lock.lock().unwrap();
-        while !*task_available {
-            task_available = cvar.wait(task_available).unwrap();
+        let mut task_queue = self.task_queue.lock().unwrap();
+        while task_queue.is_empty() {
+            task_queue = self.idle_queue.wait(task_queue).unwrap();
         }
-        let mut task_queue_guard = self.task_queue.write().unwrap();
-        let task_queue = task_queue_guard.deref_mut();
         while let Some(task) = task_queue.pop_front() {
             if task.completed() {
                 continue;
@@ -74,33 +73,27 @@ impl InnerRuba {
             if task.multithreaded() {
                 task_queue.push_front(task.clone());
             }
-            *task_available = task_queue.len() > 0;
-            if *task_available {
-                cvar.notify_one();
+            if !task_queue.is_empty() {
+                self.idle_queue.notify_one();
             }
             return Some(task);
         };
-        *task_available = false;
         None
     }
 
     pub fn schedule(&self, task: Arc<Task>) {
         // This function may be entered by event loop thread so it's important it always returns quickly.
-        // Since the task queue/idle queue locks are never held for long, we should be fine.
-        let &(ref lock, ref cvar) = &self.idle_queue;
-        let mut task_available = lock.lock().unwrap();
-        let mut task_queue_guard = self.task_queue.write().unwrap();
-        let task_queue = task_queue_guard.deref_mut();
+        // Since the task queue locks are never held for long, we should be fine.
+        let mut task_queue = self.task_queue.lock().unwrap();
         task_queue.push_back(task);
-        *task_available = true;
-        cvar.notify_one();
+        self.idle_queue.notify_one();
     }
 
     pub fn load_batches(&self, table: &str, batches: Vec<Batch>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
         let table = tables.get(table).unwrap();
-        for batch in batches.into_iter() {
+        for batch in batches {
             table.load_batch(batch);
         }
     }

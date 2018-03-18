@@ -14,11 +14,11 @@ pub enum Val<'a> {
 
 impl<'a> fmt::Display for Val<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Val::Null => write!(f, "null"),
-            &Val::Bool(b) => write!(f, "{}", b),
-            &Val::Integer(i) => write!(f, "{}", i),
-            &Val::Str(ref s) => write!(f, "\"{}\"", s),
+        match *self {
+            Val::Null => write!(f, "null"),
+            Val::Bool(b) => write!(f, "{}", b),
+            Val::Integer(i) => write!(f, "{}", i),
+            Val::Str(s) => write!(f, "\"{}\"", s),
         }
     }
 }
@@ -26,9 +26,9 @@ impl<'a> fmt::Display for Val<'a> {
 impl<'a> HeapSizeOf for Val<'a> {
     fn heap_size_of_children(&self) -> usize {
         use self::Val::*;
-        match self {
-            &Null | &Bool(_) | &Integer(_) => 0,
-            &Str(ref r) => r.heap_size_of_children(),
+        match *self {
+            Null | Bool(_) | Integer(_) => 0,
+            Str(r) => r.heap_size_of_children(),
         }
     }
 }
@@ -70,11 +70,10 @@ impl<'a, T> From<Option<T>> for Val<'a>
 
 impl<'a, 'b> From<&'a Val<'b>> for RawVal {
     fn from(val: &Val) -> RawVal {
-        match val {
-            &Val::Integer(b) => RawVal::Int(b),
-            &Val::Str(s) => RawVal::Str(s.to_string()),
-            &Val::Null => RawVal::Null,
-            &Val::Bool(_) => RawVal::Null,
+        match *val {
+            Val::Integer(b) => RawVal::Int(b),
+            Val::Str(s) => RawVal::Str(s.to_string()),
+            Val::Null | Val::Bool(_) => RawVal::Null,
         }
     }
 }

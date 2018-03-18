@@ -22,7 +22,7 @@ fn main() {
     let ruba = Ruba::memory_only();
     let _ = block_on(ruba.load_csv(filename, "default", LOAD_CHUNK_SIZE));
     // print_ingestion_stats(&batches, columnarization_start_time);
-    repl(ruba);
+    repl(&ruba);
 }
 
 // TODO(clemens): Return ingestion stats from Ruba::load_csv or something
@@ -52,7 +52,7 @@ fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {
     }
 }*/
 
-fn repl(ruba: Ruba) {
+fn repl(ruba: &Ruba) {
     let mut rl = rustyline::Editor::<()>::new();
     rl.load_history(".ruba_history").ok();
     while let Ok(mut s) = rl.readline("ruba> ") {
@@ -65,14 +65,14 @@ fn repl(ruba: Ruba) {
         if s == "exit" {
             break;
         }
-        if s.chars().next_back() != Some(';') {
+        if !s.ends_with(';') {
             s.push(';');
         }
         rl.add_history_entry(&s);
         let query = ruba.run_query(&s);
         match block_on(query) {
             Ok(result) => print_results::print_query_result(&result),
-            _ => {}
+            _ =>println!("Error: Query execution was canceled!"),
         }
     }
     rl.save_history(".ruba_history").ok();

@@ -15,11 +15,11 @@ pub fn ingest_file(filename: &str, chunk_size: usize) -> Vec<Batch> {
         .unwrap()
         .has_headers(true);
     let headers = reader.headers().unwrap();
-    auto_ingest(reader.records().map(|r| r.unwrap()), headers, chunk_size)
+    auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size)
 }
 
 fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T,
-                                              colnames: Vec<String>,
+                                              colnames: &[String],
                                               batch_size: usize)
                                               -> Vec<Batch> {
     let num_columns = colnames.len();
@@ -33,20 +33,20 @@ fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T,
         }
 
         if row_num % batch_size == batch_size - 1 {
-            batches.push(create_batch(raw_cols, &colnames));
+            batches.push(create_batch(raw_cols, colnames));
             raw_cols = (0..num_columns).map(|_| RawCol::new()).collect::<Vec<_>>();
         }
         row_num += 1;
     }
 
     if row_num % batch_size != 0 {
-        batches.push(create_batch(raw_cols, &colnames));
+        batches.push(create_batch(raw_cols, colnames));
     }
 
     batches
 }
 
-fn create_batch(cols: Vec<RawCol>, colnames: &Vec<String>) -> Batch {
+fn create_batch(cols: Vec<RawCol>, colnames: &[String]) -> Batch {
     let mut mem_store = Vec::new();
     for (i, col) in cols.into_iter().enumerate() {
         mem_store.push(Column::new(colnames[i].clone(), col.finalize()));
@@ -69,11 +69,11 @@ impl CSVIngestionTask {
                ruba: Arc<InnerRuba>,
                sender: SharedSender<()>) -> CSVIngestionTask {
         CSVIngestionTask {
-            filename: filename,
-            table: table,
-            chunk_size: chunk_size,
-            ruba: ruba,
-            sender: sender,
+            filename,
+            table,
+            chunk_size,
+            ruba,
+            sender,
         }
     }
 }

@@ -9,7 +9,7 @@ use engine::vector_operator::*;
 use ingest::raw_val::RawVal;
 use mem_store::column::Column;
 use mem_store::column::{ColumnData, ColumnCodec};
-use parser::expression::*;
+use syntax::expression::*;
 use std::rc::Rc;
 
 
@@ -74,7 +74,7 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
 pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
-                                   grouping: &'b Vec<usize>,
+                                   grouping: &'b [usize],
                                    max_index: usize,
                                    aggregator: Aggregator) -> Box<VecOperator<'a> + 'b> {
     match (aggregator, plan) {
@@ -99,9 +99,9 @@ impl<'a> QueryPlan<'a> {
                                  filter: Filter) -> (QueryPlan<'b>, Type<'b>) {
         use self::Expr::*;
         use self::FuncType::*;
-        match expr {
-            &ColName(ref name) => match columns.get::<str>(name.as_ref()) {
-                Some(ref c) => {
+        match *expr {
+            ColName(ref name) => match columns.get::<str>(name.as_ref()) {
+                Some(c) => {
                     let t = c.data().full_type();
                     match (c.data().to_codec(), filter) {
                         (None, Filter::None) => (QueryPlan::GetDecode(c.data()), t.decoded()),
@@ -114,7 +114,7 @@ impl<'a> QueryPlan<'a> {
                 }
                 None => panic!("Not implemented")//VecOperator::Constant(VecValue::Constant(RawVal::Null)),
             }
-            &Func(LT, ref lhs, ref rhs) => {
+            Func(LT, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
                 let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
                 match (type_lhs.decoded, type_rhs.decoded) {
@@ -136,7 +136,7 @@ impl<'a> QueryPlan<'a> {
                     _ => panic!("type error: {:?} < {:?}", type_lhs, type_rhs)
                 }
             }
-            &Func(Equals, ref lhs, ref rhs) => {
+            Func(Equals, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
                 let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
                 match (type_lhs.decoded, type_rhs.decoded) {
@@ -165,24 +165,24 @@ impl<'a> QueryPlan<'a> {
                     _ => panic!("type error: {:?} = {:?}", type_lhs, type_rhs)
                 }
             }
-            &Func(Or, ref lhs, ref rhs) => {
+            Func(Or, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
                 let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
                 assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
                 (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
-            &Func(And, ref lhs, ref rhs) => {
+            Func(And, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
                 let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
                 assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
                 (QueryPlan::And(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
-            &Const(ref v) => (QueryPlan::Constant(v.clone()), Type::scalar(v.get_type())),
-            x => panic!("{:?}.compile_vec() not implemented", x),
+            Const(ref v) => (QueryPlan::Constant(v.clone()), Type::scalar(v.get_type())),
+            ref x => panic!("{:?}.compile_vec() not implemented", x),
         }
     }
 
-    pub fn compile_grouping_key<'b>(exprs: &Vec<Expr>,
+    pub fn compile_grouping_key<'b>(exprs: &[Expr],
                                     columns: &HashMap<&'b str, &'b Column>,
                                     filter: Filter) -> (QueryPlan<'b>, Type<'b>) {
         assert!(exprs.len() == 1);

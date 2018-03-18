@@ -41,6 +41,6 @@ impl Task {
         F: Fn() -> T + Sync + Send + 'static,
         T: Send {
         let (sender, receiver) = oneshot::channel();
-        (FnTask { fun: fun, sender: SharedSender::new(sender) }, receiver)
+        (FnTask { fun, sender: SharedSender::new(sender) }, receiver)
     }
 }

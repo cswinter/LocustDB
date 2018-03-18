@@ -22,8 +22,8 @@ pub fn print_query_result(results: &QueryResult) {
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }
 
-fn format_results(colnames: &Vec<String>, rows: &Vec<Vec<Value>>) -> String {
-    let strcolnames: Vec<&str> = colnames.iter().map(|ref s| s.clone() as &str).collect();
+fn format_results(colnames: &[String], rows: &[Vec<Value>]) -> String {
+    let strcolnames: Vec<&str> = colnames.iter().map(|s| s as &str).collect();
     let formattedrows: Vec<Vec<String>> = rows.iter()
         .map(|row| {
             row.iter()
@@ -32,7 +32,7 @@ fn format_results(colnames: &Vec<String>, rows: &Vec<Vec<Value>>) -> String {
         })
         .collect();
     let strrows =
-        formattedrows.iter().map(|row| row.iter().map(|val| val as &str).collect()).collect();
+        formattedrows.iter().map(|row| row.iter().map(|val| val as &str).collect()).collect::<Vec<_>>();
 
     fmt_table(&strcolnames, &strrows)
 }

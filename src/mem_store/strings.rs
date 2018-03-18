@@ -15,13 +15,13 @@ use engine::typed_vec::TypedVec;
 
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
-pub fn build_string_column(values: Vec<Option<Rc<String>>>,
+pub fn build_string_column(values: &[Option<Rc<String>>],
                            unique_values: UniqueValues<Option<Rc<String>>>)
                            -> Box<ColumnData> {
     if let Some(u) = unique_values.get_values() {
-        Box::new(DictEncodedStrings::from_strings(&values, u))
+        Box::new(DictEncodedStrings::from_strings(values, u))
     } else {
-        Box::new(StringPacker::from_strings(&values))
+        Box::new(StringPacker::from_strings(values))
     }
 }
 
@@ -35,12 +35,12 @@ impl StringPacker {
         StringPacker { data: Vec::new() }
     }
 
-    pub fn from_strings(strings: &Vec<Option<Rc<String>>>) -> StringPacker {
+    pub fn from_strings(strings: &[Option<Rc<String>>]) -> StringPacker {
         let mut sp = StringPacker::new();
         for string in strings {
-            match string {
-                &Some(ref string) => sp.push(string),
-                &None => sp.push(""),
+            match *string {
+                Some(ref string) => sp.push(string),
+                None => sp.push(""),
             }
         }
         sp.shrink_to_fit();
@@ -81,7 +81,7 @@ impl ColumnData for StringPacker {
         TypedVec::String(result)
     }
 
-    fn index_decode<'a>(&'a self, filter: &Vec<usize>) -> TypedVec {
+    fn index_decode<'a>(&'a self, filter: &[usize]) -> TypedVec {
         let decoded = self.iter().collect::<Vec<_>>();
         let mut result = Vec::with_capacity(filter.len());
         for &i in filter {
@@ -128,7 +128,7 @@ struct DictEncodedStrings {
 }
 
 impl DictEncodedStrings {
-    pub fn from_strings(strings: &Vec<Option<Rc<String>>>,
+    pub fn from_strings(strings: &[Option<Rc<String>>],
                         unique_values: HashSet<Option<Rc<String>>>)
                         -> DictEncodedStrings {
         assert!(unique_values.len() <= u16::MAX as usize);
@@ -146,8 +146,8 @@ impl DictEncodedStrings {
         //          encoded_values.heap_size_of_children() as f64 / 1024f64 / 1024f64);
 
         DictEncodedStrings {
-            mapping: mapping,
-            encoded_values: encoded_values,
+            mapping,
+            encoded_values,
         }
     }
 }
@@ -167,7 +167,7 @@ impl ColumnData for DictEncodedStrings {
         TypedVec::String(result)
     }
 
-    fn index_decode(&self, filter: &Vec<usize>) -> TypedVec {
+    fn index_decode(&self, filter: &[usize]) -> TypedVec {
         PointCodec::index_decode(self, &self.encoded_values, filter)
     }
 
@@ -221,7 +221,7 @@ impl ColumnCodec for DictEncodedStrings {
         TypedVec::EncodedU16(result, self as &PointCodec<u16>)
     }
 
-    fn index_encoded(&self, filter: &Vec<usize>) -> TypedVec {
+    fn index_encoded(&self, filter: &[usize]) -> TypedVec {
         let mut result = Vec::with_capacity(filter.len());
         for &i in filter {
             result.push(self.encoded_values[i]);

@@ -12,8 +12,8 @@ use engine::query_plan;
 use engine::query_task::QueryStats;
 use engine::typed_vec::TypedVec;
 use mem_store::column::Column;
-use parser::expression::*;
-use parser::limit::*;
+use syntax::expression::*;
+use syntax::limit::*;
 
 
 #[derive(Debug, Clone)]
@@ -36,7 +36,7 @@ impl Query {
         //println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
-        stats.record(&"compile_filter");
+        stats.record("compile_filter");
 
         let mut filter = match compiled_filter.execute(stats) {
             TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
@@ -72,7 +72,7 @@ impl Query {
             let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone());
             //println!("select: {:?}", plan);
             let mut compiled = query_plan::prepare(plan);
-            stats.record(&"compile_select");
+            stats.record("compile_select");
             result.push(compiled.execute(stats).decode());
         }
 
@@ -92,7 +92,7 @@ impl Query {
         let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
-        stats.record(&"compile_filter");
+        stats.record("compile_filter");
 
         let filter = match compiled_filter.execute(stats) {
             TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
@@ -102,9 +102,9 @@ impl Query {
         stats.start();
         let (grouping_key_plan, _) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone());
         let mut compiled_gk = query_plan::prepare(grouping_key_plan);
-        stats.record(&"compile_grouping_key");
+        stats.record("compile_grouping_key");
         let grouping_key = compiled_gk.execute(stats);
-        let (grouping, max_index, groups) = grouping(grouping_key);
+        let (grouping, max_index, groups) = grouping(&grouping_key);
         let groups = groups.order_preserving();
         let mut grouping_sort_indices = (0..groups.len()).collect();
         groups.sort_indices_asc(&mut grouping_sort_indices);
@@ -114,7 +114,7 @@ impl Query {
             stats.start();
             let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone());
             let mut compiled = query_plan::prepare_aggregation(plan, &grouping, max_index, aggregator);
-            stats.record(&"compile_aggregate");
+            stats.record("compile_aggregate");
             result.push(compiled.execute(stats).index_decode(&grouping_sort_indices));
         }
 
@@ -131,7 +131,7 @@ impl Query {
     pub fn is_select_star(&self) -> bool {
         if self.select.len() == 1 {
             match self.select[0] {
-                Expr::ColName(ref colname) if **colname == "*".to_string() => true,
+                Expr::ColName(ref colname) if colname == "*" => true,
                 _ => false,
             }
         } else {
@@ -143,8 +143,8 @@ impl Query {
         let mut anon_columns = -1;
         let select_cols = self.select
             .iter()
-            .map(|expr| match expr {
-                &Expr::ColName(ref name) => name.clone(),
+            .map(|expr| match *expr {
+                Expr::ColName(ref name) => name.clone(),
                 _ => {
                     anon_columns += 1;
                     format!("col_{}", anon_columns)
@@ -167,11 +167,11 @@ impl Query {
 
     pub fn find_referenced_cols(&self) -> HashSet<String> {
         let mut colnames = HashSet::new();
-        for expr in self.select.iter() {
+        for expr in &self.select {
             expr.add_colnames(&mut colnames);
         }
         self.filter.add_colnames(&mut colnames);
-        for &(_, ref expr) in self.aggregate.iter() {
+        for &(_, ref expr) in &self.aggregate {
             expr.add_colnames(&mut colnames);
         }
         colnames
