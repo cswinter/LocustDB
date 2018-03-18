@@ -3,6 +3,8 @@ extern crate ruba;
 extern crate test;
 extern crate futures;
 
+use std::path::Path;
+
 use ruba::Ruba;
 use futures::executor::block_on;
 
@@ -32,6 +34,20 @@ fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
 fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
     let ruba = Ruba::memory_only();
     let load = ruba.load_csv("test_data/green_tripdata_2017-06.csv", "test", 16_384);
+    let _ = block_on(load);
+    b.iter(|| {
+        let query = ruba.run_query(query_str);
+        let _ = block_on(query);
+    });
+}
+
+fn bench_query_ytd_14m(b: &mut test::Bencher, query_str: &str) {
+    let path = "test_data/yellow_tripdata_2009-01.csv";
+    if !Path::new(path).exists() {
+        panic!("{} not found. Download dataset at https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2009-01.csv", path);
+    }
+    let ruba = Ruba::memory_only();
+    let load = ruba.load_csv(path, "test", 16_384);
     let _ = block_on(load);
     b.iter(|| {
         let query = ruba.run_query(query_str);
@@ -87,4 +103,9 @@ fn gt_1m_select_passenger_count_count(b: &mut test::Bencher) {
 #[bench]
 fn gt_1m_int_sort(b: &mut test::Bencher) {
     bench_query_gtd_1m(b, "select total_amount from test order by total_amount limit 10000;");
+}
+
+#[bench]
+fn yt_14m_count_by_passenger(b: &mut test::Bencher) {
+    bench_query_ytd_14m(b, "select Passenger_Count, count(1) from test;");
 }

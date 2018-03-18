@@ -5,5 +5,8 @@
 **/node_modules/
 **/.ruba_history
 
+# Large benchmarking datasets
+test_data/yellow_tripdata_2009-01.csv
+
 # IntelliJ
 .idea
