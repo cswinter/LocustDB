@@ -1,7 +1,8 @@
-use engine::typed_vec::TypedVec;
-use std::fmt::Debug;
 use std::cmp::{max, min};
+use std::fmt::Debug;
+
 use engine::aggregator::Aggregator;
+use engine::typed_vec::TypedVec;
 use engine::types::*;
 
 
@@ -30,8 +31,9 @@ pub enum MergeOp {
     MergeRight,
 }
 
-pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>) -> BatchResult<'a> {
+pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usize) -> BatchResult<'a> {
     match (batch1.group_by, batch2.group_by) {
+        // Aggregation query
         (Some(g1), Some(g2)) => {
             // TODO(clemens): other types, val coercion
             let (merged_grouping, ops) = match (g1.get_type(), g2.get_type()) {
@@ -60,17 +62,19 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>) -> BatchRes
                 batch_count: batch1.batch_count + batch2.batch_count,
             }
         }
+        // No aggregation
         (None, None) => {
             match batch1.sort_by {
+                // Sort query
                 Some(index) => {
                     let (merged_sort_col, ops) = {
                         let s1 = &batch1.select[index];
                         let s2 = &batch2.select[index];
                         match (s1.get_type(), s2.get_type()) {
                             (EncodingType::Str, EncodingType::Str) =>
-                                merge_sort(s1.cast_ref_str(), s2.cast_ref_str()),
+                                merge_sort(s1.cast_ref_str(), s2.cast_ref_str(), limit),
                             (EncodingType::I64, EncodingType::I64) =>
-                                merge_sort(s1.cast_ref_i64(), s2.cast_ref_i64()),
+                                merge_sort(s1.cast_ref_i64(), s2.cast_ref_i64(), limit),
                             (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
                         }
                     };
@@ -101,11 +105,14 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>) -> BatchRes
                         batch_count: batch1.batch_count + batch2.batch_count,
                     }
                 }
+                // Select query
                 None => {
                     let mut result = Vec::with_capacity(batch1.select.len());
-                    // TODO(clemens): handle sort case
                     for (col1, col2) in batch1.select.into_iter().zip(batch2.select) {
-                        result.push(col1.extend(col2))
+                        let count = if col1.len() >= limit { 0 } else {
+                            min(col2.len(), limit - col1.len())
+                        };
+                        result.push(col1.extend(col2, count))
                     }
                     BatchResult {
                         group_by: None,
@@ -163,14 +170,14 @@ fn merge_deduplicate<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &
 }
 
 // TODO(clemens): implement descending ordering
-fn merge_sort<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T]) -> (TypedVec<'a>, Vec<bool>)
+fn merge_sort<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], limit: usize) -> (TypedVec<'a>, Vec<bool>)
     where Vec<T>: Into<TypedVec<'a>> {
     let mut result = Vec::with_capacity(left.len() + right.len());
     let mut ops = Vec::<bool>::with_capacity(left.len() + right.len());
 
     let mut i = 0;
     let mut j = 0;
-    while i < left.len() && j < right.len() {
+    while i < left.len() && j < right.len() && i + j < limit {
         if left[i] <= right[j] {
             result.push(left[i]);
             ops.push(true);
@@ -182,11 +189,11 @@ fn merge_sort<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T]) ->
         }
     }
 
-    for x in left[i..].iter() {
+    for x in left[i..min(left.len(), limit - j)].iter() {
         result.push(*x);
         ops.push(true);
     }
-    for x in right[j..].iter() {
+    for x in right[j..min(right.len(), limit - i)].iter() {
         result.push(*x);
         ops.push(false);
     }

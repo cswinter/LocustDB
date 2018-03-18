@@ -97,14 +97,14 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn extend(self, other: TypedVec<'a>) -> TypedVec<'a> {
+    pub fn extend(self, other: TypedVec<'a>, count: usize) -> TypedVec<'a> {
         match (self, other) {
             (TypedVec::Integer(mut data), TypedVec::Integer(mut other_data)) => {
-                data.append(&mut other_data);
+                data.extend_from_slice(&mut other_data[..count]);
                 TypedVec::Integer(data)
             }
             (TypedVec::String(mut data), TypedVec::String(mut other_data)) => {
-                data.append(&mut other_data);
+                data.extend_from_slice(&mut other_data[..count]);
                 TypedVec::String(data)
             }
             _ => panic!("not implemented")
