@@ -28,4 +28,4 @@ mod disk_store;
 
 pub use ingest::raw_val::RawVal as Value;
 pub use ruba::Ruba as Ruba;
-pub use engine::query::QueryResult;
+pub use engine::query_task::QueryResult;

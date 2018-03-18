@@ -4,7 +4,7 @@ use std::rc::Rc;
 use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 use engine::typed_vec::TypedVec;
-use engine::query::QueryStats;
+use engine::query_task::QueryStats;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;

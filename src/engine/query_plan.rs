@@ -1,10 +1,16 @@
+use std::collections::HashMap;
+
 use bit_vec::BitVec;
-use mem_store::column::{ColumnData, ColumnCodec};
-use ingest::raw_val::RawVal;
-use engine::vector_operator::*;
 use engine::aggregation_operator::*;
-use std::rc::Rc;
 use engine::aggregator::Aggregator;
+use engine::filter::Filter;
+use engine::types::*;
+use engine::vector_operator::*;
+use ingest::raw_val::RawVal;
+use mem_store::column::Column;
+use mem_store::column::{ColumnData, ColumnCodec};
+use parser::expression::*;
+use std::rc::Rc;
 
 
 #[derive(Debug)]
@@ -86,6 +92,101 @@ impl<'a> QueryPlan<'a> {
             QueryPlan::Constant(ref c) => c.clone(),
             x => panic!("{:?} not implemented get_const", x),
         }
+    }
+
+    pub fn create_query_plan<'b>(expr: &Expr,
+                                 columns: &HashMap<&'b str, &'b Column>,
+                                 filter: Filter) -> (QueryPlan<'b>, Type<'b>) {
+        use self::Expr::*;
+        use self::FuncType::*;
+        match expr {
+            &ColName(ref name) => match columns.get::<str>(name.as_ref()) {
+                Some(ref c) => {
+                    let t = c.data().full_type();
+                    match (c.data().to_codec(), filter) {
+                        (None, Filter::None) => (QueryPlan::GetDecode(c.data()), t.decoded()),
+                        (None, Filter::BitVec(f)) => (QueryPlan::FilterDecode(c.data(), f), t.decoded()),
+                        (None, Filter::Indices(f)) => (QueryPlan::IndexDecode(c.data(), f), t.decoded()),
+                        (Some(c), Filter::None) => (QueryPlan::GetEncoded(c), t),
+                        (Some(c), Filter::BitVec(f)) => (QueryPlan::FilterEncoded(c, f), t.mutable()),
+                        (Some(c), Filter::Indices(f)) => (QueryPlan::IndexEncoded(c, f), t.mutable()),
+                    }
+                }
+                None => panic!("Not implemented")//VecOperator::Constant(VecValue::Constant(RawVal::Null)),
+            }
+            &Func(LT, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
+                match (type_lhs.decoded, type_rhs.decoded) {
+                    (BasicType::Integer, BasicType::Integer) => {
+                        let plan = if type_rhs.is_scalar {
+                            if type_lhs.is_encoded() {
+                                match type_lhs.encoding_type() {
+                                    EncodingType::U8 => QueryPlan::LessThanVSu8(Box::new(plan_lhs), Box::new(plan_rhs)),
+                                    _ => unimplemented!(),
+                                }
+                            } else {
+                                QueryPlan::LessThanVSi64(Box::new(plan_lhs), Box::new(plan_rhs))
+                            }
+                        } else {
+                            unimplemented!()
+                        };
+                        (plan, Type::new(BasicType::Boolean, None).mutable())
+                    }
+                    _ => panic!("type error: {:?} < {:?}", type_lhs, type_rhs)
+                }
+            }
+            &Func(Equals, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
+                match (type_lhs.decoded, type_rhs.decoded) {
+                    (BasicType::String, BasicType::String) => {
+                        let plan = if type_rhs.is_scalar {
+                            if type_lhs.is_encoded() {
+                                match type_lhs.encoding_type() {
+                                    EncodingType::U16 => {
+                                        let encoded = QueryPlan::EncodeStrConstant(
+                                            Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                        QueryPlan::EqualsVSU16(Box::new(plan_lhs), Box::new(encoded))
+                                    }
+                                    _ => {
+                                        let decoded = QueryPlan::Decode(Box::new(plan_lhs));
+                                        QueryPlan::EqualsVSString(Box::new(decoded), Box::new(plan_rhs))
+                                    }
+                                }
+                            } else {
+                                unimplemented!()
+                            }
+                        } else {
+                            unimplemented!()
+                        };
+                        (plan, Type::new(BasicType::Boolean, None).mutable())
+                    }
+                    _ => panic!("type error: {:?} = {:?}", type_lhs, type_rhs)
+                }
+            }
+            &Func(Or, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
+                assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
+                (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
+            }
+            &Func(And, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
+                assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
+                (QueryPlan::And(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
+            }
+            &Const(ref v) => (QueryPlan::Constant(v.clone()), Type::scalar(v.get_type())),
+            x => panic!("{:?}.compile_vec() not implemented", x),
+        }
+    }
+
+    pub fn compile_grouping_key<'b>(exprs: &Vec<Expr>,
+                                    columns: &HashMap<&'b str, &'b Column>,
+                                    filter: Filter) -> (QueryPlan<'b>, Type<'b>) {
+        assert!(exprs.len() == 1);
+        QueryPlan::create_query_plan(&exprs[0], columns, filter)
     }
 }
 

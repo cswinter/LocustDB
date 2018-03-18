@@ -5,7 +5,7 @@ use std::sync::Arc;
 // use tempdir::TempDir;
 use disk_store::db::*;
 use disk_store::noop_storage::NoopStorage;
-use engine::query::{QueryResult, QueryTask};
+use engine::query_task::{QueryResult, QueryTask};
 use futures::*;
 use futures_channel::oneshot;
 use ingest::csv_loader::CSVIngestionTask;
