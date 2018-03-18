@@ -22,13 +22,12 @@ pub struct InnerRuba {
 }
 
 impl InnerRuba {
-    pub fn new(storage: Box<DB>, load_tabledata: bool) -> InnerRuba {
-        let existing_tables =
-            if load_tabledata {
-                Table::restore_from_db(20_000, storage.as_ref())
-            } else {
-                Table::load_table_metadata(20_000, storage.as_ref())
-            };
+    pub fn new(storage: Box<DB>, restore_tabledata: bool) -> InnerRuba {
+        let existing_tables = if restore_tabledata {
+            Table::load_table_metadata(20_000, storage.as_ref())
+        } else {
+            Table::restore_from_db(20_000, storage.as_ref())
+        };
 
         let ruba = InnerRuba {
             tables: RwLock::new(existing_tables),
@@ -97,15 +96,6 @@ impl InnerRuba {
         cvar.notify_one();
     }
 
-    pub fn load_table_data(&self) {
-        let tables = self.tables.read().unwrap();
-        for (_, table) in tables.iter() {
-            table.load_table_data(self.storage.as_ref());
-            println!("Finished loading {}", &table.name());
-        }
-        println!("Finished loading all table data!");
-    }
-
     pub fn load_batches(&self, table: &str, batches: Vec<Batch>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
@@ -121,24 +111,23 @@ impl InnerRuba {
         tables.get(table).unwrap().ingest(row)
     }
 
-
+    #[allow(dead_code)]
     pub fn ingest_homogeneous(&self, table: &str, columns: HashMap<String, InputColumn>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
         tables.get(table).unwrap().ingest_homogeneous(columns)
     }
 
+    #[allow(dead_code)]
     pub fn ingest_heterogeneous(&self, table: &str, columns: HashMap<String, Vec<RawVal>>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
         tables.get(table).unwrap().ingest_heterogeneous(columns)
     }
 
-    pub fn stats(&self) -> Stats {
+    pub fn stats(&self) -> Vec<TableStats> {
         let tables = self.tables.read().unwrap();
-        Stats {
-            tables: tables.values().map(|table| table.stats()).collect()
-        }
+        tables.values().map(|table| table.stats()).collect()
     }
 
     fn create_if_empty(&self, table: &str) {

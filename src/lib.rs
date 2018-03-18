@@ -1,4 +1,4 @@
-#![feature(conservative_impl_trait)]
+#![feature(conservative_impl_trait, fn_traits)]
 #[macro_use]
 extern crate nom;
 #[macro_use]
@@ -18,15 +18,13 @@ extern crate futures;
 extern crate futures_channel;
 // extern crate tempdir;
 
-// TODO(clemens): make private once Ruba object supports full api
-pub mod parser;
-pub mod mem_store;
-pub mod ingest;
-pub mod engine;
+mod parser;
+mod mem_store;
+mod ingest;
+mod engine;
 mod scheduler;
 mod ruba;
 mod disk_store;
-
 
 pub use ingest::raw_val::RawVal as Value;
 pub use ruba::Ruba as Ruba;

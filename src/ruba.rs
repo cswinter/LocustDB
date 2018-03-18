@@ -12,6 +12,7 @@ use ingest::csv_loader::CSVIngestionTask;
 use nom;
 use parser::parser;
 use scheduler::*;
+use mem_store::table::TableStats;
 
 
 pub struct Ruba {
@@ -67,6 +68,13 @@ impl Ruba {
         receiver
     }
 
+    pub fn table_stats(&self) -> impl Future<Item=Vec<TableStats>, Error=oneshot::Canceled> {
+        let inner = self.inner_ruba.clone();
+        let (task, receiver) = Task::from_fn(move || inner.stats());
+        self.schedule(task);
+        receiver
+    }
+
     fn schedule<T: Task + 'static>(&self, task: T) {
         self.inner_ruba.schedule(Arc::new(task));
     }
@@ -81,7 +89,7 @@ mod tests {
     fn test_storage() {
         let tmpdir = TempDir::new("ruba_test_db").unwrap().into_path();
         {
-            let ruba = Ruba::new(&tmpdir.to_str().unwrap(), false);
+            let ruba = Ruba::new(&tmpdir.to_str().unwrap(), false*);
             for i in 0..10000 {
                 ruba.ingest("default", vec![("timestamp".to_string(), mem_store::ingest::RawVal::Int(i))]);
             }

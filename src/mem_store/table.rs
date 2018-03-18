@@ -36,18 +36,16 @@ impl Table {
         &self.name
     }
 
-    pub fn snapshot(&self) ->Vec<Batch> {
+    pub fn snapshot(&self) -> Vec<Batch> {
         let batches = self.batches.read().unwrap();
         batches.clone()
     }
 
     pub fn restore_from_db(batch_size: usize, storage: &DB) -> HashMap<String, Table> {
         let mut tables = Table::load_table_metadata(batch_size, storage);
-        // populate tables
         for (_, table) in tables.iter_mut() {
             table.load_table_data(storage);
         }
-
         tables
     }
 
@@ -58,25 +56,9 @@ impl Table {
             tables.insert(md.name.to_string(), Table::new(batch_size, &md.name, md.clone()));
         }
         tables
-
-        // load metadata
-        /*let metadata_prefix = "METADATA$".as_bytes();
-        let iter = storage.iterator(IteratorMode::From(metadata_prefix, Direction::Forward));
-        for (key, val) in iter {
-            if !key.starts_with(metadata_prefix) { break; }
-            let table_name = str::from_utf8(&key[metadata_prefix.len()..]).unwrap();
-            let metadata = deserialize::<Metadata>(&val).unwrap();
-        }*/
     }
 
     pub fn load_table_data(&self, storage: &DB) {
-        /*let tabledata_prefix = format!("BATCHES${}", &self.name);
-        let iter = self.storage.iterator(IteratorMode::From(tabledata_prefix.as_bytes(), Direction::Forward));
-        for (key, val) in iter {
-            if !key.starts_with(tabledata_prefix.as_bytes()) { break; }
-            let batch = deserialize::<Buffer>(&val).unwrap();
-            self.load_batch(batch);
-        }*/
         for buffer in storage.data(&self.name) {
             self.load_buffer(buffer);
         }
@@ -102,7 +84,6 @@ impl Table {
     pub fn load_batch(&self, batch: Batch) {
         let mut batches = self.batches.write().unwrap();
         batches.push(batch);
-        // println!("Loaded batch for {}", self.name)
     }
 
     fn batch_if_needed(&self, buffer: &mut Buffer) {
@@ -111,36 +92,25 @@ impl Table {
     }
 
     fn batch(&self, buffer: &mut Buffer) {
-        // let length = buffer.length;
         let buffer = std::mem::replace(buffer, Buffer::new());
         self.persist_batch(&buffer);
         let new_batch = buffer.into();
         let mut batches = self.batches.write().unwrap();
         batches.push(new_batch);
-
-        // println!("Created size {} batch for {}!", length, self.name);
     }
 
     fn load_buffer(&self, buffer: Buffer) {
         self.load_batch(buffer.into());
     }
 
-    fn persist_batch(&self, _batch: &Buffer) {
-        /*let encoded = serialize(batch, Infinite).unwrap();
-        let mut metadata = self.metadata.write().unwrap();
-        metadata.batch_count = metadata.batch_count + 1;
+    fn persist_batch(&self, _batch: &Buffer) {}
 
-        let mut transaction = WriteBatch::default();
-        transaction.put(format!("METADATA${}", self.name).as_bytes(), &serialize(metadata.deref(), Infinite).unwrap());
-        transaction.put(format!("BATCHES${}{}", self.name, metadata.batch_count).as_bytes(), &encoded);
-        self.storage.write(transaction);*/
-    }
-
+    #[allow(dead_code)]
     pub fn stats(&self) -> TableStats {
         let buffer = self.buffer.lock().unwrap();
         let batches = self.batches.read().unwrap();
         TableStats {
-            name: self.name.clone(),
+            name: self.name().to_string(),
             batches: batches.len() as u64,
             batches_bytes: batches.heap_size_of_children() as u64,
             buffer_length: buffer.len() as u64,
@@ -171,11 +141,6 @@ impl HeapSizeOf for Table {
 pub struct Metadata {
     pub name: String,
     pub batch_count: u64,
-}
-
-#[derive(Debug)]
-pub struct Stats {
-    pub tables: Vec<TableStats>,
 }
 
 #[derive(Debug)]
