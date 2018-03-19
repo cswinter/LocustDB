@@ -52,6 +52,13 @@ impl InnerRuba {
         tables.get(table).map(|t| t.snapshot())
     }
 
+    pub fn stop(&self) {
+        // Acquire task_queue_guard to make sure that there are no threads that have checked self.running but not waited on idle_queue yet.
+        let _ = self.task_queue.lock();
+        self.running.store(false, Ordering::SeqCst);
+        self.idle_queue.notify_all();
+    }
+
     fn worker_loop(ruba: Arc<InnerRuba>) {
         while ruba.running.load(Ordering::SeqCst) {
             if let Some(task) = ruba.await_task() {
@@ -64,6 +71,7 @@ impl InnerRuba {
     fn await_task(&self) -> Option<Arc<Task>> {
         let mut task_queue = self.task_queue.lock().unwrap();
         while task_queue.is_empty() {
+            if !self.running.load(Ordering::SeqCst) { return None; }
             task_queue = self.idle_queue.wait(task_queue).unwrap();
         }
         while let Some(task) = task_queue.pop_front() {

@@ -80,4 +80,8 @@ impl Ruba {
     }
 }
 
-
+impl Drop for Ruba {
+    fn drop(&mut self) {
+        self.inner_ruba.stop();
+    }
+}
