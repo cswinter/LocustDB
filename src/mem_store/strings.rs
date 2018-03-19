@@ -91,6 +91,8 @@ impl ColumnData for StringPacker {
     }
 
     fn basic_type(&self) -> BasicType { BasicType::String }
+
+    fn len(&self) -> usize { self.iter().count() } // FIXME(clemens): O(n)
 }
 
 impl HeapSizeOf for StringPacker {
@@ -173,6 +175,7 @@ impl ColumnData for DictEncodedStrings {
 
     fn basic_type(&self) -> BasicType { BasicType::String }
     fn to_codec(&self) -> Option<&ColumnCodec> { Some(self as &ColumnCodec) }
+    fn len(&self) -> usize { self.encoded_values.len() }
 }
 
 impl PointCodec<u16> for DictEncodedStrings {
@@ -234,7 +237,7 @@ impl ColumnCodec for DictEncodedStrings {
     fn encode_str(&self, s: &str) -> RawVal {
         for (i, val) in self.mapping.iter().enumerate() {
             if val.as_ref().unwrap() == s {
-                return RawVal::Int(i as i64)
+                return RawVal::Int(i as i64);
             }
         }
         RawVal::Int(-1)

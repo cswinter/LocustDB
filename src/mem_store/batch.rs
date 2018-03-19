@@ -32,7 +32,6 @@ impl From<Vec<Column>> for Batch {
 
 impl HeapSizeOf for Batch {
     fn heap_size_of_children(&self) -> usize {
-        println!("HEAP SIZE BATCH");
         self.cols.heap_size_of_children()
     }
 }

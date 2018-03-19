@@ -29,6 +29,8 @@ impl ColumnData for NullColumn {
     }
 
     fn basic_type(&self) -> BasicType { BasicType::Null }
+
+    fn len(&self) -> usize { self.length }
 }
 
 impl HeapSizeOf for NullColumn {

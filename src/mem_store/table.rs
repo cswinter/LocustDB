@@ -105,17 +105,30 @@ impl Table {
 
     fn persist_batch(&self, _batch: &Buffer) {}
 
-    #[allow(dead_code)]
     pub fn stats(&self) -> TableStats {
+        let batches = self.snapshot();
+        let size_per_column = Table::size_per_column(&batches);
         let buffer = self.buffer.lock().unwrap();
-        let batches = self.batches.read().unwrap();
         TableStats {
             name: self.name().to_string(),
-            batches: batches.len() as u64,
-            batches_bytes: batches.heap_size_of_children() as u64,
-            buffer_length: buffer.len() as u64,
-            buffer_bytes: buffer.heap_size_of_children() as u64,
+            rows: batches.iter().map(|b| b.cols().get(0).map_or(0, |c| c.len())).sum(),
+            batches: batches.len(),
+            batches_bytes: batches.heap_size_of_children(),
+            buffer_length: buffer.len(),
+            buffer_bytes: buffer.heap_size_of_children(),
+            size_per_column,
         }
+    }
+
+    fn size_per_column(batches: &[Batch]) -> Vec<(String, usize)> {
+        let mut sizes: HashMap<&str, usize> = HashMap::default();
+        for batch in batches {
+            for col in batch.cols() {
+                let heapsize = col.heap_size_of_children();
+                *sizes.entry(col.name()).or_insert(0) += heapsize;
+            }
+        }
+        sizes.iter().map(|(name, size)| (name.to_string(), *size)).collect()
     }
 }
 
@@ -146,10 +159,12 @@ pub struct Metadata {
 #[derive(Debug)]
 pub struct TableStats {
     pub name: String,
-    pub batches: u64,
-    pub batches_bytes: u64,
-    pub buffer_length: u64,
-    pub buffer_bytes: u64,
+    pub rows: usize,
+    pub batches: usize,
+    pub batches_bytes: usize,
+    pub buffer_length: usize,
+    pub buffer_bytes: usize,
+    pub size_per_column: Vec<(String, usize)>,
 }
 
 

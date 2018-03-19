@@ -12,7 +12,8 @@ mod fmt_table;
 use std::env;
 
 use futures::executor::block_on;
-use ruba::Ruba;
+use ruba::{Ruba, TableStats};
+use time::precise_time_ns;
 
 const LOAD_CHUNK_SIZE: usize = 200_000;
 
@@ -20,37 +21,24 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
     let ruba = Ruba::memory_only();
+    println!("Loading {} into table default.", filename);
+    let start_time = precise_time_ns();
     let _ = block_on(ruba.load_csv(filename, "default", LOAD_CHUNK_SIZE));
-    // print_ingestion_stats(&batches, columnarization_start_time);
+    let table_stats = block_on(ruba.table_stats()).expect("!?!");
+    print_table_stats(&table_stats, start_time);
     repl(&ruba);
 }
 
-// TODO(clemens): Return ingestion stats from Ruba::load_csv or something
-/*
-fn print_ingestion_stats(batches: &Vec<Batch>, starttime: f64) {
-    let bytes_in_ram: usize = batches.iter().map(|batch| batch.cols().heap_size_of_children()).sum();
-    println!("Loaded data into {:.2} MiB in RAM in {} chunk(s) in {:.1} seconds.",
-             bytes_in_ram as f64 / 1024f64 / 1024f64,
-             batches.len(),
-             precise_time_s() - starttime);
-
-    println!("\n# Breakdown by column #");
-    let mut column_sizes = HashMap::new();
-    for batch in batches {
-        for col in batch.cols() {
-            let heapsize = col.heap_size_of_children();
-            if let Some(size) = column_sizes.get_mut(col.name()) {
-                *size += heapsize;
-            }
-            if !column_sizes.contains_key(col.name()) {
-                column_sizes.insert(col.name().to_string(), heapsize);
-            }
+fn print_table_stats(stats: &[TableStats], start_time: u64) {
+    println!("Loaded data in {:.1} seconds.", (precise_time_ns() - start_time) / 1_000_000_000);
+    for table in stats {
+        let size = (table.batches_bytes + table.buffer_bytes) as f64 / 1024f64 / 1024f64;
+        println!("\n# Table `{}` ({} rows, {:.2} MiB) #", &table.name, table.rows, size);
+        for &(ref columname, heapsize) in &table.size_per_column {
+            println!("{}: {:.2}MiB", columname, heapsize as f64 / 1024. / 1024.);
         }
     }
-    for (columname, heapsize) in column_sizes {
-        println!("{}: {:.2}MiB", columname, heapsize as f64 / 1024. / 1024.);
-    }
-}*/
+}
 
 fn repl(ruba: &Ruba) {
     let mut rl = rustyline::Editor::<()>::new();
@@ -72,7 +60,7 @@ fn repl(ruba: &Ruba) {
         let query = ruba.run_query(&s);
         match block_on(query) {
             Ok(result) => print_results::print_query_result(&result),
-            _ =>println!("Error: Query execution was canceled!"),
+            _ => println!("Error: Query execution was canceled!"),
         }
     }
     rl.save_history(".ruba_history").ok();

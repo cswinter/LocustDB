@@ -12,18 +12,16 @@ pub struct Column {
 }
 
 impl Column {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn data(&self) -> &ColumnData { self.data.as_ref() }
-
     pub fn new(name: String, data: Box<ColumnData>) -> Column {
         Column {
             name,
             data,
         }
     }
+
+    pub fn name(&self) -> &str { &self.name }
+    pub fn len(&self) -> usize { self.data().len() }
+    pub fn data(&self) -> &ColumnData { self.data.as_ref() }
 }
 
 
@@ -39,6 +37,7 @@ pub trait ColumnData: HeapSizeOf + Send + Sync {
     fn index_decode(&self, filter: &[usize]) -> TypedVec;
     fn basic_type(&self) -> BasicType;
     fn to_codec(&self) -> Option<&ColumnCodec> { None }
+    fn len(&self) -> usize;
 
     fn full_type(&self) -> Type {
         Type::new(self.basic_type(), self.to_codec())

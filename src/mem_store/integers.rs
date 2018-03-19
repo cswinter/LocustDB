@@ -55,6 +55,8 @@ impl ColumnData for IntegerColumn {
     }
 
     fn basic_type(&self) -> BasicType { BasicType::Integer }
+
+    fn len(&self) -> usize { self.values.len() }
 }
 
 
@@ -100,6 +102,8 @@ impl<T: IntLike> ColumnData for IntegerOffsetColumn<T> {
     }
 
     fn to_codec(&self) -> Option<&ColumnCodec> { Some(self as &ColumnCodec) }
+
+    fn len(&self) -> usize { self.values.len() }
 }
 
 impl<T: IntLike> PointCodec<T> for IntegerOffsetColumn<T> {
