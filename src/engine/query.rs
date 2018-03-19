@@ -9,7 +9,6 @@ use engine::batch_merging::*;
 use engine::filter::Filter;
 use engine::query_plan::QueryPlan;
 use engine::query_plan;
-use engine::query_task::QueryStats;
 use engine::typed_vec::TypedVec;
 use mem_store::column::Column;
 use syntax::expression::*;
@@ -30,15 +29,13 @@ pub struct Query {
 
 impl Query {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> BatchResult<'a> {
-        stats.start();
+    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> BatchResult<'a> {
         let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None);
         //println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
-        stats.record("compile_filter");
 
-        let mut filter = match compiled_filter.execute(stats) {
+        let mut filter = match compiled_filter.execute() {
             TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
             _ => Filter::None,
         };
@@ -49,7 +46,7 @@ impl Query {
             // TODO(clemens): Optimization: sort directly if only single column selected
             let (plan, _) = QueryPlan::create_query_plan(&self.select[index], columns, filter.clone());
             let mut compiled = query_plan::prepare(plan);
-            let sort_column = compiled.execute(stats).order_preserving();
+            let sort_column = compiled.execute().order_preserving();
             let mut sort_indices = match filter {
                 Filter::BitVec(vec) => vec.iter()
                     .enumerate()
@@ -68,12 +65,10 @@ impl Query {
             filter = Filter::Indices(Rc::new(sort_indices));
         }
         for expr in &self.select {
-            stats.start();
             let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone());
             //println!("select: {:?}", plan);
             let mut compiled = query_plan::prepare(plan);
-            stats.record("compile_select");
-            result.push(compiled.execute(stats).decode());
+            result.push(compiled.execute().decode());
         }
 
         BatchResult {
@@ -87,23 +82,19 @@ impl Query {
     }
 
     #[inline(never)] // produces more useful profiles
-    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, stats: &mut QueryStats) -> BatchResult<'a> {
-        stats.start();
+    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> BatchResult<'a> {
         let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
-        stats.record("compile_filter");
 
-        let filter = match compiled_filter.execute(stats) {
+        let filter = match compiled_filter.execute() {
             TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
             _ => Filter::None,
         };
 
-        stats.start();
         let (grouping_key_plan, _) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone());
         let mut compiled_gk = query_plan::prepare(grouping_key_plan);
-        stats.record("compile_grouping_key");
-        let grouping_key = compiled_gk.execute(stats);
+        let grouping_key = compiled_gk.execute();
         let (grouping, max_index, groups) = grouping(&grouping_key);
         let groups = groups.order_preserving();
         let mut grouping_sort_indices = (0..groups.len()).collect();
@@ -111,11 +102,9 @@ impl Query {
 
         let mut result = Vec::new();
         for &(aggregator, ref expr) in &self.aggregate {
-            stats.start();
             let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone());
             let mut compiled = query_plan::prepare_aggregation(plan, &grouping, max_index, aggregator);
-            stats.record("compile_aggregate");
-            result.push(compiled.execute(stats).index_decode(&grouping_sort_indices));
+            result.push(compiled.execute().index_decode(&grouping_sort_indices));
         }
 
         BatchResult {

@@ -33,7 +33,7 @@ fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
 
 fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
     let ruba = Ruba::memory_only();
-    let load = ruba.load_csv("test_data/green_tripdata_2017-06.csv", "test", 16_384);
+    let load = ruba.load_csv("test_data/green_tripdata_2017-06.csv", "test", 1 << 14);
     let _ = block_on(load);
     b.iter(|| {
         let query = ruba.run_query(query_str);
@@ -47,7 +47,7 @@ fn bench_query_ytd_14m(b: &mut test::Bencher, query_str: &str) {
         panic!("{} not found. Download dataset at https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2009-01.csv", path);
     }
     let ruba = Ruba::memory_only();
-    let load = ruba.load_csv(path, "test", 16_384);
+    let load = ruba.load_csv(path, "test", 1 << 16);
     let _ = block_on(load);
     b.iter(|| {
         let query = ruba.run_query(query_str);

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use engine::query_task::QueryStats;
 use engine::typed_vec::TypedVec;
 use engine::vector_operator::VecOperator;
 use engine::types::*;
@@ -59,14 +58,11 @@ impl<'b> HTSummationCi64<'b> {
 }
 
 impl<'a, 'b> VecOperator<'a> for HTSummationCi64<'b> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        stats.start();
+    fn execute(&mut self) -> TypedVec<'a> {
         let mut result = vec![0; self.max_index];
         for i in self.grouping {
             result[*i] += self.constant;
         }
-        stats.record("ht_summation_ci64");
-        stats.ops += result.len() + self.grouping.len();
         TypedVec::Integer(result)
     }
 }

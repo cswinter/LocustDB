@@ -4,13 +4,12 @@ use std::rc::Rc;
 use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 use engine::typed_vec::TypedVec;
-use engine::query_task::QueryStats;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
 pub trait VecOperator<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a>;
+    fn execute(&mut self) -> TypedVec<'a>;
 }
 
 
@@ -21,12 +20,8 @@ impl<'a> GetDecode<'a> {
 }
 
 impl<'a> VecOperator<'a> for GetDecode<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        stats.start();
-        let result = self.col.collect_decoded();
-        stats.record("decode");
-        stats.ops += result.len();
-        result
+    fn execute(&mut self) -> TypedVec<'a> {
+        self.col.collect_decoded()
     }
 }
 
@@ -45,12 +40,8 @@ impl<'a> FilterDecode<'a> {
 }
 
 impl<'a> VecOperator<'a> for FilterDecode<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        stats.start();
-        let result = self.col.filter_decode(self.filter.as_ref());
-        stats.record("filter_decode");
-        stats.ops += self.filter.len();
-        result
+    fn execute(&mut self) -> TypedVec<'a> {
+        self.col.filter_decode(self.filter.as_ref())
     }
 }
 
@@ -69,12 +60,8 @@ impl<'a> IndexDecode<'a> {
 }
 
 impl<'a> VecOperator<'a> for IndexDecode<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        stats.start();
-        let result = self.col.index_decode(self.filter.as_ref());
-        stats.record("index_decode");
-        stats.ops += self.filter.len();
-        result
+    fn execute(&mut self) -> TypedVec<'a> {
+        self.col.index_decode(self.filter.as_ref())
     }
 }
 
@@ -86,11 +73,8 @@ impl<'a> GetEncoded<'a> {
 }
 
 impl<'a> VecOperator<'a> for GetEncoded<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        stats.start();
-        let result = self.col.get_encoded();
-        stats.record("get_encoded");
-        result
+    fn execute(&mut self) -> TypedVec<'a> {
+        self.col.get_encoded()
     }
 }
 
@@ -110,12 +94,8 @@ impl<'a> FilterEncoded<'a> {
 }
 
 impl<'a> VecOperator<'a> for FilterEncoded<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        stats.start();
-        let result = self.col.filter_encoded(self.filter.as_ref());
-        stats.record("filter_encoded");
-        stats.ops += self.filter.len();
-        result
+    fn execute(&mut self) -> TypedVec<'a> {
+        self.col.filter_encoded(self.filter.as_ref())
     }
 }
 
@@ -134,12 +114,8 @@ impl<'a> IndexEncoded<'a> {
 }
 
 impl<'a> VecOperator<'a> for IndexEncoded<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        stats.start();
-        let result = self.col.index_encoded(self.filter.as_ref());
-        stats.record("index_encoded");
-        stats.ops += self.filter.len();
-        result
+    fn execute(&mut self) -> TypedVec<'a> {
+        self.col.index_encoded(self.filter.as_ref())
     }
 }
 
@@ -152,12 +128,9 @@ impl<'a> Decode<'a> {
 }
 
 impl<'a> VecOperator<'a> for Decode<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        let encoded = self.plan.execute(stats);
-        stats.start();
-        let result = encoded.decode();
-        stats.record("decode");
-        result
+    fn execute(&mut self) -> TypedVec<'a> {
+        let encoded = self.plan.execute();
+        encoded.decode()
     }
 }
 
@@ -171,11 +144,8 @@ impl Constant {
 }
 
 impl<'a> VecOperator<'a> for Constant {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'static> {
-        stats.start();
-        let result = TypedVec::Constant(self.val.clone());
-        stats.record("constant");
-        result
+    fn execute(&mut self) -> TypedVec<'static> {
+        TypedVec::Constant(self.val.clone())
     }
 }
 
@@ -195,17 +165,14 @@ impl<'a> LessThanVSi64<'a> {
 }
 
 impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        let lhs = self.lhs.execute(stats);
-        stats.start();
+    fn execute(&mut self) -> TypedVec<'a> {
+        let lhs = self.lhs.execute();
         let data = lhs.cast_ref_i64();
         let mut result = BitVec::with_capacity(lhs.len());
         let i = self.rhs;
         for l in data {
             result.push(*l < i);
         }
-        stats.record("less_than_vsi_64");
-        stats.ops += data.len();
         TypedVec::Boolean(result)
     }
 }
@@ -226,17 +193,14 @@ impl<'a> LessThanVSu8<'a> {
 }
 
 impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        let lhs = self.lhs.execute(stats);
-        stats.start();
+    fn execute(&mut self) -> TypedVec<'a> {
+        let lhs = self.lhs.execute();
         let data = lhs.cast_ref_u8().0;
         let mut result = BitVec::with_capacity(data.len());
         let i = self.rhs;
         for l in data {
             result.push(*l < i);
         }
-        stats.record("less_than_vs_u8");
-        stats.ops += data.len();
         TypedVec::Boolean(result)
     }
 }
@@ -257,18 +221,15 @@ impl<'a> EqualsVSString<'a> {
 }
 
 impl<'a> VecOperator<'a> for EqualsVSString<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        let lhs = self.lhs.execute(stats);
-        let rhs = self.rhs.execute(stats);
-        stats.start();
+    fn execute(&mut self) -> TypedVec<'a> {
+        let lhs = self.lhs.execute();
+        let rhs = self.rhs.execute();
         let data = lhs.cast_ref_str();
         let s = rhs.cast_str_const();
         let mut result = BitVec::with_capacity(data.len());
         for l in data {
             result.push(*l == s);
         }
-        stats.record("equals_vs_str");
-        stats.ops += data.len();
         TypedVec::Boolean(result)
     }
 }
@@ -289,10 +250,9 @@ impl<'a> EqualsVSU16<'a> {
 }
 
 impl<'a> VecOperator<'a> for EqualsVSU16<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        let lhs = self.lhs.execute(stats);
-        let rhs = self.rhs.execute(stats);
-        stats.start();
+    fn execute(&mut self) -> TypedVec<'a> {
+        let lhs = self.lhs.execute();
+        let rhs = self.rhs.execute();
         let data = lhs.cast_ref_u16().0;
         // TODO(clemens): range check
         let s = rhs.cast_int_const() as u16;
@@ -300,8 +260,6 @@ impl<'a> VecOperator<'a> for EqualsVSU16<'a> {
         for l in data {
             result.push(*l == s);
         }
-        stats.record("equals_vs_u16");
-        stats.ops += data.len();
         TypedVec::Boolean(result)
     }
 }
@@ -336,15 +294,13 @@ impl Boolean {
 }
 
 impl<'a, T: BooleanOp> VecOperator<'a> for BooleanOperator<'a, T> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        let _lhs = self.lhs.execute(stats);
-        let _rhs = self.rhs.execute(stats);
+    fn execute(&mut self) -> TypedVec<'a> {
+        let _lhs = self.lhs.execute();
+        let _rhs = self.rhs.execute();
 
-        stats.start();
         let mut result = _lhs.cast_bit_vec();
         let rhs = _rhs.cast_bit_vec();
         T::evaluate(&mut result, &rhs);
-        stats.record(T::name());
 
         TypedVec::Boolean(result)
     }
@@ -385,14 +341,10 @@ impl<'a> EncodeStrConstant<'a> {
 }
 
 impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
-    fn execute(&mut self, stats: &mut QueryStats) -> TypedVec<'a> {
-        let constant = self.constant.execute(stats);
-
-        stats.start();
+    fn execute(&mut self) -> TypedVec<'a> {
+        let constant = self.constant.execute();
         let s = constant.cast_str_const();
         let result = self.codec.encode_str(s);
-        stats.record("encode_str_const");
-
         TypedVec::Constant(result)
     }
 }

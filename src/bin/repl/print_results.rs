@@ -13,11 +13,10 @@ pub fn print_query_result(results: &QueryResult) {
         format!("{}s", rt / 1_000_000_000)
     };
 
-    results.stats.print();
-    println!("Performed {} ops in {} ({}ns per op)!\n",
-             results.stats.ops,
+    println!("Scanned {} rows in {} ({}ns per rows)!\n",
+             results.stats.rows_scanned,
              fmt_time,
-             rt.checked_div(results.stats.ops as u64).unwrap_or(0));
+             rt.checked_div(results.stats.rows_scanned as u64).unwrap_or(0));
     println!();
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }

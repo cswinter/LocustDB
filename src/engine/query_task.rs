@@ -23,6 +23,7 @@ pub struct QueryTask {
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
     aggregate: Vec<Aggregator>,
+    start_time_ns: u64,
 
     // Lifetime is not actually static, but tied to the lifetime of this struct.
     // There is currently no good way to express this constraint in Rust.
@@ -36,7 +37,7 @@ pub struct QueryTask {
 pub struct QueryState<'a> {
     completed_batches: usize,
     partial_results: Vec<BatchResult<'a>>,
-    stats: QueryStats,
+    rows_scanned: usize,
 }
 
 pub struct QueryResult {
@@ -45,50 +46,18 @@ pub struct QueryResult {
     pub stats: QueryStats,
 }
 
-const ENABLE_DETAILED_STATS: bool = false;
 
 #[derive(Debug, Clone)]
 pub struct QueryStats {
     pub runtime_ns: u64,
-    pub ops: usize,
-    start_time: u64,
-    breakdown: HashMap<&'static str, u64>,
-}
-
-impl QueryStats {
-    pub fn start(&mut self) {
-        if ENABLE_DETAILED_STATS {
-            self.start_time = precise_time_ns();
-        }
-    }
-
-    pub fn record(&mut self, label: &'static str) {
-        if ENABLE_DETAILED_STATS {
-            let elapsed = precise_time_ns() - self.start_time;
-            *self.breakdown.entry(label).or_insert(0) += elapsed;
-        }
-    }
-
-    pub fn print(&self) {
-        println!("Total runtime: {}ns", self.runtime_ns);
-        let mut total = 0_u64;
-        let mut sorted_breakdown = self.breakdown.iter().collect::<Vec<_>>();
-        sorted_breakdown.sort_by_key(|&(l, _)| l);
-        for (label, duration) in sorted_breakdown {
-            println!("  {}: {}ns ({}%)", label, duration, duration * 100 / self.runtime_ns);
-            total += *duration;
-        }
-        println!("  Unaccounted: {} ({}%)", self.runtime_ns - total, (self.runtime_ns - total) * 100 / self.runtime_ns)
-    }
+    pub rows_scanned: usize,
 }
 
 impl Default for QueryStats {
     fn default() -> QueryStats {
         QueryStats {
             runtime_ns: 0,
-            ops: 0,
-            start_time: 0,
-            breakdown: HashMap::new(),
+            rows_scanned: 0,
         }
     }
 }
@@ -96,14 +65,11 @@ impl Default for QueryStats {
 
 impl QueryTask {
     pub fn new(mut query: Query, source: Vec<Batch>, sender: SharedSender<QueryResult>) -> QueryTask {
-        let start_time = precise_time_ns();
-        let mut stats = QueryStats::default();
-
+        let start_time_ns = precise_time_ns();
         if query.is_select_star() {
             query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
         }
 
-        stats.start();
         let output_colnames = query.result_column_names();
         let mut order_by_index = None;
         if let Some(ref col) = query.order_by {
@@ -114,15 +80,8 @@ impl QueryTask {
             }
         }
         query.order_by_index = order_by_index;
-        stats.record("determine_output_colnames");
-
-        stats.start();
         let referenced_cols = query.find_referenced_cols();
-        stats.record("find_referenced_cols");
-
         let aggregate = query.aggregate.iter().map(|&(aggregate, _)| aggregate).collect();
-
-        stats.runtime_ns = precise_time_ns() - start_time;
 
         QueryTask {
             query,
@@ -130,11 +89,12 @@ impl QueryTask {
             referenced_cols,
             output_colnames,
             aggregate,
+            start_time_ns,
 
             unsafe_state: Mutex::new(QueryState {
                 partial_results: Vec::new(),
                 completed_batches: 0,
-                stats,
+                rows_scanned: 0
             }),
             batch_index: AtomicUsize::new(0),
             sender,
@@ -142,16 +102,15 @@ impl QueryTask {
     }
 
     pub fn run(&self) {
-        let start_time = precise_time_ns();
-        let mut stats = QueryStats::default();
-
+        let mut rows_scanned = 0;
         let mut batch_results = Vec::<BatchResult>::new();
         while let Some(batch) = self.next_batch() {
+            rows_scanned += batch.cols().get(0).map_or(0, |c| c.len());
             let batch = QueryTask::prepare_batch(&self.referenced_cols, batch);
             let mut batch_result = if self.aggregate.is_empty() {
-                self.query.run(&batch, &mut stats)
+                self.query.run(&batch)
             } else {
-                self.query.run_aggregate(&batch, &mut stats)
+                self.query.run_aggregate(&batch)
             };
             // Merge only with previous batch results of same level to get O(n log n) complexity
             loop {
@@ -166,9 +125,8 @@ impl QueryTask {
         }
 
         if let Some(result) = QueryTask::combine_results(batch_results, self.combined_limit()) {
-            self.push_result(result);
+            self.push_result(result, rows_scanned);
         }
-        stats.runtime_ns += precise_time_ns() - start_time;
     }
 
     fn combine_results(batch_results: Vec<BatchResult>, limit: usize) -> Option<BatchResult> {
@@ -183,9 +141,10 @@ impl QueryTask {
         full_result
     }
 
-    fn push_result(&self, result: BatchResult) {
+    fn push_result(&self, result: BatchResult, rows_scanned: usize) {
         let mut state = self.unsafe_state.lock().unwrap();
         state.completed_batches += result.batch_count;
+        state.rows_scanned += rows_scanned;
         unsafe {
             let result = mem::transmute::<_, BatchResult<'static>>(result);
             state.partial_results.push(result);
@@ -195,7 +154,7 @@ impl QueryTask {
             mem::swap(&mut owned_results, &mut state.partial_results);
             // TODO(clemens): Handle empty table
             let full_result = QueryTask::combine_results(owned_results, self.combined_limit()).unwrap();
-            let final_result = self.convert_to_output_format(&full_result, &mut state.stats);
+            let final_result = self.convert_to_output_format(&full_result, state.rows_scanned);
             self.sender.send(final_result);
         }
     }
@@ -207,10 +166,9 @@ impl QueryTask {
 
     fn convert_to_output_format(&self,
                                 full_result: &BatchResult,
-                                stats: &mut QueryStats) -> QueryResult {
+                                rows_scanned: usize) -> QueryResult {
         let limit = self.query.limit.limit as usize;
         let offset = self.query.limit.offset as usize;
-        stats.start();
         let mut result_rows = Vec::new();
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
@@ -223,11 +181,14 @@ impl QueryTask {
             }
             result_rows.push(record);
         }
-        stats.record("limit_collect");
+
         QueryResult {
             colnames: self.output_colnames.clone(),
             rows: result_rows,
-            stats: stats.clone(),
+            stats: QueryStats {
+                runtime_ns: precise_time_ns() - self.start_time_ns,
+                rows_scanned,
+            }
         }
     }
 
