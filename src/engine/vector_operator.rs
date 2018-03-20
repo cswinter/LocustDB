@@ -180,11 +180,11 @@ impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
 
 pub struct LessThanVSu8<'a> {
     lhs: BoxedOperator<'a>,
-    rhs: u8,
+    rhs: BoxedOperator<'a>,
 }
 
 impl<'a> LessThanVSu8<'a> {
-    pub fn new(lhs: BoxedOperator, rhs: u8) -> LessThanVSu8 {
+    pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> LessThanVSu8<'a> {
         LessThanVSu8 {
             lhs,
             rhs,
@@ -197,9 +197,12 @@ impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
         let lhs = self.lhs.execute();
         let data = lhs.cast_ref_u8().0;
         let mut result = BitVec::with_capacity(data.len());
-        let i = self.rhs;
+        let rhs = self.rhs.execute();
+        let i = rhs.cast_int_const();
+        // TODO(clemens): Return immediately if i is outside of range of u8
         for l in data {
-            result.push(*l < i);
+            // TODO(clemens): More efficient to case i to u8
+            result.push((*l as i64) < i);
         }
         TypedVec::Boolean(result)
     }
@@ -345,6 +348,30 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
         let constant = self.constant.execute();
         let s = constant.cast_str_const();
         let result = self.codec.encode_str(s);
+        TypedVec::Constant(result)
+    }
+}
+
+
+pub struct EncodeIntConstant<'a> {
+    constant: BoxedOperator<'a>,
+    codec: &'a ColumnCodec,
+}
+
+impl<'a> EncodeIntConstant<'a> {
+    pub fn new(constant: BoxedOperator<'a>, codec: &'a ColumnCodec) -> EncodeIntConstant<'a> {
+        EncodeIntConstant {
+            constant,
+            codec,
+        }
+    }
+}
+
+impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
+    fn execute(&mut self) -> TypedVec<'a> {
+        let constant = self.constant.execute();
+        let s = constant.cast_int_const();
+        let result = self.codec.encode_int(s);
         TypedVec::Constant(result)
     }
 }

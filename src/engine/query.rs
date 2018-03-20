@@ -31,10 +31,9 @@ impl Query {
     #[inline(never)] // produces more useful profiles
     pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> BatchResult<'a> {
         let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None);
-        //println!("filter: {:?}", filter_plan);
+        // println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
-
         let mut filter = match compiled_filter.execute() {
             TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
             _ => Filter::None,

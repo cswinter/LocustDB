@@ -60,6 +60,10 @@ pub trait ColumnCodec: ColumnData {
     fn encode_str(&self, _: &str) -> RawVal {
         panic!("encode_str not supported")
     }
+
+    fn encode_int(&self, _: i64) -> RawVal {
+        panic!("encode_str not supported")
+    }
 }
 
 impl<'a> fmt::Debug for &'a ColumnCodec {

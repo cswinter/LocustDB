@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::iter::Iterator;
 use std::mem;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 
 use engine::aggregator::*;
 use engine::batch_merging::*;
@@ -31,6 +31,7 @@ pub struct QueryTask {
     // TODO(clemens): better encapsulate unsafety using some abstraction such as the refstruct crate.
     unsafe_state: Mutex<QueryState<'static>>,
     batch_index: AtomicUsize,
+    completed: AtomicBool,
     sender: SharedSender<QueryResult>,
 }
 
@@ -38,6 +39,7 @@ pub struct QueryState<'a> {
     completed_batches: usize,
     partial_results: Vec<BatchResult<'a>>,
     rows_scanned: usize,
+    rows_collected: usize,
 }
 
 pub struct QueryResult {
@@ -94,15 +96,18 @@ impl QueryTask {
             unsafe_state: Mutex::new(QueryState {
                 partial_results: Vec::new(),
                 completed_batches: 0,
-                rows_scanned: 0
+                rows_scanned: 0,
+                rows_collected: 0,
             }),
             batch_index: AtomicUsize::new(0),
+            completed: AtomicBool::new(false),
             sender,
         }
     }
 
     pub fn run(&self) {
         let mut rows_scanned = 0;
+        let mut rows_collected = 0;
         let mut batch_results = Vec::<BatchResult>::new();
         while let Some(batch) = self.next_batch() {
             rows_scanned += batch.cols().get(0).map_or(0, |c| c.len());
@@ -112,20 +117,24 @@ impl QueryTask {
             } else {
                 self.query.run_aggregate(&batch)
             };
+            rows_collected += batch_result.len();
             // Merge only with previous batch results of same level to get O(n log n) complexity
             loop {
                 if !batch_results.is_empty() && batch_results.last().unwrap().level == batch_result.level {
                     batch_result = combine(batch_results.pop().unwrap(), batch_result, self.combined_limit());
                 } else { break; }
             }
-            batch_results.push(batch_result)
-            /*if self.compiled_order_by.is_none() && (max_limit as usize) < combined_results.cols.len() {
+            batch_results.push(batch_result);
+            if self.completed.load(Ordering::SeqCst) {
+                return;
+            }
+            if self.sufficient_rows(rows_collected) {
                 break;
-            }*/
+            }
         }
 
         if let Some(result) = QueryTask::combine_results(batch_results, self.combined_limit()) {
-            self.push_result(result, rows_scanned);
+            self.push_result(result, rows_scanned, rows_collected);
         }
     }
 
@@ -141,22 +150,30 @@ impl QueryTask {
         full_result
     }
 
-    fn push_result(&self, result: BatchResult, rows_scanned: usize) {
+    fn push_result(&self, result: BatchResult, rows_scanned: usize, rows_collected: usize) {
         let mut state = self.unsafe_state.lock().unwrap();
+        if self.completed.load(Ordering::SeqCst) { return; }
         state.completed_batches += result.batch_count;
         state.rows_scanned += rows_scanned;
+        state.rows_collected += rows_collected;
         unsafe {
             let result = mem::transmute::<_, BatchResult<'static>>(result);
             state.partial_results.push(result);
         }
-        if state.completed_batches == self.batches.len() {
+        if state.completed_batches == self.batches.len() || self.sufficient_rows(state.rows_collected) {
             let mut owned_results = Vec::with_capacity(0);
             mem::swap(&mut owned_results, &mut state.partial_results);
             // TODO(clemens): Handle empty table
             let full_result = QueryTask::combine_results(owned_results, self.combined_limit()).unwrap();
             let final_result = self.convert_to_output_format(&full_result, state.rows_scanned);
             self.sender.send(final_result);
+            self.completed.store(true, Ordering::SeqCst);
         }
+    }
+
+    fn sufficient_rows(&self, rows_collected: usize) -> bool {
+        let unordered_select = self.query.aggregate.is_empty() && self.query.order_by.is_none();
+        unordered_select && self.combined_limit() < rows_collected
     }
 
     fn next_batch(&self) -> Option<&Batch> {
@@ -208,7 +225,7 @@ impl Task for QueryTask {
     fn execute(&self) { self.run(); }
     fn completed(&self) -> bool {
         let batch_index = self.batch_index.load(Ordering::SeqCst);
-        batch_index >= self.batches.len()
+        self.completed.load(Ordering::SeqCst) || batch_index >= self.batches.len()
     }
     fn multithreaded(&self) -> bool { true }
 }

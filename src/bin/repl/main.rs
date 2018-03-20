@@ -15,7 +15,7 @@ use futures::executor::block_on;
 use ruba::{Ruba, TableStats};
 use time::precise_time_ns;
 
-const LOAD_CHUNK_SIZE: usize = 1 << 13;
+const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

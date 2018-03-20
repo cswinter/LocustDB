@@ -41,17 +41,33 @@ fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
     });
 }
 
-fn bench_query_ytd_14m(b: &mut test::Bencher, query_str: &str) {
-    let path = "test_data/yellow_tripdata_2009-01.csv";
-    if !Path::new(path).exists() {
-        panic!("{} not found. Download dataset at https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2009-01.csv", path);
+const YELLOW_PATH: &'static str = "test_data/yellow_tripdata_2009-01.csv";
+const YELLOW_URL: &'static str = "https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2009-01.csv";
+static mut YELLOW_RUBA: Option<Ruba> = None;
+
+fn get_yellow() -> &'static Ruba {
+    unsafe {
+        match YELLOW_RUBA {
+            Some(ref ruba) => ruba,
+            None => {
+                if !Path::new(YELLOW_PATH).exists() {
+                    panic!("{} not found. Download dataset at {}", YELLOW_PATH, YELLOW_URL);
+                }
+                let ruba = Ruba::memory_only();
+                let load = ruba.load_csv(YELLOW_PATH, "test", 1 << 16);
+                let _ = block_on(load);
+                YELLOW_RUBA = Some(ruba);
+                YELLOW_RUBA.as_ref().unwrap()
+            }
+        }
     }
-    let ruba = Ruba::memory_only();
-    let load = ruba.load_csv(path, "test", 1 << 16);
-    let _ = block_on(load);
+}
+
+fn bench_query_ytd_14m(b: &mut test::Bencher, query_str: &str) {
+    let ruba = get_yellow();
     b.iter(|| {
         let query = ruba.run_query(query_str);
-        let _ = block_on(query);
+        block_on(query)
     });
 }
 
@@ -106,6 +122,18 @@ fn gt_1m_int_sort(b: &mut test::Bencher) {
 }
 
 #[bench]
-fn yt_14m_count_by_passenger(b: &mut test::Bencher) {
+fn yt_14m_count_by_passenger_count(b: &mut test::Bencher) {
     bench_query_ytd_14m(b, "select Passenger_Count, count(1) from test;");
 }
+
+#[bench]
+fn yt_14m_select_passenger_count_sparse_filter(b: &mut test::Bencher) {
+    // there are a total of 718 entries with Passenger_Count = 0
+    bench_query_ytd_14m(b, "select Passenger_Count from test where Passenger_Count < 1 limit 1000;");
+}
+
+#[bench]
+fn yt_14m_select_star_limit_10000(b: &mut test::Bencher) {
+    bench_query_ytd_14m(b, "select * from test limit 10000;");
+}
+

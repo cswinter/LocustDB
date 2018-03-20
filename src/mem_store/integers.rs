@@ -151,6 +151,11 @@ impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {
         T::typed_vec(result, self as &PointCodec<T>)
     }
 
+    fn encode_int(&self, val: i64) -> RawVal {
+        // TODO(clemens): Underflow. Check for this in query planner?
+        RawVal::Int(val - self.offset)
+    }
+
     fn encoding_type(&self) -> EncodingType { T::t() }
 }
 

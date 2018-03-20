@@ -25,6 +25,7 @@ pub enum QueryPlan<'a> {
     Decode(Box<QueryPlan<'a>>),
 
     EncodeStrConstant(Box<QueryPlan<'a>>, &'a ColumnCodec),
+    EncodeIntConstant(Box<QueryPlan<'a>>, &'a ColumnCodec),
 
     LessThanVSi64(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     LessThanVSu8(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
@@ -52,17 +53,13 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
                 panic!("Wrong type")
             }
         }
-        QueryPlan::LessThanVSu8(lhs, rhs) => {
-            if let RawVal::Int(i) = rhs.get_const() {
-                // TODO(clemens): use codec to encode constant value
-                Box::new(LessThanVSu8::new(prepare(*lhs), i as u8))
-            } else {
-                panic!("Wrong type")
-            }
-        }
+        QueryPlan::LessThanVSu8(lhs, rhs) =>
+            Box::new(LessThanVSu8::new(prepare(*lhs), prepare(*rhs))),
         QueryPlan::Decode(plan) => Box::new(Decode::new(prepare(*plan))),
         QueryPlan::EncodeStrConstant(plan, codec) =>
             Box::new(EncodeStrConstant::new(prepare(*plan), codec)),
+        QueryPlan::EncodeIntConstant(plan, codec) =>
+            Box::new(EncodeIntConstant::new(prepare(*plan), codec)),
         QueryPlan::EqualsVSString(lhs, rhs) =>
             Box::new(EqualsVSString::new(prepare(*lhs), prepare(*rhs))),
         QueryPlan::EqualsVSU16(lhs, rhs) =>
@@ -122,7 +119,11 @@ impl<'a> QueryPlan<'a> {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
                                 match type_lhs.encoding_type() {
-                                    EncodingType::U8 => QueryPlan::LessThanVSu8(Box::new(plan_lhs), Box::new(plan_rhs)),
+                                    EncodingType::U8 => {
+                                        let encoded = QueryPlan::EncodeIntConstant(
+                                            Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                        QueryPlan::LessThanVSu8(Box::new(plan_lhs), Box::new(encoded))
+                                    }
                                     _ => unimplemented!(),
                                 }
                             } else {

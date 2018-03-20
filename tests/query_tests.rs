@@ -7,7 +7,14 @@ use futures::executor::block_on;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 4000));
+    let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 40));
+    let result = block_on(ruba.run_query(query)).unwrap();
+    assert_eq!(result.rows, expected_rows);
+}
+
+fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
+    let ruba = Ruba::memory_only();
+    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", "default", 2));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.rows, expected_rows);
 }
@@ -15,20 +22,21 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
 #[test]
 fn test_select_string() {
     test_query(
-        "select first_name from default limit 2;",
+        "select first_name from default order by first_name limit 2;",
         &[
-            vec!["Victor".into()],
-            vec!["Catherine".into()]
+            vec!["Adam".into()],
+            vec!["Adam".into()]
         ],
     )
 }
 
 #[test]
-fn test_select_string_integer() {
+fn test_select_integer() {
     test_query(
-        "select first_name, num from default limit 2;",
-        &[vec!["Victor".into(), 1.into()],
-            vec!["Catherine".into(), 1.into()]
+        "select num from default order by num limit 2;",
+        &[
+            vec![0.into()],
+            vec![0.into()]
         ],
     )
 }
@@ -66,6 +74,14 @@ fn group_by_integer_filter_integer_lt() {
             vec![3.into(), 11.into()],
             vec![4.into(), 5.into()],
             vec![5.into(), 2.into()]],
+    )
+}
+
+#[test]
+fn lt_filter_on_offset_encoded_column() {
+    test_query_ec(
+        "select u8_offset_encoded from default where u8_offset_encoded < 257;",
+        &[vec![256.into()]],
     )
 }
 

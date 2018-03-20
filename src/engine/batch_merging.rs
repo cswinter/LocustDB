@@ -19,7 +19,7 @@ impl<'a> BatchResult<'a> {
     pub fn len(&self) -> usize {
         match self.group_by {
             Some(ref g) => g.len(),
-            None => self.select[0].len(),
+            None => self.select.get(0).map_or(0, |s| s.len()),
         }
     }
 }

@@ -8,6 +8,7 @@ pub enum EncodingType {
     Val,
     Null,
     BitVec,
+    Constant,
 
     U8,
     U16,

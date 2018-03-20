@@ -9,6 +9,7 @@ pub enum TypedVec<'a> {
     String(Vec<&'a str>),
     Integer(Vec<i64>),
     Mixed(Vec<Val<'a>>),
+    Raw(Vec<RawVal>),
     Boolean(BitVec),
 
     BorrowedEncodedU8(&'a [u8], &'a PointCodec<u8>),
@@ -22,21 +23,23 @@ pub enum TypedVec<'a> {
     Empty(usize),
 }
 
+use self::TypedVec::*;
 impl<'a> TypedVec<'a> {
     pub fn len(&self) -> usize {
         match *self {
-            TypedVec::String(ref v) => v.len(),
-            TypedVec::Integer(ref v) => v.len(),
-            TypedVec::Mixed(ref v) => v.len(),
-            TypedVec::Boolean(ref v) => v.len(),
-            TypedVec::Empty(len) => len,
-            TypedVec::Constant(_) => panic!(" cannot get length of constant"),
-            TypedVec::EncodedU8(ref v, _) => v.len(),
-            TypedVec::EncodedU16(ref v, _) => v.len(),
-            TypedVec::EncodedU32(ref v, _) => v.len(),
-            TypedVec::BorrowedEncodedU8(v, _) => v.len(),
-            TypedVec::BorrowedEncodedU16(v, _) => v.len(),
-            TypedVec::BorrowedEncodedU32(v, _) => v.len(),
+            String(ref v) => v.len(),
+            Integer(ref v) => v.len(),
+            Mixed(ref v) => v.len(),
+            Raw(ref v) => v.len(),
+            Boolean(ref v) => v.len(),
+            Empty(len) => len,
+            Constant(_) => panic!(" cannot get length of constant"),
+            EncodedU8(ref v, _) => v.len(),
+            EncodedU16(ref v, _) => v.len(),
+            EncodedU32(ref v, _) => v.len(),
+            BorrowedEncodedU8(v, _) => v.len(),
+            BorrowedEncodedU16(v, _) => v.len(),
+            BorrowedEncodedU32(v, _) => v.len(),
         }
     }
 
@@ -45,6 +48,7 @@ impl<'a> TypedVec<'a> {
             TypedVec::String(ref v) => RawVal::Str(v[i].to_string()),
             TypedVec::Integer(ref v) => RawVal::Int(v[i]),
             TypedVec::Mixed(ref v) => RawVal::from(&v[i]),
+            TypedVec::Raw(ref v) => v[i].clone(),
             TypedVec::Boolean(_) => panic!("Boolean(BitVec).get_raw()"),
             TypedVec::EncodedU8(ref v, codec) => codec.to_raw(v[i]),
             TypedVec::EncodedU16(ref v, codec) => codec.to_raw(v[i]),
@@ -99,15 +103,30 @@ impl<'a> TypedVec<'a> {
 
     pub fn extend(self, other: TypedVec<'a>, count: usize) -> TypedVec<'a> {
         match (self, other) {
-            (TypedVec::Integer(mut data), TypedVec::Integer(other_data)) => {
+            (Integer(mut data), Integer(other_data)) => {
                 data.extend_from_slice(&other_data[..count]);
-                TypedVec::Integer(data)
+                Integer(data)
             }
-            (TypedVec::String(mut data), TypedVec::String(other_data)) => {
+            (String(mut data), String(other_data)) => {
                 data.extend_from_slice(&other_data[..count]);
-                TypedVec::String(data)
+                String(data)
             }
-            _ => panic!("not implemented")
+            (Empty(len), Empty(_)) => Empty(len + count),
+            (Mixed(mut data), Mixed(other_data)) => {
+                data.extend_from_slice(&other_data[..count]);
+                Mixed(data)
+            }
+            (tv1, tv2) => {
+                // TODO(clemens): Other special cases and make catch all more efficient?
+                let mut mixed = Vec::with_capacity(tv1.len() + count);
+                for i in 0..tv1.len() {
+                    mixed.push(tv1.get_raw(i));
+                }
+                for i in 0..count {
+                    mixed.push(tv2.get_raw(i));
+                }
+                Raw(mixed)
+            }
         }
     }
 
@@ -115,13 +134,13 @@ impl<'a> TypedVec<'a> {
         match *self {
             TypedVec::String(_) => EncodingType::Str,
             TypedVec::Integer(_) => EncodingType::I64,
-            TypedVec::Mixed(_) => EncodingType::Val,
+            TypedVec::Mixed(_) | Raw(_) => EncodingType::Val,
             TypedVec::Boolean(_) => EncodingType::BitVec,
             TypedVec::Empty(_) => EncodingType::Null,
             TypedVec::EncodedU8(_, _) | TypedVec::BorrowedEncodedU8(_, _) => EncodingType::U8,
             TypedVec::EncodedU16(_, _) | TypedVec::BorrowedEncodedU16(_, _) => EncodingType::U16,
             TypedVec::EncodedU32(_, _) | TypedVec::BorrowedEncodedU32(_, _) => EncodingType::U32,
-            _ => panic!("not implemented")
+            TypedVec::Constant(_) => EncodingType::Constant,
         }
     }
 
@@ -130,6 +149,7 @@ impl<'a> TypedVec<'a> {
             TypedVec::String(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(data[*j]).reverse()),
             TypedVec::Integer(ref data) => indices.sort_unstable_by_key(|i| -data[*i]),
             TypedVec::Mixed(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
+            TypedVec::Raw(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
             TypedVec::Boolean(_) => panic!("cannot sort by boolean column"),
             TypedVec::EncodedU8(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
             TypedVec::EncodedU16(ref data, _) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
@@ -146,6 +166,7 @@ impl<'a> TypedVec<'a> {
             TypedVec::String(ref data) => indices.sort_unstable_by_key(|i| data[*i]),
             TypedVec::Integer(ref data) => indices.sort_unstable_by_key(|i| data[*i]),
             TypedVec::Mixed(ref data) => indices.sort_unstable_by_key(|i| &data[*i]),
+            TypedVec::Raw(ref data) => indices.sort_unstable_by_key(|i| &data[*i]),
             TypedVec::Boolean(_) => panic!("cannot sort by boolean column"),
             TypedVec::EncodedU8(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
             TypedVec::EncodedU16(ref data, _) => indices.sort_unstable_by_key(|i| data[*i]),
