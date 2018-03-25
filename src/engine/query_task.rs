@@ -109,7 +109,8 @@ impl QueryTask {
         let mut rows_scanned = 0;
         let mut rows_collected = 0;
         let mut batch_results = Vec::<BatchResult>::new();
-        while let Some(batch) = self.next_batch() {
+        while let Some((batch, id)) = self.next_batch() {
+            trace_start!("Batch {}", id);
             rows_scanned += batch.cols().get(0).map_or(0, |c| c.len());
             let batch = QueryTask::prepare_batch(&self.referenced_cols, batch);
             let mut batch_result = if self.aggregate.is_empty() {
@@ -176,9 +177,9 @@ impl QueryTask {
         unordered_select && self.combined_limit() < rows_collected
     }
 
-    fn next_batch(&self) -> Option<&Batch> {
+    fn next_batch(&self) -> Option<(&Batch, usize)> {
         let index = self.batch_index.fetch_add(1, Ordering::SeqCst);
-        self.batches.get(index)
+        self.batches.get(index).map(|b| (b, index))
     }
 
     fn convert_to_output_format(&self,
@@ -210,6 +211,7 @@ impl QueryTask {
     }
 
     fn prepare_batch<'a>(referenced_cols: &'a HashSet<String>, source: &'a Batch) -> HashMap<&'a str, &'a Column> {
+        trace_start!("prepare_batch");
         source.cols().iter()
             .filter(|col| referenced_cols.contains(col.name()))
             .map(|col| (col.name(), col))

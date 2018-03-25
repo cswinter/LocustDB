@@ -15,7 +15,7 @@ use futures::executor::block_on;
 use ruba::{Ruba, TableStats};
 use time::precise_time_ns;
 
-const LOAD_CHUNK_SIZE: usize = 1 << 16;
+const LOAD_CHUNK_SIZE: usize = 1 << 13;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -57,9 +57,22 @@ fn repl(ruba: &Ruba) {
             s.push(';');
         }
         rl.add_history_entry(&s);
-        let query = ruba.run_query(&s);
+
+        let mut print_trace = false;
+        let mut s: &str = &s;
+        if s.starts_with(":trace") {
+            print_trace = true;
+            s = &s[7..];
+        }
+
+        let query = ruba.run_query(s);
         match block_on(query) {
-            Ok(result) => print_results::print_query_result(&result),
+            Ok((result, trace)) => {
+                if print_trace {
+                    trace.print();
+                }
+                print_results::print_query_result(&result);
+            },
             _ => println!("Error: Query execution was canceled!"),
         }
     }

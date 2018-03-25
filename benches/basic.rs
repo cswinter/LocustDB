@@ -41,8 +41,8 @@ fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
     });
 }
 
-const YELLOW_PATH: &'static str = "test_data/yellow_tripdata_2009-01.csv";
-const YELLOW_URL: &'static str = "https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2009-01.csv";
+const YELLOW_PATH: &str = "test_data/yellow_tripdata_2009-01.csv";
+const YELLOW_URL: &str = "https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2009-01.csv";
 static mut YELLOW_RUBA: Option<Ruba> = None;
 
 fn get_yellow() -> &'static Ruba {

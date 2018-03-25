@@ -1,10 +1,13 @@
 use std::collections::{HashMap, VecDeque};
+use std::mem;
 use std::str;
-use std::sync::{Arc, Mutex, RwLock, Condvar};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock, Condvar};
 use std::thread;
 
 use disk_store::db::*;
+use futures::*;
+use futures_channel::oneshot;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
 use mem_store::batch::Batch;
@@ -12,6 +15,7 @@ use mem_store::table::*;
 use num_cpus;
 use scheduler::*;
 use time;
+use trace::*;
 
 
 pub struct InnerRuba {
@@ -20,7 +24,20 @@ pub struct InnerRuba {
 
     running: AtomicBool,
     idle_queue: Condvar,
-    task_queue: Mutex<VecDeque<Arc<Task>>>,
+    task_queue: Mutex<VecDeque<Arc<TaskState>>>,
+}
+
+struct TaskState {
+    trace_builder: RwLock<Option<TraceBuilder>>,
+    trace_sender: SharedSender<Trace>,
+    task: Box<Task>,
+}
+
+impl Drop for TaskState {
+    fn drop(&mut self) {
+        let trace_builder = mem::replace(&mut *self.trace_builder.write().unwrap(), None);
+        self.trace_sender.send(trace_builder.map(|tb| tb.finalize()).unwrap());
+    }
 }
 
 impl InnerRuba {
@@ -41,9 +58,9 @@ impl InnerRuba {
     }
 
     pub fn start_worker_threads(ruba: &Arc<InnerRuba>) {
-        for _ in 0..num_cpus::get() {
+        for id in 0..num_cpus::get() {
             let cloned = ruba.clone();
-            thread::spawn(move || InnerRuba::worker_loop(cloned));
+            thread::spawn(move || InnerRuba::worker_loop(cloned, id));
         }
     }
 
@@ -59,26 +76,35 @@ impl InnerRuba {
         self.idle_queue.notify_all();
     }
 
-    fn worker_loop(ruba: Arc<InnerRuba>) {
+    fn worker_loop(ruba: Arc<InnerRuba>, thread_id: usize) {
         while ruba.running.load(Ordering::SeqCst) {
             if let Some(task) = ruba.await_task() {
-                task.execute();
+                if let Some(ref tb) = *task.trace_builder.read().unwrap() {
+                    tb.activate();
+                }
+                {
+                    trace_start!("Worker thread {}", thread_id);
+                    task.task.execute();
+                }
+                if let Some(ref mut tb) = *task.trace_builder.write().unwrap() {
+                    tb.collect();
+                }
             }
         }
         drop(ruba) // Make clippy happy
     }
 
-    fn await_task(&self) -> Option<Arc<Task>> {
+    fn await_task(&self) -> Option<Arc<TaskState>> {
         let mut task_queue = self.task_queue.lock().unwrap();
         while task_queue.is_empty() {
             if !self.running.load(Ordering::SeqCst) { return None; }
             task_queue = self.idle_queue.wait(task_queue).unwrap();
         }
         while let Some(task) = task_queue.pop_front() {
-            if task.completed() {
+            if task.task.completed() {
                 continue;
             }
-            if task.multithreaded() {
+            if task.task.multithreaded() {
                 task_queue.push_front(task.clone());
             }
             if !task_queue.is_empty() {
@@ -89,12 +115,19 @@ impl InnerRuba {
         None
     }
 
-    pub fn schedule(&self, task: Arc<Task>) {
+    pub fn schedule<T: Task + 'static>(&self, task: T) -> impl Future<Item=Trace, Error=oneshot::Canceled> {
         // This function may be entered by event loop thread so it's important it always returns quickly.
         // Since the task queue locks are never held for long, we should be fine.
+        let trace_builder = RwLock::new(Some(start_toplevel("schedule")));
+        let (trace_sender, trace_receiver) = oneshot::channel();
         let mut task_queue = self.task_queue.lock().unwrap();
-        task_queue.push_back(task);
+        task_queue.push_back(Arc::new(TaskState {
+            trace_sender: SharedSender::new(trace_sender),
+            trace_builder,
+            task: Box::new(task),
+        }));
         self.idle_queue.notify_one();
+        trace_receiver
     }
 
     pub fn load_batches(&self, table: &str, batches: Vec<Batch>) {

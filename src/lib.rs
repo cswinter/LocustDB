@@ -1,4 +1,4 @@
-#![feature(conservative_impl_trait, fn_traits)]
+#![feature(conservative_impl_trait, fn_traits, integer_atomics, refcell_replace_swap)]
 #[macro_use]
 extern crate nom;
 #[macro_use]
@@ -18,6 +18,8 @@ extern crate futures;
 extern crate futures_channel;
 // extern crate tempdir;
 
+#[macro_use]
+mod trace;
 mod syntax;
 mod mem_store;
 mod ingest;

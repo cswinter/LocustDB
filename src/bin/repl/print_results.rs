@@ -13,10 +13,10 @@ pub fn print_query_result(results: &QueryResult) {
         format!("{}s", rt / 1_000_000_000)
     };
 
-    println!("Scanned {} rows in {} ({}ns per rows)!\n",
+    println!("Scanned {} rows in {} ({:.2}B rows/s)!\n",
              results.stats.rows_scanned,
              fmt_time,
-             rt.checked_div(results.stats.rows_scanned as u64).unwrap_or(0));
+             results.stats.rows_scanned as f64 / rt as f64);
     println!();
     println!("{}\n", format_results(&results.colnames, &results.rows));
 }

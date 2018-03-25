@@ -82,7 +82,10 @@ impl Query {
 
     #[inline(never)] // produces more useful profiles
     pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> BatchResult<'a> {
+        trace_start!("run_aggregate");
+        trace_start!("filter");
         let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None);
+
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
 
@@ -91,21 +94,27 @@ impl Query {
             _ => Filter::None,
         };
 
+        trace_replace!("grouping_key");
         let (grouping_key_plan, _) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone());
         let mut compiled_gk = query_plan::prepare(grouping_key_plan);
         let grouping_key = compiled_gk.execute();
         let (grouping, max_index, groups) = grouping(&grouping_key);
         let groups = groups.order_preserving();
+
+        trace_replace!("group_ordering");
         let mut grouping_sort_indices = (0..groups.len()).collect();
         groups.sort_indices_asc(&mut grouping_sort_indices);
 
+        trace_replace!("aggregate");
         let mut result = Vec::new();
         for &(aggregator, ref expr) in &self.aggregate {
+            trace_start!("aggregator {:?}", aggregator);
             let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone());
             let mut compiled = query_plan::prepare_aggregation(plan, &grouping, max_index, aggregator);
             result.push(compiled.execute().index_decode(&grouping_sort_indices));
         }
 
+        trace_replace!("final decode");
         BatchResult {
             group_by: Some(groups.index_decode(&grouping_sort_indices)),
             sort_by: None,

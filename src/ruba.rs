@@ -9,10 +9,11 @@ use engine::query_task::{QueryResult, QueryTask};
 use futures::*;
 use futures_channel::oneshot;
 use ingest::csv_loader::CSVIngestionTask;
-use nom;
-use syntax::parser;
-use scheduler::*;
 use mem_store::table::TableStats;
+use nom;
+use scheduler::*;
+use syntax::parser;
+use trace::Trace;
 
 
 pub struct Ruba {
@@ -31,7 +32,7 @@ impl Ruba {
     }
 
     // TODO(clemens): proper error handling throughout query stack. panics! panics everywhere!
-    pub fn run_query(&self, query: &str) -> impl Future<Item=QueryResult, Error=oneshot::Canceled> {
+    pub fn run_query(&self, query: &str) -> impl Future<Item=(QueryResult, Trace), Error=oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
 
         // TODO(clemens): perform compilation and table snapshot in asynchronous task?
@@ -49,8 +50,8 @@ impl Ruba {
         let data = self.inner_ruba.snapshot(&query.table)
             .expect(&format!("Table {} does not exist!", &query.table));
         let task = QueryTask::new(query, data, SharedSender::new(sender));
-        self.schedule(task);
-        receiver
+        let trace_receiver = self.schedule(task);
+        receiver.join(trace_receiver)
     }
 
     pub fn load_csv(&self,
@@ -75,8 +76,8 @@ impl Ruba {
         receiver
     }
 
-    fn schedule<T: Task + 'static>(&self, task: T) {
-        self.inner_ruba.schedule(Arc::new(task));
+    fn schedule<T: Task + 'static>(&self, task: T) -> impl Future<Item=Trace, Error=oneshot::Canceled> {
+        self.inner_ruba.schedule(task)
     }
 }
 
