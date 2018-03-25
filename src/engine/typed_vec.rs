@@ -24,6 +24,7 @@ pub enum TypedVec<'a> {
 }
 
 use self::TypedVec::*;
+
 impl<'a> TypedVec<'a> {
     pub fn len(&self) -> usize {
         match *self {
@@ -70,6 +71,28 @@ impl<'a> TypedVec<'a> {
             TypedVec::BorrowedEncodedU16(v, codec) => codec.decode(v),
             TypedVec::BorrowedEncodedU32(v, codec) => codec.decode(v),
             x => x,
+        }
+    }
+
+    pub fn max_cardinality(&self) -> usize {
+        match *self {
+            EncodedU8(_, codec) => codec.max_cardinality(),
+            EncodedU16(_, codec) => codec.max_cardinality(),
+            EncodedU32(_, codec) => codec.max_cardinality(),
+            BorrowedEncodedU8(_, codec) => codec.max_cardinality(),
+            BorrowedEncodedU16(_, codec) => codec.max_cardinality(),
+            BorrowedEncodedU32(_, codec) => codec.max_cardinality(),
+            _ => unimplemented!("max_cardinality {:?}", self.get_type()),
+        }
+    }
+
+    pub fn is_positive_integer(&self) -> bool {
+        match *self {
+            EncodedU8(_, _) | EncodedU16(_, _) | EncodedU32(_, _) |
+            BorrowedEncodedU8(_, _) | BorrowedEncodedU16(_, _) |
+            BorrowedEncodedU32(_, _) => true,
+            // TODO(clemens): Constant etc.
+            _ => false,
         }
     }
 

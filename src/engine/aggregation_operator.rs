@@ -1,32 +1,67 @@
 use std::collections::HashMap;
-use std::hash::Hash;
-use engine::typed_vec::TypedVec;
-use engine::vector_operator::VecOperator;
-use engine::types::*;
-use seahash::SeaHasher;
 use std::hash::BuildHasherDefault;
+use std::hash::Hash;
 
+use engine::typed_vec::TypedVec;
+use engine::types::*;
+use engine::vector_operator::VecOperator;
+use num::PrimInt;
+use seahash::SeaHasher;
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 
-pub fn grouping<'a>(grouping_key: &TypedVec<'a>) -> (Vec<usize>, usize, TypedVec<'a>) {
-    match grouping_key.get_type() {
-        EncodingType::U8 => {
-            let (data, encoding) = grouping_key.cast_ref_u8();
-            let (grouping, max_index, raw_groups) = ht_grouping(data);
-            (grouping, max_index, (raw_groups, encoding).into())
+pub fn grouping<'a, 'b>(grouping_key: TypedVec<'a>) -> (TypedVec<'a>, usize, TypedVec<'a>) {
+    /*if let Some(grouping)  = grouping_key.decodless_grouping() {
+        return grouping
+    }*/
+    // TODO(clemens): refine criterion
+    let max_cardinality = grouping_key.max_cardinality();
+    if max_cardinality < 1 << 12 && grouping_key.is_positive_integer() {
+        match grouping_key.get_type() {
+            EncodingType::U8 => {
+                let raw_groups = {
+                    let (data, encoding) = grouping_key.cast_ref_u8();
+                    (unique(data, max_cardinality), encoding).into()
+                };
+                (grouping_key, max_cardinality, raw_groups)
+            }
+            EncodingType::U16 => {
+                let raw_groups = {
+                    let (data, encoding) = grouping_key.cast_ref_u16();
+                    (unique(data, max_cardinality), encoding).into()
+                };
+                (grouping_key, max_cardinality, raw_groups)
+            }
+            t => panic!("vec grouping not implemented for type {:?}", t)
         }
-        EncodingType::U16 => {
-            let (data, encoding) = grouping_key.cast_ref_u16();
-            let (grouping, max_index, raw_groups) = ht_grouping(data);
-            (grouping, max_index, (raw_groups, encoding).into())
+    } else {
+        match grouping_key.get_type() {
+            EncodingType::U16 => {
+                let (data, encoding) = grouping_key.cast_ref_u16();
+                let (grouping, max_index, raw_groups) = ht_grouping(data);
+                ((grouping, encoding).into(), max_index, (raw_groups, encoding).into())
+            }
+            t => panic!("ht grouping not implemented for type {:?}", t)
         }
-        t => panic!(" grouping not implemented for type {:?}", t)
     }
 }
 
-fn ht_grouping<T: Number>(grouping_key: &[T]) -> (Vec<usize>, usize, Vec<T>) {
-    let mut count = 0;
+fn unique<T: PrimInt + 'static>(data: &[T], max_index: usize) -> Vec<T> {
+    let mut seen_before = vec![false; max_index + 1];
+    let mut result = Vec::new();
+    for &i in data {
+        let index = i.to_usize().unwrap();
+        if !seen_before[index] {
+            result.push(i);
+            seen_before[index] = true;
+        }
+    }
+    result.sort();
+    result
+}
+
+fn ht_grouping<T: PrimInt + Hash>(grouping_key: &[T]) -> (Vec<T>, usize, Vec<T>) {
+    let mut count = T::zero();
     let mut grouping = Vec::with_capacity(grouping_key.len());
     let mut groups = Vec::new();
     let mut map = HashMapSea::default();
@@ -34,43 +69,47 @@ fn ht_grouping<T: Number>(grouping_key: &[T]) -> (Vec<usize>, usize, Vec<T>) {
         grouping.push(*map.entry(i).or_insert_with(|| {
             groups.push(*i);
             let old = count;
-            count += 1;
+            count = count + T::one();
             old
         }));
     }
-    (grouping, count, groups)
+    (grouping, count.to_usize().unwrap(), groups)
 }
 
-pub struct HTSummationCi64<'b> {
-    grouping: &'b [usize],
+pub struct VecCount<'b, T: PrimInt + 'static> {
+    grouping: &'b [T],
     max_index: usize,
-    constant: i64,
+    dense_grouping: bool,
 }
 
-impl<'b> HTSummationCi64<'b> {
-    pub fn new(grouping: &'b [usize], max_index: usize, constant: i64) -> HTSummationCi64 {
-        HTSummationCi64 {
+impl<'b, T: PrimInt> VecCount<'b, T> {
+    pub fn new(grouping: &'b [T], max_index: usize, dense_grouping: bool) -> VecCount<'b, T> {
+        VecCount {
             grouping,
-            max_index,
-            constant,
+            max_index: max_index,
+            dense_grouping,
         }
     }
 }
 
-impl<'a, 'b> VecOperator<'a> for HTSummationCi64<'b> {
+impl<'a, 'b, T: PrimInt + 'static> VecOperator<'a> for VecCount<'b, T> {
     fn execute(&mut self) -> TypedVec<'a> {
-        let mut result = vec![0; self.max_index];
+        let mut result = vec![0; self.max_index + 1];
         for i in self.grouping {
-            result[*i] += self.constant;
+            result[i.to_usize().unwrap()] += 1;
+        }
+        if !self.dense_grouping {
+            // Remove 0 counts for all entries that weren't present in grouping
+            let mut j = 0;
+            for i in 0..result.len() {
+                if result[i] > 0 {
+                    result[j] = result[i];
+                    j += 1;
+                }
+            }
+            result.truncate(j);
         }
         TypedVec::Integer(result)
     }
 }
 
-pub trait Number: Hash + Eq + Copy + 'static {}
-
-impl Number for u32 {}
-
-impl Number for u16 {}
-
-impl Number for u8 {}

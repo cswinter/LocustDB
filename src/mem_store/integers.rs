@@ -18,12 +18,13 @@ pub struct IntegerColumn {
 impl IntegerColumn {
     // TODO(clemens): do not subtract offset if it does not change encoding size
     pub fn new_boxed(mut values: Vec<i64>, min: i64, max: i64) -> Box<ColumnData> {
+        let maximum = (max - min) as usize;
         if max - min <= From::from(u8::MAX) {
-            Box::new(IntegerOffsetColumn::<u8>::new(values, min))
+            Box::new(IntegerOffsetColumn::<u8>::new(values, min, maximum))
         } else if max - min <= From::from(u16::MAX) {
-            Box::new(IntegerOffsetColumn::<u16>::new(values, min))
+            Box::new(IntegerOffsetColumn::<u16>::new(values, min, maximum))
         } else if max - min <= From::from(u32::MAX) {
-            Box::new(IntegerOffsetColumn::<u32>::new(values, min))
+            Box::new(IntegerOffsetColumn::<u32>::new(values, min, maximum))
         } else {
             values.shrink_to_fit();
             Box::new(IntegerColumn { values })
@@ -63,10 +64,11 @@ impl ColumnData for IntegerColumn {
 struct IntegerOffsetColumn<T: IntLike> {
     values: Vec<T>,
     offset: i64,
+    maximum: usize,
 }
 
 impl<T: IntLike> IntegerOffsetColumn<T> {
-    fn new(values: Vec<i64>, offset: i64) -> IntegerOffsetColumn<T> {
+    fn new(values: Vec<i64>, offset: i64, maximum: usize) -> IntegerOffsetColumn<T> {
         let mut encoded_vals = Vec::with_capacity(values.len());
         for v in values {
             encoded_vals.push(T::from(v - offset).unwrap());
@@ -74,6 +76,7 @@ impl<T: IntLike> IntegerOffsetColumn<T> {
         IntegerOffsetColumn {
             values: encoded_vals,
             offset,
+            maximum,
         }
     }
 }
@@ -128,6 +131,8 @@ impl<T: IntLike> PointCodec<T> for IntegerOffsetColumn<T> {
     }
 
     fn is_order_preserving(&self) -> bool { true }
+
+    fn max_cardinality(&self) -> usize { self.maximum }
 }
 
 impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {

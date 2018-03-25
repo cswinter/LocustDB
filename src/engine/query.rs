@@ -98,7 +98,7 @@ impl Query {
         let (grouping_key_plan, _) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone());
         let mut compiled_gk = query_plan::prepare(grouping_key_plan);
         let grouping_key = compiled_gk.execute();
-        let (grouping, max_index, groups) = grouping(&grouping_key);
+        let (grouping, max_index, groups) = grouping(grouping_key);
         let groups = groups.order_preserving();
 
         trace_replace!("group_ordering");

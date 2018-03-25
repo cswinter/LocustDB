@@ -1,16 +1,17 @@
 use std::collections::HashMap;
+use std::rc::Rc;
+use syntax::expression::*;
 
 use bit_vec::BitVec;
 use engine::aggregation_operator::*;
 use engine::aggregator::Aggregator;
 use engine::filter::Filter;
+use engine::typed_vec::TypedVec;
 use engine::types::*;
 use engine::vector_operator::*;
 use ingest::raw_val::RawVal;
 use mem_store::column::Column;
 use mem_store::column::{ColumnData, ColumnCodec};
-use syntax::expression::*;
-use std::rc::Rc;
 
 
 #[derive(Debug)]
@@ -71,12 +72,14 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
 pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
-                                   grouping: &'b [usize],
+                                   grouping: &'b TypedVec<'a>,
                                    max_index: usize,
                                    aggregator: Aggregator) -> Box<VecOperator<'a> + 'b> {
     match (aggregator, plan) {
-        (Aggregator::Count, QueryPlan::Constant(RawVal::Int(i))) => {
-            Box::new(HTSummationCi64::new(grouping, max_index, i))
+        (Aggregator::Count, QueryPlan::Constant(RawVal::Int(_))) => match grouping.get_type() {
+            EncodingType::U8 => Box::new(VecCount::new(grouping.cast_ref_u8().0, max_index, false)),
+            EncodingType::U16 => Box::new(VecCount::new(grouping.cast_ref_u16().0, max_index, false)),
+            t => panic!("unsupported type {:?} for grouping key", t),
         }
         (a, p) => panic!("prepare_aggregation not implemented for {:?}, {:?}", &a, &p)
     }

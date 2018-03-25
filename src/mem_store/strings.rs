@@ -202,6 +202,8 @@ impl PointCodec<u16> for DictEncodedStrings {
 
     // TODO(clemens): sort dictionary on creation to make encoding order preserving?
     fn is_order_preserving(&self) -> bool { false }
+
+    fn max_cardinality(&self) -> usize { self.mapping.len() }
 }
 
 impl ColumnCodec for DictEncodedStrings {
