@@ -21,6 +21,7 @@ bincode = "0.9.2"
 seahash = "3.0.5"
 bit-vec = "0.4.4"
 num_cpus = "1.0"
+chrono = "0.4.0"
 
 [features]
 default=[]

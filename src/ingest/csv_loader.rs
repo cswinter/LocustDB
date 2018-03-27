@@ -1,26 +1,31 @@
 extern crate csv;
 
+use std::boxed::Box;
+use std::collections::HashMap;
+use std::ops::BitOr;
+use std::sync::Arc;
+
 use mem_store::batch::Batch;
 use mem_store::column::*;
 use mem_store::column_builder::*;
 use mem_store::null_column::NullColumn;
-use std::boxed::Box;
-use std::ops::BitOr;
-use std::sync::Arc;
 use scheduler::*;
+use super::extractor;
 
+type IngestionTransform = HashMap<String, extractor::Extractor>;
 
-pub fn ingest_file(filename: &str, chunk_size: usize) -> Vec<Batch> {
+pub fn ingest_file(filename: &str, chunk_size: usize, extractors: &IngestionTransform) -> Vec<Batch> {
     let mut reader = csv::Reader::from_file(filename)
         .unwrap()
         .has_headers(true);
     let headers = reader.headers().unwrap();
-    auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size)
+    auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors)
 }
 
 fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T,
                                               colnames: &[String],
-                                              batch_size: usize)
+                                              batch_size: usize,
+                                              extractors: &IngestionTransform)
                                               -> Vec<Batch> {
     let num_columns = colnames.len();
     let mut batches = Vec::new();
@@ -33,23 +38,27 @@ fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T,
         }
 
         if row_num % batch_size == batch_size - 1 {
-            batches.push(create_batch(raw_cols, colnames));
+            batches.push(create_batch(raw_cols, colnames, extractors));
             raw_cols = (0..num_columns).map(|_| RawCol::new()).collect::<Vec<_>>();
         }
         row_num += 1;
     }
 
     if row_num % batch_size != 0 {
-        batches.push(create_batch(raw_cols, colnames));
+        batches.push(create_batch(raw_cols, colnames, extractors));
     }
 
     batches
 }
 
-fn create_batch(cols: Vec<RawCol>, colnames: &[String]) -> Batch {
+fn create_batch(cols: Vec<RawCol>, colnames: &[String], extractors: &IngestionTransform) -> Batch {
     let mut mem_store = Vec::new();
     for (i, col) in cols.into_iter().enumerate() {
-        mem_store.push(Column::new(colnames[i].clone(), col.finalize()));
+        let new_column = match extractors.get(&colnames[i]) {
+            Some(extractor) => Column::new(colnames[i].clone(), col.extract(extractor)),
+            None => Column::new(colnames[i].clone(), col.finalize()),
+        };
+        mem_store.push(new_column);
     }
     Batch::from(mem_store)
 }
@@ -58,6 +67,7 @@ pub struct CSVIngestionTask {
     filename: String,
     table: String,
     chunk_size: usize,
+    extractors: IngestionTransform,
     ruba: Arc<InnerRuba>,
     sender: SharedSender<()>,
 }
@@ -66,12 +76,14 @@ impl CSVIngestionTask {
     pub fn new(filename: String,
                table: String,
                chunk_size: usize,
+               extractors: IngestionTransform,
                ruba: Arc<InnerRuba>,
                sender: SharedSender<()>) -> CSVIngestionTask {
         CSVIngestionTask {
             filename,
             table,
             chunk_size,
+            extractors,
             ruba,
             sender,
         }
@@ -80,7 +92,7 @@ impl CSVIngestionTask {
 
 impl Task for CSVIngestionTask {
     fn execute(&self) {
-        let batches = ingest_file(&self.filename, self.chunk_size);
+        let batches = ingest_file(&self.filename, self.chunk_size, &self.extractors);
         self.ruba.load_batches(&self.table, batches);
         self.sender.send(());
     }
@@ -122,7 +134,7 @@ impl RawCol {
                 } else if let Ok(int) = s.parse::<i64>() {
                     int
                 } else if let Ok(float) = s.parse::<f64>() {
-                    (float * 10000.) as i64
+                    float as i64
                 } else {
                     unreachable!("{} should be parseable as int or float", s)
                 };
@@ -132,6 +144,14 @@ impl RawCol {
         } else {
             Box::new(NullColumn::new(self.data.len()))
         }
+    }
+
+    fn extract(self, extractor: &extractor::Extractor) -> Box<ColumnData> {
+        let mut builder = IntColBuilder::new();
+        for s in self.data {
+            builder.push(&extractor(&s));
+        }
+        builder.finalize()
     }
 }
 

@@ -76,12 +76,9 @@ impl<'a> TypedVec<'a> {
 
     pub fn max_cardinality(&self) -> usize {
         match *self {
-            EncodedU8(_, codec) => codec.max_cardinality(),
-            EncodedU16(_, codec) => codec.max_cardinality(),
-            EncodedU32(_, codec) => codec.max_cardinality(),
-            BorrowedEncodedU8(_, codec) => codec.max_cardinality(),
-            BorrowedEncodedU16(_, codec) => codec.max_cardinality(),
-            BorrowedEncodedU32(_, codec) => codec.max_cardinality(),
+            EncodedU8(_, codec) | BorrowedEncodedU8(_, codec) => codec.max_cardinality(),
+            EncodedU16(_, codec) | BorrowedEncodedU16(_, codec) => codec.max_cardinality(),
+            EncodedU32(_, codec) | BorrowedEncodedU32(_, codec) => codec.max_cardinality(),
             _ => unimplemented!("max_cardinality {:?}", self.get_type()),
         }
     }

@@ -15,7 +15,7 @@ use futures::executor::block_on;
 use ruba::{Ruba, TableStats};
 use time::precise_time_ns;
 
-const LOAD_CHUNK_SIZE: usize = 1 << 13;
+const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -23,7 +23,16 @@ fn main() {
     let ruba = Ruba::memory_only();
     println!("Loading {} into table default.", filename);
     let start_time = precise_time_ns();
-    let _ = block_on(ruba.load_csv(filename, "default", LOAD_CHUNK_SIZE));
+    let _ = block_on(ruba.load_csv(
+        filename, "default", LOAD_CHUNK_SIZE,
+        vec![
+            ("Tolls_Amt".to_owned(), ruba::extractor::multiply_by_100),
+            ("Tip_Amt".to_owned(), ruba::extractor::multiply_by_100),
+            ("Fare_Amt".to_owned(), ruba::extractor::multiply_by_100),
+            ("Total_Amt".to_owned(), ruba::extractor::multiply_by_100),
+            ("Trip_Pickup_DateTime".to_owned(), ruba::extractor::date_time),
+            ("Trip_Dropoff_DateTime".to_owned(), ruba::extractor::date_time),
+        ]));
     let table_stats = block_on(ruba.table_stats()).expect("!?!");
     print_table_stats(&table_stats, start_time);
     repl(&ruba);
@@ -72,7 +81,7 @@ fn repl(ruba: &Ruba) {
                     trace.print();
                 }
                 print_results::print_query_result(&result);
-            },
+            }
             _ => println!("Error: Query execution was canceled!"),
         }
     }

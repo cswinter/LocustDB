@@ -32,3 +32,7 @@ pub use ingest::raw_val::RawVal as Value;
 pub use ruba::Ruba as Ruba;
 pub use engine::query_task::QueryResult;
 pub use mem_store::table::TableStats;
+pub use ingest::extractor;
+
+#[doc(hidden)] pub use trace::_replace;
+#[doc(hidden)] pub use trace::_start;

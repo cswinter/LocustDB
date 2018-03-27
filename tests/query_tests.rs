@@ -7,14 +7,14 @@ use futures::executor::block_on;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 40));
+    let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 40, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.0.rows, expected_rows);
 }
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", "default", 2));
+    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", "default", 2, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.0.rows, expected_rows);
 }

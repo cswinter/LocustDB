@@ -30,17 +30,26 @@ macro_rules! trace_replace {
 }
 
 #[cfg(not(feature = "trace"))]
-#[cfg_attr(feature="cargo-clippy", allow(drop_ref))]
 macro_rules! trace_start {
     // Drop refs to args (which is no-op) to prevent unused variable warnings.
-    ( $( $x:expr),* ) => { $( drop(& $x); )* }
+    ( $( $x:expr),* ) => {
+        $(
+            #[cfg_attr(feature="cargo-clippy", allow(drop_ref))]
+            drop(& $x);
+        )*
+    }
 }
 
 #[cfg(not(feature = "trace"))]
 #[cfg_attr(feature="cargo-clippy", allow(drop_ref))]
 macro_rules! trace_replace {
     // Drop refs to args (which is no-op) to prevent unused variable warnings.
-    ( $( $x:expr),* ) => { $( drop(& $x); )* }
+    ( $( $x:expr),* ) => {
+        $(
+            #[cfg_attr(feature="cargo-clippy", allow(drop_ref))]
+            drop(& $x);
+        )*
+    }
 }
 
 #[doc(hidden)]

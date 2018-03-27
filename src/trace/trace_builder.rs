@@ -17,7 +17,7 @@ impl TraceBuilder {
     pub fn new(name: String) -> TraceBuilder {
         TraceBuilder {
             id: new_id(),
-            name: name.to_owned(),
+            name,
             start_time: precise_time_ns(),
             finalized_collectors: Vec::new(),
         }
@@ -75,7 +75,7 @@ impl TraceBuilder {
     }
 
     fn reconstruct_tree(mut spans: HashMap<u64, (Span, u64)>) -> Span {
-        let mut keys_sorted = spans.keys().map(|k| *k).collect::<Vec<_>>();
+        let mut keys_sorted = spans.keys().cloned().collect::<Vec<_>>();
         keys_sorted.sort();
         for span_id in keys_sorted.iter().rev() {
             let (mut span, parent_id) = spans.remove(span_id).unwrap();

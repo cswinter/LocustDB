@@ -23,7 +23,7 @@ fn bench_sum_4000(b: &mut test::Bencher) {
 
 fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
     let ruba = Ruba::memory_only();
-    let load = ruba.load_csv("test_data/small.csv", "test", 4000);
+    let load = ruba.load_csv("test_data/small.csv", "test", 4000, vec![]);
     let _ = block_on(load);
     b.iter(|| {
         let query = ruba.run_query(query_str);
@@ -33,7 +33,7 @@ fn bench_query_2mb(b: &mut test::Bencher, query_str: &str) {
 
 fn bench_query_gtd_1m(b: &mut test::Bencher, query_str: &str) {
     let ruba = Ruba::memory_only();
-    let load = ruba.load_csv("test_data/green_tripdata_2017-06.csv", "test", 1 << 14);
+    let load = ruba.load_csv("test_data/green_tripdata_2017-06.csv", "test", 1 << 14, vec![]);
     let _ = block_on(load);
     b.iter(|| {
         let query = ruba.run_query(query_str);
@@ -54,7 +54,7 @@ fn get_yellow() -> &'static Ruba {
                     panic!("{} not found. Download dataset at {}", YELLOW_PATH, YELLOW_URL);
                 }
                 let ruba = Ruba::memory_only();
-                let load = ruba.load_csv(YELLOW_PATH, "test", 1 << 16);
+                let load = ruba.load_csv(YELLOW_PATH, "test", 1 << 16, vec![]);
                 let _ = block_on(load);
                 YELLOW_RUBA = Some(ruba);
                 YELLOW_RUBA.as_ref().unwrap()

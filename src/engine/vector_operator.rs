@@ -201,8 +201,8 @@ impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
         let i = rhs.cast_int_const();
         // TODO(clemens): Return immediately if i is outside of range of u8
         for l in data {
-            // TODO(clemens): More efficient to case i to u8
-            result.push((*l as i64) < i);
+            // TODO(clemens): More efficient to cast i to u8?
+            result.push(i64::from(*l) < i);
         }
         TypedVec::Boolean(result)
     }

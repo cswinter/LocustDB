@@ -9,12 +9,12 @@ use engine::query_task::{QueryResult, QueryTask};
 use futures::*;
 use futures_channel::oneshot;
 use ingest::csv_loader::CSVIngestionTask;
+use ingest::extractor::Extractor;
 use mem_store::table::TableStats;
 use nom;
 use scheduler::*;
 use syntax::parser;
 use trace::Trace;
-
 
 pub struct Ruba {
     inner_ruba: Arc<InnerRuba>
@@ -57,12 +57,14 @@ impl Ruba {
     pub fn load_csv(&self,
                     path: &str,
                     table_name: &str,
-                    chunk_size: usize) -> impl Future<Item=(), Error=oneshot::Canceled> {
+                    chunk_size: usize,
+                    extractors: Vec<(String, Extractor)>) -> impl Future<Item=(), Error=oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
         let task = CSVIngestionTask::new(
             path.to_string(),
             table_name.to_string(),
             chunk_size,
+            extractors.into_iter().collect(),
             self.inner_ruba.clone(),
             SharedSender::new(sender));
         self.schedule(task);

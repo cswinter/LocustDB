@@ -10,10 +10,7 @@ use seahash::SeaHasher;
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 
-pub fn grouping<'a, 'b>(grouping_key: TypedVec<'a>) -> (TypedVec<'a>, usize, TypedVec<'a>) {
-    /*if let Some(grouping)  = grouping_key.decodless_grouping() {
-        return grouping
-    }*/
+pub fn grouping(grouping_key: TypedVec) -> (TypedVec, usize, TypedVec) {
     // TODO(clemens): refine criterion
     let max_cardinality = grouping_key.max_cardinality();
     if max_cardinality < 1 << 12 && grouping_key.is_positive_integer() {
@@ -86,7 +83,7 @@ impl<'b, T: PrimInt> VecCount<'b, T> {
     pub fn new(grouping: &'b [T], max_index: usize, dense_grouping: bool) -> VecCount<'b, T> {
         VecCount {
             grouping,
-            max_index: max_index,
+            max_index,
             dense_grouping,
         }
     }
