@@ -149,7 +149,6 @@ impl<'a> VecOperator<'a> for Constant {
     }
 }
 
-
 pub struct LessThanVSi64<'a> {
     lhs: BoxedOperator<'a>,
     rhs: i64,
@@ -177,6 +176,43 @@ impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
     }
 }
 
+
+struct VecConstBoolOperator<'a, T, U, Op> where
+    T: VecType<T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+    lhs: BoxedOperator<'a>,
+    rhs: BoxedOperator<'a>,
+    t: PhantomData<T>,
+    u: PhantomData<U>,
+    op: PhantomData<Op>,
+}
+
+impl<'a, T, U, Op> VecOperator<'a> for VecConstBoolOperator<'a, T, U, Op> where
+    T: VecType<T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+    fn execute(&mut self) -> TypedVec<'a> {
+        let lhs = self.lhs.execute();
+        let rhs = self.rhs.execute();
+        let data = T::cast(lhs);
+        let c = U::cast(rhs);
+        let mut output = BitVec::with_capacity(data.len());
+        for d in data {
+            output.push(Op::perform(d, &c));
+        }
+        TypedVec::Boolean(output)
+    }
+}
+
+trait VecType<T> {
+    fn cast(vec: TypedVec) -> &[T];
+}
+
+trait ConstType<T> {
+    fn cast(vec: TypedVec) -> T;
+}
+
+trait BoolOperation<T, U> {
+    #[inline]
+    fn perform(lhs: &T, rhs: &U) -> bool;
+}
 
 pub struct LessThanVSu8<'a> {
     lhs: BoxedOperator<'a>,
