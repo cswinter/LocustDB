@@ -1,8 +1,10 @@
+use std::string;
+
 use bit_vec::BitVec;
-use mem_store::point_codec::PointCodec;
 use engine::types::*;
-use mem_store::value::Val;
 use ingest::raw_val::RawVal;
+use mem_store::point_codec::PointCodec;
+use mem_store::value::Val;
 
 
 pub enum TypedVec<'a> {
@@ -261,9 +263,9 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn cast_str_const(&self) -> &str {
+    pub fn cast_str_const(&self) -> string::String {
         match *self {
-            TypedVec::Constant(RawVal::Str(ref s)) => s,
+            TypedVec::Constant(RawVal::Str(ref s)) => s.clone(),
             _ => panic!("type error: {:?}", self.get_type()),
         }
     }

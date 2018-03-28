@@ -4,7 +4,7 @@ use std::hash::Hash;
 
 use engine::typed_vec::TypedVec;
 use engine::types::*;
-use engine::vector_operator::VecOperator;
+use engine::vector_op::VecOperator;
 use num::PrimInt;
 use seahash::SeaHasher;
 

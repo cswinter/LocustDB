@@ -1,9 +1,12 @@
 use std::marker::PhantomData;
-use bit_vec::BitVec;
 use std::rc::Rc;
+
+use bit_vec::BitVec;
+use engine::typed_vec::TypedVec;
+use engine::types::EncodingType;
+use engine::vector_op::types::*;
 use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
-use engine::typed_vec::TypedVec;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
@@ -149,36 +152,32 @@ impl<'a> VecOperator<'a> for Constant {
     }
 }
 
-pub struct LessThanVSi64<'a> {
-    lhs: BoxedOperator<'a>,
-    rhs: i64,
-}
+impl<'a> VecOperator<'a> {
+    pub fn less_than_vs(t: EncodingType, lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
+        match t {
+            EncodingType::U8 => Box::new(VecConstBoolOperator::<u8, i64, LessThanInt<u8>>::new(lhs, rhs)),
+            EncodingType::U16 => Box::new(VecConstBoolOperator::<u16, i64, LessThanInt<u16>>::new(lhs, rhs)),
+            EncodingType::U32 => Box::new(VecConstBoolOperator::<u32, i64, LessThanInt<u32>>::new(lhs, rhs)),
+            EncodingType::I64 => Box::new(VecConstBoolOperator::<i64, i64, LessThanInt<i64>>::new(lhs, rhs)),
+            _ => panic!("less_than_vs not supported for type {:?}", t),
+        }
+    }
 
-impl<'a> LessThanVSi64<'a> {
-    pub fn new(lhs: BoxedOperator, rhs: i64) -> LessThanVSi64 {
-        LessThanVSi64 {
-            lhs,
-            rhs,
+    pub fn equals_vs(t: EncodingType, lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> BoxedOperator<'a> {
+        match t {
+            EncodingType::Str => Box::new(VecConstBoolOperator::<_, _, EqualsString>::new(lhs, rhs)),
+            EncodingType::U8 => Box::new(VecConstBoolOperator::<_, _, EqualsInt<u8>>::new(lhs, rhs)),
+            EncodingType::U16 => Box::new(VecConstBoolOperator::<_, _, EqualsInt<u16>>::new(lhs, rhs)),
+            EncodingType::U32 => Box::new(VecConstBoolOperator::<_, _, EqualsInt<u32>>::new(lhs, rhs)),
+            EncodingType::I64 => Box::new(VecConstBoolOperator::<_, _, Equals<i64>>::new(lhs, rhs)),
+            _ => panic!("equals_vs not supported for type {:?}", t),
         }
     }
 }
 
-impl<'a> VecOperator<'a> for LessThanVSi64<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        let lhs = self.lhs.execute();
-        let data = lhs.cast_ref_i64();
-        let mut result = BitVec::with_capacity(lhs.len());
-        let i = self.rhs;
-        for l in data {
-            result.push(*l < i);
-        }
-        TypedVec::Boolean(result)
-    }
-}
 
-
-struct VecConstBoolOperator<'a, T, U, Op> where
-    T: VecType<T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+struct VecConstBoolOperator<'a, T: 'a, U, Op> where
+    T: VecType<'a, T>, U: ConstType<U>, Op: BoolOperation<T, U> {
     lhs: BoxedOperator<'a>,
     rhs: BoxedOperator<'a>,
     t: PhantomData<T>,
@@ -186,13 +185,26 @@ struct VecConstBoolOperator<'a, T, U, Op> where
     op: PhantomData<Op>,
 }
 
-impl<'a, T, U, Op> VecOperator<'a> for VecConstBoolOperator<'a, T, U, Op> where
-    T: VecType<T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+impl<'a, T: 'a, U, Op> VecConstBoolOperator<'a, T, U, Op> where
+    T: VecType<'a, T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+    fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> VecConstBoolOperator<'a, T, U, Op> {
+        VecConstBoolOperator {
+            lhs,
+            rhs,
+            t: PhantomData,
+            u: PhantomData,
+            op: PhantomData,
+        }
+    }
+}
+
+impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<'a, T, U, Op> where
+    T: VecType<'a, T>, U: ConstType<U>, Op: BoolOperation<T, U> {
     fn execute(&mut self) -> TypedVec<'a> {
         let lhs = self.lhs.execute();
         let rhs = self.rhs.execute();
-        let data = T::cast(lhs);
-        let c = U::cast(rhs);
+        let data = T::cast(&lhs);
+        let c = U::cast(&rhs);
         let mut output = BitVec::with_capacity(data.len());
         for d in data {
             output.push(Op::perform(d, &c));
@@ -201,106 +213,37 @@ impl<'a, T, U, Op> VecOperator<'a> for VecConstBoolOperator<'a, T, U, Op> where
     }
 }
 
-trait VecType<T> {
-    fn cast(vec: TypedVec) -> &[T];
-}
-
-trait ConstType<T> {
-    fn cast(vec: TypedVec) -> T;
-}
-
 trait BoolOperation<T, U> {
     #[inline]
     fn perform(lhs: &T, rhs: &U) -> bool;
 }
 
-pub struct LessThanVSu8<'a> {
-    lhs: BoxedOperator<'a>,
-    rhs: BoxedOperator<'a>,
+struct LessThanInt<T> { t: PhantomData<T> }
+
+impl<T: Into<i64> + Copy> BoolOperation<T, i64> for LessThanInt<T> {
+    #[inline]
+    fn perform(l: &T, r: &i64) -> bool { Into::<i64>::into(*l) < *r }
 }
 
-impl<'a> LessThanVSu8<'a> {
-    pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> LessThanVSu8<'a> {
-        LessThanVSu8 {
-            lhs,
-            rhs,
-        }
-    }
+struct Equals<T> { t: PhantomData<T> }
+
+impl<T: PartialEq> BoolOperation<T, T> for Equals<T> {
+    #[inline]
+    fn perform(l: &T, r: &T) -> bool { l == r }
 }
 
-impl<'a> VecOperator<'a> for LessThanVSu8<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        let lhs = self.lhs.execute();
-        let data = lhs.cast_ref_u8().0;
-        let mut result = BitVec::with_capacity(data.len());
-        let rhs = self.rhs.execute();
-        let i = rhs.cast_int_const();
-        // TODO(clemens): Return immediately if i is outside of range of u8
-        for l in data {
-            // TODO(clemens): More efficient to cast i to u8?
-            result.push(i64::from(*l) < i);
-        }
-        TypedVec::Boolean(result)
-    }
+struct EqualsInt<T> { t: PhantomData<T> }
+
+impl<T: Into<i64> + Copy> BoolOperation<T, i64> for EqualsInt<T> {
+    #[inline]
+    fn perform(l: &T, r: &i64) -> bool { Into::<i64>::into(*l) == *r }
 }
 
+struct EqualsString;
 
-pub struct EqualsVSString<'a> {
-    lhs: BoxedOperator<'a>,
-    rhs: BoxedOperator<'a>,
-}
-
-impl<'a> EqualsVSString<'a> {
-    pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> EqualsVSString<'a> {
-        EqualsVSString {
-            lhs,
-            rhs,
-        }
-    }
-}
-
-impl<'a> VecOperator<'a> for EqualsVSString<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        let lhs = self.lhs.execute();
-        let rhs = self.rhs.execute();
-        let data = lhs.cast_ref_str();
-        let s = rhs.cast_str_const();
-        let mut result = BitVec::with_capacity(data.len());
-        for l in data {
-            result.push(*l == s);
-        }
-        TypedVec::Boolean(result)
-    }
-}
-
-
-pub struct EqualsVSU16<'a> {
-    lhs: BoxedOperator<'a>,
-    rhs: BoxedOperator<'a>,
-}
-
-impl<'a> EqualsVSU16<'a> {
-    pub fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> EqualsVSU16<'a> {
-        EqualsVSU16 {
-            lhs,
-            rhs,
-        }
-    }
-}
-
-impl<'a> VecOperator<'a> for EqualsVSU16<'a> {
-    fn execute(&mut self) -> TypedVec<'a> {
-        let lhs = self.lhs.execute();
-        let rhs = self.rhs.execute();
-        let data = lhs.cast_ref_u16().0;
-        // TODO(clemens): range check
-        let s = rhs.cast_int_const() as u16;
-        let mut result = BitVec::with_capacity(data.len());
-        for l in data {
-            result.push(*l == s);
-        }
-        TypedVec::Boolean(result)
-    }
+impl<'a> BoolOperation<&'a str, String> for EqualsString {
+    #[inline]
+    fn perform(l: &&'a str, r: &String) -> bool { l == r }
 }
 
 
@@ -383,7 +326,7 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
     fn execute(&mut self) -> TypedVec<'a> {
         let constant = self.constant.execute();
         let s = constant.cast_str_const();
-        let result = self.codec.encode_str(s);
+        let result = self.codec.encode_str(&s);
         TypedVec::Constant(result)
     }
 }

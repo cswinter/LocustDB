@@ -8,7 +8,7 @@ use engine::aggregator::Aggregator;
 use engine::filter::Filter;
 use engine::typed_vec::TypedVec;
 use engine::types::*;
-use engine::vector_operator::*;
+use engine::vector_op::*;
 use ingest::raw_val::RawVal;
 use mem_store::column::Column;
 use mem_store::column::{ColumnData, ColumnCodec};
@@ -28,10 +28,8 @@ pub enum QueryPlan<'a> {
     EncodeStrConstant(Box<QueryPlan<'a>>, &'a ColumnCodec),
     EncodeIntConstant(Box<QueryPlan<'a>>, &'a ColumnCodec),
 
-    LessThanVSi64(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    LessThanVSu8(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    EqualsVSString(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    EqualsVSU16(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    LessThanVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    EqualsVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     And(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     Or(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
 
@@ -47,24 +45,11 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
         QueryPlan::FilterEncoded(col, filter) => Box::new(FilterEncoded::new(col, filter)),
         QueryPlan::IndexEncoded(col, filter) => Box::new(IndexEncoded::new(col, filter)),
         QueryPlan::Constant(ref c) => Box::new(Constant::new(c.clone())),
-        QueryPlan::LessThanVSi64(lhs, rhs) => {
-            if let RawVal::Int(i) = rhs.get_const() {
-                Box::new(LessThanVSi64::new(prepare(*lhs), i))
-            } else {
-                panic!("Wrong type")
-            }
-        }
-        QueryPlan::LessThanVSu8(lhs, rhs) =>
-            Box::new(LessThanVSu8::new(prepare(*lhs), prepare(*rhs))),
         QueryPlan::Decode(plan) => Box::new(Decode::new(prepare(*plan))),
-        QueryPlan::EncodeStrConstant(plan, codec) =>
-            Box::new(EncodeStrConstant::new(prepare(*plan), codec)),
-        QueryPlan::EncodeIntConstant(plan, codec) =>
-            Box::new(EncodeIntConstant::new(prepare(*plan), codec)),
-        QueryPlan::EqualsVSString(lhs, rhs) =>
-            Box::new(EqualsVSString::new(prepare(*lhs), prepare(*rhs))),
-        QueryPlan::EqualsVSU16(lhs, rhs) =>
-            Box::new(EqualsVSU16::new(prepare(*lhs), prepare(*rhs))),
+        QueryPlan::EncodeStrConstant(plan, codec) => Box::new(EncodeStrConstant::new(prepare(*plan), codec)),
+        QueryPlan::EncodeIntConstant(plan, codec) => Box::new(EncodeIntConstant::new(prepare(*plan), codec)),
+        QueryPlan::LessThanVS(left_type, lhs, rhs) => VecOperator::less_than_vs(left_type, prepare(*lhs), prepare(*rhs)),
+        QueryPlan::EqualsVS(left_type, lhs, rhs) => VecOperator::equals_vs(left_type, prepare(*lhs), prepare(*rhs)),
         QueryPlan::Or(lhs, rhs) => Boolean::or(prepare(*lhs), prepare(*rhs)),
         QueryPlan::And(lhs, rhs) => Boolean::and(prepare(*lhs), prepare(*rhs)),
     }
@@ -87,13 +72,6 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
 
 
 impl<'a> QueryPlan<'a> {
-    fn get_const(self) -> RawVal {
-        match self {
-            QueryPlan::Constant(ref c) => c.clone(),
-            x => panic!("{:?} not implemented get_const", x),
-        }
-    }
-
     pub fn create_query_plan<'b>(expr: &Expr,
                                  columns: &HashMap<&'b str, &'b Column>,
                                  filter: Filter) -> (QueryPlan<'b>, Type<'b>) {
@@ -121,16 +99,10 @@ impl<'a> QueryPlan<'a> {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                match type_lhs.encoding_type() {
-                                    EncodingType::U8 => {
-                                        let encoded = QueryPlan::EncodeIntConstant(
-                                            Box::new(plan_rhs), type_lhs.codec.unwrap());
-                                        QueryPlan::LessThanVSu8(Box::new(plan_lhs), Box::new(encoded))
-                                    }
-                                    _ => unimplemented!(),
-                                }
+                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                QueryPlan::LessThanVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
                             } else {
-                                QueryPlan::LessThanVSi64(Box::new(plan_lhs), Box::new(plan_rhs))
+                                QueryPlan::LessThanVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
                         } else {
                             unimplemented!()
@@ -147,19 +119,23 @@ impl<'a> QueryPlan<'a> {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                match type_lhs.encoding_type() {
-                                    EncodingType::U16 => {
-                                        let encoded = QueryPlan::EncodeStrConstant(
-                                            Box::new(plan_rhs), type_lhs.codec.unwrap());
-                                        QueryPlan::EqualsVSU16(Box::new(plan_lhs), Box::new(encoded))
-                                    }
-                                    _ => {
-                                        let decoded = QueryPlan::Decode(Box::new(plan_lhs));
-                                        QueryPlan::EqualsVSString(Box::new(decoded), Box::new(plan_rhs))
-                                    }
-                                }
+                                let encoded = QueryPlan::EncodeStrConstant(Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
                             } else {
-                                unimplemented!()
+                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                            }
+                        } else {
+                            unimplemented!()
+                        };
+                        (plan, Type::new(BasicType::Boolean, None).mutable())
+                    }
+                    (BasicType::Integer, BasicType::Integer) => {
+                         let plan = if type_rhs.is_scalar {
+                            if type_lhs.is_encoded() {
+                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                            } else {
+                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
                         } else {
                             unimplemented!()
