@@ -214,7 +214,6 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<'a, T, U, Op> wh
 }
 
 trait BoolOperation<T, U> {
-    #[inline]
     fn perform(lhs: &T, rhs: &U) -> bool;
 }
 

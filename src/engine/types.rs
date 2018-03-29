@@ -62,6 +62,10 @@ impl<'a> Type<'a> {
         self.codec.is_some()
     }
 
+    pub fn is_summation_preserving(&self) -> bool {
+        self.codec.map_or(true, |c| c.is_summation_preserving())
+    }
+
     pub fn scalar(basic: BasicType) -> Type<'static> {
         Type {
             decoded: basic,

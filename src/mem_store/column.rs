@@ -56,6 +56,7 @@ pub trait ColumnCodec: ColumnData {
     fn filter_encoded(&self, filter: &BitVec) -> TypedVec;
     fn index_encoded(&self, filter: &[usize]) -> TypedVec;
     fn encoding_type(&self) -> EncodingType;
+    fn is_summation_preserving(&self) -> bool;
 
     fn encode_str(&self, _: &str) -> RawVal {
         panic!("encode_str not supported")

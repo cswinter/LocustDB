@@ -109,8 +109,8 @@ impl Query {
         let mut result = Vec::new();
         for &(aggregator, ref expr) in &self.aggregate {
             trace_start!("aggregator {:?}", aggregator);
-            let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone());
-            let mut compiled = query_plan::prepare_aggregation(plan, &grouping, max_index, aggregator);
+            let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns, filter.clone());
+            let mut compiled = query_plan::prepare_aggregation(plan, plan_type, &grouping, max_index, aggregator);
             result.push(compiled.execute().index_decode(&grouping_sort_indices));
         }
 

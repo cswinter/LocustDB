@@ -57,6 +57,7 @@ pub fn prepare(plan: QueryPlan) -> BoxedOperator {
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
 pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
+                                   mut plan_type: Type,
                                    grouping: &'b TypedVec<'a>,
                                    max_index: usize,
                                    aggregator: Aggregator) -> Box<VecOperator<'a> + 'b> {
@@ -66,10 +67,30 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
             EncodingType::U16 => Box::new(VecCount::new(grouping.cast_ref_u16().0, max_index, false)),
             t => panic!("unsupported type {:?} for grouping key", t),
         }
+        (Aggregator::Sum, mut plan) => {
+            if !plan_type.is_summation_preserving() {
+                plan = QueryPlan::Decode(Box::new(plan));
+                plan_type = plan_type.decoded();
+            }
+            match (plan_type.encoding_type(), grouping.get_type()) {
+                (EncodingType::U8, EncodingType::U8) => VecSum::<u8, u8>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U8, EncodingType::U16) => VecSum::<u8, u16>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U8, EncodingType::U32) => VecSum::<u8, u32>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U16, EncodingType::U8) => VecSum::<u16, u8>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U16, EncodingType::U16) => VecSum::<u16, u16>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U16, EncodingType::U32) => VecSum::<u16, u32>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U32, EncodingType::U8) => VecSum::<u32, u8>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U32, EncodingType::U16) => VecSum::<u32, u16>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::U32, EncodingType::U32) => VecSum::<u32, u32>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::I64, EncodingType::U8) => VecSum::<i64, u8>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::I64, EncodingType::U16) => VecSum::<i64, u16>::boxed(prepare(plan), grouping, max_index, false),
+                (EncodingType::I64, EncodingType::U32) => VecSum::<i64, u32>::boxed(prepare(plan), grouping, max_index, false),
+                (pt, gt) => panic!("invalid aggregation types {:?}, {:?}", pt, gt),
+            }
+        }
         (a, p) => panic!("prepare_aggregation not implemented for {:?}, {:?}", &a, &p)
     }
 }
-
 
 impl<'a> QueryPlan<'a> {
     pub fn create_query_plan<'b>(expr: &Expr,
@@ -130,7 +151,7 @@ impl<'a> QueryPlan<'a> {
                         (plan, Type::new(BasicType::Boolean, None).mutable())
                     }
                     (BasicType::Integer, BasicType::Integer) => {
-                         let plan = if type_rhs.is_scalar {
+                        let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
                                 let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.unwrap());
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))

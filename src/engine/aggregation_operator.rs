@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::hash::Hash;
+use std::marker::PhantomData;
 
 use engine::typed_vec::TypedVec;
 use engine::types::*;
-use engine::vector_op::VecOperator;
+use engine::vector_op::*;
+use engine::vector_op::types::*;
 use num::PrimInt;
 use seahash::SeaHasher;
 
@@ -110,3 +112,53 @@ impl<'a, 'b, T: PrimInt + 'static> VecOperator<'a> for VecCount<'b, T> {
     }
 }
 
+pub struct VecSum<'a, 'b, T: 'a, U> where 'a: 'b {
+    input: BoxedOperator<'a>,
+    grouping: &'b TypedVec<'a>,
+    max_index: usize,
+    dense_grouping: bool,
+    t: PhantomData<T>,
+    u: PhantomData<U>,
+}
+
+impl<'a, 'b, T: 'a, U: 'a> VecSum<'a, 'b, T, U> where
+    T: IntVecType<'a, T>, U: VecType<'a, U> + IntoUsize {
+    pub fn boxed(input: BoxedOperator<'a>, grouping: &'b TypedVec<'a>, max_index: usize, dense_grouping: bool) -> Box<VecOperator<'a> + 'b> {
+        Box::new(VecSum::<T, U> {
+            input,
+            grouping,
+            max_index,
+            dense_grouping,
+            t: PhantomData,
+            u: PhantomData,
+        })
+    }
+}
+
+impl<'a, 'b, T: 'a, U: 'a> VecOperator<'a> for VecSum<'a, 'b, T, U> where
+    T: IntVecType<'a, T>, U: VecType<'a, U> + IntoUsize {
+    fn execute(&mut self) -> TypedVec<'a> {
+        // TODO(clemens): this is already computed in unique function, we should just reuse
+        let mut modified = vec![false; self.max_index + 1];
+        let input = self.input.execute();
+        let nums = T::cast(&input);
+        let grouping = U::cast(self.grouping);
+        let mut result = vec![0; self.max_index + 1];
+        for (i, n) in grouping.iter().zip(nums) {
+            result[i.to_usize()] += Into::<i64>::into(*n);
+            modified[i.to_usize()] = true;
+        }
+        if !self.dense_grouping {
+            // Remove 0 counts for all entries that weren't present in grouping
+            let mut j = 0;
+            for i in 0..result.len() {
+                if modified[i] {
+                    result[j] = result[i];
+                    j += 1;
+                }
+            }
+            result.truncate(j);
+        }
+        TypedVec::Integer(result)
+    }
+}

@@ -1,4 +1,4 @@
 pub mod vector_operator;
-mod types;
+pub mod types;
 
 pub use self::vector_operator::*;

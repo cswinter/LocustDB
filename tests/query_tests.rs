@@ -100,3 +100,25 @@ fn test_and_or() {
         &[vec!["Adam".into(), "Crawford".into()]],
     )
 }
+
+#[test]
+fn test_sum() {
+    test_query(
+        "select tld, sum(num) from default where (tld = \"name\");",
+        &[vec!["name".into(), 26.into()]],
+    )
+}
+
+#[test]
+fn test_sum_2() {
+    test_query_ec(
+        "select non_dense_ints, sum(u8_offset_encoded) from default;",
+        &[
+            vec![0.into(), 756.into()],
+            vec![1.into(), 689.into()],
+            vec![2.into(), 1112.into()],
+            vec![3.into(), 759.into()],
+            vec![4.into(), 275.into()],
+        ],
+    )
+}

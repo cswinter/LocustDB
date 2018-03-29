@@ -130,9 +130,9 @@ impl<T: IntLike> PointCodec<T> for IntegerOffsetColumn<T> {
         RawVal::Int(elem.to_i64().unwrap() + self.offset)
     }
 
-    fn is_order_preserving(&self) -> bool { true }
-
     fn max_cardinality(&self) -> usize { self.maximum }
+
+    fn is_order_preserving(&self) -> bool { true }
 }
 
 impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {
@@ -160,6 +160,8 @@ impl<T: IntLike> ColumnCodec for IntegerOffsetColumn<T> {
         // TODO(clemens): Underflow. Check for this in query planner?
         RawVal::Int(val - self.offset)
     }
+
+    fn is_summation_preserving(&self) -> bool { self.offset == 0 }
 
     fn encoding_type(&self) -> EncodingType { T::t() }
 }

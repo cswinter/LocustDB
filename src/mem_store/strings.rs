@@ -244,6 +244,8 @@ impl ColumnCodec for DictEncodedStrings {
         }
         RawVal::Int(-1)
     }
+
+    fn is_summation_preserving(&self) -> bool { false }
 }
 
 impl HeapSizeOf for DictEncodedStrings {

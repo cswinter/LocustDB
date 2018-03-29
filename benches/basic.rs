@@ -127,6 +127,11 @@ fn yt_14m_count_by_passenger_count(b: &mut test::Bencher) {
 }
 
 #[bench]
+fn yt_14m_sum_total_amt_group_by_passenger_count(b: &mut test::Bencher) {
+    bench_query_ytd_14m(b, "select Passenger_Count, sum(Total_Amt) from test;");
+}
+
+#[bench]
 fn yt_14m_select_passenger_count_sparse_filter(b: &mut test::Bencher) {
     // there are a total of 718 entries with Passenger_Count = 0
     bench_query_ytd_14m(b, "select Passenger_Count from test where Passenger_Count < 1 limit 1000;");

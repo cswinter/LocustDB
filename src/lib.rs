@@ -1,4 +1,4 @@
-#![feature(conservative_impl_trait, fn_traits, integer_atomics, refcell_replace_swap)]
+#![feature(conservative_impl_trait, fn_traits, integer_atomics, refcell_replace_swap, trait_alias)]
 #[macro_use]
 extern crate nom;
 #[macro_use]
