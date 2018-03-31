@@ -3,9 +3,11 @@ use std::sync::Arc;
 
 // use rocksdb::{DB, Options, WriteBatch, IteratorMode, Direction};
 // use tempdir::TempDir;
+use QueryResult;
+use QueryError;
 use disk_store::db::*;
 use disk_store::noop_storage::NoopStorage;
-use engine::query_task::{QueryResult, QueryTask};
+use engine::query_task::QueryTask;
 use futures::*;
 use futures_channel::oneshot;
 use ingest::csv_loader::CSVIngestionTask;
@@ -14,7 +16,7 @@ use mem_store::table::TableStats;
 use nom;
 use scheduler::*;
 use syntax::parser;
-use trace::Trace;
+use trace::{Trace, TraceBuilder};
 
 pub struct Ruba {
     inner_ruba: Arc<InnerRuba>
@@ -32,18 +34,27 @@ impl Ruba {
     }
 
     // TODO(clemens): proper error handling throughout query stack. panics! panics everywhere!
-    pub fn run_query(&self, query: &str) -> impl Future<Item=(QueryResult, Trace), Error=oneshot::Canceled> {
+    pub fn run_query(&self, query: &str) -> Box<Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
         let (sender, receiver) = oneshot::channel();
 
         // TODO(clemens): perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query.as_bytes()) {
             nom::IResult::Done(remaining, query) => {
                 if !remaining.is_empty() {
-                    panic!("Error parsing query. Bytes remaining: {:?}", &remaining);
+                    let error = match str::from_utf8(remaining) {
+                        Ok(chars) => QueryError::SytaxErrorCharsRemaining(chars.to_owned()),
+                        Err(_) => QueryError::SyntaxErrorBytesRemaining(remaining.to_vec()),
+                    };
+                    return Box::new(future::ok((Err(error), TraceBuilder::new("empty".to_owned()).finalize())));
                 }
                 query
             }
-            err => panic!("Failed to parse query! {:?}", err),
+            nom::IResult::Error(err) => return Box::new(future::ok((
+                Err(QueryError::ParseError(format!("{:?}", err))),
+                TraceBuilder::new("empty".to_owned()).finalize()))),
+            nom::IResult::Incomplete(needed)=> return Box::new(future::ok((
+                Err(QueryError::ParseError(format!("Incomplete. Needed: {:?}", needed))),
+                TraceBuilder::new("empty".to_owned()).finalize()))),
         };
 
         // TODO(clemens): A table may not exist on all nodes, so querying empty table is valid and should return empty result.
@@ -51,7 +62,7 @@ impl Ruba {
             .expect(&format!("Table {} does not exist!", &query.table));
         let task = QueryTask::new(query, data, SharedSender::new(sender));
         let trace_receiver = self.schedule(task);
-        receiver.join(trace_receiver)
+        Box::new(receiver.join(trace_receiver))
     }
 
     pub fn load_csv(&self,

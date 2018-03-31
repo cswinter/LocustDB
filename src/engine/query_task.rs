@@ -6,6 +6,8 @@ use std::mem;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 
+use ::QueryError;
+use QueryResult;
 use engine::aggregator::*;
 use engine::batch_merging::*;
 use engine::query::Query;
@@ -42,7 +44,7 @@ pub struct QueryState<'a> {
     rows_collected: usize,
 }
 
-pub struct QueryResult {
+pub struct QueryOutput {
     pub colnames: Vec<String>,
     pub rows: Vec<Vec<RawVal>>,
     pub stats: QueryStats,
@@ -113,19 +115,29 @@ impl QueryTask {
             trace_start!("Batch {}", id);
             rows_scanned += batch.cols().get(0).map_or(0, |c| c.len());
             let batch = QueryTask::prepare_batch(&self.referenced_cols, batch);
-            let mut batch_result = if self.aggregate.is_empty() {
+            let mut batch_result = match if self.aggregate.is_empty() {
                 self.query.run(&batch)
             } else {
                 self.query.run_aggregate(&batch)
+            } {
+                Ok(result) => result,
+                Err(error) => {
+                    self.fail_with(error);
+                    return;
+                }
             };
             rows_collected += batch_result.len();
+
             // Merge only with previous batch results of same level to get O(n log n) complexity
-            loop {
-                if !batch_results.is_empty() && batch_results.last().unwrap().level == batch_result.level {
-                    batch_result = combine(batch_results.pop().unwrap(), batch_result, self.combined_limit());
-                } else { break; }
+            while let Some(br) = batch_results.pop() {
+                if br.level == batch_result.level {
+                    batch_result = combine(br, batch_result, self.combined_limit());
+                } else {
+                    batch_results.push(br);
+                }
             }
             batch_results.push(batch_result);
+
             if self.completed.load(Ordering::SeqCst) {
                 return;
             }
@@ -167,9 +179,17 @@ impl QueryTask {
             // TODO(clemens): Handle empty table
             let full_result = QueryTask::combine_results(owned_results, self.combined_limit()).unwrap();
             let final_result = self.convert_to_output_format(&full_result, state.rows_scanned);
-            self.sender.send(final_result);
+            self.sender.send(Ok(final_result));
             self.completed.store(true, Ordering::SeqCst);
         }
+    }
+
+    fn fail_with(&self, error: QueryError) {
+        let mut _state = self.unsafe_state.lock().unwrap();
+        if self.completed.load(Ordering::SeqCst) { return; }
+        self.completed.store(true, Ordering::SeqCst);
+        self.batch_index.store(self.batches.len(), Ordering::SeqCst);
+        self.sender.send(Err(error));
     }
 
     fn sufficient_rows(&self, rows_collected: usize) -> bool {
@@ -184,7 +204,7 @@ impl QueryTask {
 
     fn convert_to_output_format(&self,
                                 full_result: &BatchResult,
-                                rows_scanned: usize) -> QueryResult {
+                                rows_scanned: usize) -> QueryOutput {
         let limit = self.query.limit.limit as usize;
         let offset = self.query.limit.offset as usize;
         let mut result_rows = Vec::new();
@@ -200,7 +220,7 @@ impl QueryTask {
             result_rows.push(record);
         }
 
-        QueryResult {
+        QueryOutput {
             colnames: self.output_colnames.clone(),
             rows: result_rows,
             stats: QueryStats {

@@ -5,6 +5,7 @@ extern crate heapsize;
 extern crate time;
 extern crate nom;
 extern crate futures;
+extern crate failure;
 
 mod print_results;
 mod fmt_table;
@@ -14,6 +15,7 @@ use std::env;
 use futures::executor::block_on;
 use ruba::{Ruba, TableStats};
 use time::precise_time_ns;
+use failure::Fail;
 
 const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
@@ -80,7 +82,18 @@ fn repl(ruba: &Ruba) {
                 if print_trace {
                     trace.print();
                 }
-                print_results::print_query_result(&result);
+                match result {
+                    Ok(output) => print_results::print_query_result(&output),
+                    Err(mut fail) =>{
+                        println!("{}", fail);
+                        while let Some(cause) = fail.cause() {
+                            println!("{}", cause);
+                            if let Some(bt) = cause.backtrace() {
+                                println!("{}", bt);
+                            }
+                        }
+                    }
+                }
             }
             _ => println!("Error: Query execution was canceled!"),
         }

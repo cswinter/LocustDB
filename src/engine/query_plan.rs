@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use syntax::expression::*;
 
+use ::QueryError;
 use bit_vec::BitVec;
 use engine::aggregation_operator::*;
 use engine::aggregator::Aggregator;
@@ -95,10 +96,10 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
 impl<'a> QueryPlan<'a> {
     pub fn create_query_plan<'b>(expr: &Expr,
                                  columns: &HashMap<&'b str, &'b Column>,
-                                 filter: Filter) -> (QueryPlan<'b>, Type<'b>) {
+                                 filter: Filter) -> Result<(QueryPlan<'b>, Type<'b>), QueryError> {
         use self::Expr::*;
         use self::FuncType::*;
-        match *expr {
+        Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
                     let t = c.data().full_type();
@@ -111,11 +112,11 @@ impl<'a> QueryPlan<'a> {
                         (Some(c), Filter::Indices(f)) => (QueryPlan::IndexEncoded(c, f), t.mutable()),
                     }
                 }
-                None => panic!("Not implemented")//VecOperator::Constant(VecValue::Constant(RawVal::Null)),
+                None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
             }
             Func(LT, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone())?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
@@ -126,16 +127,16 @@ impl<'a> QueryPlan<'a> {
                                 QueryPlan::LessThanVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
                         } else {
-                            unimplemented!()
+                            bail!(QueryError::NotImplemented, "< operator only implemented for column < constant")
                         };
                         (plan, Type::new(BasicType::Boolean, None).mutable())
                     }
-                    _ => panic!("type error: {:?} < {:?}", type_lhs, type_rhs)
+                    _ => bail!(QueryError::TypeError, "{:?} < {:?}", type_lhs, type_rhs)
                 }
             }
             Func(Equals, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone())?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
@@ -146,7 +147,7 @@ impl<'a> QueryPlan<'a> {
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
                         } else {
-                            unimplemented!()
+                            bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
                         };
                         (plan, Type::new(BasicType::Boolean, None).mutable())
                     }
@@ -159,34 +160,40 @@ impl<'a> QueryPlan<'a> {
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
                         } else {
-                            unimplemented!()
+                            bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
                         };
                         (plan, Type::new(BasicType::Boolean, None).mutable())
                     }
-                    _ => panic!("type error: {:?} = {:?}", type_lhs, type_rhs)
+                    _ => bail!(QueryError::TypeError, "{:?} = {:?}", type_lhs, type_rhs)
                 }
             }
             Func(Or, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
-                assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone())?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter)?;
+                if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
+                    bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
+                }
                 (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
             Func(And, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone());
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter);
-                assert!(type_lhs.decoded == BasicType::Boolean && type_rhs.decoded == BasicType::Boolean);
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns, filter.clone())?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns, filter)?;
+                if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
+                    bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
+                }
                 (QueryPlan::And(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
             Const(ref v) => (QueryPlan::Constant(v.clone()), Type::scalar(v.get_type())),
-            ref x => panic!("{:?}.compile_vec() not implemented", x),
-        }
+            ref x => bail!(QueryError::NotImplemented, "{:?}.compile_vec()", x),
+        })
     }
 
     pub fn compile_grouping_key<'b>(exprs: &[Expr],
                                     columns: &HashMap<&'b str, &'b Column>,
-                                    filter: Filter) -> (QueryPlan<'b>, Type<'b>) {
-        assert!(exprs.len() == 1);
+                                    filter: Filter) -> Result<(QueryPlan<'b>, Type<'b>), QueryError> {
+        if exprs.len() != 1 {
+            bail!(QueryError::NotImplemented, "Can only group by a single column. Actual: {}", exprs.len())
+        }
         QueryPlan::create_query_plan(&exprs[0], columns, filter)
     }
 }

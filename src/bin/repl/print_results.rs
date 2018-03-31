@@ -1,7 +1,7 @@
 use fmt_table::fmt_table;
 use ruba::*;
 
-pub fn print_query_result(results: &QueryResult) {
+pub fn print_query_result(results: &QueryOutput) {
     let rt = results.stats.runtime_ns;
     let fmt_time = if rt < 10_000 {
         format!("{}ns", rt)

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::iter::Iterator;
 use std::rc::Rc;
 
+use ::QueryError;
 use engine::aggregation_operator::*;
 use engine::aggregator::*;
 use engine::batch_merging::*;
@@ -29,8 +30,8 @@ pub struct Query {
 
 impl Query {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> BatchResult<'a> {
-        let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None);
+    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> Result<BatchResult<'a>, QueryError> {
+        let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None)?;
         // println!("filter: {:?}", filter_plan);
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
@@ -43,7 +44,7 @@ impl Query {
         if let Some(index) = self.order_by_index {
             // TODO(clemens): Reuse sort_column for result
             // TODO(clemens): Optimization: sort directly if only single column selected
-            let (plan, _) = QueryPlan::create_query_plan(&self.select[index], columns, filter.clone());
+            let (plan, _) = QueryPlan::create_query_plan(&self.select[index], columns, filter.clone())?;
             let mut compiled = query_plan::prepare(plan);
             let sort_column = compiled.execute().order_preserving();
             let mut sort_indices = match filter {
@@ -53,7 +54,7 @@ impl Query {
                     .map(|x| x.0)
                     .collect(),
                 Filter::None => (0..sort_column.len()).collect(),
-                _ => panic!("surely this will never happen :)"),
+                _ => bail!(QueryError::FatalError, "filter expression returned index list"),
             };
             if self.order_desc {
                 sort_column.sort_indices_desc(&mut sort_indices);
@@ -64,27 +65,27 @@ impl Query {
             filter = Filter::Indices(Rc::new(sort_indices));
         }
         for expr in &self.select {
-            let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone());
+            let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone())?;
             //println!("select: {:?}", plan);
             let mut compiled = query_plan::prepare(plan);
             result.push(compiled.execute().decode());
         }
 
-        BatchResult {
+        Ok(BatchResult {
             group_by: None,
             sort_by: self.order_by_index,
             select: result,
             aggregators: Vec::with_capacity(0),
             level: 0,
             batch_count: 1,
-        }
+        })
     }
 
     #[inline(never)] // produces more useful profiles
-    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> BatchResult<'a> {
+    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> Result<BatchResult<'a>, QueryError> {
         trace_start!("run_aggregate");
         trace_start!("filter");
-        let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None);
+        let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None)?;
 
         // TODO(clemens): type check
         let mut compiled_filter = query_plan::prepare(filter_plan);
@@ -95,7 +96,7 @@ impl Query {
         };
 
         trace_replace!("grouping_key");
-        let (grouping_key_plan, _) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone());
+        let (grouping_key_plan, _) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone())?;
         let mut compiled_gk = query_plan::prepare(grouping_key_plan);
         let grouping_key = compiled_gk.execute();
         let (grouping, max_index, groups) = grouping(grouping_key);
@@ -109,20 +110,20 @@ impl Query {
         let mut result = Vec::new();
         for &(aggregator, ref expr) in &self.aggregate {
             trace_start!("aggregator {:?}", aggregator);
-            let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns, filter.clone());
+            let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns, filter.clone())?;
             let mut compiled = query_plan::prepare_aggregation(plan, plan_type, &grouping, max_index, aggregator);
             result.push(compiled.execute().index_decode(&grouping_sort_indices));
         }
 
         trace_replace!("final decode");
-        BatchResult {
+        Ok(BatchResult {
             group_by: Some(groups.index_decode(&grouping_sort_indices)),
             sort_by: None,
             select: result,
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
             level: 0,
             batch_count: 1,
-        }
+        })
     }
 
     pub fn is_select_star(&self) -> bool {
