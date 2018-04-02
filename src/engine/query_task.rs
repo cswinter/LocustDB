@@ -134,6 +134,7 @@ impl QueryTask {
                     batch_result = combine(br, batch_result, self.combined_limit());
                 } else {
                     batch_results.push(br);
+                    break;
                 }
             }
             batch_results.push(batch_result);
@@ -211,8 +212,10 @@ impl QueryTask {
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
             let mut record = Vec::with_capacity(self.output_colnames.len());
-            if let Some(ref g) = full_result.group_by {
-                record.push(g.get_raw(i));
+            if let Some(ref gs) = full_result.group_by {
+                for g in gs {
+                    record.push(g.get_raw(i));
+                }
             }
             for col in &full_result.select {
                 record.push(col.get_raw(i));

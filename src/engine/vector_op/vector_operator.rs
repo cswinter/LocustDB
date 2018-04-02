@@ -138,6 +138,22 @@ impl<'a> VecOperator<'a> for Decode<'a> {
 }
 
 
+pub struct DecodeWith<'a> { plan: BoxedOperator<'a>, codec: &'a ColumnCodec }
+
+impl<'a> DecodeWith<'a> {
+    pub fn new(plan: BoxedOperator<'a>, codec: &'a ColumnCodec) -> DecodeWith<'a> {
+        DecodeWith { plan, codec }
+    }
+}
+
+impl<'a> VecOperator<'a> for DecodeWith<'a> {
+    fn execute(&mut self) -> TypedVec<'a> {
+        let encoded = self.plan.execute();
+        self.codec.unwrap_decode(&encoded)
+    }
+}
+
+
 pub struct Constant { val: RawVal }
 
 impl Constant {
@@ -149,6 +165,14 @@ impl Constant {
 impl<'a> VecOperator<'a> for Constant {
     fn execute(&mut self) -> TypedVec<'static> {
         TypedVec::Constant(self.val.clone())
+    }
+}
+
+pub struct VectorConstant<'a> { pub val: TypedVec<'a> }
+
+impl<'a> VecOperator<'a> for VectorConstant<'a> {
+    fn execute(&mut self) -> TypedVec<'a> {
+        self.val.clone()
     }
 }
 
@@ -173,11 +197,45 @@ impl<'a> VecOperator<'a> {
             _ => panic!("equals_vs not supported for type {:?}", t),
         }
     }
+
+    pub fn bit_shift_left_add(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>, shift_amount: i64) -> BoxedOperator<'a> {
+        Box::new(ParameterizedVecVecIntegerOperator::<BitShiftLeftAdd>::new(lhs, rhs, shift_amount))
+    }
+
+    pub fn bit_unpack(inner: BoxedOperator<'a>, shift: u8, width: u8) -> BoxedOperator<'a> {
+        Box::new(BitUnpackOperator::new(inner, shift, width))
+    }
+
+    pub fn type_conversion(inner: BoxedOperator<'a>, initial_type: EncodingType, target_type: EncodingType) -> BoxedOperator<'a> {
+        // disallow potentially lossy conversions?
+        use self::EncodingType::*;
+        match (initial_type, target_type) {
+            (U8, U8) | (U16, U16) | (U32, U32) | (I64, I64) => inner,
+
+            (U8, U16) => Box::new(TypeConversionOperator::<u8, u16>::new(inner)),
+            (U8, U32) => Box::new(TypeConversionOperator::<u8, u32>::new(inner)),
+            (U8, I64) => Box::new(TypeConversionOperator::<u8, i64>::new(inner)),
+
+            (U16, U8) => Box::new(TypeConversionOperator::<u16, u8>::new(inner)),
+            (U16, U32) => Box::new(TypeConversionOperator::<u16, u32>::new(inner)),
+            (U16, I64) => Box::new(TypeConversionOperator::<u16, i64>::new(inner)),
+
+            (U32, U8) => Box::new(TypeConversionOperator::<u32, u8>::new(inner)),
+            (U32, U16) => Box::new(TypeConversionOperator::<u32, u16>::new(inner)),
+            (U32, I64) => Box::new(TypeConversionOperator::<u32, i64>::new(inner)),
+
+            (I64, U8) => Box::new(TypeConversionOperator::<i64, u8>::new(inner)),
+            (I64, U16) => Box::new(TypeConversionOperator::<i64, u16>::new(inner)),
+            (I64, U32) => Box::new(TypeConversionOperator::<i64, u32>::new(inner)),
+
+            _ => panic!("type_conversion not supported for types {:?} -> {:?}", initial_type, target_type)
+        }
+    }
 }
 
 
 struct VecConstBoolOperator<'a, T: 'a, U, Op> where
-    T: VecType<'a, T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+    T: VecType<T>, U: ConstType<U>, Op: BoolOperation<T, U> {
     lhs: BoxedOperator<'a>,
     rhs: BoxedOperator<'a>,
     t: PhantomData<T>,
@@ -186,7 +244,7 @@ struct VecConstBoolOperator<'a, T: 'a, U, Op> where
 }
 
 impl<'a, T: 'a, U, Op> VecConstBoolOperator<'a, T, U, Op> where
-    T: VecType<'a, T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+    T: VecType<T>, U: ConstType<U>, Op: BoolOperation<T, U> {
     fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>) -> VecConstBoolOperator<'a, T, U, Op> {
         VecConstBoolOperator {
             lhs,
@@ -199,12 +257,12 @@ impl<'a, T: 'a, U, Op> VecConstBoolOperator<'a, T, U, Op> where
 }
 
 impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<'a, T, U, Op> where
-    T: VecType<'a, T>, U: ConstType<U>, Op: BoolOperation<T, U> {
+    T: VecType<T>, U: ConstType<U>, Op: BoolOperation<T, U> {
     fn execute(&mut self) -> TypedVec<'a> {
         let lhs = self.lhs.execute();
         let rhs = self.rhs.execute();
-        let data = T::cast(&lhs);
-        let c = U::cast(&rhs);
+        let data = T::unwrap(&lhs);
+        let c = U::unwrap(&rhs);
         let mut output = BitVec::with_capacity(data.len());
         for d in data {
             output.push(Op::perform(d, &c));
@@ -353,3 +411,134 @@ impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
         TypedVec::Constant(result)
     }
 }
+
+
+struct ParameterizedVecVecIntegerOperator<'a, Op> {
+    lhs: BoxedOperator<'a>,
+    rhs: BoxedOperator<'a>,
+    parameter: i64,
+    op: PhantomData<Op>,
+}
+
+impl<'a, Op> ParameterizedVecVecIntegerOperator<'a, Op> {
+    fn new(lhs: BoxedOperator<'a>, rhs: BoxedOperator<'a>, parameter: i64) -> ParameterizedVecVecIntegerOperator<'a, Op> {
+        ParameterizedVecVecIntegerOperator {
+            lhs,
+            rhs,
+            parameter,
+            op: PhantomData,
+        }
+    }
+}
+
+impl<'a, Op: ParameterizedIntegerOperation> VecOperator<'a> for ParameterizedVecVecIntegerOperator<'a, Op> {
+    fn execute(&mut self) -> TypedVec<'a> {
+        let lhs = self.lhs.execute();
+        let rhs = self.rhs.execute();
+        let lhs = lhs.cast_ref_i64();
+        let rhs = rhs.cast_ref_i64();
+        let mut output = Vec::with_capacity(lhs.len());
+        for (l, r) in lhs.iter().zip(rhs) {
+            output.push(Op::perform(*l, *r, self.parameter));
+        }
+        TypedVec::Integer(output)
+    }
+}
+
+struct BitUnpackOperator<'a> {
+    inner: BoxedOperator<'a>,
+    shift: u8,
+    width: u8,
+}
+
+impl<'a> BitUnpackOperator<'a> {
+    pub fn new(inner: BoxedOperator<'a>, shift: u8, width: u8) -> BitUnpackOperator<'a> {
+        BitUnpackOperator {
+            inner,
+            shift,
+            width,
+        }
+    }
+}
+
+impl<'a> VecOperator<'a> for BitUnpackOperator<'a> {
+    fn execute(&mut self) -> TypedVec<'a> {
+        let data = self.inner.execute();
+        let data = data.cast_ref_i64();
+        let mask = (1 << self.width) - 1;
+        let mut output = Vec::with_capacity(data.len());
+        for d in data {
+            output.push((d >> self.shift) & mask);
+        }
+        TypedVec::Integer(output)
+    }
+}
+
+trait ParameterizedIntegerOperation {
+    fn perform(lhs: i64, rhs: i64, param: i64) -> i64;
+}
+
+struct BitShiftLeftAdd;
+
+impl ParameterizedIntegerOperation for BitShiftLeftAdd {
+    fn perform(lhs: i64, rhs: i64, param: i64) -> i64 { lhs + (rhs << param) }
+}
+
+
+struct TypeConversionOperator<'a, T, U> {
+    inner: BoxedOperator<'a>,
+    t: PhantomData<T>,
+    s: PhantomData<U>,
+}
+
+impl<'a, T, U> TypeConversionOperator<'a, T, U> {
+    pub fn new(inner: BoxedOperator<'a>) -> TypeConversionOperator<'a, T, U> {
+        TypeConversionOperator {
+            inner,
+            t: PhantomData,
+            s: PhantomData,
+        }
+    }
+}
+
+impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<'a, T, U> where
+    T: VecType<T> + Copy, U: VecType<U>, T: Cast<U> {
+    fn execute(&mut self) -> TypedVec<'a> {
+        let data = self.inner.execute();
+        let data = T::unwrap(&data);
+        let mut output = Vec::with_capacity(data.len());
+        for d in data {
+            output.push(d.cast());
+        }
+        U::wrap(output)
+    }
+}
+
+trait Cast<T> {
+    fn cast(self) -> T;
+}
+
+impl Cast<u8> for u16 { fn cast(self) -> u8 { self as u8 } }
+
+impl Cast<u8> for u32 { fn cast(self) -> u8 { self as u8 } }
+
+impl Cast<u8> for i64 { fn cast(self) -> u8 { self as u8 } }
+
+impl Cast<u16> for u8 { fn cast(self) -> u16 { u16::from(self) } }
+
+impl Cast<u16> for u32 { fn cast(self) -> u16 { self as u16 } }
+
+impl Cast<u16> for i64 { fn cast(self) -> u16 { self as u16 } }
+
+impl Cast<u32> for u8 { fn cast(self) -> u32 { u32::from(self) } }
+
+impl Cast<u32> for u16 { fn cast(self) -> u32 { u32::from(self) } }
+
+impl Cast<u32> for i64 { fn cast(self) -> u32 { self as u32 } }
+
+impl Cast<i64> for u8 { fn cast(self) -> i64 { i64::from(self) } }
+
+impl Cast<i64> for u16 { fn cast(self) -> i64 { i64::from(self) } }
+
+impl Cast<i64> for u32 { fn cast(self) -> i64 { i64::from(self) } }
+

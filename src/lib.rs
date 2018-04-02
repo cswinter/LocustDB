@@ -5,7 +5,8 @@ extern crate nom;
 extern crate serde_derive;
 #[macro_use]
 extern crate failure_derive;
-
+#[macro_use]
+extern crate log;
 extern crate bincode;
 extern crate bit_vec;
 extern crate failure;

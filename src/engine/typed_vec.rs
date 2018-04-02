@@ -7,6 +7,9 @@ use mem_store::point_codec::PointCodec;
 use mem_store::value::Val;
 
 
+// TODO(clemens): get rid of codec fields, let the query planner take care of this
+// TODO(clemens): shouldn't implement clone
+#[derive(Clone)]
 pub enum TypedVec<'a> {
     String(Vec<&'a str>),
     Integer(Vec<i64>),
@@ -76,20 +79,12 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn max_cardinality(&self) -> usize {
-        match *self {
-            EncodedU8(_, codec) | BorrowedEncodedU8(_, codec) => codec.max_cardinality(),
-            EncodedU16(_, codec) | BorrowedEncodedU16(_, codec) => codec.max_cardinality(),
-            EncodedU32(_, codec) | BorrowedEncodedU32(_, codec) => codec.max_cardinality(),
-            _ => unimplemented!("max_cardinality {:?}", self.get_type()),
-        }
-    }
-
     pub fn is_positive_integer(&self) -> bool {
         match *self {
             EncodedU8(_, _) | EncodedU16(_, _) | EncodedU32(_, _) |
             BorrowedEncodedU8(_, _) | BorrowedEncodedU16(_, _) |
             BorrowedEncodedU32(_, _) => true,
+            Integer(_) => true, // TODO(clemens): FIX THIS. Dreadful hack to make I64 work as grouping key without refactoring grouping code.
             // TODO(clemens): Constant etc.
             _ => false,
         }

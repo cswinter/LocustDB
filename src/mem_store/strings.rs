@@ -135,17 +135,14 @@ impl DictEncodedStrings {
                         -> DictEncodedStrings {
         assert!(unique_values.len() <= u16::MAX as usize);
 
-        let mapping: Vec<Option<String>> =
+        let mut mapping: Vec<Option<String>> =
             unique_values.into_iter().map(|o| o.map(|s| s.as_str().to_owned())).collect();
+        mapping.sort();
         let encoded_values: Vec<u16> = {
             let reverse_mapping: HashMap<Option<&String>, u16> =
                 mapping.iter().map(Option::as_ref).zip(0..).collect();
             strings.iter().map(|o| reverse_mapping[&o.as_ref().map(|x| &**x)]).collect()
         };
-
-        // println!("\tMapping: {}MB; values: {}MB",
-        //          mapping.heap_size_of_children() as f64 / 1024f64 / 1024f64,
-        //          encoded_values.heap_size_of_children() as f64 / 1024f64 / 1024f64);
 
         DictEncodedStrings {
             mapping,
@@ -200,8 +197,7 @@ impl PointCodec<u16> for DictEncodedStrings {
         RawVal::Str(self.mapping[elem as usize].as_ref().unwrap().to_string())
     }
 
-    // TODO(clemens): sort dictionary on creation to make encoding order preserving?
-    fn is_order_preserving(&self) -> bool { false }
+    fn is_order_preserving(&self) -> bool { true }
 
     fn max_cardinality(&self) -> usize { self.mapping.len() }
 }
@@ -211,12 +207,11 @@ impl ColumnCodec for DictEncodedStrings {
         TypedVec::BorrowedEncodedU16(&self.encoded_values, self as &PointCodec<u16>)
     }
 
+    fn unwrap_decode<'a>(&'a self, data: &TypedVec<'a>) -> TypedVec<'a> {
+        self.decode(data.cast_ref_u16().0)
+    }
+
     fn filter_encoded(&self, filter: &BitVec) -> TypedVec {
-        /*let filtered_values = self.encoded_values.iter().zip(filter.iter())
-            .filter(|&(_, select)| select)
-            .map(|(i, _)| *i)
-            .collect();
-        TypedVec::EncodedU16(filtered_values, self as &PointCodec<u16>)*/
         let mut result = Vec::with_capacity(self.encoded_values.len());
         for (encoded_value, selected) in self.encoded_values.iter().zip(filter) {
             if selected {
@@ -246,6 +241,8 @@ impl ColumnCodec for DictEncodedStrings {
     }
 
     fn is_summation_preserving(&self) -> bool { false }
+
+    fn encoding_range(&self) -> Option<(i64, i64)> { Some((0, self.mapping.len() as i64)) }
 }
 
 impl HeapSizeOf for DictEncodedStrings {

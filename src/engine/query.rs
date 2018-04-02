@@ -96,11 +96,12 @@ impl Query {
         };
 
         trace_replace!("grouping_key");
-        let (grouping_key_plan, _) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone())?;
+        let (grouping_key_plan, _, max_cardinality, decode_plans) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone())?;
         let mut compiled_gk = query_plan::prepare(grouping_key_plan);
         let grouping_key = compiled_gk.execute();
-        let (grouping, max_index, groups) = grouping(grouping_key);
-        let groups = groups.order_preserving();
+        let (grouping, max_index, groups) = grouping(grouping_key, max_cardinality as usize);
+        // TODO(clemens): fix for multiple groups
+        // let groups = groups.order_preserving();
 
         trace_replace!("group_ordering");
         let mut grouping_sort_indices = (0..groups.len()).collect();
@@ -111,13 +112,22 @@ impl Query {
         for &(aggregator, ref expr) in &self.aggregate {
             trace_start!("aggregator {:?}", aggregator);
             let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns, filter.clone())?;
-            let mut compiled = query_plan::prepare_aggregation(plan, plan_type, &grouping, max_index, aggregator);
+            let mut compiled = query_plan::prepare_aggregation(plan, plan_type, &grouping, max_index, aggregator)?;
             result.push(compiled.execute().index_decode(&grouping_sort_indices));
+        }
+
+        trace_replace!("decode grouping_key");
+        let mut grouping_columns = Vec::with_capacity(decode_plans.len());
+        for decode_plan in decode_plans {
+            let decoded = query_plan::prepare_asdf(decode_plan.clone(), &groups)
+                .execute()
+                .index_decode(&grouping_sort_indices);
+            grouping_columns.push(decoded);
         }
 
         trace_replace!("final decode");
         Ok(BatchResult {
-            group_by: Some(groups.index_decode(&grouping_sort_indices)),
+            group_by: Some(grouping_columns),
             sort_by: None,
             select: result,
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),

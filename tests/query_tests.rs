@@ -1,11 +1,15 @@
 extern crate ruba;
 extern crate futures;
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 
 use ruba::*;
 use futures::executor::block_on;
 
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
+    let _ = env_logger::try_init();
     let ruba = Ruba::memory_only();
     let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 40, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
@@ -13,6 +17,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
 }
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
+    let _ = env_logger::try_init();
     let ruba = Ruba::memory_only();
     let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", "default", 2, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
@@ -119,6 +124,34 @@ fn test_sum_2() {
             vec![2.into(), 1112.into()],
             vec![3.into(), 759.into()],
             vec![4.into(), 275.into()],
+        ],
+    )
+}
+
+#[test]
+fn test_multiple_group_by() {
+    test_query(
+        "select first_name, num, count(1) from default where num = 5;",
+        &[
+            vec!["Christina".into(), 5.into(), 1.into()],
+            vec!["Joshua".into(), 5.into(), 1.into()],
+        ],
+    )
+}
+
+#[test]
+fn test_multiple_group_by_2() {
+    test_query_ec(
+        "select enum, non_dense_ints, count(1) from default;",
+        &[
+            vec!["aa".into(), 0.into(), 2.into()],
+            vec!["aa".into(), 1.into(), 1.into()],
+            vec!["aa".into(), 2.into(), 1.into()],
+            vec!["aa".into(), 3.into(), 1.into()],
+            vec!["bb".into(), 1.into(), 1.into()],
+            vec!["bb".into(), 3.into(), 1.into()],
+            vec!["bb".into(), 4.into(), 1.into()],
+            vec!["cc".into(), 2.into(), 2.into()],
         ],
     )
 }

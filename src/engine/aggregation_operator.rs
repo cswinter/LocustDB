@@ -12,10 +12,9 @@ use seahash::SeaHasher;
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 
-pub fn grouping(grouping_key: TypedVec) -> (TypedVec, usize, TypedVec) {
+pub fn grouping(grouping_key: TypedVec, max_cardinality: usize) -> (TypedVec, usize, TypedVec) {
     // TODO(clemens): refine criterion
-    let max_cardinality = grouping_key.max_cardinality();
-    if max_cardinality < 1 << 12 && grouping_key.is_positive_integer() {
+    if max_cardinality < 1 << 16 && grouping_key.is_positive_integer() {
         match grouping_key.get_type() {
             EncodingType::U8 => {
                 let raw_groups = {
@@ -28,6 +27,13 @@ pub fn grouping(grouping_key: TypedVec) -> (TypedVec, usize, TypedVec) {
                 let raw_groups = {
                     let (data, encoding) = grouping_key.cast_ref_u16();
                     (unique(data, max_cardinality), encoding).into()
+                };
+                (grouping_key, max_cardinality, raw_groups)
+            }
+            EncodingType::I64 => {
+                let raw_groups = {
+                    let data = grouping_key.cast_ref_i64();
+                    unique(data, max_cardinality).into()
                 };
                 (grouping_key, max_cardinality, raw_groups)
             }
@@ -122,7 +128,7 @@ pub struct VecSum<'a, 'b, T: 'a, U> where 'a: 'b {
 }
 
 impl<'a, 'b, T: 'a, U: 'a> VecSum<'a, 'b, T, U> where
-    T: IntVecType<'a, T>, U: VecType<'a, U> + IntoUsize {
+    T: IntVecType<T>, U: VecType<U> + IntoUsize {
     pub fn boxed(input: BoxedOperator<'a>, grouping: &'b TypedVec<'a>, max_index: usize, dense_grouping: bool) -> Box<VecOperator<'a> + 'b> {
         Box::new(VecSum::<T, U> {
             input,
@@ -136,13 +142,13 @@ impl<'a, 'b, T: 'a, U: 'a> VecSum<'a, 'b, T, U> where
 }
 
 impl<'a, 'b, T: 'a, U: 'a> VecOperator<'a> for VecSum<'a, 'b, T, U> where
-    T: IntVecType<'a, T>, U: VecType<'a, U> + IntoUsize {
+    T: IntVecType< T>, U: VecType<U> + IntoUsize {
     fn execute(&mut self) -> TypedVec<'a> {
         // TODO(clemens): this is already computed in unique function, we should just reuse
         let mut modified = vec![false; self.max_index + 1];
         let input = self.input.execute();
-        let nums = T::cast(&input);
-        let grouping = U::cast(self.grouping);
+        let nums = T::unwrap(&input);
+        let grouping = U::unwrap(self.grouping);
         let mut result = vec![0; self.max_index + 1];
         for (i, n) in grouping.iter().zip(nums) {
             result[i.to_usize()] += Into::<i64>::into(*n);

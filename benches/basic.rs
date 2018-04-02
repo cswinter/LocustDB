@@ -60,3 +60,7 @@ fn yt_14m_select_star_limit_10000(b: &mut test::Bencher) {
     bench_query_ytd_14m(b, "select * from test limit 10000;");
 }
 
+#[bench]
+fn yt_14m_count_group_by_vendor_name_and_passenger_count(b: &mut test::Bencher) {
+    bench_query_ytd_14m(b, "select vendor_name, Passenger_Count, count(1) from test;");
+}
