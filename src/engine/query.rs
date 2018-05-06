@@ -1,16 +1,14 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
-use std::rc::Rc;
 
 use ::QueryError;
-use engine::aggregation_operator::*;
 use engine::aggregator::*;
 use engine::batch_merging::*;
 use engine::filter::Filter;
-use engine::query_plan::QueryPlan;
+use engine::query_plan::{QueryPlan, QueryExecutor};
 use engine::query_plan;
-use engine::typed_vec::TypedVec;
+use engine::types::EncodingType;
 use mem_store::column::Column;
 use syntax::expression::*;
 use syntax::limit::*;
@@ -31,50 +29,48 @@ pub struct Query {
 impl Query {
     #[inline(never)] // produces more useful profiles
     pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> Result<BatchResult<'a>, QueryError> {
-        let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None)?;
-        // println!("filter: {:?}", filter_plan);
-        // TODO(clemens): type check
-        let mut compiled_filter = query_plan::prepare(filter_plan);
-        let mut filter = match compiled_filter.execute() {
-            TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
-            _ => Filter::None,
-        };
+        let mut executor = QueryExecutor::default();
 
-        let mut result = Vec::new();
+        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, columns)?;
+        match filter_type.encoding_type() {
+            EncodingType::BitVec => {
+                let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor);
+                executor.set_filter(Filter::BitVec(compiled_filter));
+            }
+            _ => {}
+        }
+
+        let mut select = Vec::new();
         if let Some(index) = self.order_by_index {
             // TODO(clemens): Reuse sort_column for result
             // TODO(clemens): Optimization: sort directly if only single column selected
-            let (plan, _) = QueryPlan::create_query_plan(&self.select[index], columns, filter.clone())?;
-            let mut compiled = query_plan::prepare(plan);
-            let sort_column = compiled.execute().order_preserving();
-            let mut sort_indices = match filter {
-                Filter::BitVec(vec) => vec.iter()
-                    .enumerate()
-                    .filter(|x| x.1)
-                    .map(|x| x.0)
-                    .collect(),
-                Filter::None => (0..sort_column.len()).collect(),
-                _ => bail!(QueryError::FatalError, "filter expression returned index list"),
-            };
-            if self.order_desc {
-                sort_column.sort_indices_desc(&mut sort_indices);
-            } else {
-                sort_column.sort_indices_asc(&mut sort_indices);
-            }
-            sort_indices.truncate((self.limit.limit + self.limit.offset) as usize);
-            filter = Filter::Indices(Rc::new(sort_indices));
+            let (plan, _) = query_plan::order_preserving(
+                QueryPlan::create_query_plan(&self.select[index], columns)?);
+            let sort_column = query_plan::prepare(plan.clone(), &mut executor);
+            let sort_indices = query_plan::prepare(
+                QueryPlan::SortIndices(
+                    Box::new(QueryPlan::ReadBuffer(sort_column)),
+                    self.order_desc),
+                &mut executor);
+            executor.new_stage();
+            executor.set_filter(Filter::Indices(sort_indices));
         }
         for expr in &self.select {
-            let (plan, _) = QueryPlan::create_query_plan(expr, columns, filter.clone())?;
-            //println!("select: {:?}", plan);
-            let mut compiled = query_plan::prepare(plan);
-            result.push(compiled.execute().decode());
+            let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
+            if let Some(codec) = plan_type.codec {
+                plan = QueryPlan::DecodeWith(Box::new(plan), codec);
+            }
+            select.push(query_plan::prepare(plan, &mut executor));
         }
+
+        //println!("{}", &executor);
+        let mut results = executor.run();
+        let select = select.into_iter().map(|i| results.collect(i)).collect();
 
         Ok(BatchResult {
             group_by: None,
             sort_by: self.order_by_index,
-            select: result,
+            select,
             aggregators: Vec::with_capacity(0),
             level: 0,
             batch_count: 1,
@@ -84,52 +80,92 @@ impl Query {
     #[inline(never)] // produces more useful profiles
     pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> Result<BatchResult<'a>, QueryError> {
         trace_start!("run_aggregate");
-        trace_start!("filter");
-        let (filter_plan, _) = QueryPlan::create_query_plan(&self.filter, columns, Filter::None)?;
 
-        // TODO(clemens): type check
-        let mut compiled_filter = query_plan::prepare(filter_plan);
+        let mut executor = QueryExecutor::default();
 
-        let filter = match compiled_filter.execute() {
-            TypedVec::Boolean(b) => Filter::BitVec(Rc::new(b)),
-            _ => Filter::None,
-        };
+        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, columns)?;
+        match filter_type.encoding_type() {
+            EncodingType::BitVec => {
+                let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor);
+                executor.set_filter(Filter::BitVec(compiled_filter));
+            }
+            _ => {}
+        }
 
-        trace_replace!("grouping_key");
-        let (grouping_key_plan, _, max_cardinality, decode_plans) = QueryPlan::compile_grouping_key(&self.select, columns, filter.clone())?;
-        let mut compiled_gk = query_plan::prepare(grouping_key_plan);
-        let grouping_key = compiled_gk.execute();
-        let (grouping, max_index, groups) = grouping(grouping_key, max_cardinality as usize);
+        let (grouping_key_plan, grouping_key_type, max_grouping_key, decode_plans) =
+            QueryPlan::compile_grouping_key(&self.select, columns)?;
+        let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
+
+        let (encoded_group_by_column, grouping_key, aggregation_cardinality) =
+        // TODO(clemens): refine criterion
+        // TODO(clemens): can often collect group_by from non-zero positions in aggregation result
+            if max_grouping_key < 1 << 16 && grouping_key_type.is_positive_integer() {
+                let max_grouping_key_buf = executor.new_buffer();
+                (query_plan::prepare_unique(
+                    raw_grouping_key,
+                    grouping_key_type.encoding_type(),
+                    max_grouping_key as usize,
+                    &mut executor),
+                 raw_grouping_key,
+                 max_grouping_key_buf)
+            } else {
+                query_plan::prepare_hashmap_grouping(
+                    raw_grouping_key,
+                    grouping_key_type.encoding_type(),
+                    max_grouping_key as usize,
+                    &mut executor)
+            };
+
+        executor.set_encoded_group_by(encoded_group_by_column);
         // TODO(clemens): fix for multiple groups
         // let groups = groups.order_preserving();
 
-        trace_replace!("group_ordering");
-        let mut grouping_sort_indices = (0..groups.len()).collect();
-        groups.sort_indices_asc(&mut grouping_sort_indices);
-
-        trace_replace!("aggregate");
         let mut result = Vec::new();
         for &(aggregator, ref expr) in &self.aggregate {
             trace_start!("aggregator {:?}", aggregator);
-            let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns, filter.clone())?;
-            let mut compiled = query_plan::prepare_aggregation(plan, plan_type, &grouping, max_index, aggregator)?;
-            result.push(compiled.execute().index_decode(&grouping_sort_indices));
+            let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
+            // TODO(clemens): Use more precise aggregation_cardinality instead of max_grouping_key
+            let mut aggregate = query_plan::prepare_aggregation(
+                plan,
+                plan_type,
+                grouping_key,
+                grouping_key_type.encoding_type(),
+                max_grouping_key as usize,
+                aggregator,
+                &mut executor)?;
+            result.push(aggregate)
+            // TODO(clemens): renable
+            // result.push(compiled.execute().index_decode(&grouping_sort_indices));
         }
 
         trace_replace!("decode grouping_key");
         let mut grouping_columns = Vec::with_capacity(decode_plans.len());
         for decode_plan in decode_plans {
-            let decoded = query_plan::prepare_asdf(decode_plan.clone(), &groups)
-                .execute()
-                .index_decode(&grouping_sort_indices);
+            let decoded = query_plan::prepare(decode_plan.clone(), &mut executor);
+            // TODO(clemens): renable
+            // .index_decode(&grouping_sort_indices);
             grouping_columns.push(decoded);
         }
 
+        // TODO(clemens): sort if not already in sort order
+        /*let mut grouping_sort_indices = QueryPlan::create_query_plan(
+            QueryPlan::SortIndices(
+                Box::new(QueryPlan::ReadBuffer(group_by_column)),
+                (self.limit.limit + self.limit.offset) as usize,
+                false);
+        executor.new_stage();
+        executor.set_filter(Filter::Indices(sort_indices));*/
+
+        //println!("{}", &executor);
+        let mut results = executor.run();
+        let select = result.into_iter().map(|i| results.collect(i)).collect();
+        let group_by = grouping_columns.into_iter().map(|i| results.collect(i)).collect();
+
         trace_replace!("final decode");
         Ok(BatchResult {
-            group_by: Some(grouping_columns),
+            group_by: Some(group_by),
             sort_by: None,
-            select: result,
+            select: select,
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
             level: 0,
             batch_count: 1,

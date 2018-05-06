@@ -132,8 +132,6 @@ impl<'a, T: IntLike + IntVecType<T> + 'a> PointCodec<T> for IntegerOffsetColumn<
     }
 
     fn max_cardinality(&self) -> usize { self.maximum }
-
-    fn is_order_preserving(&self) -> bool { true }
 }
 
 impl<'a, T: IntLike + IntVecType<T> + 'a> ColumnCodec for IntegerOffsetColumn<T> {
@@ -167,9 +165,9 @@ impl<'a, T: IntLike + IntVecType<T> + 'a> ColumnCodec for IntegerOffsetColumn<T>
     }
 
     fn is_summation_preserving(&self) -> bool { self.offset == 0 }
-
+    fn is_order_preserving(&self) -> bool { true }
+    fn is_positive_integer(&self) -> bool { true }
     fn encoding_type(&self) -> EncodingType { T::t() }
-
     fn encoding_range(&self) -> Option<(i64, i64)> { Some((0, self.maximum as i64)) }
 }
 

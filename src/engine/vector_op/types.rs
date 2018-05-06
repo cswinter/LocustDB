@@ -1,9 +1,11 @@
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::mem;
 
 use engine::typed_vec::TypedVec;
 use ingest::raw_val::RawVal;
 use mem_store::point_codec::PointCodec;
+use num::PrimInt;
 
 
 pub trait VecType<T>: PartialEq + PartialOrd + Copy + Debug {
@@ -47,9 +49,9 @@ impl<'c> VecType<&'c str> for &'c str {
 }
 
 
-pub trait IntVecType<T>: VecType<T> + Into<i64> + Copy {}
+pub trait IntVecType<T>: VecType<T> + Into<i64> + PrimInt + Copy + Hash + 'static {}
 
-impl<T> IntVecType<T> for T where T: VecType<T> + Into<i64> + Copy {}
+impl<T> IntVecType<T> for T where T: VecType<T> + Into<i64> + PrimInt + Copy + Hash + 'static {}
 
 pub trait ConstType<T> {
     fn unwrap(vec: &TypedVec) -> T;
@@ -65,19 +67,23 @@ impl ConstType<String> for String {
 
 
 pub trait IntoUsize {
-    fn to_usize(&self) -> usize;
+    fn cast_usize(&self) -> usize;
 }
 
 impl IntoUsize for u8 {
-    fn to_usize(&self) -> usize { *self as usize }
+    fn cast_usize(&self) -> usize { *self as usize }
 }
 
 impl IntoUsize for u16 {
-    fn to_usize(&self) -> usize { *self as usize }
+    fn cast_usize(&self) -> usize { *self as usize }
 }
 
 impl IntoUsize for u32 {
-    fn to_usize(&self) -> usize { *self as usize }
+    fn cast_usize(&self) -> usize { *self as usize }
+}
+
+impl IntoUsize for i64 {
+    fn cast_usize(&self) -> usize { *self as usize }
 }
 
 
@@ -88,5 +94,4 @@ impl<T: Send + Sync> PointCodec<T> for IdentityCodec {
     fn index_decode(&self, _data: &[T], _indices: &[usize]) -> TypedVec { unimplemented!() }
     fn to_raw(&self, _elem: T) -> RawVal { unimplemented!() }
     fn max_cardinality(&self) -> usize { unimplemented!() }
-    fn is_order_preserving(&self) -> bool { unimplemented!() }
 }

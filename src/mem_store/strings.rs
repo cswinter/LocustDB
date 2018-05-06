@@ -197,8 +197,6 @@ impl PointCodec<u16> for DictEncodedStrings {
         RawVal::Str(self.mapping[elem as usize].as_ref().unwrap().to_string())
     }
 
-    fn is_order_preserving(&self) -> bool { true }
-
     fn max_cardinality(&self) -> usize { self.mapping.len() }
 }
 
@@ -241,7 +239,8 @@ impl ColumnCodec for DictEncodedStrings {
     }
 
     fn is_summation_preserving(&self) -> bool { false }
-
+    fn is_order_preserving(&self) -> bool { true }
+    fn is_positive_integer(&self) -> bool { true }
     fn encoding_range(&self) -> Option<(i64, i64)> { Some((0, self.mapping.len() as i64)) }
 }
 

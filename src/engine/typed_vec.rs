@@ -2,6 +2,7 @@ use std::string;
 
 use bit_vec::BitVec;
 use engine::types::*;
+use engine::vector_op::types::IdentityCodec;
 use ingest::raw_val::RawVal;
 use mem_store::point_codec::PointCodec;
 use mem_store::value::Val;
@@ -16,6 +17,7 @@ pub enum TypedVec<'a> {
     Mixed(Vec<Val<'a>>),
     Raw(Vec<RawVal>),
     Boolean(BitVec),
+    USize(Vec<usize>),
 
     BorrowedEncodedU8(&'a [u8], &'a PointCodec<u8>),
     BorrowedEncodedU16(&'a [u16], &'a PointCodec<u16>),
@@ -46,6 +48,7 @@ impl<'a> TypedVec<'a> {
             BorrowedEncodedU8(v, _) => v.len(),
             BorrowedEncodedU16(v, _) => v.len(),
             BorrowedEncodedU32(v, _) => v.len(),
+            USize(ref v) => v.len(),
         }
     }
 
@@ -53,6 +56,7 @@ impl<'a> TypedVec<'a> {
         match *self {
             TypedVec::String(ref v) => RawVal::Str(v[i].to_string()),
             TypedVec::Integer(ref v) => RawVal::Int(v[i]),
+            TypedVec::USize(_) => panic!("TypedVec::Usize.get_raw()"),
             TypedVec::Mixed(ref v) => RawVal::from(&v[i]),
             TypedVec::Raw(ref v) => v[i].clone(),
             TypedVec::Boolean(_) => panic!("Boolean(BitVec).get_raw()"),
@@ -76,17 +80,6 @@ impl<'a> TypedVec<'a> {
             TypedVec::BorrowedEncodedU16(v, codec) => codec.decode(v),
             TypedVec::BorrowedEncodedU32(v, codec) => codec.decode(v),
             x => x,
-        }
-    }
-
-    pub fn is_positive_integer(&self) -> bool {
-        match *self {
-            EncodedU8(_, _) | EncodedU16(_, _) | EncodedU32(_, _) |
-            BorrowedEncodedU8(_, _) | BorrowedEncodedU16(_, _) |
-            BorrowedEncodedU32(_, _) => true,
-            Integer(_) => true, // TODO(clemens): FIX THIS. Dreadful hack to make I64 work as grouping key without refactoring grouping code.
-            // TODO(clemens): Constant etc.
-            _ => false,
         }
     }
 
@@ -151,6 +144,7 @@ impl<'a> TypedVec<'a> {
         match *self {
             TypedVec::String(_) => EncodingType::Str,
             TypedVec::Integer(_) => EncodingType::I64,
+            TypedVec::USize(_) => EncodingType::USize,
             TypedVec::Mixed(_) | Raw(_) => EncodingType::Val,
             TypedVec::Boolean(_) => EncodingType::BitVec,
             TypedVec::Empty(_) => EncodingType::Null,
@@ -165,6 +159,7 @@ impl<'a> TypedVec<'a> {
         match *self {
             TypedVec::String(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(data[*j]).reverse()),
             TypedVec::Integer(ref data) => indices.sort_unstable_by_key(|i| -data[*i]),
+            TypedVec::USize(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
             TypedVec::Mixed(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
             TypedVec::Raw(ref data) => indices.sort_unstable_by(|i, j| data[*i].cmp(&data[*j]).reverse()),
             TypedVec::Boolean(_) => panic!("cannot sort by boolean column"),
@@ -182,6 +177,7 @@ impl<'a> TypedVec<'a> {
         match *self {
             TypedVec::String(ref data) => indices.sort_unstable_by_key(|i| data[*i]),
             TypedVec::Integer(ref data) => indices.sort_unstable_by_key(|i| data[*i]),
+            TypedVec::USize(ref data) => indices.sort_unstable_by_key(|i| data[*i]),
             TypedVec::Mixed(ref data) => indices.sort_unstable_by_key(|i| &data[*i]),
             TypedVec::Raw(ref data) => indices.sort_unstable_by_key(|i| &data[*i]),
             TypedVec::Boolean(_) => panic!("cannot sort by boolean column"),
@@ -195,33 +191,17 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn order_preserving(self) -> Self {
-        match self {
-            TypedVec::BorrowedEncodedU8(data, codec)
-            if !codec.is_order_preserving() =>
-                codec.decode(data),
-            TypedVec::BorrowedEncodedU16(data, codec)
-            if !codec.is_order_preserving() =>
-                codec.decode(data),
-            TypedVec::BorrowedEncodedU32(data, codec)
-            if !codec.is_order_preserving() =>
-                codec.decode(data),
-            TypedVec::EncodedU8(ref data, codec)
-            if !codec.is_order_preserving() =>
-                codec.decode(data),
-            TypedVec::EncodedU16(ref data, codec)
-            if !codec.is_order_preserving() =>
-                codec.decode(data),
-            TypedVec::EncodedU32(ref data, codec)
-            if !codec.is_order_preserving() =>
-                codec.decode(data),
-            x => x,
-        }
-    }
-
     pub fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] {
         match *self {
             TypedVec::String(ref x) => x,
+            _ => panic!("type error: {:?}", self.get_type()),
+        }
+    }
+
+
+    pub fn cast_ref_usize(&self) -> &[usize] {
+        match *self {
+            TypedVec::USize(ref x) => x,
             _ => panic!("type error: {:?}", self.get_type()),
         }
     }
@@ -232,7 +212,6 @@ impl<'a> TypedVec<'a> {
             _ => panic!("type error: {:?}", self.get_type()),
         }
     }
-
 
     pub fn cast_ref_u32<'b>(&'b self) -> (&'b [u32], &'a PointCodec<u32>) {
         match *self {
@@ -272,9 +251,16 @@ impl<'a> TypedVec<'a> {
         }
     }
 
-    pub fn cast_bit_vec(self) -> BitVec {
-        match self {
-            TypedVec::Boolean(v) => v,
+    pub fn cast_ref_mut_bit_vec(&mut self) -> &mut BitVec {
+        match *self {
+            TypedVec::Boolean(ref mut v) => v,
+            _ => panic!("type error: {:?}", self.get_type()),
+        }
+    }
+
+    pub fn cast_ref_bit_vec(&self) -> &BitVec {
+        match *self {
+            TypedVec::Boolean(ref v) => v,
             _ => panic!("type error: {:?}", self.get_type()),
         }
     }
@@ -314,6 +300,12 @@ impl<'a> From<(Vec<u16>, &'a PointCodec<u16>)> for TypedVec<'a> {
 impl<'a> From<(Vec<u32>, &'a PointCodec<u32>)> for TypedVec<'a> {
     fn from(encoded: (Vec<u32>, &'a PointCodec<u32>)) -> Self {
         TypedVec::EncodedU32(encoded.0, encoded.1)
+    }
+}
+
+impl<'a> From<Vec<u8>> for TypedVec<'a> {
+    fn from(encoded: Vec<u8>) -> Self {
+        TypedVec::EncodedU8(encoded, &IdentityCodec)
     }
 }
 

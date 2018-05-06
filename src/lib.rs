@@ -1,11 +1,10 @@
-#![feature(conservative_impl_trait, fn_traits, integer_atomics, refcell_replace_swap, trait_alias)]
+#![feature(fn_traits, integer_atomics, refcell_replace_swap, trait_alias, nll)]
 #[macro_use]
 extern crate nom;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate failure_derive;
-#[macro_use]
 extern crate log;
 extern crate bincode;
 extern crate bit_vec;

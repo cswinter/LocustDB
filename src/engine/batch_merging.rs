@@ -49,6 +49,8 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 let (merged_grouping, ops) = match (g1[0].get_type(), g2[0].get_type()) {
                     (EncodingType::Str, EncodingType::Str) =>
                         merge_deduplicate(g1[0].cast_ref_str(), g2[0].cast_ref_str()),
+                    (EncodingType::U8, EncodingType::U8) =>
+                        merge_deduplicate(g1[0].cast_ref_u8().0, g2[0].cast_ref_u8().0),
                     (EncodingType::I64, EncodingType::I64) =>
                         merge_deduplicate(g1[0].cast_ref_i64(), g2[0].cast_ref_i64()),
                     (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),

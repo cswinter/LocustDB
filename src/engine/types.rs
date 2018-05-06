@@ -5,6 +5,7 @@ use mem_store::column::ColumnCodec;
 pub enum EncodingType {
     Str,
     I64,
+    USize,
     Val,
     Null,
     BitVec,
@@ -64,6 +65,15 @@ impl<'a> Type<'a> {
 
     pub fn is_summation_preserving(&self) -> bool {
         self.codec.map_or(true, |c| c.is_summation_preserving())
+    }
+
+    pub fn is_order_preserving(&self) -> bool {
+        self.codec.map_or(true, |c| c.is_order_preserving())
+    }
+
+    pub fn is_positive_integer(&self) -> bool {
+        // TODO(clemens): this is wrong
+        self.codec.map_or(self.decoded == BasicType::Integer, |c| c.is_positive_integer())
     }
 
     pub fn scalar(basic: BasicType) -> Type<'static> {

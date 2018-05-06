@@ -1,9 +1,12 @@
-use bit_vec::BitVec;
-use std::rc::Rc;
+use engine::vector_op::vector_operator::BufferRef;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Filter {
     None,
-    BitVec(Rc<BitVec>),
-    Indices(Rc<Vec<usize>>),
+    BitVec(BufferRef),
+    Indices(BufferRef),
+}
+
+impl Default for Filter {
+    fn default() -> Filter { Filter::None }
 }

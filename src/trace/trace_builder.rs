@@ -78,7 +78,7 @@ impl TraceBuilder {
         let mut keys_sorted = spans.keys().cloned().collect::<Vec<_>>();
         keys_sorted.sort();
         for span_id in keys_sorted.iter().rev() {
-            let (mut span, parent_id) = spans.remove(span_id).unwrap();
+            let (span, parent_id) = spans.remove(span_id).unwrap();
             if parent_id == 0 { return span; }
             spans.get_mut(&parent_id).unwrap().0.children.push(span);
         }

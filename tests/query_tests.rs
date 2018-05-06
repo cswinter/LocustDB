@@ -1,6 +1,5 @@
 extern crate ruba;
 extern crate futures;
-#[macro_use]
 extern crate log;
 extern crate env_logger;
 
@@ -11,7 +10,7 @@ use futures::executor::block_on;
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 40, vec![]));
+    let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 400, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
@@ -19,7 +18,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", "default", 2, vec![]));
+    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", "default", 20, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
