@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::str;
 use std::{u8, u16};
 use engine::types::*;
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::{BoxedVec, TypedVec};
 
 
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
@@ -67,27 +67,27 @@ impl StringPacker {
 }
 
 impl ColumnData for StringPacker {
-    fn collect_decoded(&self) -> TypedVec {
-        TypedVec::String(self.iter().collect())
+    fn collect_decoded(&self) -> BoxedVec {
+        TypedVec::owned(self.iter().collect())
     }
 
-    fn filter_decode<'a>(&'a self, filter: &BitVec) -> TypedVec {
+    fn filter_decode<'a>(&'a self, filter: &BitVec) -> BoxedVec {
         let mut result = Vec::new();
         for (s, select) in self.iter().zip(filter.iter()) {
             if select {
                 result.push(s);
             }
         }
-        TypedVec::String(result)
+        TypedVec::owned(result)
     }
 
-    fn index_decode<'a>(&'a self, filter: &[usize]) -> TypedVec {
+    fn index_decode<'a>(&'a self, filter: &[usize]) -> BoxedVec {
         let decoded = self.iter().collect::<Vec<_>>();
         let mut result = Vec::with_capacity(filter.len());
         for &i in filter {
             result.push(decoded[i]);
         }
-        TypedVec::String(result)
+        TypedVec::owned(result)
     }
 
     fn basic_type(&self) -> BasicType { BasicType::String }
@@ -152,21 +152,21 @@ impl DictEncodedStrings {
 }
 
 impl ColumnData for DictEncodedStrings {
-    fn collect_decoded(&self) -> TypedVec {
+    fn collect_decoded(&self) -> BoxedVec {
         self.decode(&self.encoded_values)
     }
 
-    fn filter_decode(&self, filter: &BitVec) -> TypedVec {
+    fn filter_decode(&self, filter: &BitVec) -> BoxedVec {
         let mut result = Vec::<&str>::with_capacity(self.encoded_values.len());
         for (encoded_value, selected) in self.encoded_values.iter().zip(filter) {
             if selected {
                 result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
             }
         }
-        TypedVec::String(result)
+        TypedVec::owned(result)
     }
 
-    fn index_decode(&self, filter: &[usize]) -> TypedVec {
+    fn index_decode(&self, filter: &[usize]) -> BoxedVec {
         PointCodec::index_decode(self, &self.encoded_values, filter)
     }
 
@@ -176,21 +176,21 @@ impl ColumnData for DictEncodedStrings {
 }
 
 impl PointCodec<u16> for DictEncodedStrings {
-    fn decode(&self, data: &[u16]) -> TypedVec {
+    fn decode(&self, data: &[u16]) -> BoxedVec {
         let mut result = Vec::<&str>::with_capacity(self.encoded_values.len());
         for encoded_value in data {
             result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
         }
-        TypedVec::String(result)
+        TypedVec::owned(result)
     }
 
-    fn index_decode(&self, data: &[u16], filter: &[usize]) -> TypedVec {
+    fn index_decode(&self, data: &[u16], filter: &[usize]) -> BoxedVec {
         let mut result = Vec::<&str>::with_capacity(filter.len());
         for &i in filter {
             let encoded_value = data[i];
             result.push(self.mapping[encoded_value as usize].as_ref().unwrap());
         }
-        TypedVec::String(result)
+        TypedVec::owned(result)
     }
 
     fn to_raw(&self, elem: u16) -> RawVal {
@@ -201,30 +201,30 @@ impl PointCodec<u16> for DictEncodedStrings {
 }
 
 impl ColumnCodec for DictEncodedStrings {
-    fn get_encoded(&self) -> TypedVec {
-        TypedVec::BorrowedEncodedU16(&self.encoded_values, self as &PointCodec<u16>)
+    fn get_encoded(&self) -> BoxedVec {
+        TypedVec::borrowed(&self.encoded_values)
     }
 
-    fn unwrap_decode<'a>(&'a self, data: &TypedVec<'a>) -> TypedVec<'a> {
-        self.decode(data.cast_ref_u16().0)
+    fn unwrap_decode<'a>(&'a self, data: &TypedVec<'a>) -> BoxedVec<'a> {
+        self.decode(data.cast_ref_u16())
     }
 
-    fn filter_encoded(&self, filter: &BitVec) -> TypedVec {
+    fn filter_encoded(&self, filter: &BitVec) -> BoxedVec {
         let mut result = Vec::with_capacity(self.encoded_values.len());
         for (encoded_value, selected) in self.encoded_values.iter().zip(filter) {
             if selected {
                 result.push(*encoded_value);
             }
         }
-        TypedVec::EncodedU16(result, self as &PointCodec<u16>)
+        TypedVec::owned(result)
     }
 
-    fn index_encoded(&self, filter: &[usize]) -> TypedVec {
+    fn index_encoded(&self, filter: &[usize]) -> BoxedVec {
         let mut result = Vec::with_capacity(filter.len());
         for &i in filter {
             result.push(self.encoded_values[i]);
         }
-        TypedVec::EncodedU16(result, self as &PointCodec<u16>)
+        TypedVec::owned(result)
     }
 
     fn encoding_type(&self) -> EncodingType { EncodingType::U16 }

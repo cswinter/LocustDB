@@ -8,3 +8,13 @@ pub mod query;
 pub mod query_task;
 pub mod typed_vec;
 pub mod types;
+
+
+pub use self::typed_vec::{
+    BoxedVec,
+    TypedVec,
+    VecType,
+    IntVecType,
+    IntoUsize,
+    ConstType,
+};

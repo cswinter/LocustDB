@@ -2,7 +2,7 @@ use bit_vec::BitVec;
 use heapsize::HeapSizeOf;
 use engine::types::*;
 use std::fmt;
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::{BoxedVec, TypedVec};
 use ingest::raw_val::RawVal;
 
 
@@ -32,9 +32,9 @@ impl HeapSizeOf for Column {
 }
 
 pub trait ColumnData: HeapSizeOf + Send + Sync {
-    fn collect_decoded(&self) -> TypedVec;
-    fn filter_decode(&self, filter: &BitVec) -> TypedVec;
-    fn index_decode(&self, filter: &[usize]) -> TypedVec;
+    fn collect_decoded(&self) -> BoxedVec;
+    fn filter_decode(&self, filter: &BitVec) -> BoxedVec;
+    fn index_decode(&self, filter: &[usize]) -> BoxedVec;
     fn basic_type(&self) -> BasicType;
     fn to_codec(&self) -> Option<&ColumnCodec> { None }
     fn len(&self) -> usize;
@@ -52,15 +52,15 @@ impl<'a> fmt::Debug for &'a ColumnData {
 
 
 pub trait ColumnCodec: ColumnData {
-    fn get_encoded(&self) -> TypedVec;
-    fn filter_encoded(&self, filter: &BitVec) -> TypedVec;
-    fn index_encoded(&self, filter: &[usize]) -> TypedVec;
+    fn get_encoded(&self) -> BoxedVec;
+    fn filter_encoded(&self, filter: &BitVec) -> BoxedVec;
+    fn index_encoded(&self, filter: &[usize]) -> BoxedVec;
     fn encoding_type(&self) -> EncodingType;
     fn is_summation_preserving(&self) -> bool;
     fn is_order_preserving(&self) -> bool;
     fn is_positive_integer(&self) -> bool;
     fn encoding_range(&self) -> Option<(i64, i64)>;
-    fn unwrap_decode<'a>(&'a self, data: &TypedVec<'a>) -> TypedVec<'a>;
+    fn unwrap_decode<'a>(&'a self, data: &TypedVec<'a>) -> BoxedVec<'a>;
 
     fn encode_str(&self, _: &str) -> RawVal {
         panic!("encode_str not supported")

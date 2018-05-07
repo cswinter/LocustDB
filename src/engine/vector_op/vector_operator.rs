@@ -2,12 +2,13 @@ use std::cell::{RefCell, Ref, RefMut};
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
+use std::borrow::BorrowMut;
 
 use bit_vec::BitVec;
 use engine::aggregation_operator::*;
 use engine::typed_vec::TypedVec;
 use engine::types::EncodingType;
-use engine::vector_op::types::*;
+use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 
@@ -22,32 +23,57 @@ pub trait VecOperator<'a>: fmt::Debug {
 }
 
 pub struct Scratchpad<'a> {
-    buffers: Vec<RefCell<TypedVec<'a>>>,
+    buffers: Vec<RefCell<BoxedVec<'a>>>,
 }
 
 impl<'a> Scratchpad<'a> {
     pub fn new(count: usize) -> Scratchpad<'a> {
         let mut buffers = Vec::with_capacity(count);
         for _ in 0..count {
-            buffers.push(RefCell::new(TypedVec::Empty(0)));
+            buffers.push(RefCell::new(TypedVec::empty(0)));
         }
         Scratchpad { buffers }
     }
 
-    pub fn get(&self, index: BufferRef) -> Ref<TypedVec<'a>> {
-        self.buffers[index.0].borrow()
+    pub fn get_any(&self, index: BufferRef) -> Ref<TypedVec<'a>> {
+        Ref::map(self.buffers[index.0].borrow(), |x| x.as_ref())
     }
 
-    pub fn get_mut(&self, index: BufferRef) -> RefMut<TypedVec<'a>> {
-        self.buffers[index.0].borrow_mut()
+    pub fn get<T: VecType<T> + 'a>(&self, index: BufferRef) -> Ref<[T]> {
+        Ref::map(self.buffers[index.0].borrow(), |x| T::unwrap(x.as_ref()))
     }
 
-    pub fn collect(&mut self, index: BufferRef) -> TypedVec<'a> {
-        let owned = mem::replace(&mut self.buffers[index.0], RefCell::new(TypedVec::Empty(0)));
+    pub fn get_mut<T: VecType<T> + 'a>(&self, index: BufferRef) -> RefMut<[T]> {
+        RefMut::map(self.buffers[index.0].borrow_mut(), |x| {
+            let a: &mut TypedVec<'a> = x.borrow_mut();
+            T::unwrap_mut(a)
+        })
+    }
+
+    pub fn get_const<T: ConstType<T>>(&self, index: BufferRef) -> T {
+        T::unwrap(&*self.get_any(index))
+    }
+
+    pub fn get_bit_vec(&self, index: BufferRef) -> Ref<BitVec> {
+        Ref::map(self.buffers[index.0].borrow(), |x| {
+            let a: &TypedVec = x.as_ref();
+            a.cast_ref_bit_vec()
+        })
+    }
+
+    pub fn get_mut_bit_vec(&self, index: BufferRef) -> RefMut<BitVec> {
+        RefMut::map(self.buffers[index.0].borrow_mut(), |x: &mut BoxedVec| {
+            let a: &mut TypedVec = x.borrow_mut();
+            a.cast_ref_mut_bit_vec()
+        })
+    }
+
+    pub fn collect(&mut self, index: BufferRef) -> BoxedVec<'a> {
+        let owned = mem::replace(&mut self.buffers[index.0], RefCell::new(TypedVec::empty(0)));
         owned.into_inner()
     }
 
-    pub fn set(&mut self, index: BufferRef, vec: TypedVec<'a>) {
+    pub fn set(&mut self, index: BufferRef, vec: BoxedVec<'a>) {
         self.buffers[index.0] = RefCell::new(vec);
     }
 }
@@ -89,8 +115,8 @@ impl<'a> FilterDecode<'a> {
 impl<'a> VecOperator<'a> for FilterDecode<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let filter = scratchpad.get(self.filter);
-            self.col.filter_decode(filter.cast_ref_bit_vec())
+            let filter = scratchpad.get_mut_bit_vec(self.filter);
+            self.col.filter_decode(&filter)
         };
         scratchpad.set(self.output, result);
     }
@@ -116,8 +142,8 @@ impl<'a> IndexDecode<'a> {
 impl<'a> VecOperator<'a> for IndexDecode<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let indices = scratchpad.get(self.filter);
-            self.col.index_decode(indices.cast_ref_usize())
+            let indices = scratchpad.get::<usize>(self.filter);
+            self.col.index_decode(&indices)
         };
         scratchpad.set(self.output, result);
     }
@@ -164,8 +190,8 @@ impl<'a> FilterEncoded<'a> {
 impl<'a> VecOperator<'a> for FilterEncoded<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let filter = scratchpad.get(self.filter);
-            self.col.filter_encoded(filter.cast_ref_bit_vec())
+            let filter = scratchpad.get_bit_vec(self.filter);
+            self.col.filter_encoded(&filter)
         };
         scratchpad.set(self.output, result);
     }
@@ -191,8 +217,8 @@ impl<'a> IndexEncoded<'a> {
 impl<'a> VecOperator<'a> for IndexEncoded<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let indices = scratchpad.get(self.filter);
-            self.col.index_encoded(indices.cast_ref_usize())
+            let indices = scratchpad.get::<usize>(self.filter);
+            self.col.index_encoded(&indices)
         };
         scratchpad.set(self.output, result);
     }
@@ -214,8 +240,8 @@ impl<'a> DecodeWith<'a> {
 impl<'a> VecOperator<'a> for DecodeWith<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let encoded = scratchpad.get(self.input);
-            self.codec.unwrap_decode(&encoded)
+            let encoded = scratchpad.get_any(self.input);
+            self.codec.unwrap_decode(&*encoded)
         };
         scratchpad.set(self.output, result);
     }
@@ -231,14 +257,14 @@ pub struct SortIndices {
 impl<'a> VecOperator<'a> for SortIndices {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let input = scratchpad.get(self.input);
+            let input = scratchpad.get_any(self.input);
             let mut result = (0..input.len()).collect();
             if self.descending {
                 input.sort_indices_desc(&mut result);
             } else {
                 input.sort_indices_asc(&mut result);
             }
-            TypedVec::USize(result)
+            TypedVec::owned(result)
         };
         scratchpad.set(self.output, result);
     }
@@ -258,13 +284,14 @@ impl Constant {
 
 impl<'a> VecOperator<'a> for Constant {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = TypedVec::Constant(self.val.clone());
+        let result = TypedVec::constant(self.val.clone());
         scratchpad.set(self.output, result);
     }
 }
 
+/*
 pub struct VectorConstant<'a> {
-    pub val: TypedVec<'a>,
+    pub val: BoxedOperator<'a>,
     pub output: BufferRef
 }
 
@@ -278,7 +305,7 @@ impl<'a> fmt::Debug for VectorConstant<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} <- VectorConstant(...)", self.output.0)
     }
-}
+}*/
 
 impl<'a> VecOperator<'a> {
     pub fn less_than_vs(t: EncodingType, lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
@@ -435,15 +462,13 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     T: VecType<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> + fmt::Debug {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let lhs = scratchpad.get(self.lhs);
-            let rhs = &scratchpad.get(self.rhs);
-            let data = T::unwrap(&lhs);
-            let c = U::unwrap(&rhs);
+            let data = scratchpad.get::<T>(self.lhs);
+            let c = &scratchpad.get_const::<U>(self.rhs);
             let mut output = BitVec::with_capacity(data.len());
-            for d in data {
+            for d in data.iter() {
                 output.push(Op::perform(d, &c));
             }
-            TypedVec::Boolean(output)
+            TypedVec::bit_vec(output)
         };
         scratchpad.set(self.output, result);
     }
@@ -516,11 +541,9 @@ impl Boolean {
 
 impl<'a, T: BooleanOp + fmt::Debug> VecOperator<'a> for BooleanOperator<T> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let mut _lhs = scratchpad.get_mut(self.lhs);
-        let _rhs = scratchpad.get(self.rhs);
-        let mut result = _lhs.cast_ref_mut_bit_vec();
-        let rhs = _rhs.cast_ref_bit_vec();
-        T::evaluate(result, &rhs);
+        let mut result = scratchpad.get_mut_bit_vec(self.lhs);
+        let rhs = scratchpad.get_bit_vec(self.rhs);
+        T::evaluate(&mut result, &rhs);
     }
 }
 
@@ -565,11 +588,10 @@ impl<'a> EncodeStrConstant<'a> {
 impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let constant = scratchpad.get(self.constant);
-            let s = constant.cast_str_const();
-            self.codec.encode_str(&s)
+            let constant = scratchpad.get_const::<String>(self.constant);
+            self.codec.encode_str(&constant)
         };
-        scratchpad.set(self.output, TypedVec::Constant(result));
+        scratchpad.set(self.output, TypedVec::constant(result));
     }
 }
 
@@ -593,13 +615,9 @@ impl<'a> EncodeIntConstant<'a> {
 
 impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let constant = scratchpad.get(self.constant);
-            let s = constant.cast_int_const();
-            let result = self.codec.encode_int(s);
-            TypedVec::Constant(result)
-        };
-        scratchpad.set(self.output, result);
+        let constant = scratchpad.get_const::<i64>(self.constant);
+        let result = self.codec.encode_int(constant);
+        scratchpad.set(self.output, TypedVec::constant(result));
     }
 }
 
@@ -628,15 +646,15 @@ impl<Op> ParameterizedVecVecIntegerOperator<Op> {
 impl<'a, Op: ParameterizedIntegerOperation + fmt::Debug> VecOperator<'a> for ParameterizedVecVecIntegerOperator<Op> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let lhs = scratchpad.get(self.lhs);
-            let rhs = scratchpad.get(self.rhs);
+            let lhs = scratchpad.get::<i64>(self.lhs);
+            let rhs = scratchpad.get::<i64>(self.rhs);
             let mut output = Vec::with_capacity(lhs.len());
-            for (l, r) in lhs.cast_ref_i64().iter().zip(rhs.cast_ref_i64()) {
+            for (l, r) in lhs.iter().zip(rhs.iter()) {
                 output.push(Op::perform(*l, *r, self.parameter));
             }
-            TypedVec::Integer(output)
+            TypedVec::owned(output)
         };
-        scratchpad.set(self.output, result);
+        scratchpad.set(self.output, result)
     }
 }
 
@@ -663,14 +681,13 @@ impl BitUnpackOperator {
 impl<'a> VecOperator<'a> for BitUnpackOperator {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let data = scratchpad.get(self.input);
-            let data = data.cast_ref_i64();
+            let data = scratchpad.get::<i64>(self.input);
             let mask = (1 << self.width) - 1;
             let mut output = Vec::with_capacity(data.len());
-            for d in data {
+            for d in data.iter() {
                 output.push((d >> self.shift) & mask);
             }
-            TypedVec::Integer(output)
+            TypedVec::owned(output)
         };
         scratchpad.set(self.output, result);
     }
@@ -711,13 +728,12 @@ impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
     T: VecType<T> + Copy, U: VecType<U>, T: Cast<U> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let data = scratchpad.get(self.input);
-            let data = T::unwrap(&data);
+            let data = scratchpad.get::<T>(self.input);
             let mut output = Vec::with_capacity(data.len());
-            for d in data {
+            for d in data.iter() {
                 output.push(d.cast());
             }
-            U::wrap(output)
+            TypedVec::owned(output)
         };
         scratchpad.set(self.output, result);
     }

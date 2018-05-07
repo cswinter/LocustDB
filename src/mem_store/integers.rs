@@ -2,14 +2,13 @@ use std::convert::From;
 use std::{u8, u16, u32};
 
 use bit_vec::BitVec;
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::{BoxedVec, TypedVec};
 use engine::types::*;
-use engine::vector_op::types::IntVecType;
+use engine::*;
 use heapsize::HeapSizeOf;
 use ingest::raw_val::RawVal;
 use mem_store::column::{ColumnData, ColumnCodec};
 use mem_store::point_codec::PointCodec;
-use num::traits::NumCast;
 
 
 pub struct IntegerColumn {
@@ -34,26 +33,26 @@ impl IntegerColumn {
 }
 
 impl ColumnData for IntegerColumn {
-    fn collect_decoded(&self) -> TypedVec {
-        TypedVec::Integer(self.values.clone())
+    fn collect_decoded(&self) -> BoxedVec {
+        TypedVec::owned(self.values.clone())
     }
 
-    fn filter_decode<'a>(&'a self, filter: &BitVec) -> TypedVec {
+    fn filter_decode<'a>(&'a self, filter: &BitVec) -> BoxedVec {
         let mut results = Vec::with_capacity(self.values.len());
         for (i, select) in filter.iter().enumerate() {
             if select {
                 results.push(self.values[i]);
             }
         }
-        TypedVec::Integer(results)
+        TypedVec::owned(results)
     }
 
-    fn index_decode<'a>(&'a self, filter: &[usize]) -> TypedVec {
+    fn index_decode<'a>(&'a self, filter: &[usize]) -> BoxedVec {
         let mut results = Vec::with_capacity(filter.len());
         for &i in filter {
             results.push(self.values[i]);
         }
-        TypedVec::Integer(results)
+        TypedVec::owned(results)
     }
 
     fn basic_type(&self) -> BasicType { BasicType::Integer }
@@ -62,13 +61,13 @@ impl ColumnData for IntegerColumn {
 }
 
 
-struct IntegerOffsetColumn<T: IntLike> {
+struct IntegerOffsetColumn<T> {
     values: Vec<T>,
     offset: i64,
     maximum: usize,
 }
 
-impl<T: IntLike> IntegerOffsetColumn<T> {
+impl<T: IntVecType<T>> IntegerOffsetColumn<T> {
     fn new(values: Vec<i64>, offset: i64, maximum: usize) -> IntegerOffsetColumn<T> {
         let mut encoded_vals = Vec::with_capacity(values.len());
         for v in values {
@@ -82,22 +81,22 @@ impl<T: IntLike> IntegerOffsetColumn<T> {
     }
 }
 
-impl<T: IntLike + IntVecType<T>> ColumnData for IntegerOffsetColumn<T> {
-    fn collect_decoded(&self) -> TypedVec {
+impl<T: IntVecType<T>> ColumnData for IntegerOffsetColumn<T> {
+    fn collect_decoded(&self) -> BoxedVec {
         self.decode(&self.values)
     }
 
-    fn filter_decode(&self, filter: &BitVec) -> TypedVec {
+    fn filter_decode(&self, filter: &BitVec) -> BoxedVec {
         let mut result = Vec::with_capacity(self.values.len());
         for (i, select) in filter.iter().enumerate() {
             if select {
                 result.push(self.values[i].to_i64().unwrap() + self.offset);
             }
         }
-        TypedVec::Integer(result)
+        TypedVec::owned(result)
     }
 
-    fn index_decode<'b>(&'b self, filter: &[usize]) -> TypedVec {
+    fn index_decode<'b>(&'b self, filter: &[usize]) -> BoxedVec {
         PointCodec::index_decode(self, &self.values, filter)
     }
 
@@ -110,21 +109,21 @@ impl<T: IntLike + IntVecType<T>> ColumnData for IntegerOffsetColumn<T> {
     fn len(&self) -> usize { self.values.len() }
 }
 
-impl<'a, T: IntLike + IntVecType<T> + 'a> PointCodec<T> for IntegerOffsetColumn<T> {
-    fn decode(&self, data: &[T]) -> TypedVec {
+impl<T: IntVecType<T>> PointCodec<T> for IntegerOffsetColumn<T> {
+    fn decode(&self, data: &[T]) -> BoxedVec {
         let mut result = Vec::with_capacity(self.values.len());
         for value in data {
             result.push(value.to_i64().unwrap() + self.offset);
         }
-        TypedVec::Integer(result)
+        TypedVec::owned(result)
     }
 
-    fn index_decode<'b>(&'b self, data: &[T], filter: &[usize]) -> TypedVec {
+    fn index_decode<'b>(&'b self, data: &[T], filter: &[usize]) -> BoxedVec {
         let mut result = Vec::with_capacity(filter.len());
         for &i in filter {
             result.push(data[i].to_i64().unwrap() + self.offset);
         }
-        TypedVec::Integer(result)
+        TypedVec::owned(result)
     }
 
     fn to_raw(&self, elem: T) -> RawVal {
@@ -134,29 +133,29 @@ impl<'a, T: IntLike + IntVecType<T> + 'a> PointCodec<T> for IntegerOffsetColumn<
     fn max_cardinality(&self) -> usize { self.maximum }
 }
 
-impl<'a, T: IntLike + IntVecType<T> + 'a> ColumnCodec for IntegerOffsetColumn<T> {
-    fn get_encoded(&self) -> TypedVec {
-        T::borrowed_typed_vec(&self.values, self as &PointCodec<T>)
+impl<'a, T: IntVecType<T> + 'a> ColumnCodec for IntegerOffsetColumn<T> {
+    fn get_encoded(&self) -> BoxedVec {
+        TypedVec::borrowed(&self.values)
     }
 
-    fn unwrap_decode<'b>(&'b self, data: &TypedVec<'b>) -> TypedVec<'b> {
+    fn unwrap_decode<'b>(&'b self, data: &TypedVec<'b>) -> BoxedVec<'b> {
         self.decode(T::unwrap(data))
     }
 
-    fn filter_encoded(&self, filter: &BitVec) -> TypedVec {
+    fn filter_encoded(&self, filter: &BitVec) -> BoxedVec {
         let filtered_values = self.values.iter().zip(filter.iter())
             .filter(|&(_, select)| select)
             .map(|(i, _)| *i)
             .collect();
-        T::typed_vec(filtered_values, self as &PointCodec<T>)
+        TypedVec::owned(filtered_values)
     }
 
-    fn index_encoded<'b>(&'b self, filter: &[usize]) -> TypedVec {
+    fn index_encoded<'b>(&'b self, filter: &[usize]) -> BoxedVec {
         let mut result = Vec::with_capacity(filter.len());
         for &i in filter {
             result.push(self.values[i]);
         }
-        T::typed_vec(result, self as &PointCodec<T>)
+        TypedVec::owned(result)
     }
 
     fn encode_int(&self, val: i64) -> RawVal {
@@ -177,50 +176,9 @@ impl HeapSizeOf for IntegerColumn {
     }
 }
 
-trait IntLike: NumCast + HeapSizeOf + Copy + Send + Sync {
-    fn borrowed_typed_vec<'a>(values: &'a [Self], codec: &'a PointCodec<Self>) -> TypedVec<'a>;
-    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec;
-    fn t() -> EncodingType;
-}
-
-impl IntLike for u8 {
-    fn borrowed_typed_vec<'a>(values: &'a [Self], codec: &'a PointCodec<Self>) -> TypedVec<'a> {
-        TypedVec::BorrowedEncodedU8(values, codec)
-    }
-
-    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec {
-        TypedVec::EncodedU8(values, codec)
-    }
-
-    fn t() -> EncodingType { EncodingType::U8 }
-}
-
-impl IntLike for u16 {
-    fn borrowed_typed_vec<'a>(values: &'a [Self], codec: &'a PointCodec<Self>) -> TypedVec<'a> {
-        TypedVec::BorrowedEncodedU16(values, codec)
-    }
-
-    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec {
-        TypedVec::EncodedU16(values, codec)
-    }
-
-    fn t() -> EncodingType { EncodingType::U16 }
-}
-
-impl IntLike for u32 {
-    fn borrowed_typed_vec<'a>(values: &'a [Self], codec: &'a PointCodec<Self>) -> TypedVec<'a> {
-        TypedVec::BorrowedEncodedU32(values, codec)
-    }
-
-    fn typed_vec(values: Vec<Self>, codec: &PointCodec<Self>) -> TypedVec {
-        TypedVec::EncodedU32(values, codec)
-    }
-
-    fn t() -> EncodingType { EncodingType::U32 }
-}
-
-impl<T: IntLike> HeapSizeOf for IntegerOffsetColumn<T> {
+impl<T:     HeapSizeOf> HeapSizeOf for IntegerOffsetColumn<T> {
     fn heap_size_of_children(&self) -> usize {
         self.values.heap_size_of_children()
     }
 }
+

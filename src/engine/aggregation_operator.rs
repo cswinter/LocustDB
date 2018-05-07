@@ -1,11 +1,10 @@
-use std::cell::Ref;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::marker::PhantomData;
 
 use engine::typed_vec::TypedVec;
 use engine::vector_op::*;
-use engine::vector_op::types::*;
+use engine::*;
 use ingest::raw_val::RawVal;
 use seahash::SeaHasher;
 
@@ -31,7 +30,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for Unique<T> {
         let result = {
             let mut seen_before = vec![false; self.max_index + 1];
             let mut result = Vec::new();
-            let data = Ref::map(scratchpad.get(self.input), T::unwrap);
+            let data = scratchpad.get::<T>(self.input);
             for &i in data.iter() {
                 let index = i.cast_usize();
                 if !seen_before[index] {
@@ -40,7 +39,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for Unique<T> {
                 }
             }
             result.sort();
-            T::wrap(result)
+            TypedVec::owned(result)
         };
         scratchpad.set(self.output, result);
     }
@@ -75,7 +74,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let (unique, grouping_key, cardinality) = {
             let mut count = T::zero();
-            let grouping_key = Ref::map(scratchpad.get(self.input), T::unwrap);
+            let grouping_key = scratchpad.get::<T>(self.input);
             let mut grouping = Vec::with_capacity(grouping_key.len());
             let mut groups = Vec::new();
             let mut map = HashMapSea::default();
@@ -89,9 +88,9 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
             }
             (grouping, groups, count.to_usize().unwrap())
         };
-        scratchpad.set(self.unique_out, T::wrap(unique));
-        scratchpad.set(self.grouping_key_out, T::wrap(grouping_key));
-        scratchpad.set(self.cardinality_out, TypedVec::Constant(RawVal::Int(cardinality as i64)));
+        scratchpad.set(self.unique_out, TypedVec::owned(unique));
+        scratchpad.set(self.grouping_key_out, TypedVec::owned(grouping_key));
+        scratchpad.set(self.cardinality_out, TypedVec::constant(RawVal::Int(cardinality as i64)));
     }
 }
 
@@ -119,10 +118,9 @@ impl<T> VecCount<T> {
 impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let mut result = vec![0; self.max_index + 1];
-            let g = scratchpad.get(self.grouping);
-            let grouping = T::unwrap(&g);
-            for i in grouping {
+            let mut result = vec![0u32; self.max_index + 1];
+            let grouping = scratchpad.get::<T>(self.grouping);
+            for i in grouping.iter() {
                 result[i.cast_usize()] += 1;
             }
             if !self.dense_grouping {
@@ -136,7 +134,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
                 }
                 result.truncate(j);
             }
-            TypedVec::Integer(result)
+            TypedVec::owned(result)
         };
         scratchpad.set(self.output, result)
     }
@@ -169,17 +167,15 @@ impl<T, U> VecSum<T, U> where
 }
 
 impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
-    T: IntVecType<T>, U: VecType<U> + IntoUsize {
+    T: IntVecType<T>, U: IntVecType<U> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let result = {
             // TODO(clemens): this is already computed in unique function, we should just reuse
             let mut modified = vec![false; self.max_index + 1];
-            let input = scratchpad.get(self.input);
-            let g = scratchpad.get(self.grouping);
-            let nums = T::unwrap(&input);
-            let grouping = U::unwrap(&g);
+            let nums = scratchpad.get::<T>(self.input);
+            let grouping = scratchpad.get::<U>(self.grouping);
             let mut result = vec![0; self.max_index + 1];
-            for (i, n) in grouping.iter().zip(nums) {
+            for (i, n) in grouping.iter().zip(nums.iter()) {
                 result[i.cast_usize()] += Into::<i64>::into(*n);
                 modified[i.cast_usize()] = true;
             }
@@ -195,7 +191,7 @@ impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
                 result.truncate(j);
             }
 
-            TypedVec::Integer(result)
+            TypedVec::owned(result)
         };
         scratchpad.set(self.output, result);
     }

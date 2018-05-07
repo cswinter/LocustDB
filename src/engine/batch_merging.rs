@@ -1,17 +1,15 @@
 use std::cmp::{max, min};
-use std::fmt::Debug;
 use std::usize;
 
 use engine::aggregator::Aggregator;
-use engine::typed_vec::TypedVec;
 use engine::types::*;
-use engine::vector_op::types::VecType;
+use engine::*;
 
 
 pub struct BatchResult<'a> {
-    pub group_by: Option<Vec<TypedVec<'a>>>,
+    pub group_by: Option<Vec<BoxedVec<'a>>>,
     pub sort_by: Option<usize>,
-    pub select: Vec<TypedVec<'a>>,
+    pub select: Vec<BoxedVec<'a>>,
     pub aggregators: Vec<Aggregator>,
     pub level: u32,
     pub batch_count: usize,
@@ -50,7 +48,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     (EncodingType::Str, EncodingType::Str) =>
                         merge_deduplicate(g1[0].cast_ref_str(), g2[0].cast_ref_str()),
                     (EncodingType::U8, EncodingType::U8) =>
-                        merge_deduplicate(g1[0].cast_ref_u8().0, g2[0].cast_ref_u8().0),
+                        merge_deduplicate(g1[0].cast_ref_u8(), g2[0].cast_ref_u8()),
                     (EncodingType::I64, EncodingType::I64) =>
                         merge_deduplicate(g1[0].cast_ref_i64(), g2[0].cast_ref_i64()),
                     (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
@@ -58,8 +56,10 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 (vec![merged_grouping], ops)
             } else {
                 let initial_partitioning = match (g1[0].get_type(), g2[0].get_type()) {
-                    (EncodingType::Str, EncodingType::Str) => partition::<&str>(&g1[0], &g2[0], usize::MAX),
-                    (EncodingType::I64, EncodingType::I64) => partition::<i64>(&g1[0], &g2[0], usize::MAX),
+                    (EncodingType::Str, EncodingType::Str) =>
+                        partition::<&str>(g1[0].as_ref(), g2[0].as_ref(), usize::MAX),
+                    (EncodingType::I64, EncodingType::I64) =>
+                        partition::<i64>(g1[0].as_ref(), g2[0].as_ref(), usize::MAX),
                     (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
                 };
 
@@ -68,16 +68,18 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
                 let (merged_grouping, ops) = match (g1[1].get_type(), g2[1].get_type()) {
                     (EncodingType::Str, EncodingType::Str) =>
-                        merge_deduplicate_partitioned::<&str>(&initial_partitioning, &g1[1], &g2[1]),
+                        merge_deduplicate_partitioned::<&'a str>(&initial_partitioning, g1[1].as_ref(), g2[1].as_ref()),
                     (EncodingType::I64, EncodingType::I64) =>
-                        merge_deduplicate_partitioned::<i64>(&initial_partitioning, &g1[1], &g2[1]),
+                        merge_deduplicate_partitioned::<i64>(&initial_partitioning, g1[1].as_ref(), g2[1].as_ref()),
                     (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
                 };
 
                 let mut group_by_cols = Vec::with_capacity(g1.len());
                 group_by_cols.push(match (g1[0].get_type(), g2[0].get_type()) {
-                    (EncodingType::Str, EncodingType::Str) => merge_drop::<&str>(&g1[0], &g2[0], &ops),
-                    (EncodingType::I64, EncodingType::I64) => merge_drop::<i64>(&g1[0], &g2[0], &ops),
+                    (EncodingType::Str, EncodingType::Str) =>
+                        merge_drop::<&str>(g1[0].as_ref(), g2[0].as_ref(), &ops),
+                    (EncodingType::I64, EncodingType::I64) =>
+                        merge_drop::<i64>(g1[0].as_ref(), g2[0].as_ref(), &ops),
                     (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
                 });
                 group_by_cols.push(merged_grouping);
@@ -122,7 +124,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     let mut result = Vec::with_capacity(batch1.select.len());
                     for (i, (col1, col2)) in batch1.select.into_iter().zip(batch2.select).enumerate() {
                         if i == index {
-                            result.push(TypedVec::Empty(0));
+                            result.push(TypedVec::empty(0));
                         } else {
                             let merged = match (col1.get_type(), col2.get_type()) {
                                 (EncodingType::Str, EncodingType::Str) =>
@@ -148,11 +150,15 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 // Select query
                 None => {
                     let mut result = Vec::with_capacity(batch1.select.len());
-                    for (col1, col2) in batch1.select.into_iter().zip(batch2.select) {
+                    for (mut col1, col2) in batch1.select.into_iter().zip(batch2.select) {
                         let count = if col1.len() >= limit { 0 } else {
                             min(col2.len(), limit - col1.len())
                         };
-                        result.push(col1.extend(col2, count))
+                        if let Some(newcol) = col1.extend(col2, count) {
+                            result.push(newcol)
+                        } else {
+                            result.push(col1)
+                        }
                     }
                     BatchResult {
                         group_by: None,
@@ -169,8 +175,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
     }
 }
 
-fn merge_deduplicate<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T]) -> (TypedVec<'a>, Vec<MergeOp>)
-    where Vec<T>: Into<TypedVec<'a>> {
+fn merge_deduplicate<'a, T: VecType<T> + 'a>(left: &[T], right: &[T]) -> (BoxedVec<'a>, Vec<MergeOp>) {
     // TODO(clemens): figure out maths for precise estimate + variance derived from how much grouping reduced cardinality
     let output_len_estimate = max(left.len(), right.len()) + min(left.len(), right.len()) / 2;
     let mut result = Vec::with_capacity(output_len_estimate);
@@ -206,12 +211,12 @@ fn merge_deduplicate<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &
         ops.push(MergeOp::TakeRight);
     }
 
-    (result.into(), ops)
+    (TypedVec::owned(result), ops)
 }
 
 fn merge_deduplicate_partitioned<'a, T: VecType<T> + 'a>(partitioning: &[Premerge],
                                                          left: &TypedVec<'a>,
-                                                         right: &TypedVec<'a>) -> (TypedVec<'a>, Vec<MergeOp>) {
+                                                         right: &TypedVec<'a>) -> (BoxedVec<'a>, Vec<MergeOp>) {
     let left = T::unwrap(left);
     let right = T::unwrap(right);
     let output_len_estimate = max(left.len(), right.len()) + min(left.len(), right.len()) / 2;
@@ -245,10 +250,10 @@ fn merge_deduplicate_partitioned<'a, T: VecType<T> + 'a>(partitioning: &[Premerg
             // println!("{:?}", ops.last().unwrap());
         }
     }
-    (T::wrap(result), ops)
+    (TypedVec::owned(result), ops)
 }
 
-fn partition<'a, T: VecType<T>>(left: &TypedVec<'a>, right: &TypedVec<'a>, limit: usize) -> Vec<Premerge> {
+fn partition<'a, T: VecType<T> + 'a>(left: &TypedVec<'a>, right: &TypedVec<'a>, limit: usize) -> Vec<Premerge> {
     let mut result = Vec::new();
     let left = T::unwrap(left);
     let right = T::unwrap(right);
@@ -291,8 +296,7 @@ fn partition<'a, T: VecType<T>>(left: &TypedVec<'a>, right: &TypedVec<'a>, limit
 }
 
 // TODO(clemens): implement descending ordering
-fn merge_sort<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], limit: usize) -> (TypedVec<'a>, Vec<bool>)
-    where Vec<T>: Into<TypedVec<'a>> {
+fn merge_sort<'a, T: VecType<T> + 'a>(left: &[T], right: &[T], limit: usize) -> (BoxedVec<'a>, Vec<bool>) {
     let mut result = Vec::with_capacity(left.len() + right.len());
     let mut ops = Vec::<bool>::with_capacity(left.len() + right.len());
 
@@ -319,10 +323,10 @@ fn merge_sort<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], li
         ops.push(false);
     }
 
-    (result.into(), ops)
+    (TypedVec::owned(result), ops)
 }
 
-fn merge_aggregate(left: &[i64], right: &[i64], ops: &[MergeOp], aggregator: Aggregator) -> TypedVec<'static> {
+fn merge_aggregate<'a>(left: &[i64], right: &[i64], ops: &[MergeOp], aggregator: Aggregator) -> BoxedVec<'a> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;
@@ -344,11 +348,11 @@ fn merge_aggregate(left: &[i64], right: &[i64], ops: &[MergeOp], aggregator: Agg
             }
         }
     }
-    result.into()
+    TypedVec::owned(result)
 }
 
-fn merge<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], ops: &[bool]) -> TypedVec<'a>
-    where Vec<T>: Into<TypedVec<'a>> {
+fn merge<'a, T: 'a>(left: &[T], right: &[T], ops: &[bool]) -> BoxedVec<'a>
+    where T: VecType<T> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;
@@ -361,11 +365,10 @@ fn merge<'a, T: PartialOrd + Copy + Debug + 'a>(left: &[T], right: &[T], ops: &[
             j += 1;
         }
     }
-    result.into()
+    TypedVec::owned(result)
 }
 
-fn merge_drop<'a, T: VecType<T> + 'a>(left: &TypedVec<'a>, right: &TypedVec<'a>, ops: &[MergeOp]) -> TypedVec<'a>
-    where Vec<T>: Into<TypedVec<'a>> {
+fn merge_drop<'a, T: VecType<T> + 'a>(left: &TypedVec<'a>, right: &TypedVec<'a>, ops: &[MergeOp]) -> BoxedVec<'a> {
     let left = T::unwrap(left);
     let right = T::unwrap(right);
     // TODO(clemens): this is an overestimate
@@ -387,7 +390,7 @@ fn merge_drop<'a, T: VecType<T> + 'a>(left: &TypedVec<'a>, right: &TypedVec<'a>,
             }
         }
     }
-    T::wrap(result)
+    TypedVec::owned(result)
 }
 
 #[cfg(test)]
@@ -398,7 +401,7 @@ mod tests {
     fn test_multipass_grouping() {
         let left1 = vec!["A", "A", "A", "C", "P"];
         let right1 = vec!["A", "A", "B", "C", "X", "X", "Z"];
-        let result = partition::<&str>(&<&str>::wrap(left1), &<&str>::wrap(right1), 10);
+        let result = partition::<&str>(&left1, &right1, 10);
         assert_eq!(result, vec![
             Premerge { left: 3, right: 2 },
             Premerge { left: 0, right: 1 },
@@ -407,10 +410,10 @@ mod tests {
             Premerge { left: 0, right: 2 },
         ]);
 
-        let left2 = vec![1, 3, 7, 2, 1];
-        let right2 = vec![3, 5, 0, 2, 1, 2, 1];
-        let (merging, merge_ops) = merge_deduplicate_partitioned::<u32>(&result, &u32::wrap(left2), &u32::wrap(right2));
-        assert_eq!(u32::unwrap(&merging), &[1, 3, 5, 7, 0, 2, 1, 1, 2]);
+        let left2 = vec![1u32, 3, 7, 2, 1];
+        let right2 = vec![3u32, 5, 0, 2, 1, 2, 1];
+        let (merging, merge_ops) = merge_deduplicate_partitioned::<u32>(&result, &left2, &right2);
+        assert_eq!(u32::unwrap(merging.as_ref()), &[1, 3, 5, 7, 0, 2, 1, 1, 2]);
         use self::MergeOp::*;
         assert_eq!(&merge_ops, &[
             TakeLeft,
