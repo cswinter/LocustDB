@@ -1,2 +1,3 @@
-# ruba
-A work-in-progress fast in-memory analytics datastore in Rust started during Dropbox Hack Week 2017.
+# LocustDB
+
+An experimental, in-memory analytics database aiming to provide state of the art performance on commodity hardware.
