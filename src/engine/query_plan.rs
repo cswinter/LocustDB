@@ -126,23 +126,25 @@ impl<'a> ExecutorStage<'a> {
 pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> BufferRef {
     let operation: Box<VecOperator> = match plan {
         QueryPlan::DecodeColumn(col) => match result.filter() {
-            Filter::None => Box::new(GetDecode::new(col, result.new_buffer())),
-            Filter::BitVec(filter) => Box::new(FilterDecode::new(col, filter, result.new_buffer())),
-            Filter::Indices(filter) => Box::new(IndexDecode::new(col, filter, result.new_buffer())),
+            Filter::None => VecOperator::get_decode(col, result.new_buffer()),
+            Filter::BitVec(filter) => VecOperator::filter_decode(col, filter, result.new_buffer()),
+            Filter::Indices(filter) => VecOperator::index_decode(col, filter, result.new_buffer()),
         }
         QueryPlan::ReadColumn(col) => match result.filter() {
-            Filter::None => Box::new(GetEncoded::new(col, result.new_buffer())),
-            Filter::BitVec(filter) => Box::new(FilterEncoded::new(col, filter, result.new_buffer())),
-            Filter::Indices(filter) => Box::new(IndexEncoded::new(col, filter, result.new_buffer())),
+            Filter::None => VecOperator::get_encoded(col, result.new_buffer()),
+            Filter::BitVec(filter) => VecOperator::filter_encoded(col, filter, result.new_buffer()),
+            Filter::Indices(filter) => VecOperator::index_encoded(col, filter, result.new_buffer()),
         }
-        QueryPlan::Constant(ref c) => Box::new(Constant::new(c.clone(), result.new_buffer())),
-        QueryPlan::DecodeWith(plan, codec) => Box::new(DecodeWith::new(prepare(*plan, result), result.new_buffer(), codec)),
+        QueryPlan::Constant(ref c) =>
+            VecOperator::constant(c.clone(), result.new_buffer()),
+        QueryPlan::DecodeWith(plan, codec) =>
+            VecOperator::decode(prepare(*plan, result), result.new_buffer(), codec),
         QueryPlan::TypeConversion(plan, initial_type, target_type) =>
             VecOperator::type_conversion(prepare(*plan, result), result.new_buffer(), initial_type, target_type),
         QueryPlan::EncodeStrConstant(plan, codec) =>
-            Box::new(EncodeStrConstant::new(prepare(*plan, result), result.new_buffer(), codec)),
+            VecOperator::encode_str_const(prepare(*plan, result), result.new_buffer(), codec),
         QueryPlan::EncodeIntConstant(plan, codec) =>
-            Box::new(EncodeIntConstant::new(prepare(*plan, result), result.new_buffer(), codec)),
+            VecOperator::encode_int_const(prepare(*plan, result), result.new_buffer(), codec),
         QueryPlan::BitPack(lhs, rhs, shift_amount) =>
             VecOperator::bit_shift_left_add(prepare(*lhs, result), prepare(*rhs, result), result.new_buffer(), shift_amount),
         QueryPlan::BitUnpack(inner, shift, width) =>
@@ -155,7 +157,7 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             let inplace = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
             // Probably same issue as this: https://github.com/rust-lang/rust/issues/49936
-            let operation = Boolean::or(inplace, prepare(*rhs, result));
+            let operation = VecOperator::or(inplace, prepare(*rhs, result));
             result.push(operation);
             return inplace;
         }
@@ -163,7 +165,7 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             let inplace: BufferRef = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
             // Probably same issue as this: https://github.com/rust-lang/rust/issues/49936
-            let operation = Boolean::and(inplace, prepare(*rhs, result));
+            let operation = VecOperator::and(inplace, prepare(*rhs, result));
             result.push(operation);
             return inplace;
         }
