@@ -25,16 +25,15 @@ fn main() {
     let ruba = Ruba::memory_only();
     println!("Loading {} into table default.", filename);
     let start_time = precise_time_ns();
-    let _ = block_on(ruba.load_csv(
-        filename, "default", LOAD_CHUNK_SIZE,
-        vec![
-            ("Tolls_Amt".to_owned(), ruba::extractor::multiply_by_100),
-            ("Tip_Amt".to_owned(), ruba::extractor::multiply_by_100),
-            ("Fare_Amt".to_owned(), ruba::extractor::multiply_by_100),
-            ("Total_Amt".to_owned(), ruba::extractor::multiply_by_100),
-            ("Trip_Pickup_DateTime".to_owned(), ruba::extractor::date_time),
-            ("Trip_Dropoff_DateTime".to_owned(), ruba::extractor::date_time),
-        ]));
+    block_on(ruba.load_csv(
+        filename,
+        Some(ruba::nyc_taxi_data::nyc_colnames()),
+        "default",
+        LOAD_CHUNK_SIZE,
+        ruba::nyc_taxi_data::nyc_extractors()))
+        .expect("Ingestion crashed!")
+        .expect("Failed to load file!");
+    
     let table_stats = block_on(ruba.table_stats()).expect("!?!");
     print_table_stats(&table_stats, start_time);
     repl(&ruba);
@@ -84,7 +83,7 @@ fn repl(ruba: &Ruba) {
                 }
                 match result {
                     Ok(output) => print_results::print_query_result(&output),
-                    Err(mut fail) =>{
+                    Err(mut fail) => {
                         println!("{}", fail);
                         while let Some(cause) = fail.cause() {
                             println!("{}", cause);

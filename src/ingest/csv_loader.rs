@@ -1,9 +1,13 @@
 extern crate csv;
+extern crate flate2;
 
 use std::boxed::Box;
 use std::collections::HashMap;
+use std::fs::File;
 use std::ops::BitOr;
 use std::sync::Arc;
+
+use self::flate2::read::GzDecoder;
 
 use mem_store::batch::Batch;
 use mem_store::column::*;
@@ -14,12 +18,29 @@ use super::extractor;
 
 type IngestionTransform = HashMap<String, extractor::Extractor>;
 
-pub fn ingest_file(filename: &str, chunk_size: usize, extractors: &IngestionTransform) -> Vec<Batch> {
+
+pub fn ingest_file(filename: &str, colnames: Option<Vec<String>>, chunk_size: usize, extractors: &IngestionTransform) -> Result<Vec<Batch>, String> {
     let mut reader = csv::Reader::from_file(filename)
-        .unwrap()
-        .has_headers(true);
-    let headers = reader.headers().unwrap();
-    auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors)
+        .map_err(|x| x.to_string())?
+        .has_headers(colnames.is_none());
+    let headers = match colnames {
+        Some(colnames) => colnames,
+        None => reader.headers().unwrap()
+    };
+    Ok(auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors))
+}
+
+pub fn ingest_gzipped_file(filename: &str, colnames: Option<Vec<String>>, chunk_size: usize, extractors: &IngestionTransform) -> Result<Vec<Batch>, String> {
+    let f = File::open(filename).map_err(|x| x.to_string())?;
+    let decoded = GzDecoder::new(f);
+    let mut reader =
+        csv::Reader::from_reader(decoded)
+            .has_headers(colnames.is_none());
+    let headers = match colnames {
+        Some(colnames) => colnames,
+        None => reader.headers().unwrap()
+    };
+    Ok(auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors))
 }
 
 fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T,
@@ -65,22 +86,28 @@ fn create_batch(cols: Vec<RawCol>, colnames: &[String], extractors: &IngestionTr
 
 pub struct CSVIngestionTask {
     filename: String,
+    colnames: Option<Vec<String>>,
+    gzipped: bool,
     table: String,
     chunk_size: usize,
     extractors: IngestionTransform,
     ruba: Arc<InnerRuba>,
-    sender: SharedSender<()>,
+    sender: SharedSender<Result<(), String>>,
 }
 
 impl CSVIngestionTask {
     pub fn new(filename: String,
+               colnames: Option<Vec<String>>,
+               gzipped: bool,
                table: String,
                chunk_size: usize,
                extractors: IngestionTransform,
                ruba: Arc<InnerRuba>,
-               sender: SharedSender<()>) -> CSVIngestionTask {
+               sender: SharedSender<Result<(), String>>) -> CSVIngestionTask {
         CSVIngestionTask {
             filename,
+            colnames,
+            gzipped,
             table,
             chunk_size,
             extractors,
@@ -92,9 +119,18 @@ impl CSVIngestionTask {
 
 impl Task for CSVIngestionTask {
     fn execute(&self) {
-        let batches = ingest_file(&self.filename, self.chunk_size, &self.extractors);
-        self.ruba.load_batches(&self.table, batches);
-        self.sender.send(());
+        let batches = if self.gzipped {
+            ingest_gzipped_file(&self.filename, self.colnames.clone(), self.chunk_size, &self.extractors)
+        } else {
+            ingest_file(&self.filename, self.colnames.clone(), self.chunk_size, &self.extractors)
+        };
+        match batches {
+            Ok(batches) => {
+                self.ruba.load_batches(&self.table, batches);
+                self.sender.send(Ok(()));
+            }
+            Err(msg) => self.sender.send(Err(msg))
+        }
     }
     fn completed(&self) -> bool { false }
     fn multithreaded(&self) -> bool { false }

@@ -1,0 +1,51 @@
+trip_id                39999994
+vendor_id              2
+pickup_datetime        2016-03-13 14:58:31
+dropoff_datetime       2016-03-13 15:04:05
+store_and_fwd_flag     N
+rate_code_id           1
+pickup_longitude       -73.924003601074219
+pickup_latitude        40.743988037109375
+dropoff_longitude      -73.93267822265625
+dropoff_latitude       40.752838134765625
+passenger_count        1
+trip_distance          0.93
+fare_amount            6
+extra                  0
+mta_tax                0.5
+tip_amount             0.5
+tolls_amount           0
+ehail_fee              
+improvement_surcharge  0.3
+total_amount           7.3
+payment_type           1
+trip_type              1
+pickup                 0101000020E6100000000000E0227B52C0000000003B5F4440
+dropoff                0101000020E610000000000000B17B52C0000000005D604440
+cab_type               green
+precipitation          0.00
+snow_depth             0
+snowfall               0.0
+max_temperature        62
+min_temperature        50
+average_wind_speed     3.58
+pickup_nyct2010_gid    2064
+pickup_ctlabel         181.01
+pickup_borocode        4
+pickup_boroname        Queens
+pickup_ct2010          018101
+pickup_boroct2010      4018101
+pickup_cdeligibil      E
+pickup_ntacode         QN31
+pickup_ntaname         Hunters Point-Sunnyside-West Maspeth
+pickup_puma            4109
+dropoff_nyct2010_gid   542
+dropoff_ctlabel        31
+dropoff_borocode       4
+dropoff_boroname       Queens
+dropoff_ct2010         003100
+dropoff_boroct2010     4003100
+dropoff_cdeligibil     E
+dropoff_ntacode        QN68
+dropoff_ntaname        Queensbridge-Ravenswood-Long Island City
+dropoff_puma           4101

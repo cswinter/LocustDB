@@ -1,0 +1,51 @@
+trip_id                1
+vendor_id              2
+pickup_datetime        2013-08-01 08:14:37
+dropoff_datetime       2013-08-01 09:09:06
+store_and_fwd_flag     N
+rate_code_id           1
+pickup_longitude       
+pickup_latitude        
+dropoff_longitude      
+dropoff_latitude       
+passenger_count        1
+trip_distance          0.00
+fare_amount            21.25
+extra                  0
+mta_tax                0
+tip_amount             0
+tolls_amount           0
+ehail_fee              
+improvement_surcharge  
+total_amount           21.25
+payment_type           2
+trip_type              
+pickup                 
+dropoff                
+cab_type               green
+precipitation          0.65
+snow_depth             0
+snowfall               0.0
+max_temperature        76
+min_temperature        66
+average_wind_speed     2.91
+pickup_nyct2010_gid    
+pickup_ctlabel         
+pickup_borocode        
+pickup_boroname        
+pickup_ct2010          
+pickup_boroct2010      
+pickup_cdeligibil      
+pickup_ntacode         
+pickup_ntaname         
+pickup_puma            
+dropoff_nyct2010_gid   
+dropoff_ctlabel        
+dropoff_borocode       
+dropoff_boroname       
+dropoff_ct2010         
+dropoff_boroct2010     
+dropoff_cdeligibil     
+dropoff_ntacode        
+dropoff_ntaname        
+dropoff_puma           

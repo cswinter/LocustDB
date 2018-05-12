@@ -52,7 +52,7 @@ impl Ruba {
             nom::IResult::Error(err) => return Box::new(future::ok((
                 Err(QueryError::ParseError(format!("{:?}", err))),
                 TraceBuilder::new("empty".to_owned()).finalize()))),
-            nom::IResult::Incomplete(needed)=> return Box::new(future::ok((
+            nom::IResult::Incomplete(needed) => return Box::new(future::ok((
                 Err(QueryError::ParseError(format!("Incomplete. Needed: {:?}", needed))),
                 TraceBuilder::new("empty".to_owned()).finalize()))),
         };
@@ -67,12 +67,15 @@ impl Ruba {
 
     pub fn load_csv(&self,
                     path: &str,
+                    colnames: Option<Vec<String>>,
                     table_name: &str,
                     chunk_size: usize,
-                    extractors: Vec<(String, Extractor)>) -> impl Future<Item=(), Error=oneshot::Canceled> {
+                    extractors: Vec<(String, Extractor)>) -> impl Future<Item=Result<(), String>, Error=oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
         let task = CSVIngestionTask::new(
             path.to_string(),
+            colnames,
+            path.ends_with(".gz"),
             table_name.to_string(),
             chunk_size,
             extractors.into_iter().collect(),

@@ -34,6 +34,7 @@ mod ruba;
 mod disk_store;
 
 pub use ingest::raw_val::RawVal as Value;
+pub use ingest::nyc_taxi_data;
 pub use ruba::Ruba as Ruba;
 pub use engine::query_task::QueryOutput;
 pub use mem_store::table::TableStats;
