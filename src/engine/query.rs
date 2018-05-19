@@ -83,6 +83,7 @@ impl Query {
 
         let mut executor = QueryExecutor::default();
 
+        // Filter
         let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, columns)?;
         match filter_type.encoding_type() {
             EncodingType::BitVec => {
@@ -92,11 +93,13 @@ impl Query {
             _ => {}
         }
 
+        // Combine all group by columns into a single decodable grouping key
         let (grouping_key_plan, grouping_key_type, max_grouping_key, decode_plans) =
             QueryPlan::compile_grouping_key(&self.select, columns)?;
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
-        let (encoded_group_by_column, grouping_key, _aggregation_cardinality) =
+        // Reduce cardinality of grouping key if necessary and perform grouping
+        let (encoded_group_by_column, grouping_key, grouping_key_type, _aggregation_cardinality) =
         // TODO(clemens): refine criterion
         // TODO(clemens): can often collect group_by from non-zero positions in aggregation result
             if max_grouping_key < 1 << 16 && grouping_key_type.is_positive_integer() {
@@ -107,6 +110,7 @@ impl Query {
                     max_grouping_key as usize,
                     &mut executor),
                  raw_grouping_key,
+                 grouping_key_type,
                  max_grouping_key_buf)
             } else {
                 query_plan::prepare_hashmap_grouping(
@@ -115,14 +119,11 @@ impl Query {
                     max_grouping_key as usize,
                     &mut executor)
             };
-
         executor.set_encoded_group_by(encoded_group_by_column);
-        // TODO(clemens): fix for multiple groups
-        // let groups = groups.order_preserving();
 
+        // Aggregators
         let mut aggregation_results = Vec::new();
         for &(aggregator, ref expr) in &self.aggregate {
-            trace_start!("aggregator {:?}", aggregator);
             let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
             // TODO(clemens): Use more precise aggregation_cardinality instead of max_grouping_key
             let mut aggregate = query_plan::prepare_aggregation(
@@ -134,45 +135,65 @@ impl Query {
                 aggregator,
                 &mut executor)?;
             aggregation_results.push(aggregate)
-            // TODO(clemens): renable
-            // result.push(compiled.execute().index_decode(&grouping_sort_indices));
         }
+
+        // Decode aggregation results
         let mut select = Vec::new();
         for (aggregate, t) in aggregation_results {
             if t.is_encoded() {
                 let decoded = query_plan::prepare(
                     QueryPlan::DecodeWith(
                         Box::new(QueryPlan::ReadBuffer(aggregate)),
-                        t.codec.unwrap()), &mut executor);
-                select.push(decoded);
+                        t.codec.clone().unwrap()), &mut executor);
+                select.push((decoded, t.decoded()));
             } else {
-                select.push(aggregate);
+                select.push((aggregate, t));
             }
         }
 
-        trace_replace!("decode grouping_key");
+        //  Reconstruct all group by columns from grouping
         let mut grouping_columns = Vec::with_capacity(decode_plans.len());
-        for decode_plan in decode_plans {
+        for (decode_plan, t) in decode_plans {
             let decoded = query_plan::prepare(decode_plan.clone(), &mut executor);
-            // TODO(clemens): renable
-            // .index_decode(&grouping_sort_indices);
-            grouping_columns.push(decoded);
+            grouping_columns.push((decoded, t));
         }
 
-        // TODO(clemens): sort if not already in sort order
-        /*let mut grouping_sort_indices = QueryPlan::create_query_plan(
-            QueryPlan::SortIndices(
-                Box::new(QueryPlan::ReadBuffer(group_by_column)),
-                (self.limit.limit + self.limit.offset) as usize,
-                false);
-        executor.new_stage();
-        executor.set_filter(Filter::Indices(sort_indices));*/
+        // If the grouping is not order preserving, we need to sort all output columns by using the ordering constructed from the decoded group by columns
+        // This is necessary to make it possible to efficiently merge with other batch results
+        if !grouping_key_type.is_order_preserving() {
+            if grouping_columns.len() != 1 {
+                bail!(QueryError::NotImplemented, "Grouping key is not order preserving and more than 1 grouping column")
+            }
+            let sort_indices = query_plan::prepare(
+                QueryPlan::SortIndices(
+                    Box::new(QueryPlan::ReadBuffer(grouping_columns[0].0)),
+                    false),
+                &mut executor);
+
+            select = select.iter().map(|(s, t)| {
+                (query_plan::prepare(
+                    QueryPlan::Select(
+                        Box::new(QueryPlan::ReadBuffer(*s)),
+                        Box::new(QueryPlan::ReadBuffer(sort_indices)),
+                        t.encoding_type(),
+                    ),
+                    &mut executor), t.clone())
+            }).collect();
+            grouping_columns = grouping_columns.iter().map(|(s, t)| {
+                (query_plan::prepare(
+                    QueryPlan::Select(
+                        Box::new(QueryPlan::ReadBuffer(*s)),
+                        Box::new(QueryPlan::ReadBuffer(sort_indices)),
+                        t.encoding_type(),
+                    ),
+                    &mut executor), t.clone())
+            }).collect();
+        }
 
         let mut results = executor.run();
-        let select_cols = select.iter().map(|&i| results.collect(i)).collect();
-        let group_by_cols = grouping_columns.iter().map(|&i| results.collect(i)).collect();
+        let select_cols = select.iter().map(|&(i, _)| results.collect(i)).collect();
+        let group_by_cols = grouping_columns.iter().map(|&(i, _)| results.collect(i)).collect();
 
-        trace_replace!("final decode");
         let batch = BatchResult {
             group_by: Some(group_by_cols),
             sort_by: None,

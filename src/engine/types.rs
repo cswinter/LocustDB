@@ -1,5 +1,7 @@
-use mem_store::*;
+use std::fmt;
 
+use mem_store::*;
+use engine::*;
 
 #[derive(Debug, Copy, Clone)]
 pub enum EncodingType {
@@ -68,9 +70,9 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub fn encoded(basic: BasicType, codec: Codec<'a>) -> Type {
+    pub fn encoded(codec: Codec<'a>) -> Type {
         Type {
-            decoded: basic,
+            decoded: codec.decoded_type(),
             codec: Some(codec),
             is_scalar: false,
             is_borrowed: false,
@@ -133,3 +135,50 @@ impl<'a> Type<'a> {
     }
 }
 
+pub struct OpaqueCodec {
+    encoding_type: EncodingType,
+    decoded_type: BasicType,
+    is_summation_preserving: bool,
+    is_order_preserving: bool,
+    is_positive_integer: bool,
+    encoding_range: Option<(i64, i64)>,
+}
+
+impl OpaqueCodec {
+    pub fn new(decoded_type: BasicType, encoding_type: EncodingType) -> OpaqueCodec {
+        OpaqueCodec {
+            encoding_type,
+            decoded_type,
+            is_summation_preserving: false,
+            is_order_preserving: false,
+            is_positive_integer: false,
+            encoding_range: None,
+        }
+    }
+
+    pub fn set_positive_integer(mut self, positive_integer: bool) -> OpaqueCodec {
+        self.is_positive_integer = positive_integer;
+        self
+    }
+
+    pub fn set_order_preserving(mut self, order_preserving: bool) -> OpaqueCodec {
+        self.is_order_preserving = order_preserving;
+        self
+    }
+}
+
+impl<'a> ColumnCodec<'a> for OpaqueCodec {
+    fn unwrap_decode<'b>(&self, _data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b { panic!("OpaqueCodec.unwrap_decode()") }
+    fn encoding_type(&self) -> EncodingType { self.encoding_type }
+    fn decoded_type(&self) -> BasicType { self.decoded_type }
+    fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }
+    fn is_order_preserving(&self) -> bool { self.is_order_preserving }
+    fn is_positive_integer(&self) -> bool { self.is_positive_integer }
+    fn encoding_range(&self) -> Option<(i64, i64)> { self.encoding_range }
+}
+
+impl fmt::Debug for OpaqueCodec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Opaque")
+    }
+}

@@ -38,6 +38,8 @@ pub enum QueryPlan<'a> {
 
     SortIndices(Box<QueryPlan<'a>>, bool),
 
+    Select(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>, EncodingType),
+
     EncodedGroupByPlaceholder,
 
     Constant(RawVal),
@@ -127,6 +129,8 @@ impl<'a> ExecutorStage<'a> {
 
 pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> BufferRef {
     let operation: Box<VecOperator> = match plan {
+        QueryPlan::Select(plan, indices, t) =>
+            VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.new_buffer()),
         QueryPlan::DecodeColumn(col) => {
             let column_buffer = result.new_buffer();
             let column_op = VecOperator::get_decode(col, column_buffer);
@@ -209,16 +213,19 @@ pub fn prepare_unique(raw_grouping_key: BufferRef,
     output
 }
 
-pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
-                                grouping_key_type: EncodingType,
-                                max_cardinality: usize,
-                                result: &mut QueryExecutor) -> (BufferRef, BufferRef, BufferRef) {
+pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
+                                    grouping_key_type: EncodingType,
+                                    max_cardinality: usize,
+                                    result: &mut QueryExecutor) -> (BufferRef, BufferRef, Type<'a>, BufferRef) {
     let unique_out = result.new_buffer();
     let grouping_key_out = result.new_buffer();
     let cardinality_out = result.new_buffer();
     result.push(VecOperator::hash_map_grouping(
         raw_grouping_key, unique_out, grouping_key_out, cardinality_out, grouping_key_type, max_cardinality));
-    (unique_out, grouping_key_out, cardinality_out)
+    (unique_out,
+     grouping_key_out,
+     Type::encoded(Arc::new(OpaqueCodec::new(BasicType::Integer, grouping_key_type).set_positive_integer(true))),
+     cardinality_out)
 }
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
@@ -238,7 +245,7 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                max_index,
                                false),
             // TODO(clemens): plain integer encoding
-            Type::encoded(BasicType::Integer, Arc::new(IntegerOffsetCodec::<u32>::new(0, max_index)))
+            Type::encoded(Arc::new(IntegerOffsetCodec::<u32>::new(0, max_index)))
         ),
 
         (Aggregator::Sum, mut plan) => {
@@ -360,7 +367,7 @@ impl<'a> QueryPlan<'a> {
     }
 
     pub fn compile_grouping_key<'b>(exprs: &[Expr],
-                                    columns: &HashMap<&'b str, &'b Column>) -> Result<(QueryPlan<'b>, Type<'b>, i64, Vec<QueryPlan<'b>>), QueryError> {
+                                    columns: &HashMap<&'b str, &'b Column>) -> Result<(QueryPlan<'b>, Type<'b>, i64, Vec<(QueryPlan<'b>, Type<'b>)>), QueryError> {
         if exprs.len() == 1 {
             QueryPlan::create_query_plan(&exprs[0], columns)
                 .map(|(gk_plan, gk_type)| {
@@ -370,13 +377,14 @@ impl<'a> QueryPlan<'a> {
                         |codec| QueryPlan::DecodeWith(
                             Box::new(QueryPlan::EncodedGroupByPlaceholder),
                             codec));
-                    (gk_plan.clone(), gk_type, max_cardinality, vec![decoded_group_by])
+                    (gk_plan.clone(), gk_type.clone(), max_cardinality, vec![(decoded_group_by, gk_type.decoded())])
                 })
         } else if exprs.len() == 2 {
             let mut total_width = 0;
             let mut largest_key = 0;
             let mut plan = None;
             let mut decode_plans = Vec::with_capacity(exprs.len());
+            let mut order_preserving = true;
             for expr in exprs.iter().rev() {
                 let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
                 // TODO(clemens): Potentially subtract min if min is negative or this makes grouping key fit into 64 bits
@@ -385,6 +393,7 @@ impl<'a> QueryPlan<'a> {
                         plan = None;
                         break;
                     }
+                    order_preserving = order_preserving && plan_type.is_order_preserving();
                     let query_plan = QueryPlan::TypeConversion(Box::new(query_plan),
                                                                plan_type.encoding_type(),
                                                                EncodingType::I64);
@@ -405,12 +414,12 @@ impl<'a> QueryPlan<'a> {
                         Box::new(decode_plan),
                         EncodingType::I64,
                         plan_type.encoding_type());
-                    if let Some(codec) = plan_type.codec {
+                    if let Some(codec) = plan_type.codec.clone() {
                         decode_plan = QueryPlan::DecodeWith(
                             Box::new(decode_plan),
                             codec)
                     }
-                    decode_plans.push(decode_plan);
+                    decode_plans.push((decode_plan, plan_type.decoded()));
 
                     largest_key += max << total_width;
                     total_width += bits;
@@ -423,7 +432,10 @@ impl<'a> QueryPlan<'a> {
             if let Some(plan) = plan {
                 if total_width <= 64 {
                     decode_plans.reverse();
-                    return Ok((plan, Type::new(BasicType::Integer, None), largest_key, decode_plans));
+                    let t = Type::encoded(Arc::new(OpaqueCodec::new(BasicType::Integer, EncodingType::I64)
+                        .set_order_preserving(order_preserving)
+                        .set_positive_integer(true)));
+                    return Ok((plan, t, largest_key, decode_plans));
                 }
             }
             // TODO(clemens): add u8, u16, u32, u128 grouping keys

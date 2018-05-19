@@ -175,11 +175,11 @@ fn z_test_count_by_dropoff_boroct2010() {
     test_query_nyc(
         "select dropoff_boroct2010, count(1) from default;",
         &[
-            vec![0.into(), 423.into()],
-            vec![1000800.into(), 1.into()],
-            vec![1011500.into(), 2.into()],
-            vec![1022500.into(), 3.into()],
-            vec![1025100.into(), 3.into()],
+            vec![0.into(), 668.into()],
+            vec![1000201.into(), 1.into()],
+            vec![1000202.into(), 2.into()],
+            vec![1000600.into(), 2.into()],
+            vec![1000700.into(), 7.into()],
         ],
     )
 }

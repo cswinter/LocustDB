@@ -253,6 +253,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    // TODO(clemens): allow different types on raw input grouping key and output grouping key
     pub fn hash_map_grouping(raw_grouping_key: BufferRef,
                              unique_out: BufferRef,
                              grouping_key_out: BufferRef,
