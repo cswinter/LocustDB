@@ -168,20 +168,25 @@ impl Query {
         executor.new_stage();
         executor.set_filter(Filter::Indices(sort_indices));*/
 
-        //println!("{}", &executor);
         let mut results = executor.run();
-        let select = select.into_iter().map(|i| results.collect(i)).collect();
-        let group_by = grouping_columns.into_iter().map(|i| results.collect(i)).collect();
+        let select_cols = select.iter().map(|&i| results.collect(i)).collect();
+        let group_by_cols = grouping_columns.iter().map(|&i| results.collect(i)).collect();
 
         trace_replace!("final decode");
-        Ok(BatchResult {
-            group_by: Some(group_by),
+        let batch = BatchResult {
+            group_by: Some(group_by_cols),
             sort_by: None,
-            select: select,
+            select: select_cols,
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
             level: 0,
             batch_count: 1,
-        })
+        };
+        if let Err(err) = batch.validate() {
+            error!("Query result failed validation: {}\n{}\nGroup By:{:?}\nSelect: Write {:?}", err, &executor, grouping_columns, select);
+            Err(err)
+        } else {
+            Ok(batch)
+        }
     }
 
     pub fn is_select_star(&self) -> bool {

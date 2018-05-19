@@ -1,14 +1,17 @@
 extern crate ruba;
 extern crate futures;
+#[macro_use]
 extern crate log;
 extern crate env_logger;
 
+use std::cmp::min;
 use futures::executor::block_on;
 use ruba::*;
 use ruba::nyc_taxi_data::*;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
-    let _ = env_logger::try_init();
+    let _ =
+        env_logger::try_init();
     let ruba = Ruba::memory_only();
     let _ = block_on(ruba.load_csv("test_data/tiny.csv", None, "default", 40, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
@@ -21,6 +24,16 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", None, "default", 3, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
+}
+
+fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
+    let _ = env_logger::try_init();
+    let ruba = Ruba::memory_only();
+    let load = block_on(ruba.load_csv("test_data/nyc-taxi.csv.gz", Some(nyc_colnames()), "default", 999, nyc_extractors()));
+    load.unwrap().ok();
+    let result = block_on(ruba.run_query(query)).unwrap();
+    let actual_rows = result.0.unwrap().rows;
+    assert_eq!(&actual_rows[..min(5, actual_rows.len())], expected_rows);
 }
 
 #[test]
@@ -155,13 +168,18 @@ fn test_multiple_group_by_2() {
     )
 }
 
+// Tests are run in alphabetical order (why ;_;) and this one takes a few seconds to run, so prepend z to run last
 #[test]
-fn test_csv_load() {
-    let _ = env_logger::try_init();
-    let ruba = Ruba::memory_only();
-    let result = block_on(ruba.load_csv("test_data/nyc-taxi.csv.gz", Some(nyc_colnames()), "default", 999, nyc_extractors()));
-    result.unwrap().ok();
+fn z_test_count_by_dropoff_boroct2010() {
+    // TODO(clemens): hashmap grouping still broken bc of missing sort
+    test_query_nyc(
+        "select dropoff_boroct2010, count(1) from default;",
+        &[
+            vec![0.into(), 423.into()],
+            vec![1000800.into(), 1.into()],
+            vec![1011500.into(), 2.into()],
+            vec![1022500.into(), 3.into()],
+            vec![1025100.into(), 3.into()],
+        ],
+    )
 }
-
-// TODO(clemens): add test case for this query and fix
-// "select dropoff_boroct2010, count(1) from default;"

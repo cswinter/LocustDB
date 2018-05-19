@@ -4,6 +4,7 @@ use std::usize;
 use engine::aggregator::Aggregator;
 use engine::types::*;
 use engine::*;
+use errors::QueryError;
 
 
 pub struct BatchResult<'a> {
@@ -20,6 +21,27 @@ impl<'a> BatchResult<'a> {
         match self.group_by {
             Some(ref g) => g[0].len(),
             None => self.select.get(0).map_or(0, |s| s.len()),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), QueryError> {
+        let mut lengths = Vec::new();
+        let mut info_str = "".to_owned();
+        if let Some(ref group_bys) = self.group_by {
+            for (i, group_by) in group_bys.iter().enumerate() {
+                lengths.push(group_by.len());
+                info_str = format!("{}:group_by[{}].len = {}", info_str, i, group_by.len());
+            }
+        }
+        for (i, select) in self.select.iter().enumerate() {
+            lengths.push(select.len());
+            info_str = format!("{}:select[{}].len = {}", info_str, i, select.len()).to_owned();
+        }
+        let all_lengths_same = lengths.iter().all(|x| *x == lengths[0]);
+        if all_lengths_same {
+            Ok(())
+        } else {
+            Err(QueryError::FatalError(info_str))
         }
     }
 }
@@ -333,10 +355,16 @@ fn merge_aggregate<'a>(left: &[i64], right: &[i64], ops: &[MergeOp], aggregator:
     for op in ops {
         match *op {
             MergeOp::TakeLeft => {
+                if i == left.len() {
+                    error!("{} {} {}", left.len(), right.len(), ops.len());
+                }
                 result.push(left[i]);
                 i += 1;
             }
             MergeOp::TakeRight => {
+                if j == right.len() {
+                    error!("{} {} {}", left.len(), right.len(), ops.len());
+                }
                 result.push(right[j]);
                 j += 1;
             }

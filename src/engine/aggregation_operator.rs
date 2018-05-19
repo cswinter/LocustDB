@@ -86,7 +86,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
                     old
                 }));
             }
-            (grouping, groups, count.to_usize().unwrap())
+            (groups, grouping, count.to_usize().unwrap())
         };
         scratchpad.set(self.unique_out, TypedVec::owned(unique));
         scratchpad.set(self.grouping_key_out, TypedVec::owned(grouping_key));
