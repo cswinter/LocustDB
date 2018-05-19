@@ -1,12 +1,12 @@
 use engine::vector_op::vector_operator::*;
-use mem_store::column::ColumnCodec;
+use mem_store::*;
 
 
 #[derive(Debug)]
 pub struct Decode<'a> {
     pub input: BufferRef,
     pub output: BufferRef,
-    pub codec: &'a ColumnCodec,
+    pub codec: Codec<'a>,
 }
 
 impl<'a> VecOperator<'a> for Decode<'a> {

@@ -8,9 +8,9 @@ use std::collections::hash_set::HashSet;
 use std::rc::Rc;
 
 
-pub trait ColumnBuilder<T: ?Sized> {
+pub trait ColumnBuilder<T: ? Sized> {
     fn push(&mut self, elem: &T);
-    fn finalize(self) -> Box<ColumnData>;
+    fn finalize(self, name: &str) -> Box<Column>;
 }
 
 
@@ -35,8 +35,8 @@ impl ColumnBuilder<str> for StringColBuilder {
         self.uniques.insert(str_opt);
     }
 
-    fn finalize(self) -> Box<ColumnData> {
-        build_string_column(&self.data, self.uniques)
+    fn finalize(self, name: &str) -> Box<Column> {
+        build_string_column(name, &self.data, self.uniques)
     }
 }
 
@@ -65,8 +65,8 @@ impl ColumnBuilder<i64> for IntColBuilder {
         self.data.push(elem);
     }
 
-    fn finalize(self) -> Box<ColumnData> {
-        IntegerColumn::new_boxed(self.data, self.min, self.max)
+    fn finalize(self, name: &str) -> Box<Column> {
+        IntegerColumn::new_boxed(name, self.data, self.min, self.max)
     }
 }
 

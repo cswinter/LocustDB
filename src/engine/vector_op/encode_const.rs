@@ -1,22 +1,12 @@
 use engine::*;
 use engine::vector_op::vector_operator::*;
-use mem_store::column::ColumnCodec;
+use mem_store::*;
 
 #[derive(Debug)]
 pub struct EncodeStrConstant<'a> {
-    constant: BufferRef,
-    output: BufferRef,
-    codec: &'a ColumnCodec,
-}
-
-impl<'a> EncodeStrConstant<'a> {
-    pub fn new(constant: BufferRef, output: BufferRef, codec: &'a ColumnCodec) -> EncodeStrConstant<'a> {
-        EncodeStrConstant {
-            constant,
-            output,
-            codec,
-        }
-    }
+    pub constant: BufferRef,
+    pub output: BufferRef,
+    pub codec: Codec<'a>,
 }
 
 impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
@@ -32,19 +22,9 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
 
 #[derive(Debug)]
 pub struct EncodeIntConstant<'a> {
-    constant: BufferRef,
-    output: BufferRef,
-    codec: &'a ColumnCodec,
-}
-
-impl<'a> EncodeIntConstant<'a> {
-    pub fn new(constant: BufferRef, output: BufferRef, codec: &'a ColumnCodec) -> EncodeIntConstant<'a> {
-        EncodeIntConstant {
-            constant,
-            output,
-            codec,
-        }
-    }
+    pub constant: BufferRef,
+    pub output: BufferRef,
+    pub codec: Codec<'a>,
 }
 
 impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {

@@ -1,10 +1,12 @@
-use heapsize::HeapSizeOf;
-use mem_store::column::ColumnData;
-use mem_store::column_builder::*;
-use std::ops::BitOr;
 use std::iter::repeat;
+use std::ops::BitOr;
+
+use heapsize::HeapSizeOf;
+
 use ingest::raw_val::RawVal;
-use mem_store::null_column::NullColumn;
+use mem_store::*;
+use mem_store::column_builder::*;
+
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct RawCol {
@@ -50,7 +52,7 @@ impl RawCol {
         self.data.len()
     }
 
-    pub fn finalize(self) -> Box<ColumnData> {
+    pub fn finalize(self, name: &str) -> Box<Column> {
         if self.types.contains_string {
             let mut builder = StringColBuilder::new();
             for v in self.data {
@@ -60,7 +62,7 @@ impl RawCol {
                     RawVal::Null => builder.push(""),
                 }
             }
-            builder.finalize()
+            builder.finalize(name)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::new();
             for v in self.data {
@@ -70,9 +72,9 @@ impl RawCol {
                     RawVal::Null => builder.push(&0),
                 }
             }
-            builder.finalize()
+            builder.finalize(name)
         } else {
-            Box::new(NullColumn::new(self.data.len()))
+            Column::plain(name, self.data.len())
         }
     }
 }

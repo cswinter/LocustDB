@@ -1,4 +1,4 @@
-use mem_store::column::ColumnCodec;
+use mem_store::*;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -16,6 +16,19 @@ pub enum EncodingType {
     U32,
 }
 
+impl EncodingType {
+    pub fn cast_to_basic(&self) -> BasicType {
+        match self {
+            EncodingType::Str => BasicType::String,
+            EncodingType::I64 => BasicType::Integer,
+            EncodingType::Val => BasicType::Val,
+            EncodingType::Null => BasicType::Null,
+            EncodingType::BitVec => BasicType::Boolean,
+            _ => panic!("{:?} does not have a corresponding BasicType", &self)
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BasicType {
     String,
@@ -26,7 +39,7 @@ pub enum BasicType {
 }
 
 impl BasicType {
-    fn to_encoded(&self) -> EncodingType {
+    pub fn to_encoded(&self) -> EncodingType {
         match *self {
             BasicType::String => EncodingType::Str,
             BasicType::Integer => EncodingType::I64,
@@ -37,16 +50,16 @@ impl BasicType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Type<'a> {
     pub decoded: BasicType,
-    pub codec: Option<&'a ColumnCodec>,
+    pub codec: Option<Codec<'a>>,
     pub is_scalar: bool,
     pub is_borrowed: bool,
 }
 
 impl<'a> Type<'a> {
-    pub fn new(basic: BasicType, codec: Option<&'a ColumnCodec>) -> Type {
+    pub fn new(basic: BasicType, codec: Option<Codec>) -> Type {
         Type {
             decoded: basic,
             codec,
@@ -55,7 +68,25 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub fn bit_vec() -> Type<'static> {
+    pub fn encoded(basic: BasicType, codec: Codec<'a>) -> Type {
+        Type {
+            decoded: basic,
+            codec: Some(codec),
+            is_scalar: false,
+            is_borrowed: false,
+        }
+    }
+
+    pub fn unencoded(basic: BasicType) -> Type<'a> {
+        Type {
+            decoded: basic,
+            codec: None,
+            is_scalar: false,
+            is_borrowed: false,
+        }
+    }
+
+    pub fn bit_vec() -> Type<'a> {
         Type::new(BasicType::Boolean, None).mutable()
     }
 
@@ -64,19 +95,19 @@ impl<'a> Type<'a> {
     }
 
     pub fn is_summation_preserving(&self) -> bool {
-        self.codec.map_or(true, |c| c.is_summation_preserving())
+        self.codec.as_ref().map_or(true, |c| c.is_summation_preserving())
     }
 
     pub fn is_order_preserving(&self) -> bool {
-        self.codec.map_or(true, |c| c.is_order_preserving())
+        self.codec.as_ref().map_or(true, |c| c.is_order_preserving())
     }
 
     pub fn is_positive_integer(&self) -> bool {
         // TODO(clemens): this is wrong
-        self.codec.map_or(self.decoded == BasicType::Integer, |c| c.is_positive_integer())
+        self.codec.as_ref().map_or(self.decoded == BasicType::Integer, |c| c.is_positive_integer())
     }
 
-    pub fn scalar(basic: BasicType) -> Type<'static> {
+    pub fn scalar(basic: BasicType) -> Type<'a> {
         Type {
             decoded: basic,
             codec: None,
@@ -86,13 +117,14 @@ impl<'a> Type<'a> {
     }
 
     pub fn encoding_type(&self) -> EncodingType {
-        self.codec.map_or(self.decoded.to_encoded(), |x| x.encoding_type())
+        self.codec.as_ref().map_or(self.decoded.to_encoded(), |x| x.encoding_type())
     }
 
-    pub fn decoded(mut self) -> Type<'a> {
-        self.is_borrowed = !self.is_encoded();
-        self.codec = None;
-        self
+    pub fn decoded(&self) -> Type<'a> {
+        let mut result = (*self).clone();
+        result.is_borrowed = !self.is_encoded();
+        result.codec = None;
+        result
     }
 
     pub fn mutable(mut self) -> Type<'a> {

@@ -89,7 +89,7 @@ impl HeapSizeOf for Buffer {
 impl From<Buffer> for Batch {
     fn from(buffer: Buffer) -> Self {
         Batch::new(buffer.buffer.into_iter()
-            .map(|(name, raw_col)| (name, raw_col.finalize()))
+            .map(|(name, raw_col)| raw_col.finalize(&name))
             .collect())
     }
 }

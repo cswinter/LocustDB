@@ -1,15 +1,17 @@
+use std::borrow::BorrowMut;
+use std::marker::PhantomData;
 use std::cell::{RefCell, Ref, RefMut};
 use std::fmt;
 use std::mem;
-use std::borrow::BorrowMut;
 
 use bit_vec::BitVec;
+
 use engine::aggregation_operator::*;
 use engine::typed_vec::TypedVec;
 use engine::types::EncodingType;
 use engine::*;
 use ingest::raw_val::RawVal;
-use mem_store::column::{ColumnData, ColumnCodec};
+use mem_store::*;
 
 use engine::vector_op::bit_unpack::BitUnpackOperator;
 use engine::vector_op::bool_op::*;
@@ -17,9 +19,11 @@ use engine::vector_op::column_ops::*;
 use engine::vector_op::constant::Constant;
 use engine::vector_op::decode::Decode;
 use engine::vector_op::encode_const::*;
+use engine::vector_op::filter::Filter;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
 use engine::vector_op::sort_indices::SortIndices;
 use engine::vector_op::type_conversion::TypeConversionOperator;
+use engine::vector_op::select::Select;
 use engine::vector_op::vec_const_bool_op::*;
 
 
@@ -90,39 +94,46 @@ impl<'a> Scratchpad<'a> {
 
 
 impl<'a> VecOperator<'a> {
-    pub fn get_decode(col: &'a ColumnData, output: BufferRef) -> BoxedOperator<'a> {
+    pub fn get_decode(col: &'a Column, output: BufferRef) -> BoxedOperator<'a> {
         Box::new(GetDecode { col, output })
     }
 
-    pub fn filter_decode(col: &'a ColumnData, filter: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(FilterDecode { col, filter, output })
-    }
-
-    pub fn index_decode(col: &'a ColumnData, filter: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(IndexDecode { col, filter, output })
-    }
-
-    pub fn get_encoded(col: &'a ColumnCodec, output: BufferRef) -> BoxedOperator<'a> {
+    pub fn get_encoded(col: &'a Column, output: BufferRef) -> BoxedOperator<'a> {
         Box::new(GetEncoded { col, output })
     }
 
-    pub fn filter_encoded(col: &'a ColumnCodec, filter: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(FilterEncoded { col, filter, output })
-    }
-
-    pub fn index_encoded(col: &'a ColumnCodec, filter: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(IndexEncoded { col, filter, output })
-    }
-
-    pub fn decode(input: BufferRef, output: BufferRef, codec: &'a ColumnCodec) -> BoxedOperator<'a> {
+    pub fn decode(input: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {
         Box::new(Decode { input, output, codec })
     }
 
-    pub fn encode_int_const(constant: BufferRef, output: BufferRef, codec: &'a ColumnCodec) -> BoxedOperator<'a> {
-        Box::new(EncodeIntConstant::new(constant, output, codec))
+    pub fn encode_int_const(constant: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {
+        Box::new(EncodeIntConstant { constant, output, codec })
     }
-    pub fn encode_str_const(constant: BufferRef, output: BufferRef, codec: &'a ColumnCodec) -> BoxedOperator<'a> {
-        Box::new(EncodeStrConstant::new(constant, output, codec))
+
+    pub fn encode_str_const(constant: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {
+        Box::new(EncodeStrConstant { constant, output, codec })
+    }
+
+    pub fn filter(t: EncodingType, input: BufferRef, filter: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
+        match t {
+            EncodingType::I64 => Box::new(Filter::<i64> { input, filter, output, t: PhantomData }),
+            EncodingType::U32 => Box::new(Filter::<u32> { input, filter, output, t: PhantomData }),
+            EncodingType::U16 => Box::new(Filter::<u16> { input, filter, output, t: PhantomData }),
+            EncodingType::U8 => Box::new(Filter::<u8> { input, filter, output, t: PhantomData }),
+            EncodingType::Str => Box::new(Filter::<&str> { input, filter, output, t: PhantomData }),
+            _ => panic!("filter not supported for type {:?}", t),
+        }
+    }
+
+    pub fn select(t: EncodingType, input: BufferRef, indices: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
+        match t {
+            EncodingType::I64 => Box::new(Select::<i64> { input, indices, output, t: PhantomData }),
+            EncodingType::U32 => Box::new(Select::<u32> { input, indices, output, t: PhantomData }),
+            EncodingType::U16 => Box::new(Select::<u16> { input, indices, output, t: PhantomData }),
+            EncodingType::U8 => Box::new(Select::<u8> { input, indices, output, t: PhantomData }),
+            EncodingType::Str => Box::new(Select::<&str> { input, indices, output, t: PhantomData }),
+            _ => panic!("filter not supported for type {:?}", t),
+        }
     }
 
     pub fn constant(val: RawVal, output: BufferRef) -> BoxedOperator<'a> {

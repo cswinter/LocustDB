@@ -1,19 +1,21 @@
+use std::cmp::max;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::mem;
 use std::string;
 
 use bit_vec::BitVec;
-use engine::types::*;
 use heapsize::HeapSizeOf;
-use ingest::raw_val::RawVal;
 use num::PrimInt;
+
+use engine::types::*;
+use ingest::raw_val::RawVal;
 
 
 pub type BoxedVec<'a> = Box<TypedVec<'a> + 'a>;
 
 
-pub trait TypedVec<'a>: Send {
+pub trait TypedVec<'a>: Send + Sync {
     fn len(&self) -> usize;
     fn get_raw(&self, i: usize) -> RawVal;
     fn get_type(&self) -> EncodingType;
@@ -21,6 +23,7 @@ pub trait TypedVec<'a>: Send {
     fn sort_indices_asc(&self, indices: &mut Vec<usize>);
     fn type_error(&self, func_name: &str) -> String;
     fn extend(&mut self, other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>>;
+    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b { panic!(self.type_error("ref_box")) }
 
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
     fn cast_ref_usize(&self) -> &[usize] { panic!(self.type_error("cast_ref_usize")) }
@@ -61,12 +64,14 @@ impl<'a, T: VecType<T> + 'a> TypedVec<'a> for Vec<T> {
     fn sort_indices_asc(&self, indices: &mut Vec<usize>) {
         indices.sort_unstable_by_key(|i| self[*i]);
     }
+    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b { Box::new(&self[..]) }
 
     fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
 
     fn extend(&mut self, other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
         // TODO(clemens): handle empty, null, type conversions to Mixed
-        self.extend_from_slice(T::unwrap(other.as_ref()));
+        let x = T::unwrap(other.as_ref());
+        self.extend_from_slice(&x[0..max(x.len(), count)]);
         None
     }
 }
@@ -101,7 +106,7 @@ impl<'a> TypedVec<'a> for Vec<u8> {
     fn cast_ref_mut_u8(&mut self) -> &mut [u8] { self }
 }
 
-impl<'a, 'b, T: VecType<T> + 'a> TypedVec<'a> for &'b [T] {
+impl<'a, T: VecType<T> + 'a> TypedVec<'a> for &'a [T] {
     fn len(&self) -> usize { <[T]>::len(self) }
     fn get_raw(&self, i: usize) -> RawVal { T::wrap_one(self[i]) }
     fn get_type(&self) -> EncodingType { T::t() }
@@ -114,33 +119,33 @@ impl<'a, 'b, T: VecType<T> + 'a> TypedVec<'a> for &'b [T] {
 
     fn type_error(&self, func_name: &str) -> String { format!("[{:?}].{}", T::t(), func_name) }
 
-    fn extend(&mut self, other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
+    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> {
         // TODO(clemens): convert into owned
         unimplemented!()
     }
 }
 
-impl<'a, 'c> TypedVec<'a> for &'c [&'a str] {
+impl<'a> TypedVec<'a> for &'a [&'a str] {
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { self }
 }
 
-impl<'a, 'c> TypedVec<'a> for &'c [usize] {
+impl<'a> TypedVec<'a> for &'a [usize] {
     fn cast_ref_usize<'b>(&'b self) -> &'b [usize] { self }
 }
 
-impl<'a, 'c> TypedVec<'a> for &'c [i64] {
+impl<'a> TypedVec<'a> for &'a [i64] {
     fn cast_ref_i64<'b>(&'b self) -> &'b [i64] { self }
 }
 
-impl<'a, 'c> TypedVec<'a> for &'c [u32] {
+impl<'a> TypedVec<'a> for &'a [u32] {
     fn cast_ref_u32<'b>(&'b self) -> &'b [u32] { self }
 }
 
-impl<'a, 'c> TypedVec<'a> for &'c [u16] {
+impl<'a> TypedVec<'a> for &'a [u16] {
     fn cast_ref_u16<'b>(&'b self) -> &'b [u16] { self }
 }
 
-impl<'a, 'c> TypedVec<'a> for &'c [u8] {
+impl<'a> TypedVec<'a> for &'a [u8] {
     fn cast_ref_u8<'b>(&'b self) -> &'b [u8] { self }
 }
 
@@ -156,15 +161,14 @@ impl<'a> TypedVec<'a> for BitVec {
     fn cast_ref_bit_vec(&self) -> &BitVec { self }
 }
 
-
 impl<'a> TypedVec<'a> for usize {
     fn len(&self) -> usize { *self }
-    fn get_raw(&self, i: usize) -> RawVal { panic!("EmptyVector.get_raw") }
+    fn get_raw(&self, _i: usize) -> RawVal { panic!("EmptyVector.get_raw") }
     fn get_type(&self) -> EncodingType { panic!("EmptyVector.get_type") }
     fn sort_indices_desc(&self, _indices: &mut Vec<usize>) { panic!("EmptyVector.sort_indices_desc") }
     fn sort_indices_asc(&self, _indices: &mut Vec<usize>) { panic!("EmptyVector.sort_indices_asc") }
     fn type_error(&self, func_name: &str) -> String { format!("EmptyVector.{}", func_name) }
-    fn extend(&mut self, _other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>> { panic!("EmptyVector.extend") }
+    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("EmptyVector.extend") }
 }
 
 impl<'a> TypedVec<'a> for RawVal {

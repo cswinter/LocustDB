@@ -237,7 +237,7 @@ impl QueryTask {
         trace_start!("prepare_batch");
         source.cols().iter()
             .filter(|col| referenced_cols.contains(col.name()))
-            .map(|col| (col.name(), col))
+            .map(|col| (col.name(), col.as_ref()))
             .collect()
     }
 

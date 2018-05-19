@@ -10,5 +10,7 @@ mod parameterized_vec_vec_int_op;
 mod sort_indices;
 mod type_conversion;
 mod vec_const_bool_op;
+mod filter;
+mod select;
 
 pub use self::vector_operator::*;

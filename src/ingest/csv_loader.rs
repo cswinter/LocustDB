@@ -12,7 +12,6 @@ use self::flate2::read::GzDecoder;
 use mem_store::batch::Batch;
 use mem_store::column::*;
 use mem_store::column_builder::*;
-use mem_store::null_column::NullColumn;
 use scheduler::*;
 use super::extractor;
 
@@ -76,8 +75,8 @@ fn create_batch(cols: Vec<RawCol>, colnames: &[String], extractors: &IngestionTr
     let mut mem_store = Vec::new();
     for (i, col) in cols.into_iter().enumerate() {
         let new_column = match extractors.get(&colnames[i]) {
-            Some(extractor) => Column::new(colnames[i].clone(), col.extract(extractor)),
-            None => Column::new(colnames[i].clone(), col.finalize()),
+            Some(extractor) => col.extract(&colnames[i], extractor),
+            None => col.finalize(&colnames[i]),
         };
         mem_store.push(new_column);
     }
@@ -155,13 +154,13 @@ impl RawCol {
         self.data.push(elem);
     }
 
-    fn finalize(self) -> Box<ColumnData> {
+    fn finalize(self, name: &str) -> Box<Column> {
         if self.types.contains_string {
             let mut builder = StringColBuilder::new();
             for s in self.data {
                 builder.push(&s);
             }
-            builder.finalize()
+            builder.finalize(name)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::new();
             for s in self.data {
@@ -176,18 +175,18 @@ impl RawCol {
                 };
                 builder.push(&int);
             }
-            builder.finalize()
+            builder.finalize(name)
         } else {
-            Box::new(NullColumn::new(self.data.len()))
+            Column::plain(name, self.data.len())
         }
     }
 
-    fn extract(self, extractor: &extractor::Extractor) -> Box<ColumnData> {
+    fn extract(self, name: &str, extractor: &extractor::Extractor) -> Box<Column> {
         let mut builder = IntColBuilder::new();
         for s in self.data {
             builder.push(&extractor(&s));
         }
-        builder.finalize()
+        builder.finalize(name)
     }
 }
 

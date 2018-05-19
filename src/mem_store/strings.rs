@@ -1,42 +1,43 @@
-use bit_vec::BitVec;
-use ingest::raw_val::RawVal;
-use mem_store::column::{ColumnData, ColumnCodec};
-use mem_store::column_builder::UniqueValues;
-use mem_store::point_codec::PointCodec;
-use heapsize::HeapSizeOf;
 use std::collections::hash_set::HashSet;
 use std::collections::HashMap;
+use std::fmt;
 use std::rc::Rc;
 use std::str;
 use std::{u8, u16};
-use engine::types::*;
+
+use heapsize::HeapSizeOf;
+
 use engine::typed_vec::{BoxedVec, TypedVec};
+use engine::types::*;
+use ingest::raw_val::RawVal;
+use mem_store::*;
+use mem_store::column_builder::UniqueValues;
 
 
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
-pub fn build_string_column(values: &[Option<Rc<String>>],
+pub fn build_string_column(name: &str,
+                           values: &[Option<Rc<String>>],
                            unique_values: UniqueValues<Option<Rc<String>>>)
-                           -> Box<ColumnData> {
+                           -> Box<Column> {
     if let Some(u) = unique_values.get_values() {
-        Box::new(DictEncodedStrings::from_strings(values, u))
+        let (indices, dictionary) = DictEncodedStrings::construct_dictionary(values, u);
+        Column::encoded(name, indices, DictionaryEncoding { mapping: dictionary })
     } else {
-        Box::new(StringPacker::from_strings(values))
+        Box::new(StringPacker::from_strings(name.to_owned(), values))
     }
 }
 
 struct StringPacker {
+    name: String,
+    count: usize,
     data: Vec<u8>,
 }
 
 // TODO(clemens): encode using variable size length + special value to represent null
 impl StringPacker {
-    pub fn new() -> StringPacker {
-        StringPacker { data: Vec::new() }
-    }
-
-    pub fn from_strings(strings: &[Option<Rc<String>>]) -> StringPacker {
-        let mut sp = StringPacker::new();
+    pub fn from_strings(name: String, strings: &[Option<Rc<String>>]) -> StringPacker {
+        let mut sp = StringPacker { name, count: strings.len(), data: Vec::new() };
         for string in strings {
             match *string {
                 Some(ref string) => sp.push(string),
@@ -66,33 +67,22 @@ impl StringPacker {
     }
 }
 
-impl ColumnData for StringPacker {
-    fn collect_decoded(&self) -> BoxedVec {
-        TypedVec::owned(self.iter().collect())
+impl Column for StringPacker {
+    fn name(&self) -> &str { &self.name }
+    fn len(&self) -> usize { self.count }
+    fn get_encoded(&self) -> Option<BoxedVec> { None }
+    fn decode(&self) -> Option<BoxedVec> {
+        Some(TypedVec::owned(self.iter().collect()))
     }
-
-    fn filter_decode<'a>(&'a self, filter: &BitVec) -> BoxedVec {
-        let mut result = Vec::new();
-        for (s, select) in self.iter().zip(filter.iter()) {
-            if select {
-                result.push(s);
-            }
-        }
-        TypedVec::owned(result)
-    }
-
-    fn index_decode<'a>(&'a self, filter: &[usize]) -> BoxedVec {
-        let decoded = self.iter().collect::<Vec<_>>();
-        let mut result = Vec::with_capacity(filter.len());
-        for &i in filter {
-            result.push(decoded[i]);
-        }
-        TypedVec::owned(result)
-    }
-
+    fn codec(&self) -> Option<Codec> { None }
+    fn encoding_type(&self) -> EncodingType { EncodingType::U8 }
     fn basic_type(&self) -> BasicType { BasicType::String }
+}
 
-    fn len(&self) -> usize { self.iter().count() } // FIXME(clemens): O(n)
+impl fmt::Debug for StringPacker {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<{}, StringPacked>", &self.name)
+    }
 }
 
 impl HeapSizeOf for StringPacker {
@@ -130,108 +120,42 @@ struct DictEncodedStrings {
 }
 
 impl DictEncodedStrings {
-    pub fn from_strings(strings: &[Option<Rc<String>>],
-                        unique_values: HashSet<Option<Rc<String>>>)
-                        -> DictEncodedStrings {
+    pub fn construct_dictionary(strings: &[Option<Rc<String>>],
+                                unique_values: HashSet<Option<Rc<String>>>)
+                                -> (Vec<u16>, Vec<String>) {
         assert!(unique_values.len() <= u16::MAX as usize);
-
-        let mut mapping: Vec<Option<String>> =
-            unique_values.into_iter().map(|o| o.map(|s| s.as_str().to_owned())).collect();
+        // TODO(clemens): handle null values
+        let mut mapping: Vec<String> =
+            unique_values.into_iter().map(|o| o.unwrap().to_string()).collect();
         mapping.sort();
         let encoded_values: Vec<u16> = {
-            let reverse_mapping: HashMap<Option<&String>, u16> =
-                mapping.iter().map(Option::as_ref).zip(0..).collect();
-            strings.iter().map(|o| reverse_mapping[&o.as_ref().map(|x| &**x)]).collect()
+            let reverse_mapping: HashMap<&String, u16> =
+                mapping.iter().zip(0..).collect();
+            strings.iter().map(|o| reverse_mapping[o.clone().unwrap().as_ref()]).collect()
         };
 
-        DictEncodedStrings {
-            mapping,
-            encoded_values,
-        }
+        (encoded_values, mapping)
     }
 }
 
-impl ColumnData for DictEncodedStrings {
-    fn collect_decoded(&self) -> BoxedVec {
-        self.decode(&self.encoded_values)
-    }
-
-    fn filter_decode(&self, filter: &BitVec) -> BoxedVec {
-        let mut result = Vec::<&str>::with_capacity(self.encoded_values.len());
-        for (encoded_value, selected) in self.encoded_values.iter().zip(filter) {
-            if selected {
-                result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
-            }
-        }
-        TypedVec::owned(result)
-    }
-
-    fn index_decode(&self, filter: &[usize]) -> BoxedVec {
-        PointCodec::index_decode(self, &self.encoded_values, filter)
-    }
-
-    fn basic_type(&self) -> BasicType { BasicType::String }
-    fn to_codec(&self) -> Option<&ColumnCodec> { Some(self as &ColumnCodec) }
-    fn len(&self) -> usize { self.encoded_values.len() }
+struct DictionaryEncoding {
+    mapping: Vec<String>,
 }
 
-impl PointCodec<u16> for DictEncodedStrings {
-    fn decode(&self, data: &[u16]) -> BoxedVec {
-        let mut result = Vec::<&str>::with_capacity(self.encoded_values.len());
+impl<'a> ColumnCodec<'a> for &'a DictionaryEncoding {
+    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b {
+        let data = data.cast_ref_u16();
+        let mut result = Vec::<&str>::with_capacity(data.len());
         for encoded_value in data {
-            result.push(self.mapping[*encoded_value as usize].as_ref().unwrap());
+            result.push(self.mapping[*encoded_value as usize].as_ref());
         }
         TypedVec::owned(result)
     }
-
-    fn index_decode(&self, data: &[u16], filter: &[usize]) -> BoxedVec {
-        let mut result = Vec::<&str>::with_capacity(filter.len());
-        for &i in filter {
-            let encoded_value = data[i];
-            result.push(self.mapping[encoded_value as usize].as_ref().unwrap());
-        }
-        TypedVec::owned(result)
-    }
-
-    fn to_raw(&self, elem: u16) -> RawVal {
-        RawVal::Str(self.mapping[elem as usize].as_ref().unwrap().to_string())
-    }
-
-    fn max_cardinality(&self) -> usize { self.mapping.len() }
-}
-
-impl ColumnCodec for DictEncodedStrings {
-    fn get_encoded(&self) -> BoxedVec {
-        TypedVec::borrowed(&self.encoded_values)
-    }
-
-    fn unwrap_decode<'a>(&'a self, data: &TypedVec<'a>) -> BoxedVec<'a> {
-        self.decode(data.cast_ref_u16())
-    }
-
-    fn filter_encoded(&self, filter: &BitVec) -> BoxedVec {
-        let mut result = Vec::with_capacity(self.encoded_values.len());
-        for (encoded_value, selected) in self.encoded_values.iter().zip(filter) {
-            if selected {
-                result.push(*encoded_value);
-            }
-        }
-        TypedVec::owned(result)
-    }
-
-    fn index_encoded(&self, filter: &[usize]) -> BoxedVec {
-        let mut result = Vec::with_capacity(filter.len());
-        for &i in filter {
-            result.push(self.encoded_values[i]);
-        }
-        TypedVec::owned(result)
-    }
-
-    fn encoding_type(&self) -> EncodingType { EncodingType::U16 }
 
     fn encode_str(&self, s: &str) -> RawVal {
+        // TODO(clemens): use binary search!
         for (i, val) in self.mapping.iter().enumerate() {
-            if val.as_ref().unwrap() == s {
+            if val == s {
                 return RawVal::Int(i as i64);
             }
         }
@@ -242,10 +166,18 @@ impl ColumnCodec for DictEncodedStrings {
     fn is_order_preserving(&self) -> bool { true }
     fn is_positive_integer(&self) -> bool { true }
     fn encoding_range(&self) -> Option<(i64, i64)> { Some((0, self.mapping.len() as i64)) }
+    fn encoding_type(&self) -> EncodingType { EncodingType::U16 }
+    fn decoded_type(&self) -> BasicType { BasicType::String }
 }
 
-impl HeapSizeOf for DictEncodedStrings {
+impl fmt::Debug for DictionaryEncoding {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "StringDictionary({})", self.mapping.len())
+    }
+}
+
+impl HeapSizeOf for DictionaryEncoding {
     fn heap_size_of_children(&self) -> usize {
-        self.mapping.heap_size_of_children() + self.encoded_values.heap_size_of_children()
+        self.mapping.heap_size_of_children()
     }
 }

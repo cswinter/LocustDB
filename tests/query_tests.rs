@@ -3,14 +3,14 @@ extern crate futures;
 extern crate log;
 extern crate env_logger;
 
-use ruba::*;
 use futures::executor::block_on;
-
+use ruba::*;
+use ruba::nyc_taxi_data::*;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/tiny.csv", "default", 400, vec![]));
+    let _ = block_on(ruba.load_csv("test_data/tiny.csv", None, "default", 40, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
@@ -18,7 +18,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", "default", 20, vec![]));
+    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", None, "default", 3, vec![]));
     let result = block_on(ruba.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
@@ -154,3 +154,14 @@ fn test_multiple_group_by_2() {
         ],
     )
 }
+
+#[test]
+fn test_csv_load() {
+    let _ = env_logger::try_init();
+    let ruba = Ruba::memory_only();
+    let result = block_on(ruba.load_csv("test_data/nyc-taxi.csv.gz", Some(nyc_colnames()), "default", 999, nyc_extractors()));
+    result.unwrap().ok();
+}
+
+// TODO(clemens): add test case for this query and fix
+// "select dropoff_boroct2010, count(1) from default;"

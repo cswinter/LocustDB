@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use ::QueryError;
 use engine::aggregator::Aggregator;
@@ -9,22 +10,23 @@ use engine::vector_op::*;
 use engine::vector_op::vector_operator::BufferRef;
 use ingest::raw_val::RawVal;
 use mem_store::column::Column;
-use mem_store::column::{ColumnData, ColumnCodec};
+use mem_store::*;
 use syntax::expression::*;
+use mem_store::integers::IntegerOffsetCodec;
 
 
 #[derive(Debug, Clone)]
 pub enum QueryPlan<'a> {
-    ReadColumn(&'a ColumnCodec),
-    DecodeColumn(&'a ColumnData),
+    ReadColumn(&'a Column),
+    DecodeColumn(&'a Column),
     ReadBuffer(BufferRef),
     // TODO(clemens): make it possible to replace this with Decode(ReadColumn)
 
-    DecodeWith(Box<QueryPlan<'a>>, &'a ColumnCodec),
+    DecodeWith(Box<QueryPlan<'a>>, Codec<'a>),
     TypeConversion(Box<QueryPlan<'a>>, EncodingType, EncodingType),
 
-    EncodeStrConstant(Box<QueryPlan<'a>>, &'a ColumnCodec),
-    EncodeIntConstant(Box<QueryPlan<'a>>, &'a ColumnCodec),
+    EncodeStrConstant(Box<QueryPlan<'a>>, Codec<'a>),
+    EncodeIntConstant(Box<QueryPlan<'a>>, Codec<'a>),
 
     BitPack(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>, i64),
     BitUnpack(Box<QueryPlan<'a>>, u8, u8),
@@ -125,15 +127,35 @@ impl<'a> ExecutorStage<'a> {
 
 pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> BufferRef {
     let operation: Box<VecOperator> = match plan {
-        QueryPlan::DecodeColumn(col) => match result.filter() {
-            Filter::None => VecOperator::get_decode(col, result.new_buffer()),
-            Filter::BitVec(filter) => VecOperator::filter_decode(col, filter, result.new_buffer()),
-            Filter::Indices(filter) => VecOperator::index_decode(col, filter, result.new_buffer()),
+        QueryPlan::DecodeColumn(col) => {
+            let column_buffer = result.new_buffer();
+            let column_op = VecOperator::get_decode(col, column_buffer);
+            match result.filter() {
+                Filter::BitVec(filter) => {
+                    result.push(column_op);
+                    VecOperator::filter(col.basic_type().to_encoded(), column_buffer, filter, result.new_buffer())
+                }
+                Filter::Indices(filter) => {
+                    result.push(column_op);
+                    VecOperator::select(col.basic_type().to_encoded(), column_buffer, filter, result.new_buffer())
+                }
+                Filter::None => column_op,
+            }
         }
-        QueryPlan::ReadColumn(col) => match result.filter() {
-            Filter::None => VecOperator::get_encoded(col, result.new_buffer()),
-            Filter::BitVec(filter) => VecOperator::filter_encoded(col, filter, result.new_buffer()),
-            Filter::Indices(filter) => VecOperator::index_encoded(col, filter, result.new_buffer()),
+        QueryPlan::ReadColumn(col) => {
+            let column_buffer = result.new_buffer();
+            let column_op = VecOperator::get_encoded(col, column_buffer);
+            match result.filter() {
+                Filter::BitVec(filter) => {
+                    result.push(column_op);
+                    VecOperator::filter(col.encoding_type(), column_buffer, filter, result.new_buffer())
+                }
+                Filter::Indices(filter) => {
+                    result.push(column_op);
+                    VecOperator::select(col.encoding_type(), column_buffer, filter, result.new_buffer())
+                }
+                Filter::None => column_op,
+            }
         }
         QueryPlan::Constant(ref c) =>
             VecOperator::constant(c.clone(), result.new_buffer()),
@@ -206,39 +228,44 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                    grouping_type: EncodingType,
                                    max_index: usize,
                                    aggregator: Aggregator,
-                                   result: &mut QueryExecutor<'a>) -> Result<BufferRef, QueryError> {
+                                   result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type<'a>), QueryError> {
     let output_location = result.new_buffer();
-    let operation: BoxedOperator<'a> = match (aggregator, plan) {
-        (Aggregator::Count, _) =>
+    let (operation, t): (BoxedOperator<'a>, _) = match (aggregator, plan) {
+        (Aggregator::Count, _) => (
             VecOperator::count(grouping_key,
                                output_location,
                                grouping_type,
                                max_index,
                                false),
+            // TODO(clemens): plain integer encoding
+            Type::encoded(BasicType::Integer, Arc::new(IntegerOffsetCodec::<u32>::new(0, max_index)))
+        ),
 
         (Aggregator::Sum, mut plan) => {
             if !plan_type.is_summation_preserving() {
-                plan = QueryPlan::DecodeWith(Box::new(plan), plan_type.codec.unwrap());
+                plan = QueryPlan::DecodeWith(Box::new(plan), plan_type.codec.clone().unwrap());
                 plan_type = plan_type.decoded();
             }
-            VecOperator::summation(prepare(plan, result),
-                                   grouping_key,
-                                   output_location,
-                                   plan_type.encoding_type(),
-                                   grouping_type,
-                                   max_index,
-                                   false) // TODO(clemens): determine dense groupings
+            (VecOperator::summation(prepare(plan, result),
+                                    grouping_key,
+                                    output_location,
+                                    plan_type.encoding_type(),
+                                    grouping_type,
+                                    max_index,
+                                    false), // TODO(clemens): determine dense groupings
+             Type::unencoded(BasicType::Integer))
         }
     };
     result.push(operation);
-    Ok(output_location)
+    Ok((output_location, t))
 }
 
-pub fn order_preserving<'a>(typed_plan: (QueryPlan<'a>, Type<'a>)) -> (QueryPlan<'a>, Type<'a>) {
-    if typed_plan.1.is_order_preserving() {
-        typed_plan
+pub fn order_preserving<'a>((plan, t): (QueryPlan<'a>, Type<'a>)) -> (QueryPlan<'a>, Type<'a>) {
+    if t.is_order_preserving() {
+        (plan, t)
     } else {
-        (QueryPlan::DecodeWith(Box::new(typed_plan.0), typed_plan.1.codec.unwrap()), typed_plan.1.decoded())
+        let new_type = t.decoded();
+        (QueryPlan::DecodeWith(Box::new(plan), t.codec.unwrap()), new_type)
     }
 }
 
@@ -250,10 +277,10 @@ impl<'a> QueryPlan<'a> {
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    let t = c.data().full_type();
-                    match c.data().to_codec() {
-                        None => (QueryPlan::DecodeColumn(c.data()), t.decoded()),
-                        Some(codec) => (QueryPlan::ReadColumn(codec), t),
+                    let t = c.full_type();
+                    match c.codec() {
+                        None => (QueryPlan::DecodeColumn(*c), t.decoded()),
+                        Some(_) => (QueryPlan::ReadColumn(*c), t),
                     }
                 }
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
@@ -265,7 +292,7 @@ impl<'a> QueryPlan<'a> {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
                                 QueryPlan::LessThanVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
                             } else {
                                 QueryPlan::LessThanVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
@@ -285,7 +312,7 @@ impl<'a> QueryPlan<'a> {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeStrConstant(Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                let encoded = QueryPlan::EncodeStrConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
                             } else {
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
@@ -298,7 +325,7 @@ impl<'a> QueryPlan<'a> {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.unwrap());
+                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
                             } else {
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
@@ -338,7 +365,7 @@ impl<'a> QueryPlan<'a> {
             QueryPlan::create_query_plan(&exprs[0], columns)
                 .map(|(gk_plan, gk_type)| {
                     let max_cardinality = QueryPlan::encoding_range(&gk_plan).map_or(1 << 63, |i| i.1);
-                    let decoded_group_by = gk_type.codec.map_or(
+                    let decoded_group_by = gk_type.codec.clone().map_or(
                         QueryPlan::EncodedGroupByPlaceholder,
                         |codec| QueryPlan::DecodeWith(
                             Box::new(QueryPlan::EncodedGroupByPlaceholder),
@@ -361,7 +388,8 @@ impl<'a> QueryPlan<'a> {
                     let query_plan = QueryPlan::TypeConversion(Box::new(query_plan),
                                                                plan_type.encoding_type(),
                                                                EncodingType::I64);
-                    let bits = (max as f64).log2().floor() as i64 + 1;
+                    let bits =
+                        if max == 0 { 0 } else { (max as f64).log2().floor() as i64 + 1 };
                     if total_width == 0 {
                         plan = Some(query_plan);
                     } else {
@@ -409,7 +437,7 @@ impl<'a> QueryPlan<'a> {
     fn encoding_range(&self) -> Option<(i64, i64)> {
         use self::QueryPlan::*;
         match *self {
-            ReadColumn(codec) => codec.encoding_range(),
+            ReadColumn(col) => col.codec().unwrap().encoding_range(),
             _ => None, // TODO(clemens): many more cases where we can determine range
         }
     }

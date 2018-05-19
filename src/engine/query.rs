@@ -96,7 +96,7 @@ impl Query {
             QueryPlan::compile_grouping_key(&self.select, columns)?;
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
-        let (encoded_group_by_column, grouping_key, aggregation_cardinality) =
+        let (encoded_group_by_column, grouping_key, _aggregation_cardinality) =
         // TODO(clemens): refine criterion
         // TODO(clemens): can often collect group_by from non-zero positions in aggregation result
             if max_grouping_key < 1 << 16 && grouping_key_type.is_positive_integer() {
@@ -120,7 +120,7 @@ impl Query {
         // TODO(clemens): fix for multiple groups
         // let groups = groups.order_preserving();
 
-        let mut result = Vec::new();
+        let mut aggregation_results = Vec::new();
         for &(aggregator, ref expr) in &self.aggregate {
             trace_start!("aggregator {:?}", aggregator);
             let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
@@ -133,9 +133,21 @@ impl Query {
                 max_grouping_key as usize,
                 aggregator,
                 &mut executor)?;
-            result.push(aggregate)
+            aggregation_results.push(aggregate)
             // TODO(clemens): renable
             // result.push(compiled.execute().index_decode(&grouping_sort_indices));
+        }
+        let mut select = Vec::new();
+        for (aggregate, t) in aggregation_results {
+            if t.is_encoded() {
+                let decoded = query_plan::prepare(
+                    QueryPlan::DecodeWith(
+                        Box::new(QueryPlan::ReadBuffer(aggregate)),
+                        t.codec.unwrap()), &mut executor);
+                select.push(decoded);
+            } else {
+                select.push(aggregate);
+            }
         }
 
         trace_replace!("decode grouping_key");
@@ -158,7 +170,7 @@ impl Query {
 
         //println!("{}", &executor);
         let mut results = executor.run();
-        let select = result.into_iter().map(|i| results.collect(i)).collect();
+        let select = select.into_iter().map(|i| results.collect(i)).collect();
         let group_by = grouping_columns.into_iter().map(|i| results.collect(i)).collect();
 
         trace_replace!("final decode");
