@@ -19,12 +19,13 @@ type IngestionTransform = HashMap<String, extractor::Extractor>;
 
 
 pub fn ingest_file(filename: &str, colnames: Option<Vec<String>>, chunk_size: usize, extractors: &IngestionTransform) -> Result<Vec<Batch>, String> {
-    let mut reader = csv::Reader::from_file(filename)
-        .map_err(|x| x.to_string())?
-        .has_headers(colnames.is_none());
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(colnames.is_none())
+        .from_path(filename)
+        .map_err(|x| x.to_string())?;
     let headers = match colnames {
         Some(colnames) => colnames,
-        None => reader.headers().unwrap()
+        None => reader.headers().unwrap().iter().map(str::to_owned).collect()
     };
     Ok(auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors))
 }
@@ -33,27 +34,28 @@ pub fn ingest_gzipped_file(filename: &str, colnames: Option<Vec<String>>, chunk_
     let f = File::open(filename).map_err(|x| x.to_string())?;
     let decoded = GzDecoder::new(f);
     let mut reader =
-        csv::Reader::from_reader(decoded)
-            .has_headers(colnames.is_none());
+        csv::ReaderBuilder::new()
+            .has_headers(colnames.is_none())
+            .from_reader(decoded);
     let headers = match colnames {
         Some(colnames) => colnames,
-        None => reader.headers().unwrap()
+        None => reader.headers().unwrap().iter().map(str::to_owned).collect(),
     };
     Ok(auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors))
 }
 
-fn auto_ingest<T: Iterator<Item=Vec<String>>>(records: T,
-                                              colnames: &[String],
-                                              batch_size: usize,
-                                              extractors: &IngestionTransform)
-                                              -> Vec<Batch> {
+fn auto_ingest<T: Iterator<Item=csv::StringRecord>>(records: T,
+                                                    colnames: &[String],
+                                                    batch_size: usize,
+                                                    extractors: &IngestionTransform)
+                                                    -> Vec<Batch> {
     let num_columns = colnames.len();
     let mut batches = Vec::new();
 
     let mut raw_cols = (0..num_columns).map(|_| RawCol::new()).collect::<Vec<_>>();
     let mut row_num = 0usize;
     for row in records {
-        for (i, val) in row.into_iter().enumerate() {
+        for (i, val) in row.iter().enumerate() {
             raw_cols[i].push(val);
         }
 
@@ -149,9 +151,9 @@ impl RawCol {
         }
     }
 
-    fn push(&mut self, elem: String) {
-        self.types = self.types | ColType::determine(&elem);
-        self.data.push(elem);
+    fn push(&mut self, elem: &str) {
+        self.types = self.types | ColType::determine(elem);
+        self.data.push(elem.to_owned());
     }
 
     fn finalize(self, name: &str) -> Box<Column> {
