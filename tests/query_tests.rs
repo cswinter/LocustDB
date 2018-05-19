@@ -1,4 +1,4 @@
-extern crate ruba;
+extern crate locustdb;
 extern crate futures;
 #[macro_use]
 extern crate log;
@@ -6,32 +6,32 @@ extern crate env_logger;
 
 use std::cmp::min;
 use futures::executor::block_on;
-use ruba::*;
-use ruba::nyc_taxi_data::*;
+use locustdb::*;
+use locustdb::nyc_taxi_data::*;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ =
         env_logger::try_init();
-    let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/tiny.csv", None, "default", 40, vec![]));
-    let result = block_on(ruba.run_query(query)).unwrap();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.load_csv("test_data/tiny.csv", None, "default", 40, vec![]));
+    let result = block_on(locustdb.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    let ruba = Ruba::memory_only();
-    let _ = block_on(ruba.load_csv("test_data/edge_cases.csv", None, "default", 3, vec![]));
-    let result = block_on(ruba.run_query(query)).unwrap();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.load_csv("test_data/edge_cases.csv", None, "default", 3, vec![]));
+    let result = block_on(locustdb.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
 fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    let ruba = Ruba::memory_only();
-    let load = block_on(ruba.load_csv("test_data/nyc-taxi.csv.gz", Some(nyc_colnames()), "default", 999, nyc_extractors()));
+    let locustdb = LocustDB::memory_only();
+    let load = block_on(locustdb.load_csv("test_data/nyc-taxi.csv.gz", Some(nyc_colnames()), "default", 999, nyc_extractors()));
     load.unwrap().ok();
-    let result = block_on(ruba.run_query(query)).unwrap();
+    let result = block_on(locustdb.run_query(query)).unwrap();
     let actual_rows = result.0.unwrap().rows;
     assert_eq!(&actual_rows[..min(5, actual_rows.len())], expected_rows);
 }

@@ -17,7 +17,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
   render() {
     return (
       <header>
-        <h1>Ruba</h1>
+        <h1>LocustDB</h1>
       </header>
     );
   }

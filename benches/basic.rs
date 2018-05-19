@@ -1,30 +1,30 @@
 #![feature(test)]
-extern crate ruba;
+extern crate locustdb;
 extern crate test;
 extern crate futures;
 
 use std::path::Path;
 
-use ruba::Ruba;
+use locustdb::LocustDB;
 use futures::executor::block_on;
 
 
 const YELLOW_PATH: &str = "test_data/yellow_tripdata_2009-01.csv";
 const YELLOW_URL: &str = "https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2009-01.csv";
-static mut YELLOW_RUBA: Option<Ruba> = None;
+static mut YELLOW_RUBA: Option<LocustDB> = None;
 
-fn get_yellow() -> &'static Ruba {
+fn get_yellow() -> &'static LocustDB {
     unsafe {
         match YELLOW_RUBA {
-            Some(ref ruba) => ruba,
+            Some(ref locustdb) => locustdb,
             None => {
                 if !Path::new(YELLOW_PATH).exists() {
                     panic!("{} not found. Download dataset at {}", YELLOW_PATH, YELLOW_URL);
                 }
-                let ruba = Ruba::memory_only();
-                let load = ruba.load_csv(YELLOW_PATH, "test", 1 << 16, vec![]);
+                let locustdb = LocustDB::memory_only();
+                let load = locustdb.load_csv(YELLOW_PATH, "test", 1 << 16, vec![]);
                 let _ = block_on(load);
-                YELLOW_RUBA = Some(ruba);
+                YELLOW_RUBA = Some(locustdb);
                 YELLOW_RUBA.as_ref().unwrap()
             }
         }
@@ -32,9 +32,9 @@ fn get_yellow() -> &'static Ruba {
 }
 
 fn bench_query_ytd_14m(b: &mut test::Bencher, query_str: &str) {
-    let ruba = get_yellow();
+    let locustdb = get_yellow();
     b.iter(|| {
-        let query = ruba.run_query(query_str);
+        let query = locustdb.run_query(query_str);
         block_on(query)
     });
 }

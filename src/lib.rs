@@ -31,12 +31,12 @@ mod mem_store;
 mod ingest;
 mod engine;
 mod scheduler;
-mod ruba;
+mod locustdb;
 mod disk_store;
 
 pub use ingest::raw_val::RawVal as Value;
 pub use ingest::nyc_taxi_data;
-pub use ruba::Ruba as Ruba;
+pub use locustdb::LocustDB as LocustDB;
 pub use engine::query_task::QueryOutput;
 pub use mem_store::table::TableStats;
 pub use ingest::extractor;

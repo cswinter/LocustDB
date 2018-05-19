@@ -18,19 +18,19 @@ use scheduler::*;
 use syntax::parser;
 use trace::{Trace, TraceBuilder};
 
-pub struct Ruba {
-    inner_ruba: Arc<InnerRuba>
+pub struct LocustDB {
+    inner_locustdb: Arc<InnerLocustDB>
 }
 
-impl Ruba {
-    pub fn memory_only() -> Ruba {
-        Ruba::new(Box::new(NoopStorage), false)
+impl LocustDB {
+    pub fn memory_only() -> LocustDB {
+        LocustDB::new(Box::new(NoopStorage), false)
     }
 
-    pub fn new(storage: Box<DB>, load_tabledata: bool) -> Ruba {
-        let ruba = Arc::new(InnerRuba::new(storage, load_tabledata));
-        InnerRuba::start_worker_threads(&ruba);
-        Ruba { inner_ruba: ruba }
+    pub fn new(storage: Box<DB>, load_tabledata: bool) -> LocustDB {
+        let locustdb = Arc::new(InnerLocustDB::new(storage, load_tabledata));
+        InnerLocustDB::start_worker_threads(&locustdb);
+        LocustDB { inner_locustdb: locustdb }
     }
 
     // TODO(clemens): proper error handling throughout query stack. panics! panics everywhere!
@@ -58,7 +58,7 @@ impl Ruba {
         };
 
         // TODO(clemens): A table may not exist on all nodes, so querying empty table is valid and should return empty result.
-        let data = self.inner_ruba.snapshot(&query.table)
+        let data = self.inner_locustdb.snapshot(&query.table)
             .expect(&format!("Table {} does not exist!", &query.table));
         let task = QueryTask::new(query, data, SharedSender::new(sender));
         let trace_receiver = self.schedule(task);
@@ -79,26 +79,26 @@ impl Ruba {
             table_name.to_string(),
             chunk_size,
             extractors.into_iter().collect(),
-            self.inner_ruba.clone(),
+            self.inner_locustdb.clone(),
             SharedSender::new(sender));
         self.schedule(task);
         receiver
     }
 
     pub fn table_stats(&self) -> impl Future<Item=Vec<TableStats>, Error=oneshot::Canceled> {
-        let inner = self.inner_ruba.clone();
+        let inner = self.inner_locustdb.clone();
         let (task, receiver) = Task::from_fn(move || inner.stats());
         self.schedule(task);
         receiver
     }
 
     fn schedule<T: Task + 'static>(&self, task: T) -> impl Future<Item=Trace, Error=oneshot::Canceled> {
-        self.inner_ruba.schedule(task)
+        self.inner_locustdb.schedule(task)
     }
 }
 
-impl Drop for Ruba {
+impl Drop for LocustDB {
     fn drop(&mut self) {
-        self.inner_ruba.stop();
+        self.inner_locustdb.stop();
     }
 }

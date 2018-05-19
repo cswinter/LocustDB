@@ -92,7 +92,7 @@ pub struct CSVIngestionTask {
     table: String,
     chunk_size: usize,
     extractors: IngestionTransform,
-    ruba: Arc<InnerRuba>,
+    locustdb: Arc<InnerLocustDB>,
     sender: SharedSender<Result<(), String>>,
 }
 
@@ -103,7 +103,7 @@ impl CSVIngestionTask {
                table: String,
                chunk_size: usize,
                extractors: IngestionTransform,
-               ruba: Arc<InnerRuba>,
+               locustdb: Arc<InnerLocustDB>,
                sender: SharedSender<Result<(), String>>) -> CSVIngestionTask {
         CSVIngestionTask {
             filename,
@@ -112,7 +112,7 @@ impl CSVIngestionTask {
             table,
             chunk_size,
             extractors,
-            ruba,
+            locustdb,
             sender,
         }
     }
@@ -127,7 +127,7 @@ impl Task for CSVIngestionTask {
         };
         match batches {
             Ok(batches) => {
-                self.ruba.load_batches(&self.table, batches);
+                self.locustdb.load_batches(&self.table, batches);
                 self.sender.send(Ok(()));
             }
             Err(msg) => self.sender.send(Err(msg))

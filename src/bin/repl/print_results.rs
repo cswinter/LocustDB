@@ -1,5 +1,5 @@
 use fmt_table::fmt_table;
-use ruba::*;
+use locustdb::*;
 
 pub fn print_query_result(results: &QueryOutput) {
     let rt = results.stats.runtime_ns;

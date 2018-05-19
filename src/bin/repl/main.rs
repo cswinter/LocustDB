@@ -1,4 +1,4 @@
-extern crate ruba;
+extern crate locustdb;
 
 extern crate rustyline;
 extern crate heapsize;
@@ -13,7 +13,7 @@ mod fmt_table;
 use std::env;
 
 use futures::executor::block_on;
-use ruba::{Ruba, TableStats};
+use locustdb::{LocustDB, TableStats};
 use time::precise_time_ns;
 use failure::Fail;
 
@@ -22,21 +22,21 @@ const LOAD_CHUNK_SIZE: usize = 1 << 16;
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
-    let ruba = Ruba::memory_only();
+    let locustdb = LocustDB::memory_only();
     println!("Loading {} into table default.", filename);
     let start_time = precise_time_ns();
-    block_on(ruba.load_csv(
+    block_on(locustdb.load_csv(
         filename,
-        Some(ruba::nyc_taxi_data::nyc_colnames()),
+        Some(locustdb::nyc_taxi_data::nyc_colnames()),
         "default",
         LOAD_CHUNK_SIZE,
-        ruba::nyc_taxi_data::nyc_extractors()))
+        locustdb::nyc_taxi_data::nyc_extractors()))
         .expect("Ingestion crashed!")
         .expect("Failed to load file!");
     
-    let table_stats = block_on(ruba.table_stats()).expect("!?!");
+    let table_stats = block_on(locustdb.table_stats()).expect("!?!");
     print_table_stats(&table_stats, start_time);
-    repl(&ruba);
+    repl(&locustdb);
 }
 
 fn print_table_stats(stats: &[TableStats], start_time: u64) {
@@ -50,10 +50,10 @@ fn print_table_stats(stats: &[TableStats], start_time: u64) {
     }
 }
 
-fn repl(ruba: &Ruba) {
+fn repl(locustdb: &LocustDB) {
     let mut rl = rustyline::Editor::<()>::new();
-    rl.load_history(".ruba_history").ok();
-    while let Ok(mut s) = rl.readline("ruba> ") {
+    rl.load_history(".locustdb_history").ok();
+    while let Ok(mut s) = rl.readline("locustdb> ") {
         if let Some('\n') = s.chars().next_back() {
             s.pop();
         }
@@ -75,7 +75,7 @@ fn repl(ruba: &Ruba) {
             s = &s[7..];
         }
 
-        let query = ruba.run_query(s);
+        let query = locustdb.run_query(s);
         match block_on(query) {
             Ok((result, trace)) => {
                 if print_trace {
@@ -97,5 +97,5 @@ fn repl(ruba: &Ruba) {
             _ => println!("Error: Query execution was canceled!"),
         }
     }
-    rl.save_history(".ruba_history").ok();
+    rl.save_history(".locustdb_history").ok();
 }

@@ -1,6 +1,6 @@
 [package]
-authors = ["David Fisher <ddfisher@dropbox.com>", "clemens"]
-name = "ruba"
+authors = ["Clemens Winter <clemenswinter1@gmail.com>", "David Fisher"]
+name = "locustdb"
 version = "0.1.0"
 
 [dependencies]

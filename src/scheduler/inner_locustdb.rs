@@ -18,7 +18,7 @@ use time;
 use trace::*;
 
 
-pub struct InnerRuba {
+pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
     storage: Box<DB>,
 
@@ -40,15 +40,15 @@ impl Drop for TaskState {
     }
 }
 
-impl InnerRuba {
-    pub fn new(storage: Box<DB>, restore_tabledata: bool) -> InnerRuba {
+impl InnerLocustDB {
+    pub fn new(storage: Box<DB>, restore_tabledata: bool) -> InnerLocustDB {
         let existing_tables = if restore_tabledata {
             Table::load_table_metadata(20_000, storage.as_ref())
         } else {
             Table::restore_from_db(20_000, storage.as_ref())
         };
 
-        InnerRuba {
+        InnerLocustDB {
             tables: RwLock::new(existing_tables),
             storage,
             running: AtomicBool::new(true),
@@ -57,10 +57,10 @@ impl InnerRuba {
         }
     }
 
-    pub fn start_worker_threads(ruba: &Arc<InnerRuba>) {
+    pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>) {
         for id in 0..num_cpus::get() {
-            let cloned = ruba.clone();
-            thread::spawn(move || InnerRuba::worker_loop(cloned, id));
+            let cloned = locustdb.clone();
+            thread::spawn(move || InnerLocustDB::worker_loop(cloned, id));
         }
     }
 
@@ -76,9 +76,9 @@ impl InnerRuba {
         self.idle_queue.notify_all();
     }
 
-    fn worker_loop(ruba: Arc<InnerRuba>, thread_id: usize) {
-        while ruba.running.load(Ordering::SeqCst) {
-            if let Some(task) = ruba.await_task() {
+    fn worker_loop(locustdb: Arc<InnerLocustDB>, thread_id: usize) {
+        while locustdb.running.load(Ordering::SeqCst) {
+            if let Some(task) = locustdb.await_task() {
                 if let Some(ref tb) = *task.trace_builder.read().unwrap() {
                     tb.activate();
                 }
@@ -91,7 +91,7 @@ impl InnerRuba {
                 }
             }
         }
-        drop(ruba) // Make clippy happy
+        drop(locustdb) // Make clippy happy
     }
 
     fn await_task(&self) -> Option<Arc<TaskState>> {
