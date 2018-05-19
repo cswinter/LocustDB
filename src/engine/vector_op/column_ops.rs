@@ -10,7 +10,7 @@ pub struct GetDecode<'a> {
 
 impl<'a> VecOperator<'a> for GetDecode<'a> {
     fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, self.col.decode().unwrap());
+        scratchpad.set(self.output, self.col.decode());
     }
 }
 

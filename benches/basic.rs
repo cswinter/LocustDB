@@ -22,7 +22,7 @@ fn get_yellow() -> &'static LocustDB {
                     panic!("{} not found. Download dataset at {}", YELLOW_PATH, YELLOW_URL);
                 }
                 let locustdb = LocustDB::memory_only();
-                let load = locustdb.load_csv(YELLOW_PATH, "test", 1 << 16, vec![]);
+                let load = locustdb.load_csv(YELLOW_PATH, None, "test", 1 << 16, vec![]);
                 let _ = block_on(load);
                 YELLOW_RUBA = Some(locustdb);
                 YELLOW_RUBA.as_ref().unwrap()

@@ -71,9 +71,7 @@ impl Column for StringPacker {
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.count }
     fn get_encoded(&self) -> Option<BoxedVec> { None }
-    fn decode(&self) -> Option<BoxedVec> {
-        Some(TypedVec::owned(self.iter().collect()))
-    }
+    fn decode(&self) -> BoxedVec { TypedVec::owned(self.iter().collect()) }
     fn codec(&self) -> Option<Codec> { None }
     fn encoding_type(&self) -> EncodingType { EncodingType::U8 }
     fn basic_type(&self) -> BasicType { BasicType::String }
@@ -114,10 +112,7 @@ impl<'a> Iterator for StringPackerIterator<'a> {
     }
 }
 
-struct DictEncodedStrings {
-    mapping: Vec<Option<String>>,
-    encoded_values: Vec<u16>,
-}
+struct DictEncodedStrings;
 
 impl DictEncodedStrings {
     pub fn construct_dictionary(strings: &[Option<Rc<String>>],

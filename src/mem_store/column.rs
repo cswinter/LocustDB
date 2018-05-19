@@ -11,7 +11,7 @@ pub trait Column: HeapSizeOf + fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
     fn len(&self) -> usize;
     fn get_encoded(&self) -> Option<BoxedVec>;
-    fn decode(&self) -> Option<BoxedVec>;
+    fn decode(&self) -> BoxedVec;
     fn codec(&self) -> Option<Codec>;
     fn basic_type(&self) -> BasicType;
     fn encoding_type(&self) -> EncodingType;
@@ -46,7 +46,7 @@ impl<T, C> Column for PlainEncodedColumn<T, C>
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.data.len() }
     fn get_encoded<'b>(&'b self) -> Option<BoxedVec<'b>> { Some(self.data.ref_box()) }
-    fn decode(&self) -> Option<BoxedVec> { None }
+    fn decode(&self) -> BoxedVec { panic!("PlayingEncodedColumn{:?}.decode()", &self) }
     fn codec(&self) -> Option<Codec> { Some(Arc::new(&self.codec)) }
     fn basic_type(&self) -> BasicType { (&self.codec).decoded_type() }
     fn encoding_type(&self) -> EncodingType { self.data.get_type() }
@@ -79,7 +79,7 @@ impl<T: TypedVec<'static> + HeapSizeOf> Column for PlainColumn<T> {
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.data.len() }
     fn get_encoded(&self) -> Option<BoxedVec> { Some(self.data.ref_box()) }
-    fn decode(&self) -> Option<BoxedVec> { None }
+    fn decode(&self) -> BoxedVec { panic!("PlainColumn{:?}.decode()", self) }
     fn codec(&self) -> Option<Codec> { None }
     fn basic_type(&self) -> BasicType { self.data.get_type().cast_to_basic() }
     fn encoding_type(&self) -> EncodingType { self.data.get_type() }

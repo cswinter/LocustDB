@@ -285,9 +285,10 @@ impl<'a> QueryPlan<'a> {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
                     let t = c.full_type();
-                    match c.codec() {
-                        None => (QueryPlan::DecodeColumn(*c), t.decoded()),
-                        Some(_) => (QueryPlan::ReadColumn(*c), t),
+                    if c.get_encoded().is_some() {
+                        (QueryPlan::ReadColumn(*c), t)
+                    } else {
+                        (QueryPlan::DecodeColumn(*c), t.decoded())
                     }
                 }
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
