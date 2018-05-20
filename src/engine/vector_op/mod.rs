@@ -1,5 +1,7 @@
 pub mod vector_operator;
 pub mod types;
+
+mod division_vs;
 mod bit_unpack;
 mod bool_op;
 mod column_ops;

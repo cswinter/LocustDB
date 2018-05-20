@@ -19,6 +19,7 @@ use engine::vector_op::column_ops::*;
 use engine::vector_op::constant::Constant;
 use engine::vector_op::decode::Decode;
 use engine::vector_op::encode_const::*;
+use engine::vector_op::division_vs::DivideVS;
 use engine::vector_op::filter::Filter;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
 use engine::vector_op::select::Select;
@@ -160,6 +161,10 @@ impl<'a> VecOperator<'a> {
             EncodingType::I64 => Box::new(VecConstBoolOperator::<_, _, Equals<i64>>::new(lhs, rhs, output)),
             _ => panic!("equals_vs not supported for type {:?}", t),
         }
+    }
+
+    pub fn divide_vs(lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
+        Box::new(DivideVS { lhs, rhs, output })
     }
 
     pub fn or(lhs: BufferRef, rhs: BufferRef) -> BoxedOperator<'a> {

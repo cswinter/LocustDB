@@ -35,6 +35,7 @@ pub enum QueryPlan<'a> {
 
     LessThanVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     EqualsVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    DivideVS(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     And(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     Or(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     ToYear(Box<QueryPlan<'a>>),
@@ -185,6 +186,8 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             VecOperator::less_than_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.new_buffer()),
         QueryPlan::EqualsVS(left_type, lhs, rhs) =>
             VecOperator::equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.new_buffer()),
+        QueryPlan::DivideVS(lhs, rhs) =>
+            VecOperator::divide_vs(prepare(*lhs, result), prepare(*rhs, result), result.new_buffer()),
         QueryPlan::Or(lhs, rhs) => {
             let inplace = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
@@ -371,6 +374,24 @@ impl<'a> QueryPlan<'a> {
                 }
                 (QueryPlan::And(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
+            Func2(Divide, ref lhs, ref rhs) => {
+                let (mut plan_lhs, mut type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                match (type_lhs.decoded, type_rhs.decoded) {
+                    (BasicType::Integer, BasicType::Integer) => {
+                        let plan = if type_rhs.is_scalar {
+                            if let Some(codec) = type_lhs.codec {
+                                plan_lhs = QueryPlan::Decode(Box::new(plan_lhs), codec);
+                            }
+                            QueryPlan::DivideVS(Box::new(plan_lhs), Box::new(plan_rhs))
+                        } else {
+                            bail!(QueryError::NotImplemented, "/ operator only implemented for column / constant")
+                        };
+                        (plan, Type::unencoded(BasicType::Integer).mutable())
+                    }
+                    _ => bail!(QueryError::TypeError, "{:?} / {:?}", type_lhs, type_rhs)
+                }
+            }
             Func1(ToYear, ref inner) => {
                 let (plan, t) = QueryPlan::create_query_plan(inner, columns)?;
                 if t.decoded != BasicType::Integer {
@@ -475,6 +496,8 @@ impl<'a> QueryPlan<'a> {
                 (NaiveDateTime::from_timestamp(min, 0).year() as i64,
                  NaiveDateTime::from_timestamp(max, 0).year() as i64)
             ),
+            // TODO(clemens): this is just wrong
+            DivideVS(ref left, _) => left.encoding_range(),
             Decode(ref plan, ref codec) => plan.encoding_range().and_then(|x| codec.decode_range(x)),
             _ => None, // TODO(clemens): many more cases where we can determine range
         }

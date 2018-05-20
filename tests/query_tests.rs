@@ -168,6 +168,17 @@ fn test_multiple_group_by_2() {
     )
 }
 
+#[test]
+fn test_division() {
+    test_query(
+        "select num / 10, count(1) from default;",
+        &[
+            vec![0.into(), 100.into()],
+        ],
+    )
+}
+
+
 // Tests are run in alphabetical order (why ;_;) and this one takes a few seconds to run, so prepend z to run last
 #[test]
 fn z_test_count_by_dropoff_boroct2010() {
