@@ -21,8 +21,9 @@ pub fn build_string_column(name: &str,
                            unique_values: UniqueValues<Option<Rc<String>>>)
                            -> Box<Column> {
     if let Some(u) = unique_values.get_values() {
+        let range = Some((0, u.len() as i64));
         let (indices, dictionary) = DictEncodedStrings::construct_dictionary(values, u);
-        Column::encoded(name, indices, DictionaryEncoding { mapping: dictionary })
+        Column::encoded(name, indices, DictionaryEncoding { mapping: dictionary }, range)
     } else {
         Box::new(StringPacker::from_strings(name.to_owned(), values))
     }
@@ -75,6 +76,7 @@ impl Column for StringPacker {
     fn codec(&self) -> Option<Codec> { None }
     fn encoding_type(&self) -> EncodingType { EncodingType::U8 }
     fn basic_type(&self) -> BasicType { BasicType::String }
+    fn range(&self) -> Option<(i64, i64)> { None }
 }
 
 impl fmt::Debug for StringPacker {
@@ -160,9 +162,9 @@ impl<'a> ColumnCodec<'a> for &'a DictionaryEncoding {
     fn is_summation_preserving(&self) -> bool { false }
     fn is_order_preserving(&self) -> bool { true }
     fn is_positive_integer(&self) -> bool { true }
-    fn encoding_range(&self) -> Option<(i64, i64)> { Some((0, self.mapping.len() as i64)) }
     fn encoding_type(&self) -> EncodingType { EncodingType::U16 }
     fn decoded_type(&self) -> BasicType { BasicType::String }
+    fn decode_range(&self, _: (i64, i64)) -> Option<(i64, i64)> { None }
 }
 
 impl fmt::Debug for DictionaryEncoding {

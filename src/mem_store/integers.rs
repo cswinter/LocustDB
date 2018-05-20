@@ -16,16 +16,16 @@ pub struct IntegerColumn;
 impl IntegerColumn {
     // TODO(clemens): do not subtract offset if it does not change encoding size
     pub fn new_boxed(name: &str, mut values: Vec<i64>, min: i64, max: i64) -> Box<Column> {
-        let maximum = (max - min) as usize;
+        let range = Some((0, max - min));
         if max - min <= From::from(u8::MAX) {
-            Column::encoded(name, IntegerColumn::encode::<u8>(values, min), IntegerOffsetCodec::<u8>::new(min, maximum))
+            Column::encoded(name, IntegerColumn::encode::<u8>(values, min), IntegerOffsetCodec::<u8>::new(min), range)
         } else if max - min <= From::from(u16::MAX) {
-            Column::encoded(name, IntegerColumn::encode::<u16>(values, min), IntegerOffsetCodec::<u16>::new(min, maximum))
+            Column::encoded(name, IntegerColumn::encode::<u16>(values, min), IntegerOffsetCodec::<u16>::new(min), range)
         } else if max - min <= From::from(u32::MAX) {
-            Column::encoded(name, IntegerColumn::encode::<u32>(values, min), IntegerOffsetCodec::<u32>::new(min, maximum))
+            Column::encoded(name, IntegerColumn::encode::<u32>(values, min), IntegerOffsetCodec::<u32>::new(min), range)
         } else {
             values.shrink_to_fit();
-            Column::plain(name, values)
+            Column::plain(name, values, Some((min, max)))
         }
     }
 
@@ -42,15 +42,13 @@ impl IntegerColumn {
 #[derive(Clone, Copy)]
 pub struct IntegerOffsetCodec<T> {
     offset: i64,
-    maximum: usize,
     t: PhantomData<T>,
 }
 
 impl<T> IntegerOffsetCodec<T> {
-    pub fn new(offset: i64, maximum: usize) -> IntegerOffsetCodec<T> {
+    pub fn new(offset: i64) -> IntegerOffsetCodec<T> {
         IntegerOffsetCodec {
             offset,
-            maximum,
             t: PhantomData,
         }
     }
@@ -76,7 +74,8 @@ impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerOffsetCodec<T> {
     fn is_positive_integer(&self) -> bool { true }
     fn decoded_type(&self) -> BasicType { BasicType::Integer }
     fn encoding_type(&self) -> EncodingType { T::t() }
-    fn encoding_range(&self) -> Option<(i64, i64)> { Some((0, self.maximum as i64)) }
+    // TODO(clemens): under/overflow?
+    fn decode_range(&self, (min, max): (i64, i64)) -> Option<(i64, i64)> { Some((min + self.offset, max + self.offset)) }
 }
 
 impl<T: IntVecType<T>> fmt::Debug for IntegerOffsetCodec<T> {

@@ -6,12 +6,13 @@ use ingest::raw_val::RawVal;
 #[derive(Debug, Clone)]
 pub enum Expr {
     ColName(String),
-    Func(FuncType, Box<Expr>, Box<Expr>),
     Const(RawVal),
+    Func1(Func1Type, Box<Expr>),
+    Func2(Func2Type, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum FuncType {
+pub enum Func2Type {
     Equals,
     LT,
     GT,
@@ -22,7 +23,12 @@ pub enum FuncType {
     Multiply,
     Divide,
     RegexMatch,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum Func1Type {
     Negate,
+    ToYear,
 }
 
 use self::Expr::*;
@@ -33,16 +39,21 @@ impl Expr {
             ColName(ref name) => {
                 result.insert(name.to_string());
             }
-            Func(_, ref expr1, ref expr2) => {
+            Func2(_, ref expr1, ref expr2) => {
                 expr1.add_colnames(result);
                 expr2.add_colnames(result);
             }
-            _ => (),
+            Func1(_, ref expr) => expr.add_colnames(result),
+            Const(_) => {}
         }
     }
 
-    pub fn func(ftype: FuncType, expr1: Expr, expr2: Expr) -> Expr {
-        Func(ftype, Box::new(expr1), Box::new(expr2))
+    pub fn func(ftype: Func2Type, expr1: Expr, expr2: Expr) -> Expr {
+        Func2(ftype, Box::new(expr1), Box::new(expr2))
+    }
+
+    pub fn func1(ftype: Func1Type, expr: Expr) -> Expr {
+        Func1(ftype, Box::new(expr))
     }
 }
 

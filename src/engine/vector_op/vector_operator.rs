@@ -21,9 +21,10 @@ use engine::vector_op::decode::Decode;
 use engine::vector_op::encode_const::*;
 use engine::vector_op::filter::Filter;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
-use engine::vector_op::sort_indices::SortIndices;
-use engine::vector_op::type_conversion::TypeConversionOperator;
 use engine::vector_op::select::Select;
+use engine::vector_op::sort_indices::SortIndices;
+use engine::vector_op::to_year::ToYear;
+use engine::vector_op::type_conversion::TypeConversionOperator;
 use engine::vector_op::vec_const_bool_op::*;
 
 
@@ -199,6 +200,10 @@ impl<'a> VecOperator<'a> {
             (U8, U8) | (U16, U16) | (U32, U32) | (I64, I64) => panic!("type_conversion from type {:?} to itself", initial_type),
             _ => panic!("type_conversion not supported for types {:?} -> {:?}", initial_type, target_type)
         }
+    }
+
+    pub fn to_year(input: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
+        Box::new(ToYear { input, output })
     }
 
     pub fn summation(input: BufferRef,

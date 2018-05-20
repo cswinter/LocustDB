@@ -25,15 +25,25 @@ fn main() {
     let locustdb = LocustDB::memory_only();
     println!("Loading {} into table default.", filename);
     let start_time = precise_time_ns();
-    block_on(locustdb.load_csv(
-        filename,
-        Some(locustdb::nyc_taxi_data::nyc_colnames()),
-        "default",
-        LOAD_CHUNK_SIZE,
-        locustdb::nyc_taxi_data::nyc_extractors()))
-        .expect("Ingestion crashed!")
-        .expect("Failed to load file!");
-    
+    if filename.contains("nyc-taxi-data") {
+        block_on(locustdb.load_csv(
+            filename,
+            Some(locustdb::nyc_taxi_data::nyc_colnames()),
+            "default",
+            LOAD_CHUNK_SIZE,
+            locustdb::nyc_taxi_data::nyc_extractors()))
+            .expect("Ingestion crashed!")
+            .expect("Failed to load file!");
+    } else {
+        block_on(locustdb.load_csv(
+            filename,
+            None,
+            "default",
+            LOAD_CHUNK_SIZE,
+            vec![]))
+            .expect("Ingestion crashed!")
+            .expect("Failed to load file!");
+    }
     let table_stats = block_on(locustdb.table_stats()).expect("!?!");
     print_table_stats(&table_stats, start_time);
     repl(&locustdb);

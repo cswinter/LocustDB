@@ -3,7 +3,7 @@ use std::fmt;
 use mem_store::*;
 use engine::*;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum EncodingType {
     Str,
     I64,
@@ -141,7 +141,6 @@ pub struct OpaqueCodec {
     is_summation_preserving: bool,
     is_order_preserving: bool,
     is_positive_integer: bool,
-    encoding_range: Option<(i64, i64)>,
 }
 
 impl OpaqueCodec {
@@ -152,7 +151,6 @@ impl OpaqueCodec {
             is_summation_preserving: false,
             is_order_preserving: false,
             is_positive_integer: false,
-            encoding_range: None,
         }
     }
 
@@ -174,7 +172,7 @@ impl<'a> ColumnCodec<'a> for OpaqueCodec {
     fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }
     fn is_order_preserving(&self) -> bool { self.is_order_preserving }
     fn is_positive_integer(&self) -> bool { self.is_positive_integer }
-    fn encoding_range(&self) -> Option<(i64, i64)> { self.encoding_range }
+    fn decode_range(&self, _range: (i64, i64)) -> Option<(i64, i64)> { None }
 }
 
 impl fmt::Debug for OpaqueCodec {

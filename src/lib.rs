@@ -9,6 +9,7 @@ extern crate failure_derive;
 extern crate log;
 extern crate bincode;
 extern crate bit_vec;
+extern crate chrono;
 extern crate failure;
 extern crate futures;
 extern crate futures_channel;

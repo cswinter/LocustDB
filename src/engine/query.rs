@@ -58,7 +58,7 @@ impl Query {
         for expr in &self.select {
             let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
             if let Some(codec) = plan_type.codec {
-                plan = QueryPlan::DecodeWith(Box::new(plan), codec);
+                plan = QueryPlan::Decode(Box::new(plan), codec);
             }
             select.push(query_plan::prepare(plan, &mut executor));
         }
@@ -142,7 +142,7 @@ impl Query {
         for (aggregate, t) in aggregation_results {
             if t.is_encoded() {
                 let decoded = query_plan::prepare(
-                    QueryPlan::DecodeWith(
+                    QueryPlan::Decode(
                         Box::new(QueryPlan::ReadBuffer(aggregate)),
                         t.codec.clone().unwrap()), &mut executor);
                 select.push((decoded, t.decoded()));

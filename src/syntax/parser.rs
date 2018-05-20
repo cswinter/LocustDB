@@ -55,11 +55,11 @@ named!(simple_query<&[u8], Query>,
 );
 
 fn construct_query(select_clauses: Vec<AggregateOrSelect>,
-                       table: &str,
-                       filter: Expr,
-                       order_by: Option<(String, bool)>,
-                       limit: Option<LimitClause>)
-                       -> Query {
+                   table: &str,
+                   filter: Expr,
+                   order_by: Option<(String, bool)>,
+                   limit: Option<LimitClause>)
+                   -> Query {
     let (select, aggregate) = partition(select_clauses);
     let order_desc = order_by.as_ref().map(|x| x.1).unwrap_or(false);
     Query {
@@ -75,7 +75,7 @@ fn construct_query(select_clauses: Vec<AggregateOrSelect>,
 }
 
 fn partition(select_or_aggregates: Vec<AggregateOrSelect>)
-                 -> (Vec<Expr>, Vec<(Aggregator, Expr)>) {
+             -> (Vec<Expr>, Vec<(Aggregator, Expr)>) {
     let (selects, aggregates): (Vec<AggregateOrSelect>, Vec<AggregateOrSelect>) =
         select_or_aggregates.into_iter()
             .partition(|x| match *x {
@@ -156,7 +156,7 @@ named!(expr<&[u8], Expr>,
 named!(expr_no_left_recur<&[u8], Expr>,
     do_parse!(
         opt!(multispace) >>
-        result: alt!(parentheses | template | function | negation | colname | constant) >>
+        result: alt!(parentheses | template | function | to_year | negation | colname | constant) >>
         (result)
     )
 );
@@ -178,8 +178,8 @@ named!(template<&[u8], Expr>,
 named!(last_hour<&[u8], Expr>,
     map!(
         tag_no_case!("$LAST_HOUR"),
-        |_| Expr::Func(
-                FuncType::GT,
+        |_| Expr::Func2(
+                Func2Type::GT,
                 Box::new(Expr::ColName("timestamp".to_string())),
                 Box::new(Expr::Const(RawVal::Int(time::now().to_timespec().sec - 3600)))
         )
@@ -189,8 +189,8 @@ named!(last_hour<&[u8], Expr>,
 named!(last_day<&[u8], Expr>,
     map!(
         tag_no_case!("$LAST_DAY"),
-        |_| Expr::Func(
-                FuncType::GT,
+        |_| Expr::Func2(
+                Func2Type::GT,
                 Box::new(Expr::ColName("timestamp".to_string())),
                 Box::new(Expr::Const(RawVal::Int(time::now().to_timespec().sec - 86400)))
         )
@@ -226,7 +226,20 @@ named!(negation<&[u8], Expr>,
         char!('-') >>
         opt!(multispace) >>
         e: expr >>
-        (Expr::func(FuncType::Negate, e, Expr::Const(RawVal::Null)))
+        (Expr::func1(Func1Type::Negate, e))
+    )
+);
+
+named!(to_year<&[u8], Expr>,
+    do_parse!(
+        tag!("to_year") >>
+        opt!(multispace) >>
+        char!('(') >>
+        opt!(multispace) >>
+        e: expr >>
+        opt!(multispace) >>
+        char!(')') >>
+        (Expr::func1(Func1Type::ToYear, e))
     )
 );
 
@@ -277,52 +290,52 @@ named!(colname<&[u8], Expr>,
     )
 );
 
-named!(function_name<&[u8], FuncType>,
+named!(function_name<&[u8], Func2Type>,
     alt!( infix_function_name | regex )
 );
 
-named!(infix_function_name<&[u8], FuncType>,
+named!(infix_function_name<&[u8], Func2Type>,
     alt!( equals | and | or | greater | less | add | subtract | divide | multiply )
 );
 
-named!(divide<&[u8], FuncType>,
-    map!( tag!("/"), |_| FuncType::Divide)
+named!(divide<&[u8], Func2Type>,
+    map!( tag!("/"), |_| Func2Type::Divide)
 );
 
-named!(add<&[u8], FuncType>,
-    map!( tag!("+"), |_| FuncType::Add)
+named!(add<&[u8], Func2Type>,
+    map!( tag!("+"), |_| Func2Type::Add)
 );
 
-named!(multiply<&[u8], FuncType>,
-    map!( tag!("*"), |_| FuncType::Multiply)
+named!(multiply<&[u8], Func2Type>,
+    map!( tag!("*"), |_| Func2Type::Multiply)
 );
 
-named!(subtract<&[u8], FuncType>,
-    map!( tag!("-"), |_| FuncType::Subtract)
+named!(subtract<&[u8], Func2Type>,
+    map!( tag!("-"), |_| Func2Type::Subtract)
 );
 
-named!(equals<&[u8], FuncType>,
-    map!( tag!("="), |_| FuncType::Equals)
+named!(equals<&[u8], Func2Type>,
+    map!( tag!("="), |_| Func2Type::Equals)
 );
 
-named!(greater<&[u8], FuncType>,
-    map!( tag!(">"), |_| FuncType::GT)
+named!(greater<&[u8], Func2Type>,
+    map!( tag!(">"), |_| Func2Type::GT)
 );
 
-named!(less<&[u8], FuncType>,
-    map!( tag!("<"), |_| FuncType::LT)
+named!(less<&[u8], Func2Type>,
+    map!( tag!("<"), |_| Func2Type::LT)
 );
 
-named!(and<&[u8], FuncType>,
-    map!( tag_no_case!("and"), |_| FuncType::And)
+named!(and<&[u8], Func2Type>,
+    map!( tag_no_case!("and"), |_| Func2Type::And)
 );
 
-named!(or<&[u8], FuncType>,
-    map!( tag_no_case!("or"), |_| FuncType::Or)
+named!(or<&[u8], Func2Type>,
+    map!( tag_no_case!("or"), |_| Func2Type::Or)
 );
 
-named!(regex<&[u8], FuncType>,
-    map!( tag_no_case!("regex"), |_| FuncType::RegexMatch)
+named!(regex<&[u8], Func2Type>,
+    map!( tag_no_case!("regex"), |_| Func2Type::RegexMatch)
 );
 
 
@@ -412,7 +425,14 @@ mod tests {
     fn test_last_hour() {
         assert!(
         format!("{:?}", parse_query("select * from default where $LAST_HOUR;".as_bytes())).starts_with(
-            "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func(GT, ColName(\"timestamp\"), Const(Int(")
+            "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func2(GT, ColName(\"timestamp\"), Const(Int(")
         )
+    }
+
+    #[test]
+    fn test_to_year() {
+        assert_eq!(
+            format!("{:?}", parse_query("select to_year(ts) from default;".as_bytes())),
+            "Done([], Query { select: [Func1(ToYear, ColName(\"ts\"))], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: None, order_desc: false, limit: LimitClause { limit: 100, offset: 0 }, order_by_index: None })");
     }
 }

@@ -74,7 +74,7 @@ impl RawCol {
             }
             builder.finalize(name)
         } else {
-            Column::plain(name, self.data.len())
+            Column::plain(name, self.data.len(), None)
         }
     }
 }

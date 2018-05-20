@@ -1,4 +1,4 @@
-use ingest::chrono::prelude::*;
+use chrono::prelude::*;
 
 pub type Extractor = fn(&str) -> i64;
 
