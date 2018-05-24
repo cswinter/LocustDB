@@ -7,13 +7,15 @@ extern crate env_logger;
 use std::cmp::min;
 use futures::executor::block_on;
 use locustdb::*;
-use locustdb::nyc_taxi_data::*;
+use locustdb::nyc_taxi_data;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ =
         env_logger::try_init();
     let locustdb = LocustDB::memory_only();
-    let _ = block_on(locustdb.load_csv("test_data/tiny.csv", None, "default", 40, vec![]));
+    let _ = block_on(locustdb.load_csv(
+        IngestFile::new("test_data/tiny.csv", "default")
+            .with_chunk_size(40)));
     let result = block_on(locustdb.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
@@ -21,7 +23,9 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
-    let _ = block_on(locustdb.load_csv("test_data/edge_cases.csv", None, "default", 3, vec![]));
+    let _ = block_on(locustdb.load_csv(
+        IngestFile::new("test_data/edge_cases.csv", "default")
+            .with_chunk_size(3)));
     let result = block_on(locustdb.run_query(query)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
@@ -29,7 +33,9 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
 fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
-    let load = block_on(locustdb.load_csv("test_data/nyc-taxi.csv.gz", Some(nyc_colnames()), "default", 999, nyc_extractors()));
+    let load = block_on(locustdb.load_csv(
+        nyc_taxi_data::ingest_file("test_data/nyc-taxi.csv.gz", "default")
+            .with_chunk_size(999)));
     load.unwrap().ok();
     let result = block_on(locustdb.run_query(query)).unwrap();
     let actual_rows = result.0.unwrap().rows;
