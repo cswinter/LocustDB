@@ -94,7 +94,7 @@ impl Query {
         }
 
         // Combine all group by columns into a single decodable grouping key
-        let (grouping_key_plan, grouping_key_type, max_grouping_key, decode_plans) =
+        let (grouping_key_plan, raw_grouping_key_type, max_grouping_key, decode_plans) =
             QueryPlan::compile_grouping_key(&self.select, columns)?;
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
@@ -102,20 +102,20 @@ impl Query {
         let (encoded_group_by_column, grouping_key, grouping_key_type, _aggregation_cardinality) =
         // TODO(clemens): refine criterion
         // TODO(clemens): can often collect group_by from non-zero positions in aggregation result
-            if max_grouping_key < 1 << 16 && grouping_key_type.is_positive_integer() {
+            if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
                 let max_grouping_key_buf = executor.new_buffer();
                 (query_plan::prepare_unique(
                     raw_grouping_key,
-                    grouping_key_type.encoding_type(),
+                    raw_grouping_key_type.encoding_type(),
                     max_grouping_key as usize,
                     &mut executor),
                  raw_grouping_key,
-                 grouping_key_type,
+                 raw_grouping_key_type.clone(),
                  max_grouping_key_buf)
             } else {
                 query_plan::prepare_hashmap_grouping(
                     raw_grouping_key,
-                    grouping_key_type.encoding_type(),
+                    raw_grouping_key_type.encoding_type(),
                     max_grouping_key as usize,
                     &mut executor)
             };
@@ -161,14 +161,25 @@ impl Query {
         // If the grouping is not order preserving, we need to sort all output columns by using the ordering constructed from the decoded group by columns
         // This is necessary to make it possible to efficiently merge with other batch results
         if !grouping_key_type.is_order_preserving() {
-            if grouping_columns.len() != 1 {
-                bail!(QueryError::NotImplemented, "Grouping key is not order preserving and more than 1 grouping column")
-            }
-            let sort_indices = query_plan::prepare(
-                QueryPlan::SortIndices(
-                    Box::new(QueryPlan::ReadBuffer(grouping_columns[0].0)),
-                    false),
-                &mut executor);
+            let sort_indices = if raw_grouping_key_type.is_order_preserving() {
+                query_plan::prepare(
+                    QueryPlan::SortIndices(
+                        Box::new(QueryPlan::ReadBuffer(encoded_group_by_column)),
+                        false),
+                    &mut executor)
+            } else {
+                if grouping_columns.len() != 1 {
+                    bail!(QueryError::NotImplemented,
+                "Grouping key is not order preserving and more than 1 grouping column\nGrouping key type: {:?}\n{}",
+                &grouping_key_type,
+                &executor)
+                }
+                query_plan::prepare(
+                    QueryPlan::SortIndices(
+                        Box::new(QueryPlan::ReadBuffer(grouping_columns[0].0)),
+                        false),
+                    &mut executor)
+            };
 
             select = select.iter().map(|(s, t)| {
                 (query_plan::prepare(

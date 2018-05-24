@@ -1,5 +1,5 @@
 use extractor;
-
+use ingest::csv_loader::IngestFile;
 
 pub fn nyc_colnames() -> Vec<String> {
     vec![
@@ -57,26 +57,34 @@ pub fn nyc_colnames() -> Vec<String> {
     ]
 }
 
-pub fn nyc_extractors() -> Vec<(String, extractor::Extractor)> {
+pub fn nyc_extractors() -> Vec<(&'static str, extractor::Extractor)> {
     vec![
-        ("pickup_datetime".to_owned(), extractor::date_time),
-        ("dropoff_datetime".to_owned(), extractor::date_time),
-        ("pickup_longitude".to_owned(), extractor::multiply_by_1000),
-        ("pickup_latitude".to_owned(), extractor::multiply_by_1000),
-        ("dropoff_longitude".to_owned(), extractor::multiply_by_1000),
-        ("dropoff_latitude".to_owned(), extractor::multiply_by_1000),
-        ("trip_distance".to_owned(), extractor::multiply_by_1000),
-        ("fare_amount".to_owned(), extractor::multiply_by_100),
-        ("extra".to_owned(), extractor::multiply_by_100),
-        ("mta_tax".to_owned(), extractor::multiply_by_100),
-        ("tip_amount".to_owned(), extractor::multiply_by_100),
-        ("tolls_amount".to_owned(), extractor::multiply_by_100),
-        ("ehail_fee".to_owned(), extractor::multiply_by_100),
-        ("improvement_surcharge".to_owned(), extractor::multiply_by_100),
-        ("total_amount".to_owned(), extractor::multiply_by_100),
-        ("precipitation".to_owned(), extractor::multiply_by_1000),
-        ("snow_depth".to_owned(), extractor::multiply_by_1000),
-        ("snowfall".to_owned(), extractor::multiply_by_1000),
-        ("average_wind_speed".to_owned(), extractor::multiply_by_1000),
+        ("pickup_datetime", extractor::date_time),
+        ("dropoff_datetime", extractor::date_time),
+        ("pickup_longitude", extractor::multiply_by_1000),
+        ("pickup_latitude", extractor::multiply_by_1000),
+        ("dropoff_longitude", extractor::multiply_by_1000),
+        ("dropoff_latitude", extractor::multiply_by_1000),
+        ("trip_distance", extractor::multiply_by_1000),
+        ("fare_amount", extractor::multiply_by_100),
+        ("extra", extractor::multiply_by_100),
+        ("mta_tax", extractor::multiply_by_100),
+        ("tip_amount", extractor::multiply_by_100),
+        ("tolls_amount", extractor::multiply_by_100),
+        ("ehail_fee", extractor::multiply_by_100),
+        ("improvement_surcharge", extractor::multiply_by_100),
+        ("total_amount", extractor::multiply_by_100),
+        ("precipitation", extractor::multiply_by_1000),
+        ("snow_depth", extractor::multiply_by_1000),
+        ("snowfall", extractor::multiply_by_1000),
+        ("average_wind_speed", extractor::multiply_by_1000),
     ]
+}
+
+pub fn ingest_file(file_path: &str, tablename: &str) -> IngestFile {
+    IngestFile::new(file_path, tablename)
+        .with_col_names(nyc_colnames())
+        .with_extractors(&nyc_extractors())
+        .with_ignore_cols(&["pickup", "dropoff"])
+        .with_always_string(&["vendor_id"])
 }

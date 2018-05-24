@@ -25,22 +25,26 @@ fn main() {
     let locustdb = LocustDB::memory_only();
     println!("Loading {} into table default.", filename);
     let start_time = precise_time_ns();
-    if filename.contains("nyc-taxi-data") {
-        block_on(locustdb.load_csv(
-            filename,
-            Some(locustdb::nyc_taxi_data::nyc_colnames()),
-            "default",
-            LOAD_CHUNK_SIZE,
-            locustdb::nyc_taxi_data::nyc_extractors()))
-            .expect("Ingestion crashed!")
-            .expect("Failed to load file!");
-    } else {
-        block_on(locustdb.load_csv(
-            filename,
-            None,
-            "default",
-            LOAD_CHUNK_SIZE,
-            vec![]))
+    if filename == &"nyc100m"{
+        let mut loads = Vec::new();
+        for x in &["aa", "ab", "ac", "ad", "ae"] {
+            let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
+            loads.push(locustdb.load_csv(
+                locustdb::nyc_taxi_data::ingest_file(&path, "test")
+                    .with_chunk_size(1 << 20)));
+        }
+        for l in loads {
+            let _ = block_on(l);
+        }
+    }else {
+        let ingestion_request = if filename.contains("nyc-taxi-data") {
+            locustdb::nyc_taxi_data::ingest_file(filename, "test")
+                .with_chunk_size(LOAD_CHUNK_SIZE)
+        } else {
+            locustdb::IngestFile::new(filename, "default")
+                .with_chunk_size(LOAD_CHUNK_SIZE)
+        };
+        block_on(locustdb.load_csv(ingestion_request))
             .expect("Ingestion crashed!")
             .expect("Failed to load file!");
     }

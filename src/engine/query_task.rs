@@ -131,7 +131,13 @@ impl QueryTask {
             // Merge only with previous batch results of same level to get O(n log n) complexity
             while let Some(br) = batch_results.pop() {
                 if br.level == batch_result.level {
-                    batch_result = combine(br, batch_result, self.combined_limit());
+                    match combine(br, batch_result, self.combined_limit()) {
+                        Ok(result) => batch_result = result,
+                        Err(error) => {
+                            self.fail_with(error);
+                            return;
+                        }
+                    };
                 } else {
                     batch_results.push(br);
                     break;
@@ -147,21 +153,23 @@ impl QueryTask {
             }
         }
 
-        if let Some(result) = QueryTask::combine_results(batch_results, self.combined_limit()) {
-            self.push_result(result, rows_scanned, rows_collected);
+        match QueryTask::combine_results(batch_results, self.combined_limit()) {
+            Ok(Some(result)) => self.push_result(result, rows_scanned, rows_collected),
+            Err(error) => self.fail_with(error),
+            _ => {}
         }
     }
 
-    fn combine_results(batch_results: Vec<BatchResult>, limit: usize) -> Option<BatchResult> {
+    fn combine_results(batch_results: Vec<BatchResult>, limit: usize) -> Result<Option<BatchResult>, QueryError> {
         let mut full_result = None;
         for batch_result in batch_results {
             if let Some(partial) = full_result {
-                full_result = Some(combine(partial, batch_result, limit));
+                full_result = Some(combine(partial, batch_result, limit)?);
             } else {
                 full_result = Some(batch_result);
             }
         }
-        full_result
+        Ok(full_result)
     }
 
     fn push_result(&self, result: BatchResult, rows_scanned: usize, rows_collected: usize) {
@@ -178,7 +186,13 @@ impl QueryTask {
             let mut owned_results = Vec::with_capacity(0);
             mem::swap(&mut owned_results, &mut state.partial_results);
             // TODO(clemens): Handle empty table
-            let full_result = QueryTask::combine_results(owned_results, self.combined_limit()).unwrap();
+            let full_result = match QueryTask::combine_results(owned_results, self.combined_limit()) {
+                Ok(result) => result.unwrap(),
+                Err(error) => {
+                    self.fail_with_no_lock(error);
+                    return;
+                }
+            };
             let final_result = self.convert_to_output_format(&full_result, state.rows_scanned);
             self.sender.send(Ok(final_result));
             self.completed.store(true, Ordering::SeqCst);
@@ -188,6 +202,10 @@ impl QueryTask {
     fn fail_with(&self, error: QueryError) {
         let mut _state = self.unsafe_state.lock().unwrap();
         if self.completed.load(Ordering::SeqCst) { return; }
+        self.fail_with_no_lock(error)
+    }
+
+    fn fail_with_no_lock(&self, error: QueryError) {
         self.completed.store(true, Ordering::SeqCst);
         self.batch_index.store(self.batches.len(), Ordering::SeqCst);
         self.sender.send(Err(error));

@@ -1,0 +1,11 @@
+batchsize 2^10
+
+running 8 tests
+test count_by_passenger_count               ... bench:  66,711,448 ns/iter (+/- 8,744,116)
+test count_by_vendor_id_and_passenger_count ... bench: 118,967,104 ns/iter (+/- 6,259,125)
+test q1_count_cab_type                      ... bench:  67,642,275 ns/iter (+/- 4,876,545)
+test q2_avg_total_amount_by_passenger_count ... bench:  89,427,755 ns/iter (+/- 6,275,577)
+test q3_count_by_passenger_count_pickup_year   ... bench: 6,359,979,005 ns/iter (+/- 310,230,539)
+test select_passenger_count_sparse_filter   ... bench: 203,733,119 ns/iter (+/- 6,924,933)
+test select_star_limit_10000                ... bench: 889,329,736 ns/iter (+/- 16,377,040)
+test sum_total_amt_by_passenger_count       ... bench:  78,117,183 ns/iter (+/- 11,485,842)

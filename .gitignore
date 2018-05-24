@@ -7,6 +7,7 @@
 
 # Large benchmarking datasets
 test_data/yellow_tripdata_2009-01.csv
+test_data/nyc-taxi-data
 
 # IntelliJ
 .idea

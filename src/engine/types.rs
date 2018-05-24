@@ -177,6 +177,16 @@ impl<'a> ColumnCodec<'a> for OpaqueCodec {
 
 impl fmt::Debug for OpaqueCodec {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Opaque")
+        write!(f, "Opaque<{:?},{:?}>[", self.encoding_type, self.decoded_type)?;
+        if self.is_summation_preserving {
+            write!(f, "SummationPreserving;")?;
+        }
+        if self.is_order_preserving{
+            write!(f, "OrderPreserving;")?;
+        }
+        if self.is_positive_integer{
+            write!(f, "PositiveInteger;")?;
+        }
+        write!(f, "]")
     }
 }

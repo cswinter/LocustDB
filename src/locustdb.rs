@@ -1,17 +1,15 @@
 use std::str;
 use std::sync::Arc;
 
-// use rocksdb::{DB, Options, WriteBatch, IteratorMode, Direction};
-// use tempdir::TempDir;
-use QueryResult;
+use futures::*;
+use futures_channel::oneshot;
+
 use QueryError;
+use QueryResult;
 use disk_store::db::*;
 use disk_store::noop_storage::NoopStorage;
 use engine::query_task::QueryTask;
-use futures::*;
-use futures_channel::oneshot;
-use ingest::csv_loader::CSVIngestionTask;
-use ingest::extractor::Extractor;
+use ingest::csv_loader::{CSVIngestionTask, IngestFile};
 use mem_store::table::TableStats;
 use nom;
 use scheduler::*;
@@ -58,27 +56,21 @@ impl LocustDB {
         };
 
         // TODO(clemens): A table may not exist on all nodes, so querying empty table is valid and should return empty result.
-        let data = self.inner_locustdb.snapshot(&query.table)
-            .expect(&format!("Table {} does not exist!", &query.table));
+        let data = match self.inner_locustdb.snapshot(&query.table) {
+            Some(data) => data,
+            None => return Box::new(future::ok((
+                Err(QueryError::NotImplemented(format!("Table {} does not exist!", &query.table))),
+                TraceBuilder::new("empty".to_owned()).finalize()))),
+        };
         let task = QueryTask::new(query, data, SharedSender::new(sender));
         let trace_receiver = self.schedule(task);
         Box::new(receiver.join(trace_receiver))
     }
 
-    pub fn load_csv(&self,
-                    path: &str,
-                    colnames: Option<Vec<String>>,
-                    table_name: &str,
-                    chunk_size: usize,
-                    extractors: Vec<(String, Extractor)>) -> impl Future<Item=Result<(), String>, Error=oneshot::Canceled> {
+    pub fn load_csv(&self, options: IngestFile) -> impl Future<Item=Result<(), String>, Error=oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
         let task = CSVIngestionTask::new(
-            path.to_string(),
-            colnames,
-            path.ends_with(".gz"),
-            table_name.to_string(),
-            chunk_size,
-            extractors.into_iter().collect(),
+            options,
             self.inner_locustdb.clone(),
             SharedSender::new(sender));
         self.schedule(task);

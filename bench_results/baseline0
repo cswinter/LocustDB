@@ -1,14 +1,11 @@
 
-running 2 tests
-test parser::parser::tests::test_last_hour ... ignored
-test parser::parser::tests::test_select_star ... ignored
+running 4 tests
+test engine::batch_merging::tests::test_multipass_grouping ... ignored
+test syntax::parser::tests::test_last_hour ... ignored
+test syntax::parser::tests::test_select_star ... ignored
+test syntax::parser::tests::test_to_year ... ignored
 
-test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out
-
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out
 
 
 running 0 tests
@@ -16,18 +13,20 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
-running 11 tests
-test bench_2mb_filter_select            ... bench:      62,945 ns/iter (+/- 3,279)
-test bench_2mb_group_count              ... bench:     152,589 ns/iter (+/- 3,971)
-test bench_2mb_group_filter_count       ... bench:      90,070 ns/iter (+/- 2,817)
-test bench_2mb_select_name              ... bench:      29,388 ns/iter (+/- 1,156)
-test bench_2mb_select_name_num          ... bench:      40,416 ns/iter (+/- 1,479)
-test bench_2mb_sort_integers            ... bench:      46,600 ns/iter (+/- 2,120)
-test bench_2mb_sort_strings             ... bench:     573,291 ns/iter (+/- 8,722)
-test bench_2mb_string_equality          ... bench:      39,773 ns/iter (+/- 1,543)
-test bench_sum_4000                     ... bench:       1,170 ns/iter (+/- 3)
-test gt_1m_int_sort                     ... bench:  24,004,708 ns/iter (+/- 1,818,085)
-test gt_1m_select_passenger_count_count ... bench:   1,869,937 ns/iter (+/- 206,881)
+running 0 tests
 
-test result: ok. 0 passed; 0 failed; 0 ignored; 11 measured; 0 filtered out
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 8 tests
+test count_by_passenger_count                ... bench:  26,938,870 ns/iter (+/- 2,675,577)
+test count_by_vendor_id_and_passenger_count  ... bench: 550,722,493 ns/iter (+/- 16,909,930)
+test q1_count_cab_type                       ... bench:  30,656,683 ns/iter (+/- 2,475,807)
+test q2_avg_total_amount_by_passenger_count  ... bench: 190,362,991 ns/iter (+/- 4,582,829)
+test q3_count_by_passenger_count_pickup_year ... bench: 828,067,692 ns/iter (+/- 29,823,670)
+test select_passenger_count_sparse_filter    ... bench: 555,553,199 ns/iter (+/- 59,422,977)
+test select_star_limit_10000                 ... bench: 972,255,085 ns/iter (+/- 25,239,661)
+test sum_total_amt_by_passenger_count        ... bench: 184,066,713 ns/iter (+/- 6,177,480)
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 8 measured; 0 filtered out
 

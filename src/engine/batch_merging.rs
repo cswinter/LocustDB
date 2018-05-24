@@ -60,7 +60,7 @@ struct Premerge {
     right: u16,
 }
 
-pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usize) -> BatchResult<'a> {
+pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usize) -> Result<BatchResult<'a>, QueryError> {
     match (batch1.group_by, batch2.group_by) {
         // Aggregation query
         (Some(g1), Some(g2)) => {
@@ -73,7 +73,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         merge_deduplicate(g1[0].cast_ref_u8(), g2[0].cast_ref_u8()),
                     (EncodingType::I64, EncodingType::I64) =>
                         merge_deduplicate(g1[0].cast_ref_i64(), g2[0].cast_ref_i64()),
-                    (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
+                    (t1, t2) => bail!(QueryError::NotImplemented, "merge_deduplicate types {:?}, {:?}", t1, t2),
                 };
                 (vec![merged_grouping], ops)
             } else {
@@ -82,7 +82,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         partition::<&str>(g1[0].as_ref(), g2[0].as_ref(), usize::MAX),
                     (EncodingType::I64, EncodingType::I64) =>
                         partition::<i64>(g1[0].as_ref(), g2[0].as_ref(), usize::MAX),
-                    (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
+                    (t1, t2) => bail!(QueryError::NotImplemented, "partition types {:?}, {:?}", t1, t2),
                 };
 
                 // TODO(clemens): subpartitionings
@@ -93,7 +93,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         merge_deduplicate_partitioned::<&'a str>(&initial_partitioning, g1[1].as_ref(), g2[1].as_ref()),
                     (EncodingType::I64, EncodingType::I64) =>
                         merge_deduplicate_partitioned::<i64>(&initial_partitioning, g1[1].as_ref(), g2[1].as_ref()),
-                    (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
+                    (t1, t2) => bail!(QueryError::NotImplemented, "merge_deduplicate_partitioned types {:?}, {:?}", t1, t2),
                 };
 
                 let mut group_by_cols = Vec::with_capacity(g1.len());
@@ -102,7 +102,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         merge_drop::<&str>(g1[0].as_ref(), g2[0].as_ref(), &ops),
                     (EncodingType::I64, EncodingType::I64) =>
                         merge_drop::<i64>(g1[0].as_ref(), g2[0].as_ref(), &ops),
-                    (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
+                    (t1, t2) => bail!(QueryError::NotImplemented, "merge_drop types {:?}, {:?}", t1, t2),
                 });
                 group_by_cols.push(merged_grouping);
 
@@ -117,14 +117,14 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     &ops, *aggregator);
                 aggregates.push(merged);
             }
-            BatchResult {
+            Ok(BatchResult {
                 group_by: Some(group_by_cols),
                 sort_by: None,
                 select: aggregates,
                 aggregators: batch1.aggregators,
                 level: batch1.level + 1,
                 batch_count: batch1.batch_count + batch2.batch_count,
-            }
+            })
         }
         // No aggregation
         (None, None) => {
@@ -139,7 +139,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                                 merge_sort(s1.cast_ref_str(), s2.cast_ref_str(), limit),
                             (EncodingType::I64, EncodingType::I64) =>
                                 merge_sort(s1.cast_ref_i64(), s2.cast_ref_i64(), limit),
-                            (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
+                            (t1, t2) => bail!(QueryError::NotImplemented, "merge_sort types {:?}, {:?}", t1, t2),
                         }
                     };
 
@@ -153,21 +153,21 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                                     merge(col1.cast_ref_str(), col2.cast_ref_str(), &ops),
                                 (EncodingType::I64, EncodingType::I64) =>
                                     merge(col1.cast_ref_i64(), col2.cast_ref_i64(), &ops),
-                                (t1, t2) => unimplemented!("{:?}, {:?}", t1, t2),
+                                (t1, t2) => bail!(QueryError::NotImplemented, "merge types {:?}, {:?}", t1, t2),
                             };
                             result.push(merged);
                         }
                     }
                     result[index] = merged_sort_col;
 
-                    BatchResult {
+                    Ok(BatchResult {
                         group_by: None,
                         sort_by: Some(index),
                         select: result,
                         aggregators: Vec::new(),
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,
-                    }
+                    })
                 }
                 // Select query
                 None => {
@@ -182,18 +182,18 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                             result.push(col1)
                         }
                     }
-                    BatchResult {
+                    Ok(BatchResult {
                         group_by: None,
                         sort_by: None,
                         select: result,
                         aggregators: Vec::new(),
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,
-                    }
+                    })
                 }
             }
         }
-        _ => panic!("Trying to merge incompatible batch results"),
+        _ => bail!(QueryError::FatalError,  "Trying to merge incompatible batch results")
     }
 }
 
