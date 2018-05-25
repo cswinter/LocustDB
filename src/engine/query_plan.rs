@@ -13,7 +13,7 @@ use engine::vector_op::vector_operator::BufferRef;
 use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column::Column;
-use mem_store::integers::IntegerOffsetCodec;
+use mem_store::integers::IntegerCodec;
 use syntax::expression::*;
 
 
@@ -255,8 +255,7 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                grouping_type,
                                max_index,
                                false),
-            // TODO(clemens): plain integer encoding
-            Type::encoded(Arc::new(IntegerOffsetCodec::<u32>::new(0)))
+            Type::encoded(Arc::new(IntegerCodec::<u32>::new()))
         ),
 
         (Aggregator::Sum, mut plan) => {

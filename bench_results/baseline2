@@ -1,0 +1,32 @@
+
+running 4 tests
+test engine::batch_merging::tests::test_multipass_grouping ... ignored
+test syntax::parser::tests::test_last_hour ... ignored
+test syntax::parser::tests::test_select_star ... ignored
+test syntax::parser::tests::test_to_year ... ignored
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 8 tests
+test count_by_passenger_count                ... bench:  27,406,000 ns/iter (+/- 6,282,199)
+test count_by_vendor_id_and_passenger_count  ... bench: 496,478,007 ns/iter (+/- 16,991,732)
+test q1_count_cab_type                       ... bench:  29,601,765 ns/iter (+/- 1,532,514)
+test q2_avg_total_amount_by_passenger_count  ... bench: 126,378,488 ns/iter (+/- 4,177,675)
+test q3_count_by_passenger_count_pickup_year ... bench: 782,609,520 ns/iter (+/- 30,886,586)
+test select_passenger_count_sparse_filter    ... bench: 535,309,369 ns/iter (+/- 11,938,554)
+test select_star_limit_10000                 ... bench: 918,701,430 ns/iter (+/- 20,417,984)
+test sum_total_amt_by_passenger_count        ... bench: 116,583,969 ns/iter (+/- 2,898,219)
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 8 measured; 0 filtered out
+
