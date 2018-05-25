@@ -1,13 +1,15 @@
-use std::collections::hash_set::HashSet;
 use std::collections::HashMap;
+use std::collections::hash_set::HashSet;
 use std::fmt;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::str;
 use std::{u8, u16};
 
 use heapsize::HeapSizeOf;
+use num::PrimInt;
 
-use engine::typed_vec::{BoxedVec, TypedVec};
+use engine::typed_vec::*;
 use engine::types::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
@@ -22,8 +24,14 @@ pub fn build_string_column(name: &str,
                            -> Box<Column> {
     if let Some(u) = unique_values.get_values() {
         let range = Some((0, u.len() as i64));
-        let (indices, dictionary) = DictEncodedStrings::construct_dictionary(values, u);
-        Column::encoded(name, indices, DictionaryEncoding { mapping: dictionary }, range)
+        // TODO(clemens): constant column when there is only one value
+        if u.len()  <= From::from(u8::MAX) {
+            let (indices, dictionary) = DictEncodedStrings::construct_dictionary::<u8>(values, u);
+            Column::encoded(name, indices, DictionaryEncoding::<u8> { mapping: dictionary, t: PhantomData }, range)
+        } else {
+            let (indices, dictionary) = DictEncodedStrings::construct_dictionary::<u16>(values, u);
+            Column::encoded(name, indices, DictionaryEncoding::<u16> { mapping: dictionary, t: PhantomData }, range)
+        }
     } else {
         Box::new(StringPacker::from_strings(name.to_owned(), values))
     }
@@ -117,17 +125,20 @@ impl<'a> Iterator for StringPackerIterator<'a> {
 struct DictEncodedStrings;
 
 impl DictEncodedStrings {
-    pub fn construct_dictionary(strings: &[Option<Rc<String>>],
-                                unique_values: HashSet<Option<Rc<String>>>)
-                                -> (Vec<u16>, Vec<String>) {
-        assert!(unique_values.len() <= u16::MAX as usize);
+    pub fn construct_dictionary<T: PrimInt>(strings: &[Option<Rc<String>>],
+                                            unique_values: HashSet<Option<Rc<String>>>)
+                                            -> (Vec<T>, Vec<String>) {
         // TODO(clemens): handle null values
         let mut mapping: Vec<String> =
             unique_values.into_iter().map(|o| o.unwrap().to_string()).collect();
         mapping.sort();
-        let encoded_values: Vec<u16> = {
-            let reverse_mapping: HashMap<&String, u16> =
-                mapping.iter().zip(0..).collect();
+        let encoded_values: Vec<T> = {
+            let mut reverse_mapping: HashMap<&String, T> = HashMap::default();
+            let mut index = T::zero();
+            for string in &mapping {
+                reverse_mapping.insert(string, index);
+                index = index + T::one();
+            }
             strings.iter().map(|o| reverse_mapping[o.clone().unwrap().as_ref()]).collect()
         };
 
@@ -135,16 +146,17 @@ impl DictEncodedStrings {
     }
 }
 
-struct DictionaryEncoding {
+struct DictionaryEncoding<T> {
     mapping: Vec<String>,
+    t: PhantomData<T>,
 }
 
-impl<'a> ColumnCodec<'a> for &'a DictionaryEncoding {
+impl<'a, T: IntVecType<T>> ColumnCodec<'a> for &'a DictionaryEncoding<T> {
     fn unwrap_decode<'b>(&self, data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b {
-        let data = data.cast_ref_u16();
+        let data = T::unwrap(data);
         let mut result = Vec::<&str>::with_capacity(data.len());
         for encoded_value in data {
-            result.push(self.mapping[*encoded_value as usize].as_ref());
+            result.push(self.mapping[encoded_value.cast_usize()].as_ref());
         }
         TypedVec::owned(result)
     }
@@ -162,18 +174,18 @@ impl<'a> ColumnCodec<'a> for &'a DictionaryEncoding {
     fn is_summation_preserving(&self) -> bool { false }
     fn is_order_preserving(&self) -> bool { true }
     fn is_positive_integer(&self) -> bool { true }
-    fn encoding_type(&self) -> EncodingType { EncodingType::U16 }
+    fn encoding_type(&self) -> EncodingType { T::t() }
     fn decoded_type(&self) -> BasicType { BasicType::String }
     fn decode_range(&self, _: (i64, i64)) -> Option<(i64, i64)> { None }
 }
 
-impl fmt::Debug for DictionaryEncoding {
+impl<T> fmt::Debug for DictionaryEncoding<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "StringDictionary({})", self.mapping.len())
     }
 }
 
-impl HeapSizeOf for DictionaryEncoding {
+impl<T> HeapSizeOf for DictionaryEncoding<T> {
     fn heap_size_of_children(&self) -> usize {
         self.mapping.heap_size_of_children()
     }
