@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_set::HashSet;
 use std::fmt;
+use std::hash::BuildHasherDefault;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::str;
@@ -8,6 +9,7 @@ use std::{u8, u16};
 
 use heapsize::HeapSizeOf;
 use num::PrimInt;
+use seahash::SeaHasher;
 
 use engine::typed_vec::*;
 use engine::types::*;
@@ -16,7 +18,50 @@ use mem_store::*;
 use mem_store::column_builder::UniqueValues;
 
 
+type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
+type HashSetSea<K> = HashSet<K, BuildHasherDefault<SeaHasher>>;
+
+// TODO(clemens): this should depend on the batch size and element length
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
+
+pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &str, strings: T, len: usize) -> Box<Column> {
+    let mut unique_values = HashSetSea::default();
+    for s in strings.clone() {
+        unique_values.insert(s);
+        let len = unique_values.len();
+        if len == MAX_UNIQUE_STRINGS {
+            return Box::new(StringPacker::from_iterator(name, strings, len));
+        }
+    }
+    let dict_size = unique_values.len();
+    let mut mapping: Vec<String> = unique_values.into_iter().map(str::to_owned).collect::<Vec<_>>();
+    mapping.sort();
+    if dict_size <= From::from(u8::MAX) {
+        let indices: Vec<u8> = {
+            let mut dictionary: HashMapSea<&str, u8> = HashMapSea::default();
+            for (i, s) in mapping.iter().enumerate() {
+                dictionary.insert(&s, i as u8);
+            }
+            strings.map(|s| *dictionary.get(s).unwrap()).collect()
+        };
+        Column::encoded(name,
+                        indices,
+                        DictionaryEncoding::<u8> { mapping, t: PhantomData },
+                        Some((0, dict_size as i64)))
+    } else {
+        let indices: Vec<u16> = {
+            let mut dictionary: HashMapSea<&str, u16> = HashMapSea::default();
+            for (i, s) in mapping.iter().enumerate() {
+                dictionary.insert(&s, i as u16);
+            }
+            strings.map(|s| *dictionary.get(s).unwrap()).collect()
+        };
+        Column::encoded(name,
+                        indices,
+                        DictionaryEncoding::<u16> { mapping, t: PhantomData },
+                        Some((0, dict_size as i64)))
+    }
+}
 
 pub fn build_string_column(name: &str,
                            values: &[Option<Rc<String>>],
@@ -25,7 +70,7 @@ pub fn build_string_column(name: &str,
     if let Some(u) = unique_values.get_values() {
         let range = Some((0, u.len() as i64));
         // TODO(clemens): constant column when there is only one value
-        if u.len()  <= From::from(u8::MAX) {
+        if u.len() <= From::from(u8::MAX) {
             let (indices, dictionary) = DictEncodedStrings::construct_dictionary::<u8>(values, u);
             Column::encoded(name, indices, DictionaryEncoding::<u8> { mapping: dictionary, t: PhantomData }, range)
         } else {
@@ -33,7 +78,7 @@ pub fn build_string_column(name: &str,
             Column::encoded(name, indices, DictionaryEncoding::<u16> { mapping: dictionary, t: PhantomData }, range)
         }
     } else {
-        Box::new(StringPacker::from_strings(name.to_owned(), values))
+        Box::new(StringPacker::from_nullable_strings(name.to_owned(), values))
     }
 }
 
@@ -45,13 +90,22 @@ struct StringPacker {
 
 // TODO(clemens): encode using variable size length + special value to represent null
 impl StringPacker {
-    pub fn from_strings(name: String, strings: &[Option<Rc<String>>]) -> StringPacker {
+    pub fn from_nullable_strings(name: String, strings: &[Option<Rc<String>>]) -> StringPacker {
         let mut sp = StringPacker { name, count: strings.len(), data: Vec::new() };
         for string in strings {
             match *string {
                 Some(ref string) => sp.push(string),
                 None => sp.push(""),
             }
+        }
+        sp.shrink_to_fit();
+        sp
+    }
+
+    pub fn from_iterator<'a>(name: &str, strings: impl Iterator<Item=&'a str>, len: usize) -> StringPacker {
+        let mut sp = StringPacker { name: name.to_owned(), count: len, data: Vec::new() };
+        for string in strings {
+            sp.push(string);
         }
         sp.shrink_to_fit();
         sp

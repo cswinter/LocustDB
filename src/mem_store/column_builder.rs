@@ -58,6 +58,7 @@ impl IntColBuilder {
 }
 
 impl ColumnBuilder<i64> for IntColBuilder {
+    #[inline]
     fn push(&mut self, elem: &i64) {
         let elem = *elem;
         self.min = cmp::min(elem, self.min);

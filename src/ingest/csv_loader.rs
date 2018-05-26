@@ -5,12 +5,14 @@ use std::boxed::Box;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::ops::BitOr;
+use std::str;
 use std::sync::Arc;
 
 use self::flate2::read::GzDecoder;
 
 use mem_store::batch::Batch;
 use mem_store::column::*;
+use mem_store::strings::fast_build_string_column;
 use mem_store::column_builder::*;
 use scheduler::*;
 use super::extractor;
@@ -120,22 +122,21 @@ fn auto_ingest<T: Iterator<Item=csv::StringRecord>>(records: T,
         }
 
         if row_num % batch_size == batch_size - 1 {
-            batches.push(create_batch(raw_cols, colnames, extractors, &ignore, &string));
-            raw_cols = (0..num_columns).map(|_| RawCol::new()).collect::<Vec<_>>();
+            batches.push(create_batch(&mut raw_cols, colnames, extractors, &ignore, &string));
         }
         row_num += 1;
     }
 
     if row_num % batch_size != 0 {
-        batches.push(create_batch(raw_cols, colnames, extractors, &ignore, &string));
+        batches.push(create_batch(&mut raw_cols, colnames, extractors, &ignore, &string));
     }
 
     batches
 }
 
-fn create_batch(cols: Vec<RawCol>, colnames: &[String], extractors: &IngestionTransform, ignore: &[bool], string: &[bool]) -> Batch {
+fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &IngestionTransform, ignore: &[bool], string: &[bool]) -> Batch {
     let mut mem_store = Vec::new();
-    for (i, col) in cols.into_iter().enumerate() {
+    for (i, col) in cols.iter_mut().enumerate() {
         if !ignore[i] {
             let new_column = match extractors.get(&colnames[i]) {
                 Some(extractor) => col.extract(&colnames[i], extractor),
@@ -190,32 +191,28 @@ impl Task for CSVIngestionTask {
 
 struct RawCol {
     types: ColType,
-    data: Vec<String>,
+    values: IndexedPackedStrings,
 }
 
 impl RawCol {
     fn new() -> RawCol {
         RawCol {
             types: ColType::nothing(),
-            data: Vec::new(),
+            values: IndexedPackedStrings::default(),
         }
     }
 
     fn push(&mut self, elem: &str) {
         self.types = self.types | ColType::determine(elem);
-        self.data.push(elem.to_owned());
+        self.values.push(elem);
     }
 
-    fn finalize(self, name: &str, string: bool) -> Box<Column> {
-        if self.types.contains_string || string {
-            let mut builder = StringColBuilder::new();
-            for s in self.data {
-                builder.push(&s);
-            }
-            builder.finalize(name)
+    fn finalize(&mut self, name: &str, string: bool) -> Box<Column> {
+        let result = if self.types.contains_string || string {
+            fast_build_string_column(name, self.values.iter(), self.values.len())
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::new();
-            for s in self.data {
+            for s in self.values.iter() {
                 let int = if s.is_empty() {
                     0
                 } else if let Ok(int) = s.parse::<i64>() {
@@ -223,27 +220,35 @@ impl RawCol {
                 } else if let Ok(float) = s.parse::<f64>() {
                     float as i64
                 } else {
-                    unreachable!("{} should be parseable as int or float", s)
+                    unreachable!("{} should be parseable as int or float. {} {:?}", s, name, self.types)
                 };
                 builder.push(&int);
             }
             builder.finalize(name)
         } else {
-            Column::plain(name, self.data.len(), None)
-        }
+            Column::plain(name, self.values.len(), None)
+        };
+        self.clear();
+        result
     }
 
-    fn extract(self, name: &str, extractor: &extractor::Extractor) -> Box<Column> {
+    fn extract(&mut self, name: &str, extractor: &extractor::Extractor) -> Box<Column> {
         let mut builder = IntColBuilder::new();
-        for s in self.data {
-            builder.push(&extractor(&s));
+        for s in self.values.iter() {
+            builder.push(&extractor(s));
         }
+        self.clear();
         builder.finalize(name)
+    }
+
+    fn clear(&mut self) {
+        self.types = ColType::nothing();
+        self.values.clear();
     }
 }
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,
@@ -292,3 +297,33 @@ impl BitOr for ColType {
         }
     }
 }
+
+#[derive(Default)]
+pub struct IndexedPackedStrings {
+    data: Vec<(u32, u32)>,
+    backing_store: Vec<u8>,
+}
+
+impl IndexedPackedStrings {
+    pub fn push(&mut self, elem: &str) {
+        let bytes = elem.as_bytes();
+        self.data.push((self.backing_store.len() as u32, bytes.len() as u32));
+        self.backing_store.extend_from_slice(bytes);
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.backing_store.clear();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item=&str> + Clone {
+        self.data.iter().map(move |&(i, len)| unsafe {
+            str::from_utf8_unchecked(&self.backing_store[i as usize..(i + len) as usize])
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+}
+
