@@ -10,12 +10,23 @@ pub struct ToYear {
 }
 
 impl<'a> VecOperator<'a> for ToYear {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let encoded = scratchpad.get::<i64>(self.input);
-            encoded.iter().map(|t| NaiveDateTime::from_timestamp(*t, 0).year() as i64).collect::<Vec<_>>()
-        };
-        scratchpad.set(self.output, Box::new(result));
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+        let timestamps = scratchpad.get::<i64>(self.input);
+        let mut years = scratchpad.get_mut::<i64>(self.output);
+        if stream { years.clear() }
+        for ts in timestamps.iter() {
+            years.push(NaiveDateTime::from_timestamp(*ts, 0).year() as i64);
+        }
     }
+
+    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.output, Box::new(Vec::<i64>::with_capacity(batch_size)));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
+    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_output(&self) -> bool { true }
+    fn allocates(&self) -> bool { true }
 }
 

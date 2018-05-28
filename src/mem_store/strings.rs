@@ -28,8 +28,7 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
     let mut unique_values = HashSetSea::default();
     for s in strings.clone() {
         unique_values.insert(s);
-        let len = unique_values.len();
-        if len == MAX_UNIQUE_STRINGS {
+        if unique_values.len() == MAX_UNIQUE_STRINGS {
             return Box::new(StringPacker::from_iterator(name, strings, len));
         }
     }
@@ -133,7 +132,7 @@ impl StringPacker {
 impl Column for StringPacker {
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.count }
-    fn get_encoded(&self) -> Option<BoxedVec> { None }
+    fn get_encoded(&self, _: usize, _: usize) -> Option<BoxedVec> { None }
     fn decode(&self) -> BoxedVec { TypedVec::owned(self.iter().collect()) }
     fn codec(&self) -> Option<Codec> { None }
     fn encoding_type(&self) -> EncodingType { EncodingType::U8 }
@@ -206,13 +205,12 @@ struct DictionaryEncoding<T> {
 }
 
 impl<'a, T: IntVecType<T>> ColumnCodec<'a> for &'a DictionaryEncoding<T> {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b {
+    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b {
         let data = T::unwrap(data);
-        let mut result = Vec::<&str>::with_capacity(data.len());
+        let result = <&str>::unwrap_mut(buffer);
         for encoded_value in data {
             result.push(self.mapping[encoded_value.cast_usize()].as_ref());
         }
-        TypedVec::owned(result)
     }
 
     fn encode_str(&self, s: &str) -> RawVal {

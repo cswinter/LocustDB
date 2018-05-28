@@ -1,5 +1,6 @@
 pub mod vector_operator;
 pub mod types;
+pub mod executor;
 
 mod division_vs;
 mod bit_unpack;
@@ -17,3 +18,4 @@ mod type_conversion;
 mod vec_const_bool_op;
 
 pub use self::vector_operator::*;
+pub use self::executor::QueryExecutor;

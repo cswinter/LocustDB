@@ -10,7 +10,7 @@ pub struct SortIndices {
 }
 
 impl<'a> VecOperator<'a> for SortIndices {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let result = {
             let input = scratchpad.get_any(self.input);
             let mut result = (0..input.len()).collect();
@@ -23,4 +23,10 @@ impl<'a> VecOperator<'a> for SortIndices {
         };
         scratchpad.set(self.output, result);
     }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
+    fn can_stream_input(&self) -> bool { false }
+    fn can_stream_output(&self) -> bool { false }
+    fn allocates(&self) -> bool { true }
 }

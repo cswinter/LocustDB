@@ -13,14 +13,25 @@ pub struct Select<T> {
 }
 
 impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: VecType<T> {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let data = scratchpad.get::<T>(self.input);
-            let indices = scratchpad.get::<usize>(self.indices);
-            let mut output = indices.iter().map(|i| data[*i]).collect();
-            TypedVec::owned(output)
-        };
-        scratchpad.set(self.output, result);
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+        let data = scratchpad.get::<T>(self.input);
+        let indices = scratchpad.get::<usize>(self.indices);
+        let mut output = scratchpad.get_mut::<T>(self.output);
+        if stream { output.clear(); }
+        for i in indices.iter() {
+            output.push(data[*i]);
+        }
     }
+
+    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.output, TypedVec::owned(Vec::<T>::with_capacity(batch_size)));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.input, self.indices] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
+    // TODO(clemens): need to add functionality to read from block input (sort indices) in streaming fashion
+    fn can_stream_input(&self) -> bool { false }
+    fn can_stream_output(&self) -> bool { false }
+    fn allocates(&self) -> bool { true }
 }
 

@@ -8,7 +8,7 @@ use bit_vec::BitVec;
 
 use engine::aggregation_operator::*;
 use engine::typed_vec::TypedVec;
-use engine::types::EncodingType;
+use engine::types::{BasicType, EncodingType};
 use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
@@ -35,7 +35,15 @@ pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 pub struct BufferRef(pub usize);
 
 pub trait VecOperator<'a>: fmt::Debug {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>);
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>);
+    fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
+    fn init(&mut self, _total_count: usize, _batch_size: usize, _stream_outputs: bool, _scratchpad: &mut Scratchpad<'a>) {}
+
+    fn inputs(&self) -> Vec<BufferRef>;
+    fn outputs(&self) -> Vec<BufferRef>;
+    fn can_stream_input(&self) -> bool;
+    fn can_stream_output(&self) -> bool;
+    fn allocates(&self) -> bool;
 }
 
 pub struct Scratchpad<'a> {
@@ -59,7 +67,7 @@ impl<'a> Scratchpad<'a> {
         Ref::map(self.buffers[index.0].borrow(), |x| T::unwrap(x.as_ref()))
     }
 
-    pub fn get_mut<T: VecType<T> + 'a>(&self, index: BufferRef) -> RefMut<[T]> {
+    pub fn get_mut<T: VecType<T> + 'a>(&self, index: BufferRef) -> RefMut<Vec<T>> {
         RefMut::map(self.buffers[index.0].borrow_mut(), |x| {
             let a: &mut TypedVec<'a> = x.borrow_mut();
             T::unwrap_mut(a)
@@ -101,11 +109,15 @@ impl<'a> VecOperator<'a> {
     }
 
     pub fn get_encoded(col: &'a Column, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(GetEncoded { col, output })
+        Box::new(GetEncoded { col, output, batch_size: 0, current_index: 0 })
     }
 
     pub fn decode(input: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {
-        Box::new(Decode { input, output, codec })
+        match codec.decoded_type() {
+            BasicType::Integer => Box::new(Decode::<i64> { input, output, codec, t: PhantomData }),
+            BasicType::String => Box::new(Decode::<&str> { input, output, codec, t: PhantomData }),
+            t => panic!("decode not supported for type {:?}", t),
+        }
     }
 
     pub fn encode_int_const(constant: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {

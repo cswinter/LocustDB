@@ -5,9 +5,8 @@ use std::iter::Iterator;
 use ::QueryError;
 use engine::aggregator::*;
 use engine::batch_merging::*;
-use engine::filter::Filter;
-use engine::query_plan::{QueryPlan, QueryExecutor};
-use engine::query_plan;
+use engine::*;
+use engine::query_plan::QueryPlan;
 use engine::types::EncodingType;
 use mem_store::column::Column;
 use syntax::expression::*;
@@ -52,7 +51,6 @@ impl Query {
                     Box::new(QueryPlan::ReadBuffer(sort_column)),
                     self.order_desc),
                 &mut executor);
-            executor.new_stage();
             executor.set_filter(Filter::Indices(sort_indices));
         }
         for expr in &self.select {
@@ -63,8 +61,8 @@ impl Query {
             select.push(query_plan::prepare(plan, &mut executor));
         }
 
-        //println!("{}", &executor);
-        let mut results = executor.run();
+        let mut results = executor.prepare();
+        executor.run(columns.iter().next().unwrap().1.len(), &mut results);
         let select = select.into_iter().map(|i| results.collect(i)).collect();
 
         Ok(BatchResult {
@@ -201,7 +199,8 @@ impl Query {
             }).collect();
         }
 
-        let mut results = executor.run();
+        let mut results = executor.prepare();
+        executor.run(columns.iter().next().unwrap().1.len(), &mut results);
         let select_cols = select.iter().map(|&(i, _)| results.collect(i)).collect();
         let group_by_cols = grouping_columns.iter().map(|&(i, _)| results.collect(i)).collect();
 
@@ -214,7 +213,7 @@ impl Query {
             batch_count: 1,
         };
         if let Err(err) = batch.validate() {
-            error!("Query result failed validation: {}\n{}\nGroup By:{:?}\nSelect: Write {:?}", err, &executor, grouping_columns, select);
+            error!("Query result failed validation: {}\n{}\nGroup By: {:?}\nSelect: {:?}", err, &executor, grouping_columns, select);
             Err(err)
         } else {
             Ok(batch)

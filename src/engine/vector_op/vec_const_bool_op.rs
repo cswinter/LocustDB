@@ -33,18 +33,25 @@ impl<'a, T: 'a, U, Op> VecConstBoolOperator<T, U, Op> where
 
 impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     T: VecType<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> + fmt::Debug {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let data = scratchpad.get::<T>(self.lhs);
-            let c = &scratchpad.get_const::<U>(self.rhs);
-            let mut output = BitVec::with_capacity(data.len());
-            for d in data.iter() {
-                output.push(Op::perform(d, &c));
-            }
-            TypedVec::bit_vec(output)
-        };
-        scratchpad.set(self.output, result);
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+        let data = scratchpad.get::<T>(self.lhs);
+        let c = &scratchpad.get_const::<U>(self.rhs);
+        let mut output = scratchpad.get_mut_bit_vec(self.output);
+        if stream { output.truncate(0); }
+        for d in data.iter() {
+            output.push(Op::perform(d, &c));
+        }
     }
+
+    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.output, TypedVec::bit_vec(BitVec::with_capacity(batch_size)));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
+    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_output(&self) -> bool { true }
+    fn allocates(&self) -> bool { true }
 }
 
 pub trait BoolOperation<T, U> {

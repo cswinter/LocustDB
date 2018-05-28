@@ -24,11 +24,17 @@ impl<'a, T: BooleanOp + fmt::Debug + 'a> BooleanOperator<T> {
 }
 
 impl<'a, T: BooleanOp + fmt::Debug> VecOperator<'a> for BooleanOperator<T> {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut result = scratchpad.get_mut_bit_vec(self.lhs);
         let rhs = scratchpad.get_bit_vec(self.rhs);
         T::evaluate(&mut result, &rhs);
     }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.rhs] }
+    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_output(&self) -> bool { true }
+    fn allocates(&self) -> bool { false }
 }
 
 pub trait BooleanOp {

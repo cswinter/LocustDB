@@ -1,6 +1,5 @@
 extern crate locustdb;
 extern crate futures;
-#[macro_use]
 extern crate log;
 extern crate env_logger;
 
@@ -96,7 +95,8 @@ fn group_by_integer_filter_integer_lt() {
             vec![2.into(), 24.into()],
             vec![3.into(), 11.into()],
             vec![4.into(), 5.into()],
-            vec![5.into(), 2.into()]],
+            vec![5.into(), 2.into()],
+        ]
     )
 }
 

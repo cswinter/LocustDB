@@ -166,7 +166,7 @@ impl OpaqueCodec {
 }
 
 impl<'a> ColumnCodec<'a> for OpaqueCodec {
-    fn unwrap_decode<'b>(&self, _data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b { panic!("OpaqueCodec.unwrap_decode()") }
+    fn unwrap_decode<'b>(&self, _data: &TypedVec<'b>, _buffer: &mut TypedVec<'b>) where 'a: 'b { panic!("OpaqueCodec.unwrap_decode()") }
     fn encoding_type(&self) -> EncodingType { self.encoding_type }
     fn decoded_type(&self) -> BasicType { self.decoded_type }
     fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }
@@ -181,10 +181,10 @@ impl fmt::Debug for OpaqueCodec {
         if self.is_summation_preserving {
             write!(f, "SummationPreserving;")?;
         }
-        if self.is_order_preserving{
+        if self.is_order_preserving {
             write!(f, "OrderPreserving;")?;
         }
-        if self.is_positive_integer{
+        if self.is_positive_integer {
             write!(f, "PositiveInteger;")?;
         }
         write!(f, "]")

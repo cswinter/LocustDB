@@ -27,18 +27,25 @@ impl<Op> ParameterizedVecVecIntegerOperator<Op> {
 }
 
 impl<'a, Op: ParameterizedIntegerOperation + fmt::Debug> VecOperator<'a> for ParameterizedVecVecIntegerOperator<Op> {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let lhs = scratchpad.get::<i64>(self.lhs);
-            let rhs = scratchpad.get::<i64>(self.rhs);
-            let mut output = Vec::with_capacity(lhs.len());
-            for (l, r) in lhs.iter().zip(rhs.iter()) {
-                output.push(Op::perform(*l, *r, self.parameter));
-            }
-            TypedVec::owned(output)
-        };
-        scratchpad.set(self.output, result)
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+        let mut output = scratchpad.get_mut::<i64>(self.output);
+        let lhs = scratchpad.get::<i64>(self.lhs);
+        let rhs = scratchpad.get::<i64>(self.rhs);
+        if stream { output.clear(); }
+        for (l, r) in lhs.iter().zip(rhs.iter()) {
+            output.push(Op::perform(*l, *r, self.parameter));
+        }
     }
+
+    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.output, TypedVec::owned(Vec::<i64>::with_capacity(batch_size)));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
+    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_output(&self) -> bool { true }
+    fn allocates(&self) -> bool { true }
 }
 
 
@@ -46,6 +53,7 @@ pub trait ParameterizedIntegerOperation {
     fn perform(lhs: i64, rhs: i64, param: i64) -> i64;
 }
 
+// TODO(clemens): reuse/mutate left buffer?
 #[derive(Debug)]
 pub struct BitShiftLeftAdd;
 

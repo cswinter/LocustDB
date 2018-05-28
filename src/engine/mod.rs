@@ -18,3 +18,6 @@ pub use self::typed_vec::{
     IntoUsize,
     ConstType,
 };
+
+pub use self::filter::Filter;
+pub use self::vector_op::*;

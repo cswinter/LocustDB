@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::cmp::min;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::mem;
@@ -23,7 +23,7 @@ pub trait TypedVec<'a>: Send + Sync {
     fn sort_indices_asc(&self, indices: &mut Vec<usize>);
     fn type_error(&self, func_name: &str) -> String;
     fn extend(&mut self, other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>>;
-    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b;
+    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b;
 
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
     fn cast_ref_usize(&self) -> &[usize] { panic!(self.type_error("cast_ref_usize")) }
@@ -34,12 +34,12 @@ pub trait TypedVec<'a>: Send + Sync {
     fn cast_str_const(&self) -> string::String { panic!(self.type_error("cast_str_const")) }
     fn cast_i64_const(&self) -> i64 { panic!(self.type_error("cast_str_const")) }
 
-    fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut [&'a str] { panic!(self.type_error("cast_ref_mut_str")) }
-    fn cast_ref_mut_usize(&mut self) -> &mut [usize] { panic!(self.type_error("cast_ref_mut_usize")) }
-    fn cast_ref_mut_i64(&mut self) -> &mut [i64] { panic!(self.type_error("cast_ref_mut_i64")) }
-    fn cast_ref_mut_u32(&mut self) -> &mut [u32] { panic!(self.type_error("cast_ref_mut_u32")) }
-    fn cast_ref_mut_u16(&mut self) -> &mut [u16] { panic!(self.type_error("cast_ref_mut_u16")) }
-    fn cast_ref_mut_u8(&mut self) -> &mut [u8] { panic!(self.type_error("cast_ref_mut_u8")) }
+    fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
+    fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> { panic!(self.type_error("cast_ref_mut_usize")) }
+    fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { panic!(self.type_error("cast_ref_mut_i64")) }
+    fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
+    fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
+    fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
 
     fn cast_ref_mut_bit_vec(&mut self) -> &mut BitVec { panic!(self.type_error("cast_ref_mut_bit_vec")) }
     fn cast_ref_bit_vec(&self) -> &BitVec { panic!(self.type_error("cast_ref_bit_vec")) }
@@ -47,7 +47,6 @@ pub trait TypedVec<'a>: Send + Sync {
 
 impl<'a> TypedVec<'a> {
     pub fn owned<T: VecType<T> + 'a>(data: Vec<T>) -> BoxedVec<'a> { Box::new(data) }
-    pub fn borrowed<T: VecType<T> + 'a>(data: &'a [T]) -> BoxedVec<'a> { Box::new(data) }
     pub fn bit_vec(value: BitVec) -> BoxedVec<'a> { Box::new(value) }
     pub fn constant(value: RawVal) -> BoxedVec<'a> { Box::new(value) }
     pub fn empty(length: usize) -> BoxedVec<'a> { Box::new(length) }
@@ -64,46 +63,49 @@ impl<'a, T: VecType<T> + 'a> TypedVec<'a> for Vec<T> {
     fn sort_indices_asc(&self, indices: &mut Vec<usize>) {
         indices.sort_unstable_by_key(|i| self[*i]);
     }
-    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b { Box::new(&self[..]) }
+    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b {
+        let to = min(to, self.len());
+        Box::new(&self[from..to])
+    }
 
     fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
 
     fn extend(&mut self, other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
         // TODO(clemens): handle empty, null, type conversions to Mixed
         let x = T::unwrap(other.as_ref());
-        self.extend_from_slice(&x[0..max(x.len(), count)]);
+        self.extend_from_slice(&x[0..min(x.len(), count)]);
         None
     }
 }
 
 impl<'a> TypedVec<'a> for Vec<&'a str> {
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { self }
-    fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut [&'a str] { self }
+    fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut Vec<&'a str> { self }
 }
 
 impl<'a> TypedVec<'a> for Vec<usize> {
     fn cast_ref_usize(&self) -> &[usize] { self }
-    fn cast_ref_mut_usize(&mut self) -> &mut [usize] { self }
+    fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> { self }
 }
 
 impl<'a> TypedVec<'a> for Vec<i64> {
     fn cast_ref_i64(&self) -> &[i64] { self }
-    fn cast_ref_mut_i64(&mut self) -> &mut [i64] { self }
+    fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { self }
 }
 
 impl<'a> TypedVec<'a> for Vec<u32> {
     fn cast_ref_u32(&self) -> &[u32] { self }
-    fn cast_ref_mut_u32(&mut self) -> &mut [u32] { self }
+    fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { self }
 }
 
 impl<'a> TypedVec<'a> for Vec<u16> {
     fn cast_ref_u16(&self) -> &[u16] { self }
-    fn cast_ref_mut_u16(&mut self) -> &mut [u16] { self }
+    fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { self }
 }
 
 impl<'a> TypedVec<'a> for Vec<u8> {
     fn cast_ref_u8(&self) -> &[u8] { self }
-    fn cast_ref_mut_u8(&mut self) -> &mut [u8] { self }
+    fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { self }
 }
 
 impl<'a, T: VecType<T> + 'a> TypedVec<'a> for &'a [T] {
@@ -116,7 +118,11 @@ impl<'a, T: VecType<T> + 'a> TypedVec<'a> for &'a [T] {
     fn sort_indices_asc(&self, indices: &mut Vec<usize>) {
         indices.sort_unstable_by_key(|i| self[*i]);
     }
-    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b { Box::new(*self) }
+    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b {
+        let to = min(to, self.len());
+        Box::new(&self[from..to])
+    }
+
 
     fn type_error(&self, func_name: &str) -> String { format!("[{:?}].{}", T::t(), func_name) }
 
@@ -160,7 +166,7 @@ impl<'a> TypedVec<'a> for BitVec {
     fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("BitVec.extend") }
     fn cast_ref_mut_bit_vec(&mut self) -> &mut BitVec { self }
     fn cast_ref_bit_vec(&self) -> &BitVec { self }
-    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b { panic!("BitVec.ref_box()") }
+    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedVec<'b> where 'a: 'b { panic!("BitVec.slice_box()") }
 }
 
 impl<'a> TypedVec<'a> for usize {
@@ -174,7 +180,7 @@ impl<'a> TypedVec<'a> for usize {
     fn sort_indices_asc(&self, _indices: &mut Vec<usize>) { panic!("EmptyVector.sort_indices_asc") }
     fn type_error(&self, func_name: &str) -> String { format!("EmptyVector.{}", func_name) }
     fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("EmptyVector.extend") }
-    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b { Box::new(*self) }
+    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(from - min(to, *self)) }
 }
 
 impl<'a> TypedVec<'a> for RawVal {
@@ -185,8 +191,7 @@ impl<'a> TypedVec<'a> for RawVal {
     fn sort_indices_asc(&self, _indices: &mut Vec<usize>) {}
     fn type_error(&self, func_name: &str) -> String { format!("Constant.{}", func_name) }
     fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("Constant.extend") }
-    fn ref_box<'b>(&'b self) -> BoxedVec<'b> where 'a: 'b { Box::new(self.clone()) }
-
+    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(self.clone()) }
     fn cast_str_const(&self) -> string::String {
         match self {
             RawVal::Str(s) => s.clone(),
@@ -203,40 +208,40 @@ impl<'a> TypedVec<'a> for RawVal {
 
 pub trait VecType<T>: PartialEq + Ord + Copy + Debug + Sync + Send + HeapSizeOf {
     fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [T] where T: 'a;
-    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut [T] where T: 'a;
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<T> where T: 'a;
     fn wrap_one(_value: T) -> RawVal { panic!("Can't wrap scalar of type {:?}", Self::t()) }
     fn t() -> EncodingType;
 }
 
 impl VecType<u8> for u8 {
     fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [u8] where u8: 'a { vec.cast_ref_u8() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut [u8] where u8: 'a { vec.cast_ref_mut_u8() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<u8> where u8: 'a { vec.cast_ref_mut_u8() }
     fn t() -> EncodingType { EncodingType::U8 }
 }
 
 impl VecType<u16> for u16 {
     fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [u16] where u16: 'a { vec.cast_ref_u16() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut [u16] where u16: 'a { vec.cast_ref_mut_u16() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<u16> where u16: 'a { vec.cast_ref_mut_u16() }
     fn t() -> EncodingType { EncodingType::U16 }
 }
 
 impl VecType<u32> for u32 {
     fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [u32] where u32: 'a { vec.cast_ref_u32() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut [u32] where u32: 'a { vec.cast_ref_mut_u32() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<u32> where u32: 'a { vec.cast_ref_mut_u32() }
     fn wrap_one(value: u32) -> RawVal { RawVal::Int(value as i64) }
     fn t() -> EncodingType { EncodingType::U32 }
 }
 
 impl VecType<i64> for i64 {
     fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [i64] where i64: 'a { vec.cast_ref_i64() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut [i64] where i64: 'a { vec.cast_ref_mut_i64() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<i64> where i64: 'a { vec.cast_ref_mut_i64() }
     fn wrap_one(value: i64) -> RawVal { RawVal::Int(value) }
     fn t() -> EncodingType { EncodingType::I64 }
 }
 
 impl VecType<usize> for usize {
     fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [usize] where usize: 'a { vec.cast_ref_usize() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut [usize] where usize: 'a { vec.cast_ref_mut_usize() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<usize> where usize: 'a { vec.cast_ref_mut_usize() }
     fn t() -> EncodingType { EncodingType::USize }
 }
 
@@ -250,9 +255,9 @@ impl<'c> VecType<&'c str> for &'c str {
         }
     }
 
-    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut [&'c str] where &'c str: 'a {
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<&'c str> where &'c str: 'a {
         unsafe {
-            mem::transmute::<_, &'b mut [&'c str]>(vec.cast_ref_mut_str())
+            mem::transmute::<_, &'b mut Vec<&'c str>>(vec.cast_ref_mut_str())
         }
     }
 

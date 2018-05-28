@@ -11,3 +11,4 @@ test_data/nyc-taxi-data
 
 # IntelliJ
 .idea
+locustdb.iml

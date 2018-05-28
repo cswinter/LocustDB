@@ -10,7 +10,7 @@ use ingest::raw_val::RawVal;
 pub trait Column: HeapSizeOf + fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
     fn len(&self) -> usize;
-    fn get_encoded(&self) -> Option<BoxedVec>;
+    fn get_encoded(&self, from: usize, to: usize) -> Option<BoxedVec>;
     fn decode(&self) -> BoxedVec;
     fn codec(&self) -> Option<Codec>;
     fn basic_type(&self) -> BasicType;
@@ -47,7 +47,7 @@ impl<T, C> Column for PlainEncodedColumn<T, C>
           for<'a> &'a C: ColumnCodec<'a> {
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.data.len() }
-    fn get_encoded<'b>(&'b self) -> Option<BoxedVec<'b>> { Some(self.data.ref_box()) }
+    fn get_encoded<'b>(&'b self, from: usize, to: usize) -> Option<BoxedVec<'b>> { Some(self.data.slice_box(from, to)) }
     fn decode(&self) -> BoxedVec { panic!("PlayingEncodedColumn{:?}.decode()", &self) }
     fn codec(&self) -> Option<Codec> { Some(Arc::new(&self.codec)) }
     fn basic_type(&self) -> BasicType { (&self.codec).decoded_type() }
@@ -82,7 +82,7 @@ pub struct PlainColumn<T> {
 impl<T: TypedVec<'static> + HeapSizeOf> Column for PlainColumn<T> {
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.data.len() }
-    fn get_encoded(&self) -> Option<BoxedVec> { Some(self.data.ref_box()) }
+    fn get_encoded(&self, from: usize, to: usize) -> Option<BoxedVec> { Some(self.data.slice_box(from, to)) }
     fn decode(&self) -> BoxedVec { panic!("PlainColumn{:?}.decode()", self) }
     fn codec(&self) -> Option<Codec> { None }
     fn basic_type(&self) -> BasicType { self.data.get_type().cast_to_basic() }
@@ -105,7 +105,7 @@ impl<T: HeapSizeOf> HeapSizeOf for PlainColumn<T> {
 pub type Codec<'a> = Arc<ColumnCodec<'a> + 'a>;
 
 pub trait ColumnCodec<'a>: fmt::Debug {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b;
+    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b;
     fn encoding_type(&self) -> EncodingType;
     fn decoded_type(&self) -> BasicType;
     fn is_summation_preserving(&self) -> bool;
@@ -123,7 +123,9 @@ pub trait ColumnCodec<'a>: fmt::Debug {
 }
 
 impl<'a, T> ColumnCodec<'a> for &'a T where T: ColumnCodec<'static> {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b { (*self).unwrap_decode(data) }
+    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b {
+        (*self).unwrap_decode(data, buffer)
+    }
     fn encoding_type(&self) -> EncodingType { (*self).encoding_type() }
     fn decoded_type(&self) -> BasicType { (*self).decoded_type() }
     fn is_summation_preserving(&self) -> bool { (*self).is_summation_preserving() }

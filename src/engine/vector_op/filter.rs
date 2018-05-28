@@ -13,19 +13,29 @@ pub struct Filter<T> {
 }
 
 impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: VecType<T> {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let data = scratchpad.get::<T>(self.input);
-            let filter = scratchpad.get_bit_vec(self.filter);
-            let mut output = Vec::with_capacity(filter.len());
-            for (d, select) in data.iter().zip(filter.iter()) {
-                if select {
-                    output.push(*d);
-                }
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+        let data = scratchpad.get::<T>(self.input);
+        let filter = scratchpad.get_bit_vec(self.filter);
+        let mut filtered = scratchpad.get_mut::<T>(self.output);
+        if stream { filtered.clear(); }
+        for (d, select) in data.iter().zip(filter.iter()) {
+            if select {
+                filtered.push(*d);
             }
-            TypedVec::owned(output)
-        };
-        scratchpad.set(self.output, result);
+        }
+        trace!("filter: {:?}", filter);
+        trace!("data: {:?}", data);
+        trace!("filtered: {:?}", filtered);
     }
+
+    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.output, TypedVec::owned(Vec::<T>::with_capacity(batch_size)));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.input, self.filter] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
+    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_output(&self) -> bool { true }
+    fn allocates(&self) -> bool { true }
 }
 

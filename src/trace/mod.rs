@@ -1,4 +1,5 @@
-#![cfg_attr(not(feature="trace"), allow(dead_code))]
+#![cfg_attr(not(feature = "trace"), allow(dead_code))]
+
 mod span_collector;
 mod trace_builder;
 
@@ -41,7 +42,8 @@ macro_rules! trace_start {
 }
 
 #[cfg(not(feature = "trace"))]
-#[cfg_attr(feature="cargo-clippy", allow(drop_ref))]
+#[cfg_attr(feature = "cargo-clippy", allow(drop_ref))]
+#[allow(unused_macros)]
 macro_rules! trace_replace {
     // Drop refs to args (which is no-op) to prevent unused variable warnings.
     ( $( $x:expr),* ) => {

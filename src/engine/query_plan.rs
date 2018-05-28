@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::Arc;
 
 use chrono::{NaiveDateTime, Datelike};
@@ -47,88 +46,6 @@ pub enum QueryPlan<'a> {
     EncodedGroupByPlaceholder,
 
     Constant(RawVal),
-}
-
-pub struct QueryExecutor<'a> {
-    stages: Vec<ExecutorStage<'a>>,
-    count: usize,
-}
-
-#[derive(Default)]
-struct ExecutorStage<'a> {
-    ops: Vec<Box<VecOperator<'a> + 'a>>,
-    encoded_group_by: Option<BufferRef>,
-    filter: Filter,
-}
-
-impl<'a> QueryExecutor<'a> {
-    pub fn new_stage(&mut self) {
-        self.stages.push(ExecutorStage::default());
-    }
-
-    pub fn new_buffer(&mut self) -> BufferRef {
-        self.count += 1;
-        BufferRef(self.count - 1)
-    }
-
-    fn last_buffer(&self) -> BufferRef { BufferRef(self.count - 1) }
-
-    fn push(&mut self, op: Box<VecOperator<'a> + 'a>) {
-        self.stages.last_mut().unwrap().push(op);
-    }
-
-    pub fn set_encoded_group_by(&mut self, gb: BufferRef) {
-        self.stages.last_mut().unwrap().encoded_group_by = Some(gb)
-    }
-
-    fn encoded_group_by(&self) -> Option<BufferRef> { self.stages.last().unwrap().encoded_group_by }
-
-    fn filter(&self) -> Filter { self.stages.last().unwrap().filter }
-
-    pub fn set_filter(&mut self, filter: Filter) {
-        self.stages.last_mut().unwrap().filter = filter;
-    }
-
-    pub fn run(&mut self) -> Scratchpad<'a> {
-        let mut scratchpad = Scratchpad::new(self.count);
-        for stage in &mut self.stages {
-            stage.run(&mut scratchpad);
-        }
-        scratchpad
-    }
-}
-
-impl<'a> Default for QueryExecutor<'a> {
-    fn default() -> QueryExecutor<'a> {
-        QueryExecutor {
-            stages: vec![ExecutorStage::default()],
-            count: 0
-        }
-    }
-}
-
-impl<'a> fmt::Display for QueryExecutor<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (i, stage) in self.stages.iter().enumerate() {
-            write!(f, "-- Stage {} --", i)?;
-            for op in &stage.ops {
-                write!(f, "\n{:?}", op)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-impl<'a> ExecutorStage<'a> {
-    fn push(&mut self, op: Box<VecOperator<'a> + 'a>) {
-        self.ops.push(op);
-    }
-
-    fn run(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        for op in &mut self.ops {
-            op.execute(scratchpad);
-        }
-    }
 }
 
 pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> BufferRef {
@@ -296,7 +213,7 @@ impl<'a> QueryPlan<'a> {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
                     let t = c.full_type();
-                    if c.get_encoded().is_some() {
+                    if c.get_encoded(0, 0).is_some() {
                         (QueryPlan::ReadColumn(*c), t)
                     } else {
                         (QueryPlan::DecodeColumn(*c), t.decoded())

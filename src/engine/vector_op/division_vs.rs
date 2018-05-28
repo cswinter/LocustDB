@@ -9,17 +9,24 @@ pub struct DivideVS {
 }
 
 impl<'a> VecOperator<'a> for DivideVS {
-    fn execute(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let data = scratchpad.get::<i64>(self.lhs);
-            let c = scratchpad.get_const::<i64>(self.rhs);
-            let mut output = Vec::with_capacity(data.len());
-            for d in data.iter() {
-                output.push(d / c);
-            }
-            output
-        };
-        scratchpad.set(self.output, Box::new(result));
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+        let mut output = scratchpad.get_mut::<i64>(self.output);
+        if stream { output.clear(); }
+        let data = scratchpad.get::<i64>(self.lhs);
+        let c = scratchpad.get_const::<i64>(self.rhs);
+        for d in data.iter() {
+            output.push(d / c);
+        }
     }
+
+    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.output, Box::new(Vec::<i64>::with_capacity(batch_size)));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
+    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
+    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_output(&self) -> bool { true }
+    fn allocates(&self) -> bool { true }
 }
 

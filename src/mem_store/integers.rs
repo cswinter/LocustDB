@@ -6,7 +6,7 @@ use std::{u8, u16, u32};
 use heapsize::HeapSizeOf;
 
 use engine::*;
-use engine::typed_vec::{BoxedVec, TypedVec};
+use engine::typed_vec::TypedVec;
 use engine::types::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
@@ -60,13 +60,12 @@ impl<T> IntegerOffsetCodec<T> {
 }
 
 impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerOffsetCodec<T> {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b {
+    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b {
         let data = T::unwrap(data);
-        let mut result = Vec::with_capacity(data.len());
+        let result = <i64>::unwrap_mut(buffer);
         for value in data {
             result.push(value.to_i64().unwrap() + self.offset);
         }
-        TypedVec::owned(result)
     }
 
     fn encode_int(&self, val: i64) -> RawVal {
@@ -110,13 +109,12 @@ impl<T> IntegerCodec<T> {
 }
 
 impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerCodec<T> {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>) -> BoxedVec<'b> where 'a: 'b {
+    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b {
         let data = T::unwrap(data);
-        let mut result = Vec::with_capacity(data.len());
+        let result = <i64>::unwrap_mut(buffer);
         for value in data {
             result.push(value.to_i64().unwrap());
         }
-        TypedVec::owned(result)
     }
 
     fn encode_int(&self, val: i64) -> RawVal {

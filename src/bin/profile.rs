@@ -1,14 +1,23 @@
 extern crate locustdb;
 extern crate futures;
 
-use locustdb::{LocustDB, IngestFile};
+use locustdb::LocustDB;
 use futures::executor::block_on;
 
 fn main() {
     let locustdb = LocustDB::memory_only();
-    let _ = block_on(locustdb.load_csv(IngestFile::new("test_data/yellow_tripdata_2009-01.csv", "test")));
+    let mut loads = Vec::new();
+    for x in &["aa", "ab", "ac", "ad", "ae"] {
+        let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
+        loads.push(locustdb.load_csv(
+            locustdb::nyc_taxi_data::ingest_file(&path, "test")
+                .with_chunk_size(1 << 20)));
+    }
+    for l in loads {
+        let _ = block_on(l);
+    }
     println!("Load completed");
     loop {
-        let _ = block_on(locustdb.run_query("select Passenger_Count, count(1) from test;"));
+        let _ = block_on(locustdb.run_query("select passenger_count, count(1) from test;"));
     }
 }
