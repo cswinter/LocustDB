@@ -6,6 +6,7 @@ extern crate env_logger;
 use std::cmp::min;
 use futures::executor::block_on;
 use locustdb::*;
+use locustdb::Value;
 use locustdb::nyc_taxi_data;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
@@ -198,5 +199,20 @@ fn z_test_count_by_dropoff_boroct2010() {
             vec![1000600.into(), 2.into()],
             vec![1000700.into(), 7.into()],
         ],
+    )
+}
+
+#[test]
+fn z_test_count_by_passenger_count_pickup_year_trip_distance() {
+    use Value::*;
+    test_query_nyc(
+        "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;",
+        &[
+            vec![Int(0), Int(2013), Int(0), Int(2)],
+            vec![Int(0), Int(2013), Int(2), Int(1)],
+            vec![Int(1), Int(2013), Int(0), Int(1965)],
+            vec![Int(1), Int(2013), Int(1), Int(1167)],
+            vec![Int(1), Int(2013), Int(2), Int(824)]
+        ]
     )
 }

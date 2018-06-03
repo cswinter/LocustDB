@@ -117,13 +117,13 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
 pub struct VecCount<T> {
     grouping: BufferRef,
     output: BufferRef,
-    max_index: usize,
+    max_index: BufferRef,
     dense_grouping: bool,
     t: PhantomData<T>,
 }
 
 impl<T> VecCount<T> {
-    pub fn new(grouping: BufferRef, output: BufferRef, max_index: usize, dense_grouping: bool) -> VecCount<T> {
+    pub fn new(grouping: BufferRef, output: BufferRef, max_index: BufferRef, dense_grouping: bool) -> VecCount<T> {
         VecCount {
             grouping,
             output,
@@ -160,10 +160,11 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
     }
 
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::owned(vec![0u32; self.max_index + 1]));
+        let max_index = scratchpad.get_const::<i64>(self.max_index) as usize;
+        scratchpad.set(self.output, TypedVec::owned(vec![0u32; max_index + 1]));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.grouping] }
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.grouping, self.max_index] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { false }
@@ -175,7 +176,7 @@ pub struct VecSum<T, U> {
     input: BufferRef,
     grouping: BufferRef,
     output: BufferRef,
-    max_index: usize,
+    max_index: BufferRef,
     dense_grouping: bool,
     modified: Vec<bool>,
     t: PhantomData<T>,
@@ -184,7 +185,7 @@ pub struct VecSum<T, U> {
 
 impl<T, U> VecSum<T, U> where
     T: IntVecType<T>, U: IntVecType<U> + IntoUsize {
-    pub fn boxed<'a>(input: BufferRef, grouping: BufferRef, output: BufferRef, max_index: usize, dense_grouping: bool) -> BoxedOperator<'a> {
+    pub fn boxed<'a>(input: BufferRef, grouping: BufferRef, output: BufferRef, max_index: BufferRef, dense_grouping: bool) -> BoxedOperator<'a> {
         Box::new(VecSum::<T, U> {
             input,
             grouping,
@@ -227,11 +228,12 @@ impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
     }
 
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        self.modified = vec![false; self.max_index + 1];
-        scratchpad.set(self.output, TypedVec::owned(vec![0 as i64; self.max_index + 1]));
+        let len = scratchpad.get_const::<i64>(self.max_index) as usize + 1;
+        self.modified = vec![false; len];
+        scratchpad.set(self.output, TypedVec::owned(vec![0 as i64; len]));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.grouping, self.input] }
+    fn inputs(&self) -> Vec<BufferRef> { vec![self.grouping, self.input, self.max_index] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { false }

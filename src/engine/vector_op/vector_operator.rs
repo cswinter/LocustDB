@@ -228,7 +228,7 @@ impl<'a> VecOperator<'a> {
                      output: BufferRef,
                      input_type: EncodingType,
                      grouping_type: EncodingType,
-                     max_index: usize,
+                     max_index: BufferRef,
                      dense_grouping: bool) -> BoxedOperator<'a> {
         use self::EncodingType::*;
         match (input_type, grouping_type) {
@@ -252,7 +252,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn count(grouping: BufferRef, output: BufferRef, grouping_type: EncodingType, max_index: usize, dense_grouping: bool) -> BoxedOperator<'a> {
+    pub fn count(grouping: BufferRef, output: BufferRef, grouping_type: EncodingType, max_index: BufferRef, dense_grouping: bool) -> BoxedOperator<'a> {
         match grouping_type {
             EncodingType::U8 => Box::new(VecCount::<u8>::new(grouping, output, max_index, dense_grouping)),
             EncodingType::U16 => Box::new(VecCount::<u16>::new(grouping, output, max_index, dense_grouping)),

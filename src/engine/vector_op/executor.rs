@@ -134,7 +134,9 @@ impl<'a> QueryExecutor<'a> {
                     (op, false)
                 }
             }).collect();
-            stages.push(ExecutorStage { ops, stream })
+            // TODO(clemens): Make streaming possible for stages other than zero (Need to be able to consume fully computed TypedVec in streaming fashion)
+            let stage0 = stages.len() == 0;
+            stages.push(ExecutorStage { ops, stream: stream && stage0 })
         }
         stages
     }
@@ -153,8 +155,7 @@ impl<'a> QueryExecutor<'a> {
         if max_length == 0 {
             max_length = column_length;
         }
-        // TODO(clemens): Make streaming possible for stages other than zero (Need to be able to consume fully computed TypedVec in streaming fashion)
-        let batch_size = if stage == 0 && self.stages[stage].stream {
+        let batch_size = if self.stages[stage].stream {
             1024
         } else {
             max_length

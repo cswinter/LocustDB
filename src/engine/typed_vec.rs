@@ -184,7 +184,7 @@ impl<'a> TypedVec<'a> for usize {
 }
 
 impl<'a> TypedVec<'a> for RawVal {
-    fn len(&self) -> usize { panic!("Length is not defined for constants") }
+    fn len(&self) -> usize { 0 }
     fn get_raw(&self, _i: usize) -> RawVal { self.clone() }
     fn get_type(&self) -> EncodingType { EncodingType::Constant }
     fn sort_indices_desc(&self, _indices: &mut Vec<usize>) {}

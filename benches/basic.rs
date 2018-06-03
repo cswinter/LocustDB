@@ -85,9 +85,8 @@ fn q2_avg_total_amount_by_passenger_count(b: &mut test::Bencher) {
 fn q3_count_by_passenger_count_pickup_year(b: &mut test::Bencher) {
     bench_query(b, "select passenger_count, to_year(pickup_datetime), count(0) from test;");
 }
-/*
+
 #[bench]
 fn q4_count_by_passenger_count_pickup_year_trip_distance(b: &mut test::Bencher) {
-    bench_query(b, "select passenger_count, to_year(pickup_date), trip_distance / 1000, count(0) from test;");
+    bench_query(b, "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from test;");
 }
-*/

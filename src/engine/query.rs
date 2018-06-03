@@ -3,11 +3,12 @@ use std::collections::HashSet;
 use std::iter::Iterator;
 
 use ::QueryError;
+use engine::*;
 use engine::aggregator::*;
 use engine::batch_merging::*;
-use engine::*;
 use engine::query_plan::QueryPlan;
 use engine::types::EncodingType;
+use ingest::raw_val::RawVal;
 use mem_store::column::Column;
 use syntax::expression::*;
 use syntax::limit::*;
@@ -97,11 +98,12 @@ impl Query {
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
         // Reduce cardinality of grouping key if necessary and perform grouping
-        let (encoded_group_by_column, grouping_key, grouping_key_type, _aggregation_cardinality) =
+        let (encoded_group_by_column, grouping_key, grouping_key_type, aggregation_cardinality) =
         // TODO(clemens): refine criterion
         // TODO(clemens): can often collect group_by from non-zero positions in aggregation result
             if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
-                let max_grouping_key_buf = executor.new_buffer();
+                let max_grouping_key_buf = query_plan::prepare(
+                    QueryPlan::Constant(RawVal::Int(max_grouping_key)), &mut executor);
                 (query_plan::prepare_unique(
                     raw_grouping_key,
                     raw_grouping_key_type.encoding_type(),
@@ -129,7 +131,7 @@ impl Query {
                 plan_type,
                 grouping_key,
                 grouping_key_type.encoding_type(),
-                max_grouping_key as usize,
+                aggregation_cardinality,
                 aggregator,
                 &mut executor)?;
             aggregation_results.push(aggregate)

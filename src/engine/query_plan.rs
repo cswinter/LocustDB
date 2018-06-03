@@ -161,7 +161,7 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                    mut plan_type: Type<'a>,
                                    grouping_key: BufferRef,
                                    grouping_type: EncodingType,
-                                   max_index: usize,
+                                   max_index: BufferRef,
                                    aggregator: Aggregator,
                                    result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type<'a>), QueryError> {
     let output_location = result.new_buffer();
@@ -337,7 +337,7 @@ impl<'a> QueryPlan<'a> {
                             codec));
                     (gk_plan.clone(), gk_type.clone(), max_cardinality, vec![(decoded_group_by, gk_type.decoded())])
                 })
-        } else if exprs.len() == 2 {
+        } else {
             let mut total_width = 0;
             let mut largest_key = 0;
             let mut plan = None;
@@ -399,8 +399,6 @@ impl<'a> QueryPlan<'a> {
             // TODO(clemens): add u8, u16, u32, u128 grouping keys
             // TODO(clemens): implement general case using bites slice as grouping key
             bail!(QueryError::NotImplemented, "Failed to pack group by columns into 64 bit value")
-        } else {
-            bail!(QueryError::NotImplemented, "Can only group by one or two columns. Actual: {}", exprs.len())
         }
     }
 

@@ -56,8 +56,8 @@ pub enum MergeOp {
 #[derive(Debug, PartialEq)]
 // TODO(clemens): u16 will not always be large enough
 struct Premerge {
-    left: u16,
-    right: u16,
+    left: u32,
+    right: u32,
 }
 
 pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usize) -> Result<BatchResult<'a>, QueryError> {
@@ -77,7 +77,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 };
                 (vec![merged_grouping], ops)
             } else {
-                let initial_partitioning = match (g1[0].get_type(), g2[0].get_type()) {
+                let mut partitioning = match (g1[0].get_type(), g2[0].get_type()) {
                     (EncodingType::Str, EncodingType::Str) =>
                         partition::<&str>(g1[0].as_ref(), g2[0].as_ref(), usize::MAX),
                     (EncodingType::I64, EncodingType::I64) =>
@@ -85,25 +85,35 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     (t1, t2) => bail!(QueryError::NotImplemented, "partition types {:?}, {:?}", t1, t2),
                 };
 
-                // TODO(clemens): subpartitionings
-                assert!(g1.len() == 2);
+                for i in 1..(g1.len() - 1) {
+                    partitioning = match (g1[i].get_type(), g2[i].get_type()) {
+                        (EncodingType::Str, EncodingType::Str) =>
+                            subpartition::<&str>(&partitioning, g1[i].as_ref(), g2[i].as_ref()),
+                        (EncodingType::I64, EncodingType::I64) =>
+                            subpartition::<i64>(&partitioning, g1[i].as_ref(), g2[i].as_ref()),
+                        (t1, t2) => bail!(QueryError::NotImplemented, "partition types {:?}, {:?}", t1, t2),
+                    };
+                }
 
-                let (merged_grouping, ops) = match (g1[1].get_type(), g2[1].get_type()) {
+                let last = g1.len() - 1;
+                let (merged_grouping, ops) = match (g1[last].get_type(), g2[last].get_type()) {
                     (EncodingType::Str, EncodingType::Str) =>
-                        merge_deduplicate_partitioned::<&'a str>(&initial_partitioning, g1[1].as_ref(), g2[1].as_ref()),
+                        merge_deduplicate_partitioned::<&'a str>(&partitioning, g1[last].as_ref(), g2[last].as_ref()),
                     (EncodingType::I64, EncodingType::I64) =>
-                        merge_deduplicate_partitioned::<i64>(&initial_partitioning, g1[1].as_ref(), g2[1].as_ref()),
+                        merge_deduplicate_partitioned::<i64>(&partitioning, g1[last].as_ref(), g2[last].as_ref()),
                     (t1, t2) => bail!(QueryError::NotImplemented, "merge_deduplicate_partitioned types {:?}, {:?}", t1, t2),
                 };
 
                 let mut group_by_cols = Vec::with_capacity(g1.len());
-                group_by_cols.push(match (g1[0].get_type(), g2[0].get_type()) {
-                    (EncodingType::Str, EncodingType::Str) =>
-                        merge_drop::<&str>(g1[0].as_ref(), g2[0].as_ref(), &ops),
-                    (EncodingType::I64, EncodingType::I64) =>
-                        merge_drop::<i64>(g1[0].as_ref(), g2[0].as_ref(), &ops),
-                    (t1, t2) => bail!(QueryError::NotImplemented, "merge_drop types {:?}, {:?}", t1, t2),
-                });
+                for i in 0..last {
+                    group_by_cols.push(match (g1[i].get_type(), g2[i].get_type()) {
+                        (EncodingType::Str, EncodingType::Str) =>
+                            merge_drop::<&str>(g1[i].as_ref(), g2[i].as_ref(), &ops),
+                        (EncodingType::I64, EncodingType::I64) =>
+                            merge_drop::<i64>(g1[i].as_ref(), g2[i].as_ref(), &ops),
+                        (t1, t2) => bail!(QueryError::NotImplemented, "merge_drop types {:?}, {:?}", t1, t2),
+                    });
+                }
                 group_by_cols.push(merged_grouping);
 
                 (group_by_cols, ops)
@@ -302,7 +312,7 @@ fn partition<'a, T: VecType<T> + 'a>(left: &TypedVec<'a>, right: &TypedVec<'a>, 
         while i < left.len() && elem == left[i] {
             i += 1;
         }
-        result.push(Premerge { left: (i - i_start) as u16, right: 0 });
+        result.push(Premerge { left: (i - i_start) as u32, right: 0 });
     }
 
     // Remaining elements on right
@@ -312,7 +322,37 @@ fn partition<'a, T: VecType<T> + 'a>(left: &TypedVec<'a>, right: &TypedVec<'a>, 
         while j < right.len() && elem == right[j] {
             j += 1;
         }
-        result.push(Premerge { right: (j - j_start) as u16, left: 0 });
+        result.push(Premerge { right: (j - j_start) as u32, left: 0 });
+    }
+    result
+}
+
+fn subpartition<'a, T: VecType<T> + 'a>(
+    partitioning: &[Premerge],
+    left: &TypedVec<'a>,
+    right: &TypedVec<'a>) -> Vec<Premerge> {
+    let left = T::unwrap(left);
+    let right = T::unwrap(right);
+    // TODO(clemens): better estimate?
+    let mut result = Vec::with_capacity(2 * partitioning.len());
+    let mut i = 0;
+    let mut j = 0;
+    for group in partitioning {
+        let i_max = i + group.left as usize;
+        let j_max = j + group.right as usize;
+        while i < i_max || j < j_max {
+            let mut subpartition = Premerge { left: 0, right: 0 };
+            let elem = if i < i_max && (j == j_max || left[i] <= right[j]) { left[i] } else { right[j] };
+            while i < i_max && elem == left[i] {
+                subpartition.left += 1;
+                i += 1;
+            }
+            while j < j_max && elem == right[j] {
+                subpartition.right += 1;
+                j += 1;
+            }
+            result.push(subpartition);
+        }
     }
     result
 }
@@ -455,6 +495,19 @@ mod tests {
             TakeLeft,
             TakeRight,
             TakeRight,
+        ]);
+
+        let subpartition = subpartition::<u32>(&result, &left2, &right2);
+        assert_eq!(subpartition, vec![
+            Premerge { left: 1, right: 0 },
+            Premerge { left: 1, right: 1 },
+            Premerge { left: 0, right: 1 },
+            Premerge { left: 1, right: 0 },
+            Premerge { left: 0, right: 1 },
+            Premerge { left: 1, right: 1 },
+            Premerge { left: 1, right: 0 },
+            Premerge { left: 0, right: 1 },
+            Premerge { left: 0, right: 1 },
         ]);
     }
 }
