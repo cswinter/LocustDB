@@ -84,7 +84,11 @@ impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerOffsetCodec<T> {
 
 impl<T: IntVecType<T>> fmt::Debug for IntegerOffsetCodec<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Subtract({})", self.offset)
+        if f.alternate() {
+            write!(f, "Subtract({})", self.offset)
+        } else {
+            write!(f, "Subtract(Int)")
+        }
     }
 }
 

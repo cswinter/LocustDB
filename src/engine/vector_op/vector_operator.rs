@@ -1,9 +1,12 @@
 use std::borrow::BorrowMut;
-use std::marker::PhantomData;
 use std::cell::{RefCell, Ref, RefMut};
+use std::fmt::Write;
 use std::fmt;
+use std::intrinsics::type_name;
+use std::marker::PhantomData;
 use std::mem;
 
+use itertools::Itertools;
 use bit_vec::BitVec;
 
 use engine::aggregation_operator::*;
@@ -32,7 +35,7 @@ use engine::vector_op::vec_const_bool_op::*;
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
 #[derive(Debug, Clone, Copy)]
-pub struct BufferRef(pub usize);
+pub struct BufferRef(pub usize, pub &'static str);
 
 pub trait VecOperator<'a>: fmt::Debug {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>);
@@ -44,6 +47,25 @@ pub trait VecOperator<'a>: fmt::Debug {
     fn can_stream_input(&self) -> bool;
     fn can_stream_output(&self) -> bool;
     fn allocates(&self) -> bool;
+
+    fn display(&self) -> String {
+        let mut s = String::new();
+        let name = match self.display_op() {
+            None => unsafe {
+                let name = type_name::<Self>();
+                name[name.rfind(":").unwrap() + 1..].to_owned()
+            }
+            Some(name) => name,
+        };
+        write!(s, "{:<12}", self.outputs().iter().map(|o| format!("{}_{}", o.1, o.0)).join(", ")).unwrap();
+        write!(s, " = {}", name).unwrap();
+        if !self.inputs().is_empty() {
+            write!(s, "({})", self.inputs().iter().map(|i| format!("{}_{}", i.1, i.0)).join(", ")).unwrap();
+        }
+        s
+    }
+
+    fn display_op(&self) -> Option<String> { None }
 }
 
 pub struct Scratchpad<'a> {
@@ -150,8 +172,8 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn constant(val: RawVal, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(Constant { val, output })
+    pub fn constant(val: RawVal, hide_value: bool, output: BufferRef) -> BoxedOperator<'a> {
+        Box::new(Constant { val, hide_value, output })
     }
 
     pub fn less_than_vs(t: EncodingType, lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> BoxedOperator<'a> {

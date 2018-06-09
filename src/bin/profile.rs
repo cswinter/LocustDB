@@ -18,6 +18,6 @@ fn main() {
     }
     println!("Load completed");
     loop {
-        let _ = block_on(locustdb.run_query("select passenger_count, count(1) from test;"));
+        let _ = block_on(locustdb.run_query("select passenger_count, count(1) from test;", false));
     }
 }

@@ -16,7 +16,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = block_on(locustdb.load_csv(
         IngestFile::new("test_data/tiny.csv", "default")
             .with_chunk_size(40)));
-    let result = block_on(locustdb.run_query(query)).unwrap();
+    let result = block_on(locustdb.run_query(query, true)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
@@ -26,7 +26,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = block_on(locustdb.load_csv(
         IngestFile::new("test_data/edge_cases.csv", "default")
             .with_chunk_size(3)));
-    let result = block_on(locustdb.run_query(query)).unwrap();
+    let result = block_on(locustdb.run_query(query, false)).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
@@ -37,7 +37,7 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
         nyc_taxi_data::ingest_file("test_data/nyc-taxi.csv.gz", "default")
             .with_chunk_size(999)));
     load.unwrap().ok();
-    let result = block_on(locustdb.run_query(query)).unwrap();
+    let result = block_on(locustdb.run_query(query, false)).unwrap();
     let actual_rows = result.0.unwrap().rows;
     assert_eq!(&actual_rows[..min(5, actual_rows.len())], expected_rows);
 }

@@ -21,6 +21,7 @@ use time::precise_time_ns;
 
 pub struct QueryTask {
     query: Query,
+    explain: bool,
     batches: Vec<Batch>,
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
@@ -40,6 +41,7 @@ pub struct QueryTask {
 pub struct QueryState<'a> {
     completed_batches: usize,
     partial_results: Vec<BatchResult<'a>>,
+    explains: Vec<String>,
     rows_scanned: usize,
     rows_collected: usize,
 }
@@ -47,6 +49,7 @@ pub struct QueryState<'a> {
 pub struct QueryOutput {
     pub colnames: Vec<String>,
     pub rows: Vec<Vec<RawVal>>,
+    pub query_plans: HashMap<String, u32>,
     pub stats: QueryStats,
 }
 
@@ -68,7 +71,7 @@ impl Default for QueryStats {
 
 
 impl QueryTask {
-    pub fn new(mut query: Query, source: Vec<Batch>, sender: SharedSender<QueryResult>) -> QueryTask {
+    pub fn new(mut query: Query, explain: bool, source: Vec<Batch>, sender: SharedSender<QueryResult>) -> QueryTask {
         let start_time_ns = precise_time_ns();
         if query.is_select_star() {
             query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
@@ -89,6 +92,7 @@ impl QueryTask {
 
         QueryTask {
             query,
+            explain,
             batches: source,
             referenced_cols,
             output_colnames,
@@ -98,6 +102,7 @@ impl QueryTask {
             unsafe_state: Mutex::new(QueryState {
                 partial_results: Vec::new(),
                 completed_batches: 0,
+                explains: Vec::new(),
                 rows_scanned: 0,
                 rows_collected: 0,
             }),
@@ -111,14 +116,15 @@ impl QueryTask {
         let mut rows_scanned = 0;
         let mut rows_collected = 0;
         let mut batch_results = Vec::<BatchResult>::new();
+        let mut explains = Vec::new();
         while let Some((batch, id)) = self.next_batch() {
             trace_start!("Batch {}", id);
             rows_scanned += batch.cols().get(0).map_or(0, |c| c.len());
             let batch = QueryTask::prepare_batch(&self.referenced_cols, batch);
-            let mut batch_result = match if self.aggregate.is_empty() {
-                self.query.run(&batch)
+            let (mut batch_result, explain) = match if self.aggregate.is_empty() {
+                self.query.run(&batch, self.explain)
             } else {
-                self.query.run_aggregate(&batch)
+                self.query.run_aggregate(&batch, self.explain)
             } {
                 Ok(result) => result,
                 Err(error) => {
@@ -127,6 +133,9 @@ impl QueryTask {
                 }
             };
             rows_collected += batch_result.len();
+            if let Some(explain) = explain {
+                explains.push(explain);
+            }
 
             // Merge only with previous batch results of same level to get O(n log n) complexity
             while let Some(br) = batch_results.pop() {
@@ -154,7 +163,7 @@ impl QueryTask {
         }
 
         match QueryTask::combine_results(batch_results, self.combined_limit()) {
-            Ok(Some(result)) => self.push_result(result, rows_scanned, rows_collected),
+            Ok(Some(result)) => self.push_result(result, rows_scanned, rows_collected, explains),
             Err(error) => self.fail_with(error),
             _ => {}
         }
@@ -172,10 +181,11 @@ impl QueryTask {
         Ok(full_result)
     }
 
-    fn push_result(&self, result: BatchResult, rows_scanned: usize, rows_collected: usize) {
+    fn push_result(&self, result: BatchResult, rows_scanned: usize, rows_collected: usize, explains: Vec<String>) {
         let mut state = self.unsafe_state.lock().unwrap();
         if self.completed.load(Ordering::SeqCst) { return; }
         state.completed_batches += result.batch_count;
+        state.explains.extend(explains);
         state.rows_scanned += rows_scanned;
         state.rows_collected += rows_collected;
         unsafe {
@@ -193,7 +203,7 @@ impl QueryTask {
                     return;
                 }
             };
-            let final_result = self.convert_to_output_format(&full_result, state.rows_scanned);
+            let final_result = self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains);
             self.sender.send(Ok(final_result));
             self.completed.store(true, Ordering::SeqCst);
         }
@@ -223,7 +233,8 @@ impl QueryTask {
 
     fn convert_to_output_format(&self,
                                 full_result: &BatchResult,
-                                rows_scanned: usize) -> QueryOutput {
+                                rows_scanned: usize,
+                                explains: &[String]) -> QueryOutput {
         let limit = self.query.limit.limit as usize;
         let offset = self.query.limit.offset as usize;
         let mut result_rows = Vec::new();
@@ -241,9 +252,15 @@ impl QueryTask {
             result_rows.push(record);
         }
 
+        let mut query_plans = HashMap::new();
+        for plan in explains {
+            *query_plans.entry(plan.to_owned()).or_insert(0) += 1
+        }
+
         QueryOutput {
             colnames: self.output_colnames.clone(),
             rows: result_rows,
+            query_plans,
             stats: QueryStats {
                 runtime_ns: precise_time_ns() - self.start_time_ns,
                 rows_scanned,

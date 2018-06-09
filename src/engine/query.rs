@@ -28,7 +28,7 @@ pub struct Query {
 
 impl Query {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> Result<BatchResult<'a>, QueryError> {
+    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let mut executor = QueryExecutor::default();
 
         let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, columns)?;
@@ -66,18 +66,21 @@ impl Query {
         executor.run(columns.iter().next().unwrap().1.len(), &mut results);
         let select = select.into_iter().map(|i| results.collect(i)).collect();
 
-        Ok(BatchResult {
-            group_by: None,
-            sort_by: self.order_by_index,
-            select,
-            aggregators: Vec::with_capacity(0),
-            level: 0,
-            batch_count: 1,
-        })
+        Ok(
+            (BatchResult {
+                group_by: None,
+                sort_by: self.order_by_index,
+                select,
+                aggregators: Vec::with_capacity(0),
+                level: 0,
+                batch_count: 1,
+            },
+             if explain { Some(format!("{}", executor)) } else { None }))
     }
 
     #[inline(never)] // produces more useful profiles
-    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>) -> Result<BatchResult<'a>, QueryError> {
+    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool)
+                             -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 
         let mut executor = QueryExecutor::default();
@@ -103,7 +106,7 @@ impl Query {
         // TODO(clemens): can often collect group_by from non-zero positions in aggregation result
             if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
                 let max_grouping_key_buf = query_plan::prepare(
-                    QueryPlan::Constant(RawVal::Int(max_grouping_key)), &mut executor);
+                    QueryPlan::Constant(RawVal::Int(max_grouping_key), true), &mut executor);
                 (query_plan::prepare_unique(
                     raw_grouping_key,
                     raw_grouping_key_type.encoding_type(),
@@ -218,7 +221,10 @@ impl Query {
             error!("Query result failed validation: {}\n{}\nGroup By: {:?}\nSelect: {:?}", err, &executor, grouping_columns, select);
             Err(err)
         } else {
-            Ok(batch)
+            Ok((
+                (batch),
+                if explain { Some(format!("{}", executor)) } else { None }
+            ))
         }
     }
 

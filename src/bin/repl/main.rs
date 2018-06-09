@@ -25,7 +25,7 @@ fn main() {
     let locustdb = LocustDB::memory_only();
     println!("Loading {} into table default.", filename);
     let start_time = precise_time_ns();
-    if filename == &"nyc100m"{
+    if filename == &"nyc100m" {
         let mut loads = Vec::new();
         for x in &["aa", "ab", "ac", "ad", "ae"] {
             let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
@@ -36,7 +36,7 @@ fn main() {
         for l in loads {
             let _ = block_on(l);
         }
-    }else {
+    } else {
         let ingestion_request = if filename.contains("nyc-taxi-data") {
             locustdb::nyc_taxi_data::ingest_file(filename, "test")
                 .with_chunk_size(LOAD_CHUNK_SIZE)
@@ -83,13 +83,18 @@ fn repl(locustdb: &LocustDB) {
         rl.add_history_entry(&s);
 
         let mut print_trace = false;
+        let mut explain = false;
         let mut s: &str = &s;
+        if s.starts_with(":explain") {
+            explain = true;
+            s = &s[9..];
+        }
         if s.starts_with(":trace") {
             print_trace = true;
             s = &s[7..];
         }
 
-        let query = locustdb.run_query(s);
+        let query = locustdb.run_query(s, explain);
         match block_on(query) {
             Ok((result, trace)) => {
                 if print_trace {

@@ -48,7 +48,7 @@ impl<T, C> Column for PlainEncodedColumn<T, C>
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.data.len() }
     fn get_encoded<'b>(&'b self, from: usize, to: usize) -> Option<BoxedVec<'b>> { Some(self.data.slice_box(from, to)) }
-    fn decode(&self) -> BoxedVec { panic!("PlayingEncodedColumn{:?}.decode()", &self) }
+    fn decode(&self) -> BoxedVec { panic!("PlainEncodedColumn{:?}.decode()", &self) }
     fn codec(&self) -> Option<Codec> { Some(Arc::new(&self.codec)) }
     fn basic_type(&self) -> BasicType { (&self.codec).decoded_type() }
     fn encoding_type(&self) -> EncodingType { self.data.get_type() }
@@ -60,7 +60,7 @@ impl<T, C> fmt::Debug for PlainEncodedColumn<T, C>
           C: HeapSizeOf + Sync + Send + 'static,
           for<'a> &'a C: ColumnCodec<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:?}, {:?}>", &self.name, self.encoding_type())
+        write!(f, "[{}; {:?}; {:?}]", &self.name, self.encoding_type(), &self.codec)
     }
 }
 
@@ -92,7 +92,7 @@ impl<T: TypedVec<'static> + HeapSizeOf> Column for PlainColumn<T> {
 
 impl<T: TypedVec<'static>> fmt::Debug for PlainColumn<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:?}, {:?}>", &self.name, &self.data.get_type())
+        write!(f, "[{}; {:?}]", &self.name, &self.data.get_type())
     }
 }
 

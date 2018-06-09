@@ -142,7 +142,7 @@ impl Column for StringPacker {
 
 impl fmt::Debug for StringPacker {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{}, StringPacked>", &self.name)
+        write!(f, "[{}; U8; StringPacked]", &self.name)
     }
 }
 
@@ -233,7 +233,11 @@ impl<'a, T: IntVecType<T>> ColumnCodec<'a> for &'a DictionaryEncoding<T> {
 
 impl<T> fmt::Debug for DictionaryEncoding<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "StringDictionary({})", self.mapping.len())
+        if f.alternate() {
+            write!(f, "StringDictionary({})", self.mapping.len())
+        } else {
+            write!(f, "StringDictionary")
+        }
     }
 }
 

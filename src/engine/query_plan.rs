@@ -45,66 +45,66 @@ pub enum QueryPlan<'a> {
 
     EncodedGroupByPlaceholder,
 
-    Constant(RawVal),
+    Constant(RawVal, bool),
 }
 
 pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> BufferRef {
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select(plan, indices, t) =>
-            VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.new_buffer()),
+            VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.named_buffer("select")),
         QueryPlan::DecodeColumn(col) => {
-            let column_buffer = result.new_buffer();
+            let column_buffer = result.named_buffer("decode");
             let column_op = VecOperator::get_decode(col, column_buffer);
             match result.filter() {
                 Filter::BitVec(filter) => {
                     result.push(column_op);
-                    VecOperator::filter(col.basic_type().to_encoded(), column_buffer, filter, result.new_buffer())
+                    VecOperator::filter(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("filter"))
                 }
                 Filter::Indices(filter) => {
                     result.push(column_op);
-                    VecOperator::select(col.basic_type().to_encoded(), column_buffer, filter, result.new_buffer())
+                    VecOperator::select(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("select"))
                 }
                 Filter::None => column_op,
             }
         }
         QueryPlan::ReadColumn(col) => {
-            let column_buffer = result.new_buffer();
+            let column_buffer = result.named_buffer("column");
             let column_op = VecOperator::get_encoded(col, column_buffer);
             match result.filter() {
                 Filter::BitVec(filter) => {
                     result.push(column_op);
-                    VecOperator::filter(col.encoding_type(), column_buffer, filter, result.new_buffer())
+                    VecOperator::filter(col.encoding_type(), column_buffer, filter, result.named_buffer("filter"))
                 }
                 Filter::Indices(filter) => {
                     result.push(column_op);
-                    VecOperator::select(col.encoding_type(), column_buffer, filter, result.new_buffer())
+                    VecOperator::select(col.encoding_type(), column_buffer, filter, result.named_buffer("select"))
                 }
                 Filter::None => column_op,
             }
         }
-        QueryPlan::Constant(ref c) =>
-            VecOperator::constant(c.clone(), result.new_buffer()),
+        QueryPlan::Constant(ref c, hide_value) =>
+            VecOperator::constant(c.clone(), hide_value, result.named_buffer("constant")),
         QueryPlan::Decode(plan, codec) =>
-            VecOperator::decode(prepare(*plan, result), result.new_buffer(), codec),
+            VecOperator::decode(prepare(*plan, result), result.named_buffer("decode"), codec),
         QueryPlan::TypeConversion(plan, initial_type, target_type) => if initial_type == target_type {
             return prepare(*plan, result);
         } else {
-            VecOperator::type_conversion(prepare(*plan, result), result.new_buffer(), initial_type, target_type)
+            VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("cast"), initial_type, target_type)
         },
         QueryPlan::EncodeStrConstant(plan, codec) =>
-            VecOperator::encode_str_const(prepare(*plan, result), result.new_buffer(), codec),
+            VecOperator::encode_str_const(prepare(*plan, result), result.named_buffer("encode"), codec),
         QueryPlan::EncodeIntConstant(plan, codec) =>
-            VecOperator::encode_int_const(prepare(*plan, result), result.new_buffer(), codec),
+            VecOperator::encode_int_const(prepare(*plan, result), result.named_buffer("encode"), codec),
         QueryPlan::BitPack(lhs, rhs, shift_amount) =>
-            VecOperator::bit_shift_left_add(prepare(*lhs, result), prepare(*rhs, result), result.new_buffer(), shift_amount),
+            VecOperator::bit_shift_left_add(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("bitpack"), shift_amount),
         QueryPlan::BitUnpack(inner, shift, width) =>
-            VecOperator::bit_unpack(prepare(*inner, result), result.new_buffer(), shift, width),
+            VecOperator::bit_unpack(prepare(*inner, result), result.named_buffer("bitunpack"), shift, width),
         QueryPlan::LessThanVS(left_type, lhs, rhs) =>
-            VecOperator::less_than_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.new_buffer()),
+            VecOperator::less_than_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("lessthan")),
         QueryPlan::EqualsVS(left_type, lhs, rhs) =>
-            VecOperator::equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.new_buffer()),
+            VecOperator::equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
         QueryPlan::DivideVS(lhs, rhs) =>
-            VecOperator::divide_vs(prepare(*lhs, result), prepare(*rhs, result), result.new_buffer()),
+            VecOperator::divide_vs(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("division")),
         QueryPlan::Or(lhs, rhs) => {
             let inplace = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
@@ -122,10 +122,10 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             return inplace;
         }
         QueryPlan::ToYear(plan) =>
-            VecOperator::to_year(prepare(*plan, result), result.new_buffer()),
+            VecOperator::to_year(prepare(*plan, result), result.named_buffer("year")),
         QueryPlan::EncodedGroupByPlaceholder => return result.encoded_group_by().unwrap(),
         QueryPlan::SortIndices(plan, descending) =>
-            VecOperator::sort_indices(prepare(*plan, result), result.new_buffer(), descending),
+            VecOperator::sort_indices(prepare(*plan, result), result.named_buffer("permutation"), descending),
         QueryPlan::ReadBuffer(buffer) => return buffer,
     };
     result.push(operation);
@@ -136,7 +136,7 @@ pub fn prepare_unique(raw_grouping_key: BufferRef,
                       raw_grouping_key_type: EncodingType,
                       max_cardinality: usize,
                       result: &mut QueryExecutor) -> BufferRef {
-    let output = result.new_buffer();
+    let output = result.named_buffer("unique");
     result.push(VecOperator::unique(raw_grouping_key, output, raw_grouping_key_type, max_cardinality));
     output
 }
@@ -145,9 +145,9 @@ pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
                                     grouping_key_type: EncodingType,
                                     max_cardinality: usize,
                                     result: &mut QueryExecutor) -> (BufferRef, BufferRef, Type<'a>, BufferRef) {
-    let unique_out = result.new_buffer();
-    let grouping_key_out = result.new_buffer();
-    let cardinality_out = result.new_buffer();
+    let unique_out = result.named_buffer("unique");
+    let grouping_key_out = result.named_buffer("grouping_key");
+    let cardinality_out = result.named_buffer("cardinality");
     result.push(VecOperator::hash_map_grouping(
         raw_grouping_key, unique_out, grouping_key_out, cardinality_out, grouping_key_type, max_cardinality));
     (unique_out,
@@ -164,18 +164,19 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                    max_index: BufferRef,
                                    aggregator: Aggregator,
                                    result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type<'a>), QueryError> {
-    let output_location = result.new_buffer();
+    let output_location;
     let (operation, t): (BoxedOperator<'a>, _) = match (aggregator, plan) {
-        (Aggregator::Count, _) => (
-            VecOperator::count(grouping_key,
-                               output_location,
-                               grouping_type,
-                               max_index,
-                               false),
-            Type::encoded(Arc::new(IntegerCodec::<u32>::new()))
-        ),
-
+        (Aggregator::Count, _) => {
+            output_location = result.named_buffer("count");
+            (VecOperator::count(grouping_key,
+                                output_location,
+                                grouping_type,
+                                max_index,
+                                false),
+             Type::encoded(Arc::new(IntegerCodec::<u32>::new())))
+        }
         (Aggregator::Sum, mut plan) => {
+            output_location = result.named_buffer("sum");
             if !plan_type.is_summation_preserving() {
                 plan = QueryPlan::Decode(Box::new(plan), plan_type.codec.clone().unwrap());
                 plan_type = plan_type.decoded();
@@ -319,7 +320,7 @@ impl<'a> QueryPlan<'a> {
                 };
                 (QueryPlan::ToYear(Box::new(decoded)), t.decoded())
             }
-            Const(ref v) => (QueryPlan::Constant(v.clone()), Type::scalar(v.get_type())),
+            Const(ref v) => (QueryPlan::Constant(v.clone(), false), Type::scalar(v.get_type())),
             ref x => bail!(QueryError::NotImplemented, "{:?}.compile_vec()", x),
         })
     }

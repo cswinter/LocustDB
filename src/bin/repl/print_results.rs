@@ -19,6 +19,11 @@ pub fn print_query_result(results: &QueryOutput) {
              results.stats.rows_scanned as f64 / rt as f64);
     println!();
     println!("{}\n", format_results(&results.colnames, &results.rows));
+    if results.query_plans.len() > 0 {
+        for (query_plan, count) in &results.query_plans {
+            println!("Query plan in {} batches{}\n", count, query_plan)
+        }
+    }
 }
 
 fn format_results(colnames: &[String], rows: &[Vec<Value>]) -> String {

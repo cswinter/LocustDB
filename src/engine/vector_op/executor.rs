@@ -11,6 +11,7 @@ pub struct QueryExecutor<'a> {
     encoded_group_by: Option<BufferRef>,
     filter: Filter,
     count: usize,
+    last_buffer: BufferRef,
 }
 
 #[derive(Default)]
@@ -21,12 +22,14 @@ struct ExecutorStage {
 }
 
 impl<'a> QueryExecutor<'a> {
-    pub fn new_buffer(&mut self) -> BufferRef {
+    pub fn named_buffer(&mut self, name: &'static str) -> BufferRef {
+        let buffer = BufferRef(self.count, name);
         self.count += 1;
-        BufferRef(self.count - 1)
+        self.last_buffer = buffer;
+        buffer
     }
 
-    pub fn last_buffer(&self) -> BufferRef { BufferRef(self.count - 1) }
+    pub fn last_buffer(&self) -> BufferRef { self.last_buffer }
 
     pub fn push(&mut self, op: Box<VecOperator<'a> + 'a>) {
         self.ops.push(op);
@@ -190,7 +193,8 @@ impl<'a> Default for QueryExecutor<'a> {
             stages: vec![],
             encoded_group_by: None,
             filter: Filter::None,
-            count: 0
+            count: 0,
+            last_buffer: BufferRef(0xdeadbeef, "ERROR"),
         }
     }
 }
@@ -198,17 +202,16 @@ impl<'a> Default for QueryExecutor<'a> {
 impl<'a> fmt::Display for QueryExecutor<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (i, stage) in self.stages.iter().enumerate() {
-            write!(f, "-- Stage {} --\n", i)?;
             if stage.stream {
-                write!(f, "Streaming\n")?;
+                write!(f, "\n-- {} (streaming) --", i)?;
             } else {
-                write!(f, "SinglePass\n")?;
+                write!(f, "\n-- {} --", i)?;
             }
-            for &(op, streamable) in &stage.ops {
-                if streamable {
-                    write!(f, "Stream: ")?;
-                }
-                write!(f, "{:?}\n", self.ops[op])?;
+            for &(op, _) in &stage.ops {
+                write!(f, "\n{}", self.ops[op].display())?;
+                // if stage.stream && streamable {
+                // write!(f, " (stream)")?;
+                // }
             }
         }
         Ok(())

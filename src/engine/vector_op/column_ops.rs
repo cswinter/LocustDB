@@ -45,4 +45,8 @@ impl<'a> VecOperator<'a> for GetEncoded<'a> {
     fn can_stream_input(&self) -> bool { false }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { false }
+
+    fn display_op(&self) -> Option<String> {
+        Some(format!("{:?}", self.col))
+    }
 }
