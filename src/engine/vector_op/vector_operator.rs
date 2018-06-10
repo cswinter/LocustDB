@@ -9,7 +9,6 @@ use std::mem;
 use itertools::Itertools;
 use bit_vec::BitVec;
 
-use engine::aggregation_operator::*;
 use engine::typed_vec::TypedVec;
 use engine::types::{BasicType, EncodingType};
 use engine::*;
@@ -20,15 +19,19 @@ use engine::vector_op::bit_unpack::BitUnpackOperator;
 use engine::vector_op::bool_op::*;
 use engine::vector_op::column_ops::*;
 use engine::vector_op::constant::Constant;
+use engine::vector_op::count::VecCount;
 use engine::vector_op::decode::Decode;
-use engine::vector_op::encode_const::*;
 use engine::vector_op::division_vs::DivideVS;
+use engine::vector_op::encode_const::*;
 use engine::vector_op::filter::Filter;
+use engine::vector_op::hashmap_grouping::HashMapGrouping;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
 use engine::vector_op::select::Select;
 use engine::vector_op::sort_indices::SortIndices;
+use engine::vector_op::sum::VecSum;
 use engine::vector_op::to_year::ToYear;
 use engine::vector_op::type_conversion::TypeConversionOperator;
+use engine::vector_op::unique::Unique;
 use engine::vector_op::vec_const_bool_op::*;
 
 

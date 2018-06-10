@@ -1,4 +1,3 @@
-mod aggregation_operator;
 mod batch_merging;
 mod query_plan;
 pub mod vector_op;
