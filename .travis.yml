@@ -2,3 +2,6 @@ language: rust
 rust:
   - nightly
 cache: cargo
+script:
+- cargo test
+- cargo check --bench basic
