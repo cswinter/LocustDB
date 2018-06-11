@@ -10,17 +10,15 @@ pub struct VecCount<T> {
     grouping: BufferRef,
     output: BufferRef,
     max_index: BufferRef,
-    dense_grouping: bool,
     t: PhantomData<T>,
 }
 
 impl<T> VecCount<T> {
-    pub fn new(grouping: BufferRef, output: BufferRef, max_index: BufferRef, dense_grouping: bool) -> VecCount<T> {
+    pub fn new(grouping: BufferRef, output: BufferRef, max_index: BufferRef) -> VecCount<T> {
         VecCount {
             grouping,
             output,
             max_index,
-            dense_grouping,
             t: PhantomData,
         }
     }
@@ -32,22 +30,6 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
         let grouping = scratchpad.get::<T>(self.grouping);
         for i in grouping.iter() {
             result[i.cast_usize()] += 1;
-        }
-    }
-
-    fn finalize(&mut self, scratchpad: &mut Scratchpad<'a>) {
-        if !self.dense_grouping {
-            let mut result = scratchpad.get_mut::<u32>(self.output);
-            // Remove 0 counts for all entries that weren't present in grouping
-            let mut j = 0;
-            for i in 0..result.len() {
-                if result[i] > 0 {
-                    result[j] = result[i];
-                    j += 1;
-                }
-            }
-            result.truncate(j);
-            trace!("Vec count: {:?}", &result);
         }
     }
 

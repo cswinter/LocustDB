@@ -19,15 +19,15 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
 running 9 tests
-test count_by_passenger_count                              ... bench:  29,199,064 ns/iter (+/- 1,034,507)
-test count_by_vendor_id_and_passenger_count                ... bench:  89,481,240 ns/iter (+/- 3,335,758)
-test q1_count_cab_type                                     ... bench:  31,903,802 ns/iter (+/- 1,176,215)
-test q2_avg_total_amount_by_passenger_count                ... bench:  67,294,496 ns/iter (+/- 1,043,722)
-test q3_count_by_passenger_count_pickup_year               ... bench: 318,842,838 ns/iter (+/- 6,398,757)
-test q4_count_by_passenger_count_pickup_year_trip_distance ... bench: 760,724,705 ns/iter (+/- 34,517,497)
-test select_passenger_count_sparse_filter                  ... bench: 390,120,439 ns/iter (+/- 7,071,757)
-test select_star_limit_10000                               ... bench: 977,810,685 ns/iter (+/- 24,288,318)
-test sum_total_amt_by_passenger_count                      ... bench:  51,671,627 ns/iter (+/- 1,322,935)
+test count_by_passenger_count                              ... bench:  15,724,438 ns/iter (+/- 1,072,153)
+test count_by_vendor_id_and_passenger_count                ... bench:  72,069,173 ns/iter (+/- 2,089,003)
+test q1_count_cab_type                                     ... bench:  18,288,624 ns/iter (+/- 1,001,521)
+test q2_avg_total_amount_by_passenger_count                ... bench:  44,159,055 ns/iter (+/- 2,239,541)
+test q3_count_by_passenger_count_pickup_year               ... bench: 291,800,859 ns/iter (+/- 6,616,003)
+test q4_count_by_passenger_count_pickup_year_trip_distance ... bench: 717,384,932 ns/iter (+/- 17,664,140)
+test select_passenger_count_sparse_filter                  ... bench: 367,080,147 ns/iter (+/- 9,438,398)
+test select_star_limit_10000                               ... bench: 939,382,492 ns/iter (+/- 28,662,138)
+test sum_total_amt_by_passenger_count                      ... bench:  39,902,086 ns/iter (+/- 1,238,907)
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 9 measured; 0 filtered out
 

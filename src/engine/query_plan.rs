@@ -21,10 +21,14 @@ pub enum QueryPlan<'a> {
     ReadColumn(&'a Column),
     DecodeColumn(&'a Column),
     ReadBuffer(BufferRef),
-    // TODO(clemens): make it possible to replace this with Decode(ReadColumn)
 
     Decode(Box<QueryPlan<'a>>, Codec<'a>),
     TypeConversion(Box<QueryPlan<'a>>, EncodingType, EncodingType),
+
+    Exists(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>),
+    NonzeroCompact(Box<QueryPlan<'a>>, EncodingType),
+    NonzeroIndices(Box<QueryPlan<'a>>, EncodingType, EncodingType),
+    Compact(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>, EncodingType),
 
     EncodeStrConstant(Box<QueryPlan<'a>>, Codec<'a>),
     EncodeIntConstant(Box<QueryPlan<'a>>, Codec<'a>),
@@ -91,6 +95,22 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
         } else {
             VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("cast"), initial_type, target_type)
         },
+
+        QueryPlan::Exists(indices, t, max_index) =>
+            VecOperator::exists(prepare(*indices, result), result.named_buffer("exists"), t, prepare(*max_index, result)),
+        QueryPlan::Compact(data, data_t, select, select_t) => {
+            let inplace = prepare(*data, result);
+            let op = VecOperator::compact(inplace, prepare(*select, result), data_t, select_t);
+            result.push(op);
+            return inplace;
+        }
+        QueryPlan::NonzeroIndices(indices, indices_t, output_t) =>
+            VecOperator::nonzero_indices(prepare(*indices, result), result.named_buffer("nonzero_indices"), indices_t, output_t),
+        QueryPlan::NonzeroCompact(data, data_t) => {
+            let inplace = prepare(*data, result);
+            result.push(VecOperator::nonzero_compact(inplace, data_t));
+            return inplace;
+        }
         QueryPlan::EncodeStrConstant(plan, codec) =>
             VecOperator::encode_str_const(prepare(*plan, result), result.named_buffer("encode"), codec),
         QueryPlan::EncodeIntConstant(plan, codec) =>
@@ -132,25 +152,16 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
     result.last_buffer()
 }
 
-pub fn prepare_unique(raw_grouping_key: BufferRef,
-                      raw_grouping_key_type: EncodingType,
-                      max_cardinality: usize,
-                      result: &mut QueryExecutor) -> BufferRef {
-    let output = result.named_buffer("unique");
-    result.push(VecOperator::unique(raw_grouping_key, output, raw_grouping_key_type, max_cardinality));
-    output
-}
-
 pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
                                     grouping_key_type: EncodingType,
                                     max_cardinality: usize,
-                                    result: &mut QueryExecutor) -> (BufferRef, BufferRef, Type<'a>, BufferRef) {
+                                    result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type<'a>, BufferRef) {
     let unique_out = result.named_buffer("unique");
     let grouping_key_out = result.named_buffer("grouping_key");
     let cardinality_out = result.named_buffer("cardinality");
     result.push(VecOperator::hash_map_grouping(
         raw_grouping_key, unique_out, grouping_key_out, cardinality_out, grouping_key_type, max_cardinality));
-    (unique_out,
+    (Some(unique_out),
      grouping_key_out,
      Type::encoded(Arc::new(OpaqueCodec::new(BasicType::Integer, grouping_key_type).set_positive_integer(true))),
      cardinality_out)
@@ -171,8 +182,7 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
             (VecOperator::count(grouping_key,
                                 output_location,
                                 grouping_type,
-                                max_index,
-                                false),
+                                max_index, ),
              Type::encoded(Arc::new(IntegerCodec::<u32>::new())))
         }
         (Aggregator::Sum, mut plan) => {
@@ -186,8 +196,7 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
                                     output_location,
                                     plan_type.encoding_type(),
                                     grouping_type,
-                                    max_index,
-                                    false), // TODO(clemens): determine dense groupings
+                                    max_index), // TODO(clemens): determine dense groupings
              Type::unencoded(BasicType::Integer))
         }
     };

@@ -18,20 +18,23 @@ use mem_store::*;
 use engine::vector_op::bit_unpack::BitUnpackOperator;
 use engine::vector_op::bool_op::*;
 use engine::vector_op::column_ops::*;
+use engine::vector_op::compact::Compact;
 use engine::vector_op::constant::Constant;
 use engine::vector_op::count::VecCount;
 use engine::vector_op::decode::Decode;
 use engine::vector_op::division_vs::DivideVS;
 use engine::vector_op::encode_const::*;
+use engine::vector_op::exists::Exists;
 use engine::vector_op::filter::Filter;
 use engine::vector_op::hashmap_grouping::HashMapGrouping;
+use engine::vector_op::nonzero_compact::NonzeroCompact;
+use engine::vector_op::nonzero_indices::NonzeroIndices;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
 use engine::vector_op::select::Select;
 use engine::vector_op::sort_indices::SortIndices;
 use engine::vector_op::sum::VecSum;
 use engine::vector_op::to_year::ToYear;
 use engine::vector_op::type_conversion::TypeConversionOperator;
-use engine::vector_op::unique::Unique;
 use engine::vector_op::vec_const_bool_op::*;
 
 
@@ -253,52 +256,111 @@ impl<'a> VecOperator<'a> {
                      output: BufferRef,
                      input_type: EncodingType,
                      grouping_type: EncodingType,
-                     max_index: BufferRef,
-                     dense_grouping: bool) -> BoxedOperator<'a> {
+                     max_index: BufferRef) -> BoxedOperator<'a> {
         use self::EncodingType::*;
         match (input_type, grouping_type) {
-            (U8, U8) => VecSum::<u8, u8>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U8, U16) => VecSum::<u8, u16>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U8, U32) => VecSum::<u8, u32>::boxed(input, grouping, output, max_index, dense_grouping),
+            (U8, U8) => VecSum::<u8, u8>::boxed(input, grouping, output, max_index),
+            (U8, U16) => VecSum::<u8, u16>::boxed(input, grouping, output, max_index),
+            (U8, U32) => VecSum::<u8, u32>::boxed(input, grouping, output, max_index),
             // (U8, I64) => VecSum::<u8, u64>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U16, U8) => VecSum::<u16, u8>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U16, U16) => VecSum::<u16, u16>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U16, U32) => VecSum::<u16, u32>::boxed(input, grouping, output, max_index, dense_grouping),
+            (U16, U8) => VecSum::<u16, u8>::boxed(input, grouping, output, max_index),
+            (U16, U16) => VecSum::<u16, u16>::boxed(input, grouping, output, max_index),
+            (U16, U32) => VecSum::<u16, u32>::boxed(input, grouping, output, max_index),
             // (U16, I64) => VecSum::<u16, u64>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U32, U8) => VecSum::<u32, u8>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U32, U16) => VecSum::<u32, u16>::boxed(input, grouping, output, max_index, dense_grouping),
-            (U32, U32) => VecSum::<u32, u32>::boxed(input, grouping, output, max_index, dense_grouping),
+            (U32, U8) => VecSum::<u32, u8>::boxed(input, grouping, output, max_index),
+            (U32, U16) => VecSum::<u32, u16>::boxed(input, grouping, output, max_index),
+            (U32, U32) => VecSum::<u32, u32>::boxed(input, grouping, output, max_index),
             // (U32, I64) => VecSum::<u32, u64>::boxed(input, grouping, output, max_index, dense_grouping),
-            (I64, U8) => VecSum::<i64, u8>::boxed(input, grouping, output, max_index, dense_grouping),
-            (I64, U16) => VecSum::<i64, u16>::boxed(input, grouping, output, max_index, dense_grouping),
-            (I64, U32) => VecSum::<i64, u32>::boxed(input, grouping, output, max_index, dense_grouping),
+            (I64, U8) => VecSum::<i64, u8>::boxed(input, grouping, output, max_index),
+            (I64, U16) => VecSum::<i64, u16>::boxed(input, grouping, output, max_index),
+            (I64, U32) => VecSum::<i64, u32>::boxed(input, grouping, output, max_index),
             // (I64, I64) => VecSum::<i64, u64>::boxed(input, grouping, output, max_index, dense_grouping),
             (pt, gt) => panic!("invalid aggregation types {:?}, {:?}", pt, gt),
         }
     }
 
-    pub fn count(grouping: BufferRef, output: BufferRef, grouping_type: EncodingType, max_index: BufferRef, dense_grouping: bool) -> BoxedOperator<'a> {
+    pub fn count(grouping: BufferRef, output: BufferRef, grouping_type: EncodingType, max_index: BufferRef) -> BoxedOperator<'a> {
         match grouping_type {
-            EncodingType::U8 => Box::new(VecCount::<u8>::new(grouping, output, max_index, dense_grouping)),
-            EncodingType::U16 => Box::new(VecCount::<u16>::new(grouping, output, max_index, dense_grouping)),
-            EncodingType::U32 => Box::new(VecCount::<u32>::new(grouping, output, max_index, dense_grouping)),
-            EncodingType::I64 => Box::new(VecCount::<i64>::new(grouping, output, max_index, dense_grouping)),
+            EncodingType::U8 => Box::new(VecCount::<u8>::new(grouping, output, max_index)),
+            EncodingType::U16 => Box::new(VecCount::<u16>::new(grouping, output, max_index)),
+            EncodingType::U32 => Box::new(VecCount::<u32>::new(grouping, output, max_index)),
+            EncodingType::I64 => Box::new(VecCount::<i64>::new(grouping, output, max_index)),
             t => panic!("unsupported type {:?} for grouping key", t),
         }
     }
 
-    pub fn unique(input: BufferRef,
-                  output: BufferRef,
-                  input_type: EncodingType,
-                  max_index: usize) -> BoxedOperator<'a> {
-        match input_type {
-            EncodingType::U8 => Unique::<u8>::boxed(input, output, max_index),
-            EncodingType::U16 => Unique::<u16>::boxed(input, output, max_index),
-            EncodingType::U32 => Unique::<u32>::boxed(input, output, max_index),
-            EncodingType::I64 => Unique::<i64>::boxed(input, output, max_index),
+    pub fn exists(grouping: BufferRef, output: BufferRef, grouping_type: EncodingType, max_index: BufferRef) -> BoxedOperator<'a> {
+        match grouping_type {
+            EncodingType::U8 => Exists::<u8>::boxed(grouping, output, max_index),
+            EncodingType::U16 => Exists::<u16>::boxed(grouping, output, max_index),
+            EncodingType::U32 => Exists::<u32>::boxed(grouping, output, max_index),
+            EncodingType::I64 => Exists::<i64>::boxed(grouping, output, max_index),
             t => panic!("unsupported type {:?} for grouping key", t),
         }
     }
+
+    pub fn nonzero_compact(data: BufferRef, data_type: EncodingType) -> BoxedOperator<'a> {
+        match data_type {
+            EncodingType::U8 => NonzeroCompact::<u8>::boxed(data),
+            EncodingType::U16 => NonzeroCompact::<u16>::boxed(data),
+            EncodingType::U32 => NonzeroCompact::<u32>::boxed(data),
+            EncodingType::I64 => NonzeroCompact::<i64>::boxed(data),
+            t => panic!("unsupported type {:?} for grouping key", t),
+        }
+    }
+
+    pub fn nonzero_indices(input: BufferRef,
+                           output: BufferRef,
+                           input_type: EncodingType,
+                           output_type: EncodingType) -> BoxedOperator<'a> {
+        use self::EncodingType::*;
+        match (input_type, output_type) {
+            (U8, U8) => NonzeroIndices::<u8, u8>::boxed(input, output),
+            (U8, U16) => NonzeroIndices::<u8, u16>::boxed(input, output),
+            (U8, U32) => NonzeroIndices::<u8, u32>::boxed(input, output),
+            (U8, I64) => NonzeroIndices::<u8, i64>::boxed(input, output),
+            (U16, U8) => NonzeroIndices::<u16, u8>::boxed(input, output),
+            (U16, U16) => NonzeroIndices::<u16, u16>::boxed(input, output),
+            (U16, U32) => NonzeroIndices::<u16, u32>::boxed(input, output),
+            (U16, I64) => NonzeroIndices::<u16, i64>::boxed(input, output),
+            (U32, U8) => NonzeroIndices::<u32, u8>::boxed(input, output),
+            (U32, U16) => NonzeroIndices::<u32, u16>::boxed(input, output),
+            (U32, U32) => NonzeroIndices::<u32, u32>::boxed(input, output),
+            (U32, I64) => NonzeroIndices::<u32, i64>::boxed(input, output),
+            (I64, U8) => NonzeroIndices::<i64, u8>::boxed(input, output),
+            (I64, U16) => NonzeroIndices::<i64, u16>::boxed(input, output),
+            (I64, U32) => NonzeroIndices::<i64, u32>::boxed(input, output),
+            (I64, I64) => NonzeroIndices::<i64, i64>::boxed(input, output),
+            t => panic!("unsupported type {:?} for grouping key", t),
+        }
+    }
+
+    pub fn compact(data: BufferRef,
+                   select: BufferRef,
+                   input_type: EncodingType,
+                   output_type: EncodingType) -> BoxedOperator<'a> {
+        use self::EncodingType::*;
+        match (input_type, output_type) {
+            (U8, U8) => Compact::<u8, u8>::boxed(data, select),
+            (U8, U16) => Compact::<u8, u16>::boxed(data, select),
+            (U8, U32) => Compact::<u8, u32>::boxed(data, select),
+            (U8, I64) => Compact::<u8, i64>::boxed(data, select),
+            (U16, U8) => Compact::<u16, u8>::boxed(data, select),
+            (U16, U16) => Compact::<u16, u16>::boxed(data, select),
+            (U16, U32) => Compact::<u16, u32>::boxed(data, select),
+            (U16, I64) => Compact::<u16, i64>::boxed(data, select),
+            (U32, U8) => Compact::<u32, u8>::boxed(data, select),
+            (U32, U16) => Compact::<u32, u16>::boxed(data, select),
+            (U32, U32) => Compact::<u32, u32>::boxed(data, select),
+            (U32, I64) => Compact::<u32, i64>::boxed(data, select),
+            (I64, U8) => Compact::<i64, u8>::boxed(data, select),
+            (I64, U16) => Compact::<i64, u16>::boxed(data, select),
+            (I64, U32) => Compact::<i64, u32>::boxed(data, select),
+            (I64, I64) => Compact::<i64, i64>::boxed(data, select),
+            t => panic!("unsupported type {:?} for grouping key", t),
+        }
+    }
+
 
     // TODO(clemens): allow different types on raw input grouping key and output grouping key
     pub fn hash_map_grouping(raw_grouping_key: BufferRef,
@@ -320,5 +382,3 @@ impl<'a> VecOperator<'a> {
         Box::new(SortIndices { input, output, descending })
     }
 }
-
-

@@ -101,17 +101,13 @@ impl Query {
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
         // Reduce cardinality of grouping key if necessary and perform grouping
+        // TODO(clemens): also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
         let (encoded_group_by_column, grouping_key, grouping_key_type, aggregation_cardinality) =
         // TODO(clemens): refine criterion
-        // TODO(clemens): can often collect group_by from non-zero positions in aggregation result
             if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
                 let max_grouping_key_buf = query_plan::prepare(
                     QueryPlan::Constant(RawVal::Int(max_grouping_key), true), &mut executor);
-                (query_plan::prepare_unique(
-                    raw_grouping_key,
-                    raw_grouping_key_type.encoding_type(),
-                    max_grouping_key as usize,
-                    &mut executor),
+                (None,
                  raw_grouping_key,
                  raw_grouping_key_type.clone(),
                  max_grouping_key_buf)
@@ -122,14 +118,13 @@ impl Query {
                     max_grouping_key as usize,
                     &mut executor)
             };
-        executor.set_encoded_group_by(encoded_group_by_column);
 
         // Aggregators
         let mut aggregation_results = Vec::new();
+        let mut selector = None;
         for &(aggregator, ref expr) in &self.aggregate {
             let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
-            // TODO(clemens): Use more precise aggregation_cardinality instead of max_grouping_key
-            let mut aggregate = query_plan::prepare_aggregation(
+            let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
                 grouping_key,
@@ -137,20 +132,57 @@ impl Query {
                 aggregation_cardinality,
                 aggregator,
                 &mut executor)?;
-            aggregation_results.push(aggregate)
+            // TODO(clemens): if summation column is strictly positive, can use sum as well
+            if aggregator == Aggregator::Count {
+                selector = Some((aggregate, t.encoding_type()));
+            }
+            aggregation_results.push((aggregator, aggregate, t))
         }
 
-        // Decode aggregation results
+        // Determine selector
+        let (selector, selector_type) = selector.unwrap_or_else(|| {
+            let s = query_plan::prepare(
+                QueryPlan::Exists(
+                    Box::new(QueryPlan::ReadBuffer(grouping_key)),
+                    grouping_key_type.encoding_type(),
+                    Box::new(QueryPlan::ReadBuffer(aggregation_cardinality))),
+                &mut executor);
+            (s, EncodingType::U8)
+        });
+
+        // Construct (encoded) group by column
+        let encoded_group_by_column = encoded_group_by_column.unwrap_or_else(|| {
+            query_plan::prepare(
+                QueryPlan::NonzeroIndices(
+                    Box::new(QueryPlan::ReadBuffer(selector)),
+                    selector_type,
+                    grouping_key_type.encoding_type()),
+                &mut executor)
+        });
+        executor.set_encoded_group_by(encoded_group_by_column);
+
+        // Compact and decode aggregation results
         let mut select = Vec::new();
-        for (aggregate, t) in aggregation_results {
+        for (aggregator, aggregate, t) in aggregation_results {
+            let compacted = match aggregator {
+                // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
+                Aggregator::Sum => query_plan::prepare(
+                    QueryPlan::Compact(
+                        Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type(),
+                        Box::new(QueryPlan::ReadBuffer(selector)), selector_type),
+                    &mut executor),
+                Aggregator::Count => query_plan::prepare(
+                    QueryPlan::NonzeroCompact(Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type()),
+                    &mut executor),
+            };
             if t.is_encoded() {
                 let decoded = query_plan::prepare(
                     QueryPlan::Decode(
-                        Box::new(QueryPlan::ReadBuffer(aggregate)),
+                        Box::new(QueryPlan::ReadBuffer(compacted)),
                         t.codec.clone().unwrap()), &mut executor);
                 select.push((decoded, t.decoded()));
             } else {
-                select.push((aggregate, t));
+                select.push((compacted, t));
             }
         }
 
