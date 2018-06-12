@@ -22,6 +22,7 @@ extern crate seahash;
 extern crate serde;
 extern crate time;
 // extern crate tempdir;
+extern crate fnv;
 
 #[macro_use]
 mod trace;

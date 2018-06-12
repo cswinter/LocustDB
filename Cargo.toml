@@ -26,6 +26,7 @@ failure = "0.1.1"
 failure_derive = "0.1.1"
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
 flate2 = "1.0"
+fnv = "1.0.3"
 
 [dev-dependencies]
 env_logger = "0.5.6"

@@ -1,13 +1,9 @@
-use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
+use fnv::FnvHashMap;
 
 use engine::typed_vec::TypedVec;
 use engine::vector_op::*;
 use engine::*;
 use ingest::raw_val::RawVal;
-use seahash::SeaHasher;
-
-type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 
 
 #[derive(Debug)]
@@ -16,7 +12,7 @@ pub struct HashMapGrouping<T: IntVecType<T>> {
     unique_out: BufferRef,
     grouping_key_out: BufferRef,
     cardinality_out: BufferRef,
-    map: HashMapSea<T, T>,
+    map: FnvHashMap<T, T>,
 }
 
 impl<T: IntVecType<T> + IntoUsize> HashMapGrouping<T> {
@@ -30,7 +26,7 @@ impl<T: IntVecType<T> + IntoUsize> HashMapGrouping<T> {
             unique_out,
             grouping_key_out,
             cardinality_out,
-            map: HashMapSea::default(),
+            map: FnvHashMap::default(),
         })
     }
 }
