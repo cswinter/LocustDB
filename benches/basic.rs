@@ -62,6 +62,7 @@ fn select_passenger_count_sparse_filter(b: &mut test::Bencher) {
 }
 
 #[bench]
+#[ignore]
 fn select_star_limit_10000(b: &mut test::Bencher) {
     bench_query(b, "select * from test limit 10000;");
 }

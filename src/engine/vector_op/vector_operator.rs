@@ -15,6 +15,7 @@ use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
 
+use engine::vector_op::addition_vs::AdditionVS;
 use engine::vector_op::bit_unpack::BitUnpackOperator;
 use engine::vector_op::bool_op::*;
 use engine::vector_op::column_ops::*;
@@ -205,6 +206,16 @@ impl<'a> VecOperator<'a> {
 
     pub fn divide_vs(lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
         Box::new(DivideVS { lhs, rhs, output })
+    }
+
+    pub fn addition_vs(lhs: BufferRef, rhs: BufferRef, output: BufferRef, left_type: EncodingType) -> BoxedOperator<'a> {
+        match left_type {
+            EncodingType::U8 => Box::new(AdditionVS::<u8> { lhs, rhs, output, t: PhantomData }),
+            EncodingType::U16 => Box::new(AdditionVS::<u16> { lhs, rhs, output, t: PhantomData }),
+            EncodingType::U32 => Box::new(AdditionVS::<u32> { lhs, rhs, output, t: PhantomData }),
+            EncodingType::I64 => Box::new(AdditionVS::<i64> { lhs, rhs, output, t: PhantomData }),
+            _ => panic!("addition_vs not supported for type {:?}", left_type),
+        }
     }
 
     pub fn or(lhs: BufferRef, rhs: BufferRef) -> BoxedOperator<'a> {

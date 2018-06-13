@@ -2,6 +2,7 @@ pub mod vector_operator;
 pub mod types;
 pub mod executor;
 
+mod addition_vs;
 mod bit_unpack;
 mod bool_op;
 mod column_ops;

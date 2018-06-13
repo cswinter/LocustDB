@@ -39,6 +39,7 @@ pub enum QueryPlan<'a> {
     LessThanVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     EqualsVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     DivideVS(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    AddVS(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>),
     And(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     Or(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     ToYear(Box<QueryPlan<'a>>),
@@ -125,6 +126,8 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             VecOperator::equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
         QueryPlan::DivideVS(lhs, rhs) =>
             VecOperator::divide_vs(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("division")),
+        QueryPlan::AddVS(lhs, t, c) =>
+            VecOperator::addition_vs(prepare(*lhs, result), prepare(*c, result), result.named_buffer("addition"), t),
         QueryPlan::Or(lhs, rhs) => {
             let inplace = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
@@ -355,21 +358,33 @@ impl<'a> QueryPlan<'a> {
             let mut order_preserving = true;
             for expr in exprs.iter().rev() {
                 let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
-                // TODO(clemens): Potentially subtract min if min is negative or this makes grouping key fit into 64 bits
                 if let Some((min, max)) = QueryPlan::encoding_range(&query_plan) {
+                    fn bits(max: i64) -> i64 {
+                        ((max + 1) as f64).log2().ceil() as i64
+                    }
+
+                    // TODO(clemens): insert addition to get into positive range
                     if min < 0 {
                         plan = None;
                         break;
                     }
+
+                    // TODO(clemens): more intelligent criterion. threshold should probably be a function of total width.
+                    let subtract_offset = bits(max) - bits(max - min) > 1;
+                    let reduced_max = if subtract_offset { max - min } else { max };
                     order_preserving = order_preserving && plan_type.is_order_preserving();
-                    let query_plan = QueryPlan::TypeConversion(Box::new(query_plan),
-                                                               plan_type.encoding_type(),
-                                                               EncodingType::I64);
-                    let bits =
-                        if max == 0 { 0 } else { (max as f64).log2().floor() as i64 + 1 };
+                    let query_plan = if subtract_offset {
+                        QueryPlan::AddVS(Box::new(query_plan),
+                                         plan_type.encoding_type(),
+                                         Box::new(QueryPlan::Constant(RawVal::Int(-min), true)))
+                    } else {
+                        QueryPlan::TypeConversion(Box::new(query_plan),
+                                                  plan_type.encoding_type(),
+                                                  EncodingType::I64)
+                    };
                     if total_width == 0 {
                         plan = Some(query_plan);
-                    } else {
+                    } else if reduced_max > 0 {
                         plan = plan.map(|plan|
                             QueryPlan::BitPack(Box::new(plan), Box::new(query_plan), total_width));
                     }
@@ -377,7 +392,13 @@ impl<'a> QueryPlan<'a> {
                     let mut decode_plan = QueryPlan::BitUnpack(
                         Box::new(QueryPlan::EncodedGroupByPlaceholder),
                         total_width as u8,
-                        bits as u8);
+                        bits(reduced_max) as u8);
+                    if subtract_offset {
+                        decode_plan = QueryPlan::AddVS(
+                            Box::new(decode_plan),
+                            EncodingType::I64,
+                            Box::new(QueryPlan::Constant(RawVal::Int(min), true)));
+                    }
                     decode_plan = QueryPlan::TypeConversion(
                         Box::new(decode_plan),
                         EncodingType::I64,
@@ -389,8 +410,8 @@ impl<'a> QueryPlan<'a> {
                     }
                     decode_plans.push((decode_plan, plan_type.decoded()));
 
-                    largest_key += max << total_width;
-                    total_width += bits;
+                    largest_key += reduced_max << total_width;
+                    total_width += bits(reduced_max);
                 } else {
                     plan = None;
                     break;
@@ -406,7 +427,7 @@ impl<'a> QueryPlan<'a> {
                     return Ok((plan, t, largest_key, decode_plans));
                 }
             }
-            // TODO(clemens): add u8, u16, u32, u128 grouping keys
+            // TODO(clemens): add more grouping key widths (u32. u16?)
             // TODO(clemens): implement general case using bites slice as grouping key
             bail!(QueryError::NotImplemented, "Failed to pack group by columns into 64 bit value")
         }
@@ -421,7 +442,9 @@ impl<'a> QueryPlan<'a> {
                  NaiveDateTime::from_timestamp(max, 0).year() as i64)
             ),
             // TODO(clemens): this is just wrong
-            DivideVS(ref left, _) => left.encoding_range(),
+            DivideVS(ref left, box Constant(RawVal::Int(c), _)) =>
+                left.encoding_range().map(|(min, max)|
+                    if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
             Decode(ref plan, ref codec) => plan.encoding_range().and_then(|x| codec.decode_range(x)),
             _ => None, // TODO(clemens): many more cases where we can determine range
         }
