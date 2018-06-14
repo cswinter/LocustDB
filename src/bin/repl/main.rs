@@ -11,6 +11,7 @@ mod print_results;
 mod fmt_table;
 
 use std::env;
+use std::fs;
 
 use futures::executor::block_on;
 use locustdb::{LocustDB, TableStats};
@@ -23,9 +24,19 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
     let locustdb = LocustDB::memory_only();
-    println!("Loading {} into table default.", filename);
+    println!("Loading {} into table test.", filename);
     let start_time = precise_time_ns();
-    if filename == &"nyc100m" {
+    if filename == &"nyc" {
+        let mut loads = Vec::new();
+        for path in fs::read_dir("test_data/nyc-taxi-data").unwrap() {
+            loads.push(locustdb.load_csv(
+                locustdb::nyc_taxi_data::ingest_file(path.unwrap().path().to_str().unwrap(), "test")
+                    .with_chunk_size(1 << 20)));
+        }
+        for l in loads {
+            let _ = block_on(l);
+        }
+    } else if filename == &"nyc100m" {
         let mut loads = Vec::new();
         for x in &["aa", "ab", "ac", "ad", "ae"] {
             let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
@@ -41,7 +52,7 @@ fn main() {
             locustdb::nyc_taxi_data::ingest_file(filename, "test")
                 .with_chunk_size(LOAD_CHUNK_SIZE)
         } else {
-            locustdb::IngestFile::new(filename, "default")
+            locustdb::IngestFile::new(filename, "test")
                 .with_chunk_size(LOAD_CHUNK_SIZE)
         };
         block_on(locustdb.load_csv(ingestion_request))
@@ -92,6 +103,10 @@ fn repl(locustdb: &LocustDB) {
         if s.starts_with(":trace") {
             print_trace = true;
             s = &s[7..];
+        }
+        if s.starts_with(":recover") {
+            locustdb.recover();
+            continue;
         }
 
         let query = locustdb.run_query(s, explain);

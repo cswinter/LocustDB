@@ -77,6 +77,11 @@ impl LocustDB {
         receiver
     }
 
+    pub fn recover(&self) {
+        self.inner_locustdb.drop_pending_tasks();
+        InnerLocustDB::start_worker_threads(&self.inner_locustdb);
+    }
+
     pub fn table_stats(&self) -> impl Future<Item=Vec<TableStats>, Error=oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
         let (task, receiver) = Task::from_fn(move || inner.stats());

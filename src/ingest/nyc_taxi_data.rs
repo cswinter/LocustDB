@@ -81,10 +81,48 @@ pub fn nyc_extractors() -> Vec<(&'static str, extractor::Extractor)> {
     ]
 }
 
+pub fn dropped_cols() -> Vec<&'static str> {
+    vec![
+        "pickup",
+        "dropoff",
+        "max_temperature",
+        "min_temperature",
+        "dropoff_borocode",
+        "dropoff_boroname",
+        "dropoff_cdeligibil",
+        "dropoff_ct2010",
+        "dropoff_ctlabel",
+        "dropoff_latitude",
+        "dropoff_longitude",
+        "dropoff_ntacode",
+        "dropoff_ntaname",
+        "dropoff_nyct_2010_gid",
+        "dropoff_puma",
+        "pickup_borocode",
+        "pickup_boroname",
+        "pickup_boroct2010",
+        "pickup_cdeligibil",
+        "pickup_ct2010",
+        "pickup_ctlabel",
+        "pickup_latitude",
+        "pickup_longitude",
+        "pickup_ntacode",
+        "pickup_ntaname",
+        "pickup_nyct_2010_gid",
+        "pickup_puma",
+
+        "tolls_amount",
+        "fare_amount",
+        "tip_amount",
+        "extra",
+        "average_wind_speed",
+    ]
+}
+
 pub fn ingest_file(file_path: &str, tablename: &str) -> IngestFile {
     IngestFile::new(file_path, tablename)
         .with_col_names(nyc_colnames())
         .with_extractors(&nyc_extractors())
-        .with_ignore_cols(&["pickup", "dropoff"])
-        .with_always_string(&["vendor_id"])
+        .with_ignore_cols(&dropped_cols())
+        .with_always_string(&["vendor_id", "store_and_fwd_flag", "payment_type"])
 }

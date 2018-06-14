@@ -159,6 +159,11 @@ impl InnerLocustDB {
         tables.get(table).unwrap().ingest_heterogeneous(columns)
     }
 
+    pub fn drop_pending_tasks(&self) {
+        let mut task_queue = self.task_queue.lock().unwrap();
+        task_queue.clear();
+    }
+
     pub fn stats(&self) -> Vec<TableStats> {
         let tables = self.tables.read().unwrap();
         tables.values().map(|table| table.stats()).collect()

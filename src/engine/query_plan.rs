@@ -363,15 +363,9 @@ impl<'a> QueryPlan<'a> {
                         ((max + 1) as f64).log2().ceil() as i64
                     }
 
-                    // TODO(clemens): insert addition to get into positive range
-                    if min < 0 {
-                        plan = None;
-                        break;
-                    }
-
                     // TODO(clemens): more intelligent criterion. threshold should probably be a function of total width.
-                    let subtract_offset = bits(max) - bits(max - min) > 1;
-                    let reduced_max = if subtract_offset { max - min } else { max };
+                    let subtract_offset = bits(max) - bits(max - min) > 1 || min < 0;
+                    let adjusted_max = if subtract_offset { max - min } else { max };
                     order_preserving = order_preserving && plan_type.is_order_preserving();
                     let query_plan = if subtract_offset {
                         QueryPlan::AddVS(Box::new(query_plan),
@@ -384,7 +378,7 @@ impl<'a> QueryPlan<'a> {
                     };
                     if total_width == 0 {
                         plan = Some(query_plan);
-                    } else if reduced_max > 0 {
+                    } else if adjusted_max > 0 {
                         plan = plan.map(|plan|
                             QueryPlan::BitPack(Box::new(plan), Box::new(query_plan), total_width));
                     }
@@ -392,7 +386,7 @@ impl<'a> QueryPlan<'a> {
                     let mut decode_plan = QueryPlan::BitUnpack(
                         Box::new(QueryPlan::EncodedGroupByPlaceholder),
                         total_width as u8,
-                        bits(reduced_max) as u8);
+                        bits(adjusted_max) as u8);
                     if subtract_offset {
                         decode_plan = QueryPlan::AddVS(
                             Box::new(decode_plan),
@@ -410,8 +404,8 @@ impl<'a> QueryPlan<'a> {
                     }
                     decode_plans.push((decode_plan, plan_type.decoded()));
 
-                    largest_key += reduced_max << total_width;
-                    total_width += bits(reduced_max);
+                    largest_key += adjusted_max << total_width;
+                    total_width += bits(adjusted_max);
                 } else {
                     plan = None;
                     break;
