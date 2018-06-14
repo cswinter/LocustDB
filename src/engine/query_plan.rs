@@ -376,9 +376,15 @@ impl<'a> QueryPlan<'a> {
                                                   plan_type.encoding_type(),
                                                   EncodingType::I64)
                     };
+
+                    #[cfg(feature = "nerf")]
+                    let nerf = true;
+                    #[cfg(not(feature = "nerf"))]
+                    let nerf = false;
+
                     if total_width == 0 {
                         plan = Some(query_plan);
-                    } else if adjusted_max > 0 {
+                    } else if adjusted_max > 0 || nerf {
                         plan = plan.map(|plan|
                             QueryPlan::BitPack(Box::new(plan), Box::new(query_plan), total_width));
                     }
