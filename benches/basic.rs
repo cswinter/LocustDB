@@ -91,3 +91,20 @@ fn q3_count_by_passenger_count_pickup_year(b: &mut test::Bencher) {
 fn q4_count_by_passenger_count_pickup_year_trip_distance(b: &mut test::Bencher) {
     bench_query(b, "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from test;");
 }
+
+#[bench]
+fn q5_sparse_filter(b: &mut test::Bencher) {
+    bench_query(b, "select trip_id, count(0) from test where (passenger_count = 1) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (payment_type = \"Dispute\") AND (store_and_fwd_flag = \"1\") limit 1000;");
+}
+
+#[bench]
+#[ignore]
+fn q6_top_n(b: &mut test::Bencher) {
+    bench_query(b, "SELECT passenger_count, trip_distance, total_amount FROM test ORDER BY total_amount DESC LIMIT 100;");
+}
+
+#[bench]
+#[ignore]
+fn q7_group_by_trip_id(b: &mut test::Bencher) {
+    bench_query(b, "select trip_id / 5, sum(total_amount) from test order by sum_0 desc;");
+}
