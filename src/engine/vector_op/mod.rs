@@ -1,6 +1,6 @@
 pub mod vector_operator;
-pub mod types;
 pub mod executor;
+pub mod comparator;
 
 mod addition_vs;
 mod bit_unpack;
@@ -22,6 +22,7 @@ mod select;
 mod sort_indices;
 mod sum;
 mod to_year;
+mod top_n;
 mod type_conversion;
 mod vec_const_bool_op;
 

@@ -1,15 +1,17 @@
 use std::cmp::{max, min};
 use std::usize;
 
+use engine::*;
 use engine::aggregator::Aggregator;
 use engine::types::*;
-use engine::*;
+use engine::vector_op::comparator::*;
 use errors::QueryError;
 
 
 pub struct BatchResult<'a> {
     pub group_by: Option<Vec<BoxedVec<'a>>>,
     pub sort_by: Option<usize>,
+    pub desc: bool,
     pub select: Vec<BoxedVec<'a>>,
     pub aggregators: Vec<Aggregator>,
     pub level: u32,
@@ -130,6 +132,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             Ok(BatchResult {
                 group_by: Some(group_by_cols),
                 sort_by: None,
+                desc: batch1.desc,
                 select: aggregates,
                 aggregators: batch1.aggregators,
                 level: batch1.level + 1,
@@ -145,10 +148,16 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         let s1 = &batch1.select[index];
                         let s2 = &batch2.select[index];
                         match (s1.get_type(), s2.get_type()) {
-                            (EncodingType::Str, EncodingType::Str) =>
-                                merge_sort(s1.cast_ref_str(), s2.cast_ref_str(), limit),
-                            (EncodingType::I64, EncodingType::I64) =>
-                                merge_sort(s1.cast_ref_i64(), s2.cast_ref_i64(), limit),
+                            (EncodingType::Str, EncodingType::Str) => if batch1.desc {
+                                merge_sort::<_, CmpGreaterThan>(s1.cast_ref_str(), s2.cast_ref_str(), limit)
+                            } else {
+                                merge_sort::<_, CmpLessThan>(s1.cast_ref_str(), s2.cast_ref_str(), limit)
+                            },
+                            (EncodingType::I64, EncodingType::I64) => if batch1.desc {
+                                merge_sort::<_, CmpGreaterThan>(s1.cast_ref_i64(), s2.cast_ref_i64(), limit)
+                            } else {
+                                merge_sort::<_, CmpLessThan>(s1.cast_ref_i64(), s2.cast_ref_i64(), limit)
+                            },
                             (t1, t2) => bail!(QueryError::NotImplemented, "merge_sort types {:?}, {:?}", t1, t2),
                         }
                     };
@@ -174,6 +183,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         group_by: None,
                         sort_by: Some(index),
                         select: result,
+                        desc: batch1.desc,
                         aggregators: Vec::new(),
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,
@@ -196,6 +206,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         group_by: None,
                         sort_by: None,
                         select: result,
+                        desc: batch1.desc,
                         aggregators: Vec::new(),
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,
@@ -357,15 +368,14 @@ fn subpartition<'a, T: VecType<T> + 'a>(
     result
 }
 
-// TODO(clemens): implement descending ordering
-fn merge_sort<'a, T: VecType<T> + 'a>(left: &[T], right: &[T], limit: usize) -> (BoxedVec<'a>, Vec<bool>) {
+fn merge_sort<'a, T: VecType<T> + 'a, C: Comparator<T>>(left: &[T], right: &[T], limit: usize) -> (BoxedVec<'a>, Vec<bool>) {
     let mut result = Vec::with_capacity(left.len() + right.len());
     let mut ops = Vec::<bool>::with_capacity(left.len() + right.len());
 
     let mut i = 0;
     let mut j = 0;
     while i < left.len() && j < right.len() && i + j < limit {
-        if left[i] <= right[j] {
+        if C::cmp(left[i], right[j]) {
             result.push(left[i]);
             ops.push(true);
             i += 1;

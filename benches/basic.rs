@@ -99,7 +99,6 @@ fn q5_sparse_filter(b: &mut test::Bencher) {
 }
 
 #[bench]
-#[ignore]
 fn q6_top_n(b: &mut test::Bencher) {
     bench_query(b, "SELECT passenger_count, trip_distance, total_amount FROM test ORDER BY total_amount DESC LIMIT 100;");
 }

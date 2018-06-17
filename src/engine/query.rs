@@ -29,6 +29,8 @@ pub struct Query {
 impl Query {
     #[inline(never)] // produces more useful profiles
     pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
+        let limit = (self.limit.limit + self.limit.offset) as usize;
+        let len = columns.iter().next().unwrap().1.len();
         let mut executor = QueryExecutor::default();
 
         let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, columns)?;
@@ -42,16 +44,25 @@ impl Query {
 
         let mut select = Vec::new();
         if let Some(index) = self.order_by_index {
-            // TODO(clemens): Reuse sort_column for result
-            // TODO(clemens): Optimization: sort directly if only single column selected
-            let (plan, _) = query_plan::order_preserving(
+            let (plan, plan_t) = query_plan::order_preserving(
                 QueryPlan::create_query_plan(&self.select[index], columns)?);
+            // TODO(clemens): Reuse sort_column for result
             let sort_column = query_plan::prepare(plan.clone(), &mut executor);
-            let sort_indices = query_plan::prepare(
-                QueryPlan::SortIndices(
-                    Box::new(QueryPlan::ReadBuffer(sort_column)),
-                    self.order_desc),
-                &mut executor);
+            // TODO(clemens): better criterion
+            let sort_indices = if limit < len / 2 {
+                query_plan::prepare(
+                    QueryPlan::TopN(
+                        Box::new(QueryPlan::ReadBuffer(sort_column)),
+                        plan_t.encoding_type(), limit, self.order_desc),
+                    &mut executor)
+            } else {
+                // TODO(clemens): Optimization: sort directly if only single column selected
+                query_plan::prepare(
+                    QueryPlan::SortIndices(
+                        Box::new(QueryPlan::ReadBuffer(sort_column)),
+                        self.order_desc),
+                    &mut executor)
+            };
             executor.set_filter(Filter::Indices(sort_indices));
         }
         for expr in &self.select {
@@ -71,6 +82,7 @@ impl Query {
                 group_by: None,
                 sort_by: self.order_by_index,
                 select,
+                desc: self.order_desc,
                 aggregators: Vec::with_capacity(0),
                 level: 0,
                 batch_count: 1,
@@ -245,6 +257,7 @@ impl Query {
             group_by: Some(group_by_cols),
             sort_by: None,
             select: select_cols,
+            desc: self.order_desc,
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
             level: 0,
             batch_count: 1,

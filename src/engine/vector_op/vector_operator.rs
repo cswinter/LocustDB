@@ -8,9 +8,10 @@ use std::mem;
 
 use itertools::Itertools;
 
+use engine::*;
 use engine::typed_vec::TypedVec;
 use engine::types::{BasicType, EncodingType};
-use engine::*;
+use engine::vector_op::comparator::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
 
@@ -34,6 +35,7 @@ use engine::vector_op::select::Select;
 use engine::vector_op::sort_indices::SortIndices;
 use engine::vector_op::sum::VecSum;
 use engine::vector_op::to_year::ToYear;
+use engine::vector_op::top_n::TopN;
 use engine::vector_op::type_conversion::TypeConversionOperator;
 use engine::vector_op::vec_const_bool_op::*;
 
@@ -116,6 +118,8 @@ impl<'a> Scratchpad<'a> {
     }
 }
 
+
+use self::EncodingType::*;
 
 impl<'a> VecOperator<'a> {
     pub fn get_decode(col: &'a Column, output: BufferRef) -> BoxedOperator<'a> {
@@ -335,7 +339,6 @@ impl<'a> VecOperator<'a> {
                    select: BufferRef,
                    input_type: EncodingType,
                    output_type: EncodingType) -> BoxedOperator<'a> {
-        use self::EncodingType::*;
         match (input_type, output_type) {
             (U8, U8) => Compact::<u8, u8>::boxed(data, select),
             (U8, U16) => Compact::<u8, u16>::boxed(data, select),
@@ -376,5 +379,27 @@ impl<'a> VecOperator<'a> {
 
     pub fn sort_indices(input: BufferRef, output: BufferRef, descending: bool) -> BoxedOperator<'a> {
         Box::new(SortIndices { input, output, descending })
+    }
+
+    pub fn top_n(input: BufferRef, keys_out: BufferRef, indices_out: BufferRef, t: EncodingType, n: usize, desc: bool) -> BoxedOperator<'a> {
+        if desc {
+            match t {
+                I64 => Box::new(TopN::<i64, CmpGreaterThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                U32 => Box::new(TopN::<u32, CmpGreaterThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                U16 => Box::new(TopN::<u16, CmpGreaterThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                U8 => Box::new(TopN::<u8, CmpGreaterThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                Str => Box::new(TopN::<&str, CmpGreaterThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                _ => panic!("top_n not supported for type {:?}", t),
+            }
+        } else {
+            match t {
+                I64 => Box::new(TopN::<i64, CmpLessThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                U32 => Box::new(TopN::<u32, CmpLessThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                U16 => Box::new(TopN::<u16, CmpLessThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                U8 => Box::new(TopN::<u8, CmpLessThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                Str => Box::new(TopN::<&str, CmpLessThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
+                _ => panic!("top_n not supported for type {:?}", t),
+            }
+        }
     }
 }

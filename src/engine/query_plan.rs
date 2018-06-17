@@ -45,6 +45,7 @@ pub enum QueryPlan<'a> {
     ToYear(Box<QueryPlan<'a>>),
 
     SortIndices(Box<QueryPlan<'a>>, bool),
+    TopN(Box<QueryPlan<'a>>, EncodingType, usize, bool),
 
     Select(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>, EncodingType),
 
@@ -149,6 +150,8 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
         QueryPlan::EncodedGroupByPlaceholder => return result.encoded_group_by().unwrap(),
         QueryPlan::SortIndices(plan, descending) =>
             VecOperator::sort_indices(prepare(*plan, result), result.named_buffer("permutation"), descending),
+        QueryPlan::TopN(plan, t, n, desc) =>
+            VecOperator::top_n(prepare(*plan, result), result.named_buffer("tmp_keys"), result.named_buffer("top_n"), t, n, desc),
         QueryPlan::ReadBuffer(buffer) => return buffer,
     };
     result.push(operation);

@@ -6,7 +6,7 @@ pub fn multiply_by_100(field: &str) -> i64 {
     if let Ok(int) = field.parse::<i64>() {
         int * 100
     } else if let Ok(float) = field.parse::<f64>() {
-        (float as i64) * 100
+        (float * 100.0) as i64
     } else if field == "" {
         0
     } else {
@@ -18,7 +18,7 @@ pub fn multiply_by_1000(field: &str) -> i64 {
     if let Ok(int) = field.parse::<i64>() {
         int * 1000
     } else if let Ok(float) = field.parse::<f64>() {
-        (float as i64) * 1000
+        (float * 1000.0) as i64
     } else if field == "" {
         0
     } else {

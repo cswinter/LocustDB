@@ -75,16 +75,16 @@ fn test_sort_string() {
     )
 }
 
-/*
 #[test]
 fn test_sort_string_desc() {
     test_query(
         &"select first_name from default order by first_name desc limit 2;",
-        vec![vec!["Willie".into()],
-             vec!["William".into()],
+        &[
+            vec!["Willie".into()],
+            vec!["William".into()],
         ],
     )
-}*/
+}
 
 #[test]
 fn group_by_integer_filter_integer_lt() {
@@ -189,7 +189,6 @@ fn test_division() {
 // Tests are run in alphabetical order (why ;_;) and this one takes a few seconds to run, so prepend z to run last
 #[test]
 fn z_test_count_by_dropoff_boroct2010() {
-    // TODO(clemens): hashmap grouping still broken bc of missing sort
     test_query_nyc(
         "select dropoff_boroct2010, count(1) from default;",
         &[
@@ -216,3 +215,19 @@ fn z_test_count_by_passenger_count_pickup_year_trip_distance() {
         ]
     )
 }
+
+#[test]
+fn z_test_top_n() {
+    use Value::*;
+    test_query_nyc(
+        "SELECT passenger_count, trip_distance, total_amount FROM default ORDER BY total_amount DESC LIMIT 100;",
+        &[
+            vec![Int(2), Int(0), Int(357050)],
+            vec![Int(1), Int(0), Int(326000)],
+            vec![Int(1), Int(0), Int(68010)],
+            vec![Int(1), Int(0), Int(66858)],
+            vec![Int(1), Int(0), Int(61950)],
+        ],
+    )
+}
+

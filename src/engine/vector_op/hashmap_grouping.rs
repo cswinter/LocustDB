@@ -48,6 +48,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
         let count = scratchpad.get::<T>(self.unique_out).len();
         scratchpad.set(self.cardinality_out, TypedVec::constant(RawVal::Int(count as i64)));
     }
+
     fn init(&mut self, total_count: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
         // TODO(clemens): Estimate capacities for unique + map?
         scratchpad.set(self.unique_out, TypedVec::owned(Vec::<T>::new()));
