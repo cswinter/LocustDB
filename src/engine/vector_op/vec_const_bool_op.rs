@@ -1,8 +1,6 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use bit_vec::BitVec;
-
 use engine::*;
 use engine::vector_op::vector_operator::*;
 
@@ -36,15 +34,15 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get::<T>(self.lhs);
         let c = &scratchpad.get_const::<U>(self.rhs);
-        let mut output = scratchpad.get_mut_bit_vec(self.output);
-        if stream { output.truncate(0); }
+        let mut output = scratchpad.get_mut::<u8>(self.output);
+        if stream { output.clear(); }
         for d in data.iter() {
             output.push(Op::perform(d, &c));
         }
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::bit_vec(BitVec::with_capacity(batch_size)));
+        scratchpad.set(self.output, TypedVec::owned(Vec::<u8>::with_capacity(batch_size)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
@@ -55,7 +53,7 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
 }
 
 pub trait BoolOperation<T, U> {
-    fn perform(lhs: &T, rhs: &U) -> bool;
+    fn perform(lhs: &T, rhs: &U) -> u8;
 }
 
 #[derive(Debug)]
@@ -63,7 +61,7 @@ pub struct LessThanInt<T> { t: PhantomData<T> }
 
 impl<T: Into<i64> + Copy> BoolOperation<T, i64> for LessThanInt<T> {
     #[inline]
-    fn perform(l: &T, r: &i64) -> bool { Into::<i64>::into(*l) < *r }
+    fn perform(l: &T, r: &i64) -> u8 { (Into::<i64>::into(*l) < *r) as u8 }
 }
 
 #[derive(Debug)]
@@ -71,7 +69,7 @@ pub struct Equals<T> { t: PhantomData<T> }
 
 impl<T: PartialEq> BoolOperation<T, T> for Equals<T> {
     #[inline]
-    fn perform(l: &T, r: &T) -> bool { l == r }
+    fn perform(l: &T, r: &T) -> u8 { (l == r) as u8 }
 }
 
 #[derive(Debug)]
@@ -79,7 +77,7 @@ pub struct EqualsInt<T> { t: PhantomData<T> }
 
 impl<T: Into<i64> + Copy> BoolOperation<T, i64> for EqualsInt<T> {
     #[inline]
-    fn perform(l: &T, r: &i64) -> bool { Into::<i64>::into(*l) == *r }
+    fn perform(l: &T, r: &i64) -> u8 { (Into::<i64>::into(*l) == *r) as u8 }
 }
 
 #[derive(Debug)]
@@ -87,6 +85,6 @@ pub struct EqualsString;
 
 impl<'a> BoolOperation<&'a str, String> for EqualsString {
     #[inline]
-    fn perform(l: &&'a str, r: &String) -> bool { l == r }
+    fn perform(l: &&'a str, r: &String) -> u8 { (l == r) as u8 }
 }
 

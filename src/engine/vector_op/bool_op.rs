@@ -1,8 +1,6 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use bit_vec::BitVec;
-
 use engine::vector_op::vector_operator::*;
 
 
@@ -25,8 +23,8 @@ impl<'a, T: BooleanOp + fmt::Debug + 'a> BooleanOperator<T> {
 
 impl<'a, T: BooleanOp + fmt::Debug> VecOperator<'a> for BooleanOperator<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut result = scratchpad.get_mut_bit_vec(self.lhs);
-        let rhs = scratchpad.get_bit_vec(self.rhs);
+        let mut result = scratchpad.get_mut::<u8>(self.lhs);
+        let rhs = scratchpad.get::<u8>(self.rhs);
         T::evaluate(&mut result, &rhs);
     }
 
@@ -38,23 +36,33 @@ impl<'a, T: BooleanOp + fmt::Debug> VecOperator<'a> for BooleanOperator<T> {
 }
 
 pub trait BooleanOp {
-    fn evaluate(lhs: &mut BitVec, rhs: &BitVec);
+    fn evaluate(lhs: &mut [u8], rhs: &[u8]);
     fn name() -> &'static str;
 }
 
 #[derive(Debug)]
 pub struct BooleanOr;
 
-#[derive(Debug)]
-pub struct BooleanAnd;
-
 impl BooleanOp for BooleanOr {
-    fn evaluate(lhs: &mut BitVec, rhs: &BitVec) { lhs.union(rhs); }
+    fn evaluate(lhs: &mut [u8], rhs: &[u8]) {
+        for (l, r) in lhs.iter_mut().zip(rhs) {
+            *l |= r;
+        }
+    }
+
     fn name() -> &'static str { "bit_vec_or" }
 }
 
+#[derive(Debug)]
+pub struct BooleanAnd;
+
 impl BooleanOp for BooleanAnd {
-    fn evaluate(lhs: &mut BitVec, rhs: &BitVec) { lhs.intersect(rhs); }
+    fn evaluate(lhs: &mut [u8], rhs: &[u8]) {
+        for (l, r) in lhs.iter_mut().zip(rhs) {
+            *l &= r;
+        }
+    }
+
     fn name() -> &'static str { "bit_vec_and" }
 }
 

@@ -7,7 +7,6 @@ use std::marker::PhantomData;
 use std::mem;
 
 use itertools::Itertools;
-use bit_vec::BitVec;
 
 use engine::typed_vec::TypedVec;
 use engine::types::{BasicType, EncodingType};
@@ -105,20 +104,6 @@ impl<'a> Scratchpad<'a> {
 
     pub fn get_const<T: ConstType<T>>(&self, index: BufferRef) -> T {
         T::unwrap(&*self.get_any(index))
-    }
-
-    pub fn get_bit_vec(&self, index: BufferRef) -> Ref<BitVec> {
-        Ref::map(self.buffers[index.0].borrow(), |x| {
-            let a: &TypedVec = x.as_ref();
-            a.cast_ref_bit_vec()
-        })
-    }
-
-    pub fn get_mut_bit_vec(&self, index: BufferRef) -> RefMut<BitVec> {
-        RefMut::map(self.buffers[index.0].borrow_mut(), |x: &mut BoxedVec| {
-            let a: &mut TypedVec = x.borrow_mut();
-            a.cast_ref_mut_bit_vec()
-        })
     }
 
     pub fn collect(&mut self, index: BufferRef) -> BoxedVec<'a> {

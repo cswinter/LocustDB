@@ -4,7 +4,6 @@ use std::hash::Hash;
 use std::mem;
 use std::string;
 
-use bit_vec::BitVec;
 use heapsize::HeapSizeOf;
 use num::PrimInt;
 
@@ -40,14 +39,10 @@ pub trait TypedVec<'a>: Send + Sync {
     fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
-
-    fn cast_ref_mut_bit_vec(&mut self) -> &mut BitVec { panic!(self.type_error("cast_ref_mut_bit_vec")) }
-    fn cast_ref_bit_vec(&self) -> &BitVec { panic!(self.type_error("cast_ref_bit_vec")) }
 }
 
 impl<'a> TypedVec<'a> {
     pub fn owned<T: VecType<T> + 'a>(data: Vec<T>) -> BoxedVec<'a> { Box::new(data) }
-    pub fn bit_vec(value: BitVec) -> BoxedVec<'a> { Box::new(value) }
     pub fn constant(value: RawVal) -> BoxedVec<'a> { Box::new(value) }
     pub fn empty(length: usize) -> BoxedVec<'a> { Box::new(length) }
 }
@@ -156,18 +151,6 @@ impl<'a> TypedVec<'a> for &'a [u8] {
     fn cast_ref_u8<'b>(&'b self) -> &'b [u8] { self }
 }
 
-impl<'a> TypedVec<'a> for BitVec {
-    fn len(&self) -> usize { BitVec::len(self) }
-    fn get_raw(&self, _i: usize) -> RawVal { panic!("BitVec.get_raw") }
-    fn get_type(&self) -> EncodingType { EncodingType::BitVec }
-    fn sort_indices_desc(&self, _indices: &mut Vec<usize>) {}
-    fn sort_indices_asc(&self, _indices: &mut Vec<usize>) {}
-    fn type_error(&self, func_name: &str) -> String { format!("BitVec.{}", func_name) }
-    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("BitVec.extend") }
-    fn cast_ref_mut_bit_vec(&mut self) -> &mut BitVec { self }
-    fn cast_ref_bit_vec(&self) -> &BitVec { self }
-    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedVec<'b> where 'a: 'b { panic!("BitVec.slice_box()") }
-}
 
 impl<'a> TypedVec<'a> for usize {
     fn len(&self) -> usize { *self }

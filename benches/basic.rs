@@ -94,7 +94,8 @@ fn q4_count_by_passenger_count_pickup_year_trip_distance(b: &mut test::Bencher) 
 
 #[bench]
 fn q5_sparse_filter(b: &mut test::Bencher) {
-    bench_query(b, "select trip_id, count(0) from test where (passenger_count = 1) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (payment_type = \"Dispute\") AND (store_and_fwd_flag = \"1\") limit 1000;");
+    // select trip_id from test where (passenger_count = 5) AND (vendor_id = "CMT") AND (total_amount < 500) AND (store_and_fwd_flag = "1") limit 100;
+    bench_query(b, "select trip_id from test where (passenger_count = 5) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (store_and_fwd_flag = \"1\") limit 100;");
 }
 
 #[bench]
