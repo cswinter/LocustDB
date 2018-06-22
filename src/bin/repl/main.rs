@@ -48,7 +48,7 @@ fn main() {
             let _ = block_on(l);
         }
     } else {
-        let ingestion_request = if filename.contains("nyc-taxi-data") {
+        let ingestion_request = if filename.contains("nyc-taxi") {
             locustdb::nyc_taxi_data::ingest_file(filename, "test")
                 .with_chunk_size(LOAD_CHUNK_SIZE)
         } else {
@@ -106,6 +106,10 @@ fn repl(locustdb: &LocustDB) {
         }
         if s.starts_with(":recover") {
             locustdb.recover();
+            continue;
+        }
+        if s.starts_with(":ast") {
+            println!("{}", locustdb.ast(&s[5..]));
             continue;
         }
 

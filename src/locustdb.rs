@@ -77,6 +77,24 @@ impl LocustDB {
         receiver
     }
 
+    pub fn ast(&self, query: &str) -> String {
+        match parser::parse_query(query.as_bytes()) {
+            nom::IResult::Done(remaining, query) => {
+                if !remaining.is_empty() {
+                    match str::from_utf8(remaining) {
+                        Ok(chars) => format!("Chars remaining: {}", chars),
+                        Err(_) => format!("Bytes remaining: {:?}", &remaining),
+                    }
+                } else {
+                    format!("{:#?}", query)
+                }
+            }
+            nom::IResult::Error(err) => format!("Parse error: {:?}", err),
+            nom::IResult::Incomplete(needed) => format!("Incomplete. Needed: {:?}", needed),
+        }
+    }
+
+
     pub fn recover(&self) {
         self.inner_locustdb.drop_pending_tasks();
         InnerLocustDB::start_worker_threads(&self.inner_locustdb);
