@@ -104,7 +104,12 @@ fn q6_top_n(b: &mut test::Bencher) {
 }
 
 #[bench]
+fn q7_hashmap_grouping(b: &mut test::Bencher) {
+    bench_query(b, "SELECT passenger_count, pickup_puma, dropoff_puma, count(0) FROM test;");
+}
+
+#[bench]
 #[ignore]
-fn q7_group_by_trip_id(b: &mut test::Bencher) {
-    bench_query(b, "select trip_id / 5, sum(total_amount) from test order by sum_0 desc;");
+fn q8_group_by_trip_id(b: &mut test::Bencher) {
+    bench_query(b, "SELECT trip_id / 5, sum(total_amount) FROM test;");
 }

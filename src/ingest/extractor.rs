@@ -26,6 +26,16 @@ pub fn multiply_by_1000(field: &str) -> i64 {
     }
 }
 
+pub fn int(field: &str) -> i64 {
+    if let Ok(int) = field.parse::<i64>() {
+        int
+    } else if field == "" {
+        0
+    } else {
+        panic!("can't parse {} as integer", &field)
+    }
+}
+
 pub fn date_time(field: &str) -> i64 {
     Utc.datetime_from_str(field, "%Y-%m-%d %H:%M:%S")
         .expect(&format!("Failed to parse {} as date time", &field))

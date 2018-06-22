@@ -78,6 +78,8 @@ pub fn nyc_extractors() -> Vec<(&'static str, extractor::Extractor)> {
         ("snow_depth", extractor::multiply_by_1000),
         ("snowfall", extractor::multiply_by_1000),
         ("average_wind_speed", extractor::multiply_by_1000),
+        ("pickup_puma", extractor::int),
+        ("dropoff_puma", extractor::int),
     ]
 }
 
@@ -96,26 +98,24 @@ pub fn dropped_cols() -> Vec<&'static str> {
         "dropoff_longitude",
         "dropoff_ntacode",
         "dropoff_ntaname",
-        "dropoff_nyct_2010_gid",
-        "dropoff_puma",
+        "dropoff_nyct2010_gid",
         "pickup_borocode",
         "pickup_boroname",
         "pickup_boroct2010",
-        "pickup_cdeligibil",
         "pickup_ct2010",
         "pickup_ctlabel",
         "pickup_latitude",
         "pickup_longitude",
         "pickup_ntacode",
-        "pickup_ntaname",
-        "pickup_nyct_2010_gid",
-        "pickup_puma",
+        "pickup_nyct2010_gid",
 
         "tolls_amount",
         "fare_amount",
         "tip_amount",
         "extra",
         "average_wind_speed",
+        "snow_depth",
+        "precipitation",
     ]
 }
 
