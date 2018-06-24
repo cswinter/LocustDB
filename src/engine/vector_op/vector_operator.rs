@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 use std::mem;
 
 use itertools::Itertools;
+use regex::Regex;
 
 use engine::*;
 use engine::typed_vec::TypedVec;
@@ -45,6 +46,13 @@ pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 #[derive(Debug, Clone, Copy)]
 pub struct BufferRef(pub usize, pub &'static str);
 
+impl fmt::Display for BufferRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}_{}", self.1, self.0)
+    }
+}
+
+
 pub trait VecOperator<'a>: fmt::Debug {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>);
     fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
@@ -56,24 +64,23 @@ pub trait VecOperator<'a>: fmt::Debug {
     fn can_stream_output(&self) -> bool;
     fn allocates(&self) -> bool;
 
-    fn display(&self) -> String {
+    fn display(&self, full: bool) -> String {
         let mut s = String::new();
-        let name = match self.display_op() {
-            None => unsafe {
-                let name = type_name::<Self>();
-                name[name.rfind(":").unwrap() + 1..].to_owned()
-            }
-            Some(name) => name,
-        };
-        write!(s, "{:<12}", self.outputs().iter().map(|o| format!("{}_{}", o.1, o.0)).join(", ")).unwrap();
-        write!(s, " = {}", name).unwrap();
-        if !self.inputs().is_empty() {
-            write!(s, "({})", self.inputs().iter().map(|i| format!("{}_{}", i.1, i.0)).join(", ")).unwrap();
+        if self.display_output() {
+            write!(s, "{:<12} = ", self.outputs().iter().map(|o| format!("{}", o)).join(", ")).unwrap();
         }
-        s
+        write!(s, "{}", self.display_op(full)).unwrap();
+        format!("{:<60} {}", s, short_type_name::<Self>())
     }
 
-    fn display_op(&self) -> Option<String> { None }
+    fn display_output(&self) -> bool { true }
+    fn display_op(&self, alternate: bool) -> String;
+}
+
+fn short_type_name<T: ? Sized>() -> String {
+    let full_name = unsafe { type_name::<T>() };
+    let re = Regex::new(r"\w+::").unwrap();
+    re.replace_all(full_name, "").into_owned()
 }
 
 pub struct Scratchpad<'a> {

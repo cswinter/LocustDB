@@ -40,5 +40,9 @@ impl<'a, T: IntVecType<T> + IntoUsize, U: IntVecType<U>> VecOperator<'a> for Non
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { false }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("nonzero_indices({})", self.input)
+    }
 }
 

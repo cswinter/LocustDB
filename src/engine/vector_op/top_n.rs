@@ -85,6 +85,10 @@ impl<'a, T: VecType<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { false }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("top_n({})", self.input)
+    }
 }
 
 #[inline]

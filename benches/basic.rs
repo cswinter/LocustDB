@@ -41,7 +41,7 @@ fn db() -> &'static LocustDB {
 fn bench_query(b: &mut test::Bencher, query_str: &str) {
     let locustdb = db();
     b.iter(|| {
-        let query = locustdb.run_query(query_str, false);
+        let query = locustdb.run_query(query_str, false, vec![]);
         block_on(query)
     });
 }

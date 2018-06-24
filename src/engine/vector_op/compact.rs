@@ -38,5 +38,9 @@ impl<'a, T: VecType<T> + 'a, U: IntVecType<U>> VecOperator<'a> for Compact<T, U>
     fn can_stream_input(&self) -> bool { false }
     fn can_stream_output(&self) -> bool { false }
     fn allocates(&self) -> bool { false }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("{}[{} > 0]", self.data, self.select)
+    }
 }
 

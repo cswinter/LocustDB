@@ -8,6 +8,7 @@ use engine::aggregator::*;
 use engine::batch_merging::*;
 use engine::query_plan::QueryPlan;
 use engine::types::EncodingType;
+use engine::types::Type;
 use ingest::raw_val::RawVal;
 use mem_store::column::Column;
 use syntax::expression::*;
@@ -28,7 +29,8 @@ pub struct Query {
 
 impl Query {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
+    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool, show: bool)
+                   -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
         let len = columns.iter().next().unwrap().1.len();
         let mut executor = QueryExecutor::default();
@@ -74,7 +76,7 @@ impl Query {
         }
 
         let mut results = executor.prepare();
-        executor.run(columns.iter().next().unwrap().1.len(), &mut results);
+        executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
         let select = select.into_iter().map(|i| results.collect(i)).collect();
 
         Ok(
@@ -91,7 +93,7 @@ impl Query {
     }
 
     #[inline(never)] // produces more useful profiles
-    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool)
+    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool, show: bool)
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 
@@ -134,7 +136,8 @@ impl Query {
         // Aggregators
         let mut aggregation_results = Vec::new();
         let mut selector = None;
-        for &(aggregator, ref expr) in &self.aggregate {
+        let mut selector_index = None;
+        for (i, &(aggregator, ref expr)) in self.aggregate.iter().enumerate() {
             let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
@@ -147,6 +150,7 @@ impl Query {
             // TODO(clemens): if summation column is strictly positive, can use sum as well
             if aggregator == Aggregator::Count {
                 selector = Some((aggregate, t.encoding_type()));
+                selector_index = Some(i)
             }
             aggregation_results.push((aggregator, aggregate, t))
         }
@@ -175,27 +179,43 @@ impl Query {
 
         // Compact and decode aggregation results
         let mut select = Vec::new();
-        for (aggregator, aggregate, t) in aggregation_results {
-            let compacted = match aggregator {
-                // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
-                Aggregator::Sum => query_plan::prepare(
-                    QueryPlan::Compact(
-                        Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type(),
-                        Box::new(QueryPlan::ReadBuffer(selector)), selector_type),
-                    &mut executor),
-                Aggregator::Count => query_plan::prepare(
-                    QueryPlan::NonzeroCompact(Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type()),
-                    &mut executor),
+        {
+            let mut decode_compact = |aggregator: Aggregator, aggregate: BufferRef, t: Type<'a>, select: &mut Vec<(BufferRef, Type<'a>)>| {
+                let compacted = match aggregator {
+                    // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
+                    Aggregator::Sum => query_plan::prepare(
+                        QueryPlan::Compact(
+                            Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type(),
+                            Box::new(QueryPlan::ReadBuffer(selector)), selector_type),
+                        &mut executor),
+                    Aggregator::Count => query_plan::prepare(
+                        QueryPlan::NonzeroCompact(Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type()),
+                        &mut executor),
+                };
+                if t.is_encoded() {
+                    let decoded = query_plan::prepare(
+                        QueryPlan::Decode(
+                            Box::new(QueryPlan::ReadBuffer(compacted)),
+                            t.codec.clone().unwrap()), &mut executor);
+                    select.push((decoded, t.decoded()));
+                } else {
+                    select.push((compacted, t));
+                }
             };
-            if t.is_encoded() {
-                let decoded = query_plan::prepare(
-                    QueryPlan::Decode(
-                        Box::new(QueryPlan::ReadBuffer(compacted)),
-                        t.codec.clone().unwrap()), &mut executor);
-                select.push((decoded, t.decoded()));
-            } else {
-                select.push((compacted, t));
+
+            for (i, &(aggregator, aggregate, ref t)) in aggregation_results.iter().enumerate() {
+                if selector_index != Some(i) {
+                    decode_compact(aggregator, aggregate, t.clone(), &mut select);
+                }
             }
+
+            // TODO(clemens): is there a simpler way to do this?
+            selector_index.map(|i| {
+                let (aggregator, aggregate, ref t) = aggregation_results[i];
+                decode_compact(aggregator, aggregate, t.clone(), &mut select);
+                let last = select.pop().unwrap();
+                select.insert(i, last);
+            });
         }
 
         //  Reconstruct all group by columns from grouping
@@ -249,7 +269,7 @@ impl Query {
         }
 
         let mut results = executor.prepare();
-        executor.run(columns.iter().next().unwrap().1.len(), &mut results);
+        executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
         let select_cols = select.iter().map(|&(i, _)| results.collect(i)).collect();
         let group_by_cols = grouping_columns.iter().map(|&(i, _)| results.collect(i)).collect();
 

@@ -32,4 +32,8 @@ impl<'a, T: IntVecType<T>> VecOperator<'a> for AdditionVS<T> {
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("{} + {}", self.lhs, self.rhs)
+    }
 }

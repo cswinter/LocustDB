@@ -52,9 +52,9 @@ impl<'a> QueryExecutor<'a> {
         Scratchpad::new(self.count)
     }
 
-    pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>) {
+    pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
         for stage in 0..self.stages.len() {
-            self.run_stage(len, stage, scratchpad);
+            self.run_stage(len, stage, scratchpad, show);
         }
     }
 
@@ -169,15 +169,21 @@ impl<'a> QueryExecutor<'a> {
         (max_length, batch_size)
     }
 
-    fn run_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>) {
+    fn run_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
         let (max_length, batch_size) = self.init_stage(column_length, stage, scratchpad);
         let iters = (max_length - 1) / batch_size + 1;
         let stream = self.stages[stage].stream;
         trace!("batch_size: {}, max_length: {}, column_length: {}, iters: {}", batch_size, max_length, column_length, iters);
         for i in 0..iters {
             for &(op, streamable) in &self.stages[stage].ops {
-                //println!("{:?}", self.ops[op]);
                 self.ops[op].execute(stream && streamable, scratchpad);
+                if show && i == 0 {
+                    println!("\n> {}", self.ops[op].display(true));
+                    for output in self.ops[op].outputs() {
+                        let data = scratchpad.get_any(output);
+                        println!("{}", data.display());
+                    }
+                }
                 if i + 1 == iters {
                     self.ops[op].finalize(scratchpad);
                 }
@@ -201,18 +207,17 @@ impl<'a> Default for QueryExecutor<'a> {
 
 impl<'a> fmt::Display for QueryExecutor<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let alternate = f.alternate();
         for (i, stage) in self.stages.iter().enumerate() {
             if stage.stream {
-                write!(f, "\n-- {} (streaming) --", i)?;
+                write!(f, "\n-- Stage {} (streaming) --", i)?;
             } else {
-                write!(f, "\n-- {} --", i)?;
+                write!(f, "\n-- Stage {} --", i)?;
             }
             for &(op, _) in &stage.ops {
-                write!(f, "\n{}", self.ops[op].display())?;
-                // if stage.stream && streamable {
-                // write!(f, " (stream)")?;
-                // }
+                write!(f, "\n{}", self.ops[op].display(alternate))?;
             }
+            write!(f, "\n")?;
         }
         Ok(())
     }

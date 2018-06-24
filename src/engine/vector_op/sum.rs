@@ -51,4 +51,9 @@ impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { false }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("{}[{}] += {}", self.output, self.grouping, self.input)
+    }
+    fn display_output(&self) -> bool { false }
 }

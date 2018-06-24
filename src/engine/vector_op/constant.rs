@@ -24,11 +24,11 @@ impl<'a> VecOperator<'a> for Constant {
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { false }
 
-    fn display_op(&self) -> Option<String> {
-        if self.hide_value {
-            Some(format!("Constant<{:?}>", self.val.get_type()))
+    fn display_op(&self, alternate: bool) -> String {
+        if self.hide_value && !alternate {
+            format!("Constant<{:?}>", self.val.get_type())
         } else {
-            Some(format!("{}", &self.val))
+            format!("{}", &self.val)
         }
     }
 }

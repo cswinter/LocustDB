@@ -1,11 +1,12 @@
 use std::cmp::min;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Write};
 use std::hash::Hash;
 use std::mem;
 use std::string;
 
 use heapsize::HeapSizeOf;
 use num::PrimInt;
+use itertools::Itertools;
 
 use engine::types::*;
 use ingest::raw_val::RawVal;
@@ -39,6 +40,8 @@ pub trait TypedVec<'a>: Send + Sync {
     fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
+
+    fn display(&self) -> String;
 }
 
 impl<'a> TypedVec<'a> {
@@ -71,6 +74,8 @@ impl<'a, T: VecType<T> + 'a> TypedVec<'a> for Vec<T> {
         self.extend_from_slice(&x[0..min(x.len(), count)]);
         None
     }
+
+    fn display(&self) -> String { format!("Vec<{:?}>{}", T::t(), display_slice(&self, 120)) }
 }
 
 impl<'a> TypedVec<'a> for Vec<&'a str> {
@@ -125,6 +130,8 @@ impl<'a, T: VecType<T> + 'a> TypedVec<'a> for &'a [T] {
         // TODO(clemens): convert into owned
         unimplemented!()
     }
+
+    fn display(&self) -> String { format!("&{:?}{}", T::t(), display_slice(&self, 120)) }
 }
 
 impl<'a> TypedVec<'a> for &'a [&'a str] {
@@ -164,6 +171,8 @@ impl<'a> TypedVec<'a> for usize {
     fn type_error(&self, func_name: &str) -> String { format!("EmptyVector.{}", func_name) }
     fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("EmptyVector.extend") }
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(from - min(to, *self)) }
+
+    fn display(&self) -> String { format!("null({})", self) }
 }
 
 impl<'a> TypedVec<'a> for RawVal {
@@ -187,9 +196,11 @@ impl<'a> TypedVec<'a> for RawVal {
             _ => panic!("{}.cast_i64_const", &self),
         }
     }
+
+    fn display(&self) -> String { format!("Scalar({})", self) }
 }
 
-pub trait VecType<T>: PartialEq + Ord + Copy + Debug + Sync + Send + HeapSizeOf {
+pub trait VecType<T>: PartialEq + Ord + Copy + Debug + Display + Sync + Send + HeapSizeOf {
     fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [T] where T: 'a;
     fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<T> where T: 'a;
     fn wrap_one(_value: T) -> RawVal { panic!("Can't wrap scalar of type {:?}", Self::t()) }
@@ -287,3 +298,35 @@ impl IntoUsize for i64 {
     fn cast_usize(&self) -> usize { *self as usize }
 }
 
+fn display_slice<T: Display>(slice: &[T], max_chars: usize) -> String {
+    let mut length = slice.len();
+    loop {
+        let result = _display_slice(slice, length);
+        if result.len() < max_chars { break; }
+        length = min(length - 1, max_chars * length / result.len());
+        if length < 3 {
+            return _display_slice(slice, 2);
+        }
+    }
+    if length == slice.len() {
+        return _display_slice(slice, slice.len())
+    }
+    for l in length..max_chars {
+        if _display_slice(slice, l).len() > max_chars {
+            return _display_slice(slice, l - 1);
+        }
+    }
+    "display_slice error!".to_owned()
+}
+
+fn _display_slice<T: Display>(slice: &[T], max: usize) -> String {
+    let mut result = String::new();
+    write!(result, "[").unwrap();
+    write!(result, "{}", slice[..max].iter().map(|x| format!("{}", x)).join(", ")).unwrap();
+    if max < slice.len() {
+        write!(result, ", ...] ({} more)", slice.len() - max).unwrap();
+    } else {
+        write!(result, "]").unwrap();
+    }
+    result
+}

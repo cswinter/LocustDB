@@ -57,18 +57,18 @@ pub enum QueryPlan<'a> {
 pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> BufferRef {
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select(plan, indices, t) =>
-            VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.named_buffer("select")),
+            VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.named_buffer("selection")),
         QueryPlan::DecodeColumn(col) => {
-            let column_buffer = result.named_buffer("decode");
+            let column_buffer = result.named_buffer("decoded");
             let column_op = VecOperator::get_decode(col, column_buffer);
             match result.filter() {
                 Filter::BitVec(filter) => {
                     result.push(column_op);
-                    VecOperator::filter(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("filter"))
+                    VecOperator::filter(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("filtered"))
                 }
                 Filter::Indices(filter) => {
                     result.push(column_op);
-                    VecOperator::select(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("select"))
+                    VecOperator::select(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("selection"))
                 }
                 Filter::None => column_op,
             }
@@ -79,11 +79,11 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             match result.filter() {
                 Filter::BitVec(filter) => {
                     result.push(column_op);
-                    VecOperator::filter(col.encoding_type(), column_buffer, filter, result.named_buffer("filter"))
+                    VecOperator::filter(col.encoding_type(), column_buffer, filter, result.named_buffer("filtered"))
                 }
                 Filter::Indices(filter) => {
                     result.push(column_op);
-                    VecOperator::select(col.encoding_type(), column_buffer, filter, result.named_buffer("select"))
+                    VecOperator::select(col.encoding_type(), column_buffer, filter, result.named_buffer("selection"))
                 }
                 Filter::None => column_op,
             }
@@ -91,11 +91,11 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
         QueryPlan::Constant(ref c, hide_value) =>
             VecOperator::constant(c.clone(), hide_value, result.named_buffer("constant")),
         QueryPlan::Decode(plan, codec) =>
-            VecOperator::decode(prepare(*plan, result), result.named_buffer("decode"), codec),
+            VecOperator::decode(prepare(*plan, result), result.named_buffer("decoded"), codec),
         QueryPlan::TypeConversion(plan, initial_type, target_type) => if initial_type == target_type {
             return prepare(*plan, result);
         } else {
-            VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("cast"), initial_type, target_type)
+            VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("casted"), initial_type, target_type)
         },
 
         QueryPlan::Exists(indices, t, max_index) =>
@@ -114,15 +114,15 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             return inplace;
         }
         QueryPlan::EncodeStrConstant(plan, codec) =>
-            VecOperator::encode_str_const(prepare(*plan, result), result.named_buffer("encode"), codec),
+            VecOperator::encode_str_const(prepare(*plan, result), result.named_buffer("encoded"), codec),
         QueryPlan::EncodeIntConstant(plan, codec) =>
-            VecOperator::encode_int_const(prepare(*plan, result), result.named_buffer("encode"), codec),
+            VecOperator::encode_int_const(prepare(*plan, result), result.named_buffer("encoded"), codec),
         QueryPlan::BitPack(lhs, rhs, shift_amount) =>
-            VecOperator::bit_shift_left_add(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("bitpack"), shift_amount),
+            VecOperator::bit_shift_left_add(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("bitpacked"), shift_amount),
         QueryPlan::BitUnpack(inner, shift, width) =>
-            VecOperator::bit_unpack(prepare(*inner, result), result.named_buffer("bitunpack"), shift, width),
+            VecOperator::bit_unpack(prepare(*inner, result), result.named_buffer("unpacked"), shift, width),
         QueryPlan::LessThanVS(left_type, lhs, rhs) =>
-            VecOperator::less_than_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("lessthan")),
+            VecOperator::less_than_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("less_than")),
         QueryPlan::EqualsVS(left_type, lhs, rhs) =>
             VecOperator::equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
         QueryPlan::DivideVS(lhs, rhs) =>

@@ -95,6 +95,7 @@ fn repl(locustdb: &LocustDB) {
 
         let mut print_trace = false;
         let mut explain = false;
+        let mut show = false;
         let mut s: &str = &s;
         if s.starts_with(":explain") {
             explain = true;
@@ -103,6 +104,10 @@ fn repl(locustdb: &LocustDB) {
         if s.starts_with(":trace") {
             print_trace = true;
             s = &s[7..];
+        }
+        if s.starts_with(":show") {
+            show = true;
+            s = &s[6..];
         }
         if s.starts_with(":recover") {
             locustdb.recover();
@@ -113,7 +118,7 @@ fn repl(locustdb: &LocustDB) {
             continue;
         }
 
-        let query = locustdb.run_query(s, explain);
+        let query = locustdb.run_query(s, explain, if show { vec![0] } else { vec![] });
         match block_on(query) {
             Ok((result, trace)) => {
                 if print_trace {

@@ -25,6 +25,10 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { false }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("encode({}; {:?})", self.constant, self.codec)
+    }
 }
 
 
@@ -49,5 +53,9 @@ impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { false }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("encode({}; {:?})", self.constant, self.codec)
+    }
 }
 

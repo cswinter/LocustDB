@@ -22,6 +22,7 @@ use time::precise_time_ns;
 pub struct QueryTask {
     query: Query,
     explain: bool,
+    show: Vec<usize>,
     batches: Vec<Batch>,
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
@@ -71,7 +72,7 @@ impl Default for QueryStats {
 
 
 impl QueryTask {
-    pub fn new(mut query: Query, explain: bool, source: Vec<Batch>, sender: SharedSender<QueryResult>) -> QueryTask {
+    pub fn new(mut query: Query, explain: bool, show: Vec<usize>, source: Vec<Batch>, sender: SharedSender<QueryResult>) -> QueryTask {
         let start_time_ns = precise_time_ns();
         if query.is_select_star() {
             query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
@@ -93,6 +94,7 @@ impl QueryTask {
         QueryTask {
             query,
             explain,
+            show,
             batches: source,
             referenced_cols,
             output_colnames,
@@ -119,12 +121,13 @@ impl QueryTask {
         let mut explains = Vec::new();
         while let Some((batch, id)) = self.next_batch() {
             trace_start!("Batch {}", id);
+            let show = self.show.iter().any(|&x| x == id);
             rows_scanned += batch.cols().get(0).map_or(0, |c| c.len());
             let batch = QueryTask::prepare_batch(&self.referenced_cols, batch);
             let (mut batch_result, explain) = match if self.aggregate.is_empty() {
-                self.query.run(&batch, self.explain)
+                self.query.run(&batch, self.explain, show)
             } else {
-                self.query.run_aggregate(&batch, self.explain)
+                self.query.run_aggregate(&batch, self.explain, show)
             } {
                 Ok(result) => result,
                 Err(error) => {

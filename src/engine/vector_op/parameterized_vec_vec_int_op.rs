@@ -46,11 +46,16 @@ impl<'a, Op: ParameterizedIntegerOperation + fmt::Debug> VecOperator<'a> for Par
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, alternate: bool) -> String {
+        Op::display(self.lhs, self.rhs, self.parameter, alternate)
+    }
 }
 
 
 pub trait ParameterizedIntegerOperation {
     fn perform(lhs: i64, rhs: i64, param: i64) -> i64;
+    fn display(lhs: BufferRef, rhs: BufferRef, param: i64, alternate: bool) -> String;
 }
 
 // TODO(clemens): reuse/mutate left buffer?
@@ -59,5 +64,12 @@ pub struct BitShiftLeftAdd;
 
 impl ParameterizedIntegerOperation for BitShiftLeftAdd {
     fn perform(lhs: i64, rhs: i64, param: i64) -> i64 { lhs + (rhs << param) }
+    fn display(lhs: BufferRef, rhs: BufferRef, param: i64, alternate: bool) -> String {
+        if alternate {
+            format!("{} + ({} << {})", lhs, rhs, param)
+        } else {
+            format!("{} + ({} << $shift)", lhs, rhs)
+        }
+    }
 }
 

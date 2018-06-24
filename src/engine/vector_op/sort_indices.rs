@@ -29,4 +29,8 @@ impl<'a> VecOperator<'a> for SortIndices {
     fn can_stream_input(&self) -> bool { false }
     fn can_stream_output(&self) -> bool { false }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("sort_indices({}; desc={})", self.input, self.descending)
+    }
 }

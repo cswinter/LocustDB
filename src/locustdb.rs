@@ -32,7 +32,7 @@ impl LocustDB {
     }
 
 
-    pub fn run_query(&self, query: &str, explain: bool) -> Box<Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
+    pub fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Box<Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
         let (sender, receiver) = oneshot::channel();
 
         // TODO(clemens): perform compilation and table snapshot in asynchronous task?
@@ -62,7 +62,7 @@ impl LocustDB {
                 Err(QueryError::NotImplemented(format!("Table {} does not exist!", &query.table))),
                 TraceBuilder::new("empty".to_owned()).finalize()))),
         };
-        let task = QueryTask::new(query, explain, data, SharedSender::new(sender));
+        let task = QueryTask::new(query, explain, show, data, SharedSender::new(sender));
         let trace_receiver = self.schedule(task);
         Box::new(receiver.join(trace_receiver))
     }

@@ -30,5 +30,9 @@ impl<'a, T: VecType<T> + 'a> VecOperator<'a> for Decode<'a, T> {
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("decode({}; {:?})", self.input, self.codec)
+    }
 }
 

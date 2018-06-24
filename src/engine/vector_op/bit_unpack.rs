@@ -41,4 +41,13 @@ impl<'a> VecOperator<'a> for BitUnpackOperator {
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, alternate: bool) -> String {
+        if alternate {
+            let mask = (1 << self.width) - 1;
+            format!("({} >> {}) & {:x}", self.input, self.shift, mask)
+        } else {
+            format!("({} >> $shift) & $mask", self.input)
+        }
+    }
 }

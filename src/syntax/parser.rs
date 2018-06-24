@@ -275,11 +275,17 @@ named!(number<&[u8], u64>,
 );
 
 named!(string<&[u8], RawVal>,
-    do_parse!(
-        char!('"') >>
-        s: is_not!("\"") >>
-        char!('"') >>
-        (RawVal::Str(str::from_utf8(s).unwrap().to_string()))
+    alt!(
+        do_parse!(
+            char!('"') >>
+            s: is_not!("\"") >>
+            char!('"') >>
+            (RawVal::Str(str::from_utf8(s).unwrap().to_string()))
+        ) |
+        do_parse!(
+            tag!("\"\"") >>
+            (RawVal::Str("".to_string()))
+        )
     )
 );
 

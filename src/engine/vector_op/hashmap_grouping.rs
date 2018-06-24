@@ -60,5 +60,9 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { false }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("hashmap_grouping({})", self.input)
+    }
 }
 

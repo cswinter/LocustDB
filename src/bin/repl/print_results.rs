@@ -13,17 +13,18 @@ pub fn print_query_result(results: &QueryOutput) {
         format!("{}s", rt / 1_000_000_000)
     };
 
-    println!("Scanned {} rows in {} ({:.2}B rows/s)!\n",
+    println!();
+    if results.query_plans.len() > 0 {
+        for (query_plan, count) in &results.query_plans {
+            println!("Query plan in {} batches{}", count, query_plan)
+        }
+    }
+    println!("Scanned {} rows in {} ({:.2}B rows/s)!",
              results.stats.rows_scanned,
              fmt_time,
              results.stats.rows_scanned as f64 / rt as f64);
+    println!("\n{}", format_results(&results.colnames, &results.rows));
     println!();
-    println!("{}\n", format_results(&results.colnames, &results.rows));
-    if results.query_plans.len() > 0 {
-        for (query_plan, count) in &results.query_plans {
-            println!("Query plan in {} batches{}\n", count, query_plan)
-        }
-    }
 }
 
 fn format_results(colnames: &[String], rows: &[Vec<Value>]) -> String {

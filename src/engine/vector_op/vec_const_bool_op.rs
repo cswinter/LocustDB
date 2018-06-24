@@ -50,10 +50,15 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     fn can_stream_input(&self) -> bool { true }
     fn can_stream_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("{} {} {}", self.lhs, Op::symbol(), self.rhs)
+    }
 }
 
 pub trait BoolOperation<T, U> {
     fn perform(lhs: &T, rhs: &U) -> u8;
+    fn symbol() -> &'static str;
 }
 
 #[derive(Debug)]
@@ -62,6 +67,7 @@ pub struct LessThanInt<T> { t: PhantomData<T> }
 impl<T: Into<i64> + Copy> BoolOperation<T, i64> for LessThanInt<T> {
     #[inline]
     fn perform(l: &T, r: &i64) -> u8 { (Into::<i64>::into(*l) < *r) as u8 }
+    fn symbol() -> &'static str { "<" }
 }
 
 #[derive(Debug)]
@@ -70,6 +76,7 @@ pub struct Equals<T> { t: PhantomData<T> }
 impl<T: PartialEq> BoolOperation<T, T> for Equals<T> {
     #[inline]
     fn perform(l: &T, r: &T) -> u8 { (l == r) as u8 }
+    fn symbol() -> &'static str { "==" }
 }
 
 #[derive(Debug)]
@@ -78,6 +85,7 @@ pub struct EqualsInt<T> { t: PhantomData<T> }
 impl<T: Into<i64> + Copy> BoolOperation<T, i64> for EqualsInt<T> {
     #[inline]
     fn perform(l: &T, r: &i64) -> u8 { (Into::<i64>::into(*l) == *r) as u8 }
+    fn symbol() -> &'static str { "==" }
 }
 
 #[derive(Debug)]
@@ -86,5 +94,6 @@ pub struct EqualsString;
 impl<'a> BoolOperation<&'a str, String> for EqualsString {
     #[inline]
     fn perform(l: &&'a str, r: &String) -> u8 { (l == r) as u8 }
+    fn symbol() -> &'static str { "==" }
 }
 
