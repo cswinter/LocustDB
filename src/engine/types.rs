@@ -16,6 +16,9 @@ pub enum EncodingType {
     U8,
     U16,
     U32,
+
+    Premerge,
+    MergeOp,
 }
 
 impl EncodingType {

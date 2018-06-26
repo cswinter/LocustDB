@@ -20,3 +20,4 @@ pub use self::typed_vec::{
 
 pub use self::filter::Filter;
 pub use self::vector_op::*;
+pub use self::types::*;

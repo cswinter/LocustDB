@@ -88,6 +88,7 @@ impl Query {
                 aggregators: Vec::with_capacity(0),
                 level: 0,
                 batch_count: 1,
+                show,
             },
              if explain { Some(format!("{}", executor)) } else { None }))
     }
@@ -281,6 +282,7 @@ impl Query {
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
             level: 0,
             batch_count: 1,
+            show,
         };
         if let Err(err) = batch.validate() {
             error!("Query result failed validation: {}\n{}\nGroup By: {:?}\nSelect: {:?}", err, &executor, grouping_columns, select);

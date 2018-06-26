@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::fmt::{Debug, Display, Write};
+use std::fmt;
 use std::hash::Hash;
 use std::mem;
 use std::string;
@@ -31,6 +32,8 @@ pub trait TypedVec<'a>: Send + Sync {
     fn cast_ref_u32<'b>(&'b self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
     fn cast_ref_u16<'b>(&'b self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
     fn cast_ref_u8<'b>(&'b self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
+    fn cast_ref_merge_op<'b>(&'b self) -> &[MergeOp] { panic!(self.type_error("cast_ref_merge_op")) }
+    fn cast_ref_premerge<'b>(&'b self) -> &[Premerge] { panic!(self.type_error("cast_ref_merge_op")) }
     fn cast_str_const(&self) -> string::String { panic!(self.type_error("cast_str_const")) }
     fn cast_i64_const(&self) -> i64 { panic!(self.type_error("cast_str_const")) }
 
@@ -40,6 +43,8 @@ pub trait TypedVec<'a>: Send + Sync {
     fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
+    fn cast_ref_mut_merge_op(&mut self) -> &mut Vec<MergeOp> { panic!(self.type_error("cast_ref_merge_op")) }
+    fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { panic!(self.type_error("cast_ref_merge_op")) }
 
     fn display(&self) -> String;
 }
@@ -108,6 +113,17 @@ impl<'a> TypedVec<'a> for Vec<u8> {
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { self }
 }
 
+impl<'a> TypedVec<'a> for Vec<MergeOp> {
+    fn cast_ref_merge_op(&self) -> &[MergeOp] { self }
+    fn cast_ref_mut_merge_op(&mut self) -> &mut Vec<MergeOp> { self }
+}
+
+impl<'a> TypedVec<'a> for Vec<Premerge> {
+    fn cast_ref_premerge(&self) -> &[Premerge] { self }
+    fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { self }
+}
+
+
 impl<'a, T: VecType<T> + 'a> TypedVec<'a> for &'a [T] {
     fn len(&self) -> usize { <[T]>::len(self) }
     fn get_raw(&self, i: usize) -> RawVal { T::wrap_one(self[i]) }
@@ -156,6 +172,14 @@ impl<'a> TypedVec<'a> for &'a [u16] {
 
 impl<'a> TypedVec<'a> for &'a [u8] {
     fn cast_ref_u8<'b>(&'b self) -> &'b [u8] { self }
+}
+
+impl<'a> TypedVec<'a> for &'a [MergeOp] {
+    fn cast_ref_merge_op<'b>(&'b self) -> &'b [MergeOp] { self }
+}
+
+impl<'a> TypedVec<'a> for &'a [Premerge] {
+    fn cast_ref_premerge<'b>(&'b self) -> &'b [Premerge] { self }
 }
 
 
@@ -298,6 +322,54 @@ impl IntoUsize for i64 {
     fn cast_usize(&self) -> usize { *self as usize }
 }
 
+
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+pub enum MergeOp {
+    TakeLeft,
+    TakeRight,
+    MergeRight,
+}
+
+impl HeapSizeOf for MergeOp {
+    fn heap_size_of_children(&self) -> usize { 0 }
+}
+
+impl Display for MergeOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", &self)
+    }
+}
+
+impl VecType<MergeOp> for MergeOp {
+    fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [MergeOp] where MergeOp: 'a { vec.cast_ref_merge_op() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<MergeOp> where MergeOp: 'a { vec.cast_ref_mut_merge_op() }
+    fn t() -> EncodingType { EncodingType::MergeOp }
+}
+
+
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+pub struct Premerge {
+    pub left: u32,
+    pub right: u32,
+}
+
+impl HeapSizeOf for Premerge {
+    fn heap_size_of_children(&self) -> usize { 0 }
+}
+
+impl Display for Premerge {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}|{}", self.left, self.right)
+    }
+}
+
+impl VecType<Premerge> for Premerge {
+    fn unwrap<'a, 'b>(vec: &'b TypedVec<'a>) -> &'b [Premerge] where Premerge: 'a { vec.cast_ref_premerge() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut TypedVec<'a>) -> &'b mut Vec<Premerge> where Premerge: 'a { vec.cast_ref_mut_premerge() }
+    fn t() -> EncodingType { EncodingType::Premerge }
+}
+
+
 fn display_slice<T: Display>(slice: &[T], max_chars: usize) -> String {
     let mut length = slice.len();
     loop {
@@ -309,7 +381,7 @@ fn display_slice<T: Display>(slice: &[T], max_chars: usize) -> String {
         }
     }
     if length == slice.len() {
-        return _display_slice(slice, slice.len())
+        return _display_slice(slice, slice.len());
     }
     for l in length..max_chars {
         if _display_slice(slice, l).len() > max_chars {

@@ -10,6 +10,7 @@ use itertools::Itertools;
 use regex::Regex;
 
 use engine::*;
+use engine::aggregator::Aggregator;
 use engine::typed_vec::TypedVec;
 use engine::types::{BasicType, EncodingType};
 use engine::vector_op::comparator::*;
@@ -19,16 +20,20 @@ use mem_store::*;
 use engine::vector_op::addition_vs::AdditionVS;
 use engine::vector_op::bit_unpack::BitUnpackOperator;
 use engine::vector_op::bool_op::*;
+use engine::vector_op::merge_aggregate::MergeAggregate;
 use engine::vector_op::column_ops::*;
 use engine::vector_op::compact::Compact;
 use engine::vector_op::constant::Constant;
+use engine::vector_op::constant_vec::ConstantVec;
 use engine::vector_op::count::VecCount;
 use engine::vector_op::decode::Decode;
 use engine::vector_op::division_vs::DivideVS;
 use engine::vector_op::encode_const::*;
 use engine::vector_op::exists::Exists;
+use engine::vector_op::merge_keep::MergeKeep;
 use engine::vector_op::filter::Filter;
 use engine::vector_op::hashmap_grouping::HashMapGrouping;
+use engine::vector_op::merge_drop::MergeDrop;
 use engine::vector_op::nonzero_compact::NonzeroCompact;
 use engine::vector_op::nonzero_indices::NonzeroIndices;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
@@ -36,9 +41,14 @@ use engine::vector_op::select::Select;
 use engine::vector_op::sort_indices::SortIndices;
 use engine::vector_op::sum::VecSum;
 use engine::vector_op::to_year::ToYear;
+use engine::vector_op::merge::Merge;
 use engine::vector_op::top_n::TopN;
 use engine::vector_op::type_conversion::TypeConversionOperator;
 use engine::vector_op::vec_const_bool_op::*;
+use engine::vector_op::subpartition::SubPartition;
+use engine::vector_op::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
+use engine::vector_op::partition::Partition;
+use engine::vector_op::merge_deduplicate::MergeDeduplicate;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
@@ -177,6 +187,10 @@ impl<'a> VecOperator<'a> {
 
     pub fn constant(val: RawVal, hide_value: bool, output: BufferRef) -> BoxedOperator<'a> {
         Box::new(Constant { val, hide_value, output })
+    }
+
+    pub fn constant_vec(val: BoxedVec<'a>, output: BufferRef) -> BoxedOperator<'a> {
+        Box::new(ConstantVec { val, output })
     }
 
     pub fn less_than_vs(t: EncodingType, lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
@@ -407,6 +421,135 @@ impl<'a> VecOperator<'a> {
                 Str => Box::new(TopN::<&str, CmpLessThan> { input, keys: keys_out, indices: indices_out, last_index: 0, n, t: PhantomData, c: PhantomData }),
                 _ => panic!("top_n not supported for type {:?}", t),
             }
+        }
+    }
+
+    pub fn merge_deduplicate(left: BufferRef,
+                             right: BufferRef,
+                             merged_out: BufferRef,
+                             ops_out: BufferRef,
+                             left_t: EncodingType,
+                             right_t: EncodingType) -> BoxedOperator<'a> {
+        match (left_t, right_t) {
+            (EncodingType::Str, EncodingType::Str) =>
+                Box::new(MergeDeduplicate::<&str> { left, right, deduplicated: merged_out, merge_ops: ops_out, t: PhantomData }),
+            (EncodingType::U8, EncodingType::U8) =>
+                Box::new(MergeDeduplicate::<u8> { left, right, deduplicated: merged_out, merge_ops: ops_out, t: PhantomData }),
+            (EncodingType::I64, EncodingType::I64) =>
+                Box::new(MergeDeduplicate::<i64> { left, right, deduplicated: merged_out, merge_ops: ops_out, t: PhantomData }),
+            (t1, t2) => panic!("merge_deduplicate types {:?}, {:?}", t1, t2),
+        }
+    }
+
+    pub fn partition(left: BufferRef,
+                     right: BufferRef,
+                     partition_out: BufferRef,
+                     left_t: EncodingType,
+                     right_t: EncodingType,
+                     limit: usize) -> BoxedOperator<'a> {
+        match (left_t, right_t) {
+            (EncodingType::Str, EncodingType::Str) =>
+                Box::new(Partition::<&str> { left, right, partitioning: partition_out, limit, t: PhantomData }),
+            (EncodingType::I64, EncodingType::I64) =>
+                Box::new(Partition::<i64> { left, right, partitioning: partition_out, limit, t: PhantomData }),
+            (t1, t2) => panic!("partition types {:?}, {:?}", t1, t2),
+        }
+    }
+
+
+    pub fn subpartition(partitioning: BufferRef,
+                        left: BufferRef,
+                        right: BufferRef,
+                        subpartition_out: BufferRef,
+                        left_t: EncodingType,
+                        right_t: EncodingType) -> BoxedOperator<'a> {
+        match (left_t, right_t) {
+            (EncodingType::Str, EncodingType::Str) =>
+                Box::new(SubPartition::<&str> { partitioning, left, right, sub_partitioning: subpartition_out, t: PhantomData }),
+            (EncodingType::I64, EncodingType::I64) =>
+                Box::new(SubPartition::<i64> { partitioning, left, right, sub_partitioning: subpartition_out, t: PhantomData }),
+            (t1, t2) => panic!("partition types {:?}, {:?}", t1, t2),
+        }
+    }
+
+    pub fn merge_deduplicate_partitioned(partitioning: BufferRef,
+                                         left: BufferRef,
+                                         right: BufferRef,
+                                         merged_out: BufferRef,
+                                         ops_out: BufferRef,
+                                         left_t: EncodingType,
+                                         right_t: EncodingType) -> BoxedOperator<'a> {
+        match (left_t, right_t) {
+            (EncodingType::Str, EncodingType::Str) =>
+                Box::new(MergeDeduplicatePartitioned::<&str> { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out, t: PhantomData }),
+            (EncodingType::I64, EncodingType::I64) =>
+                Box::new(MergeDeduplicatePartitioned::<i64> { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out, t: PhantomData }),
+            (t1, t2) => panic!("merge_deduplicate_partitioned types {:?}, {:?}", t1, t2),
+        }
+    }
+
+    pub fn merge_drop(merge_ops: BufferRef,
+                      left: BufferRef,
+                      right: BufferRef,
+                      merged_out: BufferRef,
+                      left_t: EncodingType,
+                      right_t: EncodingType) -> BoxedOperator<'a> {
+        match (left_t, right_t) {
+            (EncodingType::Str, EncodingType::Str) =>
+                Box::new(MergeDrop::<&str> { merge_ops, left, right, deduplicated: merged_out, t: PhantomData }),
+            (EncodingType::I64, EncodingType::I64) =>
+                Box::new(MergeDrop::<i64> { merge_ops, left, right, deduplicated: merged_out, t: PhantomData }),
+            (t1, t2) => panic!("merge_drop types {:?}, {:?}", t1, t2),
+        }
+    }
+
+    pub fn merge_aggregate(merge_ops: BufferRef,
+                           left: BufferRef,
+                           right: BufferRef,
+                           aggregated_out: BufferRef,
+                           aggregator: Aggregator) -> BoxedOperator<'a> {
+        Box::new(MergeAggregate { merge_ops, left, right, aggregated: aggregated_out, aggregator })
+    }
+
+    pub fn merge(left: BufferRef,
+                 right: BufferRef,
+                 merged_out: BufferRef,
+                 ops_out: BufferRef,
+                 left_t: EncodingType,
+                 right_t: EncodingType,
+                 limit: usize,
+                 desc: bool) -> BoxedOperator<'a> {
+        if desc {
+            match (left_t, right_t) {
+                (EncodingType::Str, EncodingType::Str) =>
+                    Box::new(Merge::<&str, CmpGreaterThan> { left, right, merged: merged_out, merge_ops: ops_out, limit, t: PhantomData, c: PhantomData }),
+                (EncodingType::I64, EncodingType::I64) =>
+                    Box::new(Merge::<i64, CmpGreaterThan> { left, right, merged: merged_out, merge_ops: ops_out, limit, t: PhantomData, c: PhantomData }),
+                (t1, t2) => panic!("merge types {:?}, {:?}", t1, t2),
+            }
+        } else {
+            match (left_t, right_t) {
+                (EncodingType::Str, EncodingType::Str) =>
+                    Box::new(Merge::<&str, CmpLessThan> { left, right, merged: merged_out, merge_ops: ops_out, limit, t: PhantomData, c: PhantomData }),
+                (EncodingType::I64, EncodingType::I64) =>
+                    Box::new(Merge::<i64, CmpLessThan> { left, right, merged: merged_out, merge_ops: ops_out, limit, t: PhantomData, c: PhantomData }),
+                (t1, t2) => panic!("merge types {:?}, {:?}", t1, t2),
+            }
+        }
+    }
+
+    pub fn merge_keep(merge_ops: BufferRef,
+                      left: BufferRef,
+                      right: BufferRef,
+                      merged_out: BufferRef,
+                      left_t: EncodingType,
+                      right_t: EncodingType) -> BoxedOperator<'a> {
+        match (left_t, right_t) {
+            (EncodingType::Str, EncodingType::Str) =>
+                Box::new(MergeKeep::<&str> { merge_ops, left, right, merged: merged_out, t: PhantomData }),
+            (EncodingType::I64, EncodingType::I64) =>
+                Box::new(MergeKeep::<i64> { merge_ops, left, right, merged: merged_out, t: PhantomData }),
+            (t1, t2) => panic!("merge_keep types {:?}, {:?}", t1, t2),
         }
     }
 }
