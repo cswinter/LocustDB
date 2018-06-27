@@ -95,7 +95,7 @@ impl<'a> QueryExecutor<'a> {
                     for input in op.inputs() {
                         // TODO(clemens): if a stage is streamed, any any of the inputs are (non-streamed) results need to break those up
                         for &p in &producers[input.0] {
-                            let can_stream = self.ops[p].can_stream_output();
+                            let can_stream = self.ops[p].can_stream_output(input);
                             if !visited[p] && can_stream {
                                 to_visit.push(p);
                                 visited[p] = true;
@@ -108,8 +108,8 @@ impl<'a> QueryExecutor<'a> {
                     op,
                     op.inputs().iter().map(|i| &self.ops[i.0]).collect::<Vec<_>>())
                 }
-                if op.can_stream_output() {
-                    for output in op.outputs() {
+                for output in op.outputs() {
+                    if op.can_stream_output(output) {
                         for &consumer in &consumes[output.0] {
                             if !visited[consumer] && self.ops[consumer].can_stream_input() {
                                 to_visit.push(consumer);
@@ -122,20 +122,18 @@ impl<'a> QueryExecutor<'a> {
             }
             ops.sort();
             let ops = ops.into_iter().map(|op| {
-                if self.ops[op].can_stream_output() {
-                    let mut streaming_consumers = false;
-                    let mut block_consumers = false;
-                    for output in self.ops[op].outputs() {
+                let mut streaming_consumers = false;
+                let mut block_consumers = false;
+                for output in self.ops[op].outputs() {
+                    if self.ops[op].can_stream_output(output) {
                         for &consumer in &consumes[output.0] {
                             streaming_consumers |= self.ops[consumer].can_stream_input();
                             block_consumers |= !self.ops[consumer].can_stream_input();
                         }
                     }
                     assert!(!streaming_consumers || !block_consumers);
-                    (op, streaming_consumers)
-                } else {
-                    (op, false)
                 }
+                (op, streaming_consumers)
             }).collect();
             // TODO(clemens): Make streaming possible for stages other than zero (Need to be able to consume fully computed TypedVec in streaming fashion)
             let stage0 = stages.len() == 0;

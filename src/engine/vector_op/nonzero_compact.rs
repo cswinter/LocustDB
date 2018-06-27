@@ -33,7 +33,7 @@ impl<'a, T: IntVecType<T>> VecOperator<'a> for NonzeroCompact<T> {
     fn inputs(&self) -> Vec<BufferRef> { vec![self.data] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.data] }
     fn can_stream_input(&self) -> bool { false }
-    fn can_stream_output(&self) -> bool { false }
+    fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

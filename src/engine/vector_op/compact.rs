@@ -24,7 +24,7 @@ impl<'a, T: VecType<T> + 'a, U: IntVecType<U>> VecOperator<'a> for Compact<T, U>
         let select = scratchpad.get::<U>(self.select);
         // Remove all unmodified entries
         let mut j = 0;
-        for (i, &s) in select.iter().enumerate() {
+        for (i, &s) in select.iter().take(data.len()).enumerate() {
             if s > U::zero() {
                 data[j] = data[i];
                 j += 1;
@@ -36,7 +36,7 @@ impl<'a, T: VecType<T> + 'a, U: IntVecType<U>> VecOperator<'a> for Compact<T, U>
     fn inputs(&self) -> Vec<BufferRef> { vec![self.data, self.select] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.data] }
     fn can_stream_input(&self) -> bool { false }
-    fn can_stream_output(&self) -> bool { false }
+    fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

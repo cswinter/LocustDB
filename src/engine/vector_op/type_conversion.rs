@@ -41,7 +41,7 @@ impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { true }
-    fn can_stream_output(&self) -> bool { true }
+    fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

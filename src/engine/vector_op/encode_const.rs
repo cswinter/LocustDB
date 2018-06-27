@@ -23,7 +23,7 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
     fn inputs(&self) -> Vec<BufferRef> { vec![self.constant] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { true }
-    fn can_stream_output(&self) -> bool { true }
+    fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {
@@ -51,7 +51,7 @@ impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
     fn inputs(&self) -> Vec<BufferRef> { vec![self.constant] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { true }
-    fn can_stream_output(&self) -> bool { true }
+    fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

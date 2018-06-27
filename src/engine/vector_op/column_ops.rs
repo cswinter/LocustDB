@@ -17,7 +17,7 @@ impl<'a> VecOperator<'a> for GetDecode<'a> {
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { false }
     // TODO(clemens): Make streaming possible
-    fn can_stream_output(&self) -> bool { false }
+    fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -47,7 +47,7 @@ impl<'a> VecOperator<'a> for GetEncoded<'a> {
     fn inputs(&self) -> Vec<BufferRef> { vec![] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { false }
-    fn can_stream_output(&self) -> bool { true }
+    fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

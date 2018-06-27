@@ -29,7 +29,7 @@ impl<'a, T: VecType<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
     fn inputs(&self) -> Vec<BufferRef> { vec![self.left, self.right] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.deduplicated, self.merge_ops] }
     fn can_stream_input(&self) -> bool { false }
-    fn can_stream_output(&self) -> bool { false }
+    fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

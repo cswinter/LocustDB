@@ -37,7 +37,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for Exists<T> {
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
     fn can_stream_input(&self) -> bool { true }
-    fn can_stream_output(&self) -> bool { false }
+    fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

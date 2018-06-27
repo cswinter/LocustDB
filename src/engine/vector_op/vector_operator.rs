@@ -53,7 +53,7 @@ use engine::vector_op::merge_deduplicate::MergeDeduplicate;
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BufferRef(pub usize, pub &'static str);
 
 impl fmt::Display for BufferRef {
@@ -71,7 +71,7 @@ pub trait VecOperator<'a>: fmt::Debug {
     fn inputs(&self) -> Vec<BufferRef>;
     fn outputs(&self) -> Vec<BufferRef>;
     fn can_stream_input(&self) -> bool;
-    fn can_stream_output(&self) -> bool;
+    fn can_stream_output(&self, i: BufferRef) -> bool;
     fn allocates(&self) -> bool;
 
     fn display(&self, full: bool) -> String {
