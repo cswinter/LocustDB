@@ -1,18 +1,16 @@
-use std::str;
-use std::sync::Arc;
-
-use futures::*;
-use futures_channel::oneshot;
-
-use QueryError;
-use QueryResult;
 use disk_store::db::*;
 use disk_store::noop_storage::NoopStorage;
 use engine::query_task::QueryTask;
+use futures::*;
+use futures_channel::oneshot;
 use ingest::csv_loader::{CSVIngestionTask, IngestFile};
 use mem_store::table::TableStats;
 use nom;
+use QueryError;
+use QueryResult;
 use scheduler::*;
+use std::str;
+use std::sync::Arc;
 use syntax::parser;
 use trace::{Trace, TraceBuilder};
 
@@ -22,12 +20,12 @@ pub struct LocustDB {
 
 impl LocustDB {
     pub fn memory_only() -> LocustDB {
-        LocustDB::new(Box::new(NoopStorage), false)
+        LocustDB::new(Box::new(NoopStorage), false, None)
     }
 
-    pub fn new(storage: Box<DB>, load_tabledata: bool) -> LocustDB {
+    pub fn new(storage: Box<DB>, load_tabledata: bool, threads: Option<usize>) -> LocustDB {
         let locustdb = Arc::new(InnerLocustDB::new(storage, load_tabledata));
-        InnerLocustDB::start_worker_threads(&locustdb);
+        InnerLocustDB::start_worker_threads(&locustdb, threads);
         LocustDB { inner_locustdb: locustdb }
     }
 
@@ -97,7 +95,7 @@ impl LocustDB {
 
     pub fn recover(&self) {
         self.inner_locustdb.drop_pending_tasks();
-        InnerLocustDB::start_worker_threads(&self.inner_locustdb);
+        InnerLocustDB::start_worker_threads(&self.inner_locustdb, None);
     }
 
     pub fn table_stats(&self) -> impl Future<Item=Vec<TableStats>, Error=oneshot::Canceled> {

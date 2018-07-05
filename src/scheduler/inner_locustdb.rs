@@ -1,10 +1,3 @@
-use std::collections::{HashMap, VecDeque};
-use std::mem;
-use std::str;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock, Condvar};
-use std::thread;
-
 use disk_store::db::*;
 use futures::*;
 use futures_channel::oneshot;
@@ -14,6 +7,12 @@ use mem_store::batch::Batch;
 use mem_store::table::*;
 use num_cpus;
 use scheduler::*;
+use std::collections::{HashMap, VecDeque};
+use std::mem;
+use std::str;
+use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use time;
 use trace::*;
 
@@ -57,8 +56,8 @@ impl InnerLocustDB {
         }
     }
 
-    pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>) {
-        for id in 0..num_cpus::get() {
+    pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>, threads: Option<usize>) {
+        for id in 0..threads.unwrap_or(num_cpus::get()) {
             let cloned = locustdb.clone();
             thread::spawn(move || InnerLocustDB::worker_loop(cloned, id));
         }

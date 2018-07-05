@@ -1,12 +1,12 @@
 #![feature(test)]
+extern crate futures;
 extern crate locustdb;
 extern crate test;
-extern crate futures;
-
-use std::path::Path;
 
 use futures::executor::block_on;
 use locustdb::LocustDB;
+use std::env;
+use std::path::Path;
 
 
 const DOWNLOAD_URL: &str = "https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0";
@@ -14,10 +14,13 @@ static mut DB: Option<LocustDB> = None;
 
 fn db() -> &'static LocustDB {
     unsafe {
+        // Prints each argument on a separate line
+        let thread_count = env::var_os("LOCUSTDB_THREADS")
+            .map(|x| x.to_str().unwrap().parse::<usize>().unwrap());
         match DB {
             Some(ref locustdb) => locustdb,
             None => {
-                let locustdb = LocustDB::memory_only();
+                let locustdb = LocustDB::new(Box::new(locustdb::NoopStorage), false, thread_count);
                 let mut loads = Vec::new();
                 for x in &["aa", "ab", "ac", "ad", "ae"] {
                     let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
