@@ -63,6 +63,6 @@ fn merge_aggregate<'a>(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator:
             }
         }
     }
-    TypedVec::owned(result)
+    AnyVec::owned(result)
 }
 

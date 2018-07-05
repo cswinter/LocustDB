@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 use engine::vector_op::*;
 use engine::*;
 
@@ -16,7 +16,7 @@ pub struct VecSum<T, U> {
 }
 
 impl<T, U> VecSum<T, U> where
-    T: IntVecType<T>, U: IntVecType<U> + IntoUsize {
+    T: GenericIntVec<T>, U: GenericIntVec<U> + IntoUsize {
     pub fn boxed<'a>(input: BufferRef, grouping: BufferRef, output: BufferRef, max_index: BufferRef) -> BoxedOperator<'a> {
         Box::new(VecSum::<T, U> {
             input,
@@ -30,7 +30,7 @@ impl<T, U> VecSum<T, U> where
 }
 
 impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
-    T: IntVecType<T>, U: IntVecType<U> {
+    T: GenericIntVec<T>, U: GenericIntVec<U> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let nums = scratchpad.get::<T>(self.input);
         let grouping = scratchpad.get::<U>(self.grouping);
@@ -47,7 +47,7 @@ impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
     }
 
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::owned(Vec::<i64>::with_capacity(0)));
+        scratchpad.set(self.output, AnyVec::owned(Vec::<i64>::with_capacity(0)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.grouping, self.input, self.max_index] }

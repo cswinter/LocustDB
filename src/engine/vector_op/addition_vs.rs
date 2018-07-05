@@ -12,7 +12,7 @@ pub struct AdditionVS<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: IntVecType<T>> VecOperator<'a> for AdditionVS<T> {
+impl<'a, T: GenericIntVec<T>> VecOperator<'a> for AdditionVS<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut output = scratchpad.get_mut::<i64>(self.output);
         if stream { output.clear(); }

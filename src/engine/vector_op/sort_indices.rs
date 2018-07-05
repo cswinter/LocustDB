@@ -1,5 +1,5 @@
 use engine::vector_op::vector_operator::*;
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 
 
 #[derive(Debug)]
@@ -19,7 +19,7 @@ impl<'a> VecOperator<'a> for SortIndices {
             } else {
                 input.sort_indices_asc(&mut result);
             }
-            TypedVec::owned(result)
+            AnyVec::owned(result)
         };
         scratchpad.set(self.output, result);
     }

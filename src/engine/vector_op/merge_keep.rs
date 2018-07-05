@@ -13,7 +13,7 @@ pub struct MergeKeep<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: VecType<T> + 'a> VecOperator<'a> for MergeKeep<T> {
+impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeKeep<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let merged = {
             let ops = scratchpad.get::<u8>(self.merge_ops);
@@ -36,7 +36,7 @@ impl<'a, T: VecType<T> + 'a> VecOperator<'a> for MergeKeep<T> {
 }
 
 fn merge_keep<'a, T: 'a>(ops: &[u8], left: &[T], right: &[T]) -> BoxedVec<'a>
-    where T: VecType<T> {
+    where T: GenericVec<T> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;
@@ -49,6 +49,6 @@ fn merge_keep<'a, T: 'a>(ops: &[u8], left: &[T], right: &[T]) -> BoxedVec<'a>
             j += 1;
         }
     }
-    TypedVec::owned(result)
+    AnyVec::owned(result)
 }
 

@@ -14,7 +14,7 @@ pub struct SubPartition<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: VecType<T> + 'a> VecOperator<'a> for SubPartition<T> {
+impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SubPartition<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let sub_partitioning = {
             let partitioning = scratchpad.get::<Premerge>(self.partitioning);
@@ -36,7 +36,7 @@ impl<'a, T: VecType<T> + 'a> VecOperator<'a> for SubPartition<T> {
     }
 }
 
-fn subpartition<'a, T: VecType<T> + 'a>(
+fn subpartition<'a, T: GenericVec<T> + 'a>(
     partitioning: &[Premerge],
     left: &[T],
     right: &[T]) -> Vec<Premerge> {

@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 use engine::vector_op::*;
 use engine::*;
 
@@ -24,7 +24,7 @@ impl<T> VecCount<T> {
     }
 }
 
-impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
+impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut result = scratchpad.get_mut::<u32>(self.output);
         let grouping = scratchpad.get::<T>(self.grouping);
@@ -40,7 +40,7 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
     }
 
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::owned(Vec::<u32>::with_capacity(0)));
+        scratchpad.set(self.output, AnyVec::owned(Vec::<u32>::with_capacity(0)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.grouping, self.max_index] }

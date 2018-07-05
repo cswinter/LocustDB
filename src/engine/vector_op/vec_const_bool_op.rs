@@ -16,7 +16,7 @@ pub struct VecConstBoolOperator<T, U, Op> {
 }
 
 impl<'a, T: 'a, U, Op> VecConstBoolOperator<T, U, Op> where
-    T: VecType<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> {
+    T: GenericVec<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> {
     pub fn new(lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> VecConstBoolOperator<T, U, Op> {
         VecConstBoolOperator {
             lhs,
@@ -30,7 +30,7 @@ impl<'a, T: 'a, U, Op> VecConstBoolOperator<T, U, Op> where
 }
 
 impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
-    T: VecType<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> + fmt::Debug {
+    T: GenericVec<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> + fmt::Debug {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get::<T>(self.lhs);
         let c = &scratchpad.get_const::<U>(self.rhs);
@@ -42,7 +42,7 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::owned(Vec::<u8>::with_capacity(batch_size)));
+        scratchpad.set(self.output, AnyVec::owned(Vec::<u8>::with_capacity(batch_size)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }

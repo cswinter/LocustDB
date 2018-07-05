@@ -1,4 +1,4 @@
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 use engine::vector_op::vector_operator::*;
 use ingest::raw_val::RawVal;
 
@@ -14,7 +14,7 @@ impl<'a> VecOperator<'a> for Constant {
     fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
 
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let result = TypedVec::constant(self.val.clone());
+        let result = AnyVec::constant(self.val.clone());
         scratchpad.set(self.output, result);
     }
 

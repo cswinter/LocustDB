@@ -11,7 +11,7 @@ use regex::Regex;
 
 use engine::*;
 use engine::aggregator::Aggregator;
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 use engine::types::{BasicType, EncodingType};
 use engine::vector_op::comparator::*;
 use ingest::raw_val::RawVal;
@@ -101,22 +101,22 @@ impl<'a> Scratchpad<'a> {
     pub fn new(count: usize) -> Scratchpad<'a> {
         let mut buffers = Vec::with_capacity(count);
         for _ in 0..count {
-            buffers.push(RefCell::new(TypedVec::empty(0)));
+            buffers.push(RefCell::new(AnyVec::empty(0)));
         }
         Scratchpad { buffers }
     }
 
-    pub fn get_any(&self, index: BufferRef) -> Ref<TypedVec<'a>> {
+    pub fn get_any(&self, index: BufferRef) -> Ref<AnyVec<'a>> {
         Ref::map(self.buffers[index.0].borrow(), |x| x.as_ref())
     }
 
-    pub fn get<T: VecType<T> + 'a>(&self, index: BufferRef) -> Ref<[T]> {
+    pub fn get<T: GenericVec<T> + 'a>(&self, index: BufferRef) -> Ref<[T]> {
         Ref::map(self.buffers[index.0].borrow(), |x| T::unwrap(x.as_ref()))
     }
 
-    pub fn get_mut<T: VecType<T> + 'a>(&self, index: BufferRef) -> RefMut<Vec<T>> {
+    pub fn get_mut<T: GenericVec<T> + 'a>(&self, index: BufferRef) -> RefMut<Vec<T>> {
         RefMut::map(self.buffers[index.0].borrow_mut(), |x| {
-            let a: &mut TypedVec<'a> = x.borrow_mut();
+            let a: &mut AnyVec<'a> = x.borrow_mut();
             T::unwrap_mut(a)
         })
     }
@@ -126,7 +126,7 @@ impl<'a> Scratchpad<'a> {
     }
 
     pub fn collect(&mut self, index: BufferRef) -> BoxedVec<'a> {
-        let owned = mem::replace(&mut self.buffers[index.0], RefCell::new(TypedVec::empty(0)));
+        let owned = mem::replace(&mut self.buffers[index.0], RefCell::new(AnyVec::empty(0)));
         owned.into_inner()
     }
 

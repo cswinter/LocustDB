@@ -38,7 +38,7 @@ impl<'a, Op: ParameterizedIntegerOperation + fmt::Debug> VecOperator<'a> for Par
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::owned(Vec::<i64>::with_capacity(batch_size)));
+        scratchpad.set(self.output, AnyVec::owned(Vec::<i64>::with_capacity(batch_size)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }

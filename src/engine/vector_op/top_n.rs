@@ -4,7 +4,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use engine::*;
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 use engine::vector_op::*;
 use engine::vector_op::comparator::*;
 
@@ -20,10 +20,10 @@ pub struct TopN<T, C> {
     pub c: PhantomData<C>,
 }
 
-impl<'a, T: VecType<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for TopN<T, C> {
+impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for TopN<T, C> {
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.indices, TypedVec::owned(Vec::<usize>::with_capacity(self.n)));
-        scratchpad.set(self.keys, TypedVec::owned(Vec::<T>::with_capacity(self.n)));
+        scratchpad.set(self.indices, AnyVec::owned(Vec::<usize>::with_capacity(self.n)));
+        scratchpad.set(self.keys, AnyVec::owned(Vec::<T>::with_capacity(self.n)));
     }
 
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
@@ -77,7 +77,7 @@ impl<'a, T: VecType<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
             }
             output
         };
-        scratchpad.set(self.indices, TypedVec::owned(output));
+        scratchpad.set(self.indices, AnyVec::owned(output));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }

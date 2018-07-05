@@ -12,7 +12,7 @@ pub struct Select<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: VecType<T> {
+impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: GenericVec<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get::<T>(self.input);
         let indices = scratchpad.get::<usize>(self.indices);
@@ -24,7 +24,7 @@ impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: VecType<T> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::owned(Vec::<T>::with_capacity(batch_size)));
+        scratchpad.set(self.output, AnyVec::owned(Vec::<T>::with_capacity(batch_size)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input, self.indices] }

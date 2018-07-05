@@ -133,7 +133,7 @@ impl Column for StringPacker {
     fn name(&self) -> &str { &self.name }
     fn len(&self) -> usize { self.count }
     fn get_encoded(&self, _: usize, _: usize) -> Option<BoxedVec> { None }
-    fn decode(&self) -> BoxedVec { TypedVec::owned(self.iter().collect()) }
+    fn decode(&self) -> BoxedVec { AnyVec::owned(self.iter().collect()) }
     fn codec(&self) -> Option<Codec> { None }
     fn encoding_type(&self) -> EncodingType { EncodingType::U8 }
     fn basic_type(&self) -> BasicType { BasicType::String }
@@ -204,8 +204,8 @@ struct DictionaryEncoding<T> {
     t: PhantomData<T>,
 }
 
-impl<'a, T: IntVecType<T>> ColumnCodec<'a> for &'a DictionaryEncoding<T> {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b {
+impl<'a, T: GenericIntVec<T>> ColumnCodec<'a> for &'a DictionaryEncoding<T> {
+    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b {
         let data = T::unwrap(data);
         let result = <&str>::unwrap_mut(buffer);
         for encoded_value in data {

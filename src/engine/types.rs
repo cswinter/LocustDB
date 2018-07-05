@@ -169,7 +169,7 @@ impl OpaqueCodec {
 }
 
 impl<'a> ColumnCodec<'a> for OpaqueCodec {
-    fn unwrap_decode<'b>(&self, _data: &TypedVec<'b>, _buffer: &mut TypedVec<'b>) where 'a: 'b { panic!("OpaqueCodec.unwrap_decode()") }
+    fn unwrap_decode<'b>(&self, _data: &AnyVec<'b>, _buffer: &mut AnyVec<'b>) where 'a: 'b { panic!("OpaqueCodec.unwrap_decode()") }
     fn encoding_type(&self) -> EncodingType { self.encoding_type }
     fn decoded_type(&self) -> BasicType { self.decoded_type }
     fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }

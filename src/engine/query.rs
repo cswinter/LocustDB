@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::iter::Iterator;
-
 use ::QueryError;
 use engine::*;
 use engine::aggregator::*;
@@ -11,6 +7,9 @@ use engine::types::EncodingType;
 use engine::types::Type;
 use ingest::raw_val::RawVal;
 use mem_store::column::Column;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::iter::Iterator;
 use syntax::expression::*;
 use syntax::limit::*;
 

@@ -1,13 +1,13 @@
-extern crate locustdb;
-extern crate futures;
-extern crate log;
 extern crate env_logger;
+extern crate futures;
+extern crate locustdb;
+extern crate log;
 
-use std::cmp::min;
 use futures::executor::block_on;
 use locustdb::*;
-use locustdb::Value;
 use locustdb::nyc_taxi_data;
+use locustdb::Value;
+use std::cmp::min;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ =
@@ -97,7 +97,7 @@ fn group_by_integer_filter_integer_lt() {
             vec![3.into(), 11.into()],
             vec![4.into(), 5.into()],
             vec![5.into(), 2.into()],
-        ]
+        ],
     )
 }
 
@@ -212,7 +212,7 @@ fn z_test_count_by_passenger_count_pickup_year_trip_distance() {
             vec![Int(1), Int(2013), Int(0), Int(1965)],
             vec![Int(1), Int(2013), Int(1), Int(1167)],
             vec![Int(1), Int(2013), Int(2), Int(824)]
-        ]
+        ],
     )
 }
 
@@ -231,3 +231,17 @@ fn z_test_top_n() {
     )
 }
 
+#[test]
+fn z_test_group_by_trip_id() {
+    use Value::*;
+    test_query_nyc(
+        "SELECT trip_id / 5, sum(total_amount) FROM default;",
+        &[
+            vec![Int(0), Int(10160)],
+            vec![Int(1), Int(3694)],
+            vec![Int(2), Int(1758)],
+            vec![Int(3), Int(2740)],
+            vec![Int(4), Int(377955)]
+        ],
+    )
+}

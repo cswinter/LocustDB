@@ -12,7 +12,7 @@ pub struct Filter<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: VecType<T> {
+impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: GenericVec<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get::<T>(self.input);
         let filter = scratchpad.get::<u8>(self.filter);
@@ -29,7 +29,7 @@ impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: VecType<T> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, TypedVec::owned(Vec::<T>::with_capacity(batch_size)));
+        scratchpad.set(self.output, AnyVec::owned(Vec::<T>::with_capacity(batch_size)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input, self.filter] }

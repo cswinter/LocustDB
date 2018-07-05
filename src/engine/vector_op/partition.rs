@@ -14,7 +14,7 @@ pub struct Partition<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: VecType<T> + 'a> VecOperator<'a> for Partition<T> {
+impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Partition<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let premerge = {
             let left = scratchpad.get::<T>(self.left);
@@ -35,7 +35,7 @@ impl<'a, T: VecType<T> + 'a> VecOperator<'a> for Partition<T> {
     }
 }
 
-pub fn partition<'a, T: VecType<T> + 'a>(left: &[T], right: &[T], limit: usize) -> Vec<Premerge> {
+pub fn partition<'a, T: GenericVec<T> + 'a>(left: &[T], right: &[T], limit: usize) -> Vec<Premerge> {
     let mut result = Vec::new();
     let mut i = 0;
     let mut j = 0;

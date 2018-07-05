@@ -11,9 +11,9 @@ pub mod types;
 
 pub use self::typed_vec::{
     BoxedVec,
-    TypedVec,
-    VecType,
-    IntVecType,
+    AnyVec,
+    GenericVec,
+    GenericIntVec,
     IntoUsize,
     ConstType,
 };

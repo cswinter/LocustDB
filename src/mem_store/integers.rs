@@ -6,7 +6,7 @@ use std::{u8, u16, u32};
 use heapsize::HeapSizeOf;
 
 use engine::*;
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 use engine::types::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
@@ -35,7 +35,7 @@ impl IntegerColumn {
     }
 
 
-    pub fn encode<T: IntVecType<T>>(values: Vec<i64>, offset: i64) -> Vec<T> {
+    pub fn encode<T: GenericIntVec<T>>(values: Vec<i64>, offset: i64) -> Vec<T> {
         let mut encoded_vals = Vec::with_capacity(values.len());
         for v in values {
             encoded_vals.push(T::from(v - offset).unwrap());
@@ -59,8 +59,8 @@ impl<T> IntegerOffsetCodec<T> {
     }
 }
 
-impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerOffsetCodec<T> {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b {
+impl<'a, T: GenericIntVec<T>> ColumnCodec<'a> for IntegerOffsetCodec<T> {
+    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b {
         let data = T::unwrap(data);
         let result = <i64>::unwrap_mut(buffer);
         for value in data {
@@ -82,7 +82,7 @@ impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerOffsetCodec<T> {
     fn decode_range(&self, (min, max): (i64, i64)) -> Option<(i64, i64)> { Some((min + self.offset, max + self.offset)) }
 }
 
-impl<T: IntVecType<T>> fmt::Debug for IntegerOffsetCodec<T> {
+impl<T: GenericIntVec<T>> fmt::Debug for IntegerOffsetCodec<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if f.alternate() {
             write!(f, "Subtract({})", self.offset)
@@ -112,8 +112,8 @@ impl<T> IntegerCodec<T> {
     }
 }
 
-impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerCodec<T> {
-    fn unwrap_decode<'b>(&self, data: &TypedVec<'b>, buffer: &mut TypedVec<'b>) where 'a: 'b {
+impl<'a, T: GenericIntVec<T>> ColumnCodec<'a> for IntegerCodec<T> {
+    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b {
         let data = T::unwrap(data);
         let result = <i64>::unwrap_mut(buffer);
         for value in data {
@@ -133,7 +133,7 @@ impl<'a, T: IntVecType<T>> ColumnCodec<'a> for IntegerCodec<T> {
     fn decode_range(&self, range: (i64, i64)) -> Option<(i64, i64)> { Some(range) }
 }
 
-impl<T: IntVecType<T>> fmt::Debug for IntegerCodec<T> {
+impl<T: GenericIntVec<T>> fmt::Debug for IntegerCodec<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "IntCast")
     }

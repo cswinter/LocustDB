@@ -12,13 +12,13 @@ pub struct Compact<T, U> {
     u: PhantomData<U>,
 }
 
-impl<'a, T: VecType<T> + 'a, U: IntVecType<U>> Compact<T, U> {
+impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> Compact<T, U> {
     pub fn boxed(data: BufferRef, select: BufferRef) -> BoxedOperator<'a> {
         Box::new(Compact::<T, U> { data, select, t: PhantomData, u: PhantomData })
     }
 }
 
-impl<'a, T: VecType<T> + 'a, U: IntVecType<U>> VecOperator<'a> for Compact<T, U> {
+impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact<T, U> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut data = scratchpad.get_mut::<T>(self.data);
         let select = scratchpad.get::<U>(self.select);

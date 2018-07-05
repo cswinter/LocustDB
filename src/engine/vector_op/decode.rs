@@ -13,7 +13,7 @@ pub struct Decode<'a, T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: VecType<T> + 'a> VecOperator<'a> for Decode<'a, T> {
+impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Decode<'a, T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let encoded = scratchpad.get_any(self.input);
         let mut decoded = scratchpad.get_mut::<T>(self.output);

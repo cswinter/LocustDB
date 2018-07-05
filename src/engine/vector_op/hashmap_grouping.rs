@@ -1,13 +1,13 @@
 use fnv::FnvHashMap;
 
-use engine::typed_vec::TypedVec;
+use engine::typed_vec::AnyVec;
 use engine::vector_op::*;
 use engine::*;
 use ingest::raw_val::RawVal;
 
 
 #[derive(Debug)]
-pub struct HashMapGrouping<T: IntVecType<T>> {
+pub struct HashMapGrouping<T: GenericIntVec<T>> {
     input: BufferRef,
     unique_out: BufferRef,
     grouping_key_out: BufferRef,
@@ -15,7 +15,7 @@ pub struct HashMapGrouping<T: IntVecType<T>> {
     map: FnvHashMap<T, T>,
 }
 
-impl<T: IntVecType<T> + IntoUsize> HashMapGrouping<T> {
+impl<T: GenericIntVec<T> + IntoUsize> HashMapGrouping<T> {
     pub fn boxed<'a>(input: BufferRef,
                      unique_out: BufferRef,
                      grouping_key_out: BufferRef,
@@ -31,7 +31,7 @@ impl<T: IntVecType<T> + IntoUsize> HashMapGrouping<T> {
     }
 }
 
-impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
+impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let count = {
             let raw_grouping_key = scratchpad.get::<T>(self.input);
@@ -46,13 +46,13 @@ impl<'a, T: IntVecType<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
             }
             RawVal::Int(unique.len() as i64)
         };
-        scratchpad.set(self.cardinality_out, TypedVec::constant(count));
+        scratchpad.set(self.cardinality_out, AnyVec::constant(count));
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
         // TODO(clemens): Estimate capacities for unique + map?
-        scratchpad.set(self.unique_out, TypedVec::owned(Vec::<T>::new()));
-        scratchpad.set(self.grouping_key_out, TypedVec::owned(Vec::<T>::with_capacity(batch_size)));
+        scratchpad.set(self.unique_out, AnyVec::owned(Vec::<T>::new()));
+        scratchpad.set(self.grouping_key_out, AnyVec::owned(Vec::<T>::with_capacity(batch_size)));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }

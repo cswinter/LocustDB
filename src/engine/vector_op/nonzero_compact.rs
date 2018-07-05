@@ -10,13 +10,13 @@ pub struct NonzeroCompact<T> {
     t: PhantomData<T>,
 }
 
-impl<'a, T: IntVecType<T>> NonzeroCompact<T> {
+impl<'a, T: GenericIntVec<T>> NonzeroCompact<T> {
     pub fn boxed(data: BufferRef) -> BoxedOperator<'a> {
         Box::new(NonzeroCompact::<T> { data, t: PhantomData })
     }
 }
 
-impl<'a, T: IntVecType<T>> VecOperator<'a> for NonzeroCompact<T> {
+impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut data = scratchpad.get_mut::<T>(self.data);
         // Remove all unmodified entries

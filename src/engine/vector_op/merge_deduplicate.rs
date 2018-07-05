@@ -15,7 +15,7 @@ pub struct MergeDeduplicate<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: VecType<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
+impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (deduplicated, merge_ops) = {
             let left = scratchpad.get::<T>(self.left);
@@ -37,7 +37,7 @@ impl<'a, T: VecType<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
     }
 }
 
-fn merge_deduplicate<'a, T: VecType<T> + 'a>(left: &[T], right: &[T]) -> (BoxedVec<'a>, Vec<MergeOp>) {
+fn merge_deduplicate<'a, T: GenericVec<T> + 'a>(left: &[T], right: &[T]) -> (BoxedVec<'a>, Vec<MergeOp>) {
     // TODO(clemens): figure out maths for precise estimate + variance derived from how much grouping reduced cardinality
     let output_len_estimate = max(left.len(), right.len()) + min(left.len(), right.len()) / 2;
     let mut result = Vec::with_capacity(output_len_estimate);
@@ -73,7 +73,7 @@ fn merge_deduplicate<'a, T: VecType<T> + 'a>(left: &[T], right: &[T]) -> (BoxedV
         ops.push(MergeOp::TakeRight);
     }
 
-    (TypedVec::owned(result), ops)
+    (AnyVec::owned(result), ops)
 }
 
 

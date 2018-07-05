@@ -17,7 +17,7 @@ impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
             let constant = scratchpad.get_const::<String>(self.constant);
             self.codec.encode_str(&constant)
         };
-        scratchpad.set(self.output, TypedVec::constant(result));
+        scratchpad.set(self.output, AnyVec::constant(result));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.constant] }
@@ -45,7 +45,7 @@ impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let constant = scratchpad.get_const::<i64>(self.constant);
         let result = self.codec.encode_int(constant);
-        scratchpad.set(self.output, TypedVec::constant(result));
+        scratchpad.set(self.output, AnyVec::constant(result));
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.constant] }

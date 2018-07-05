@@ -24,7 +24,7 @@ impl<T, U> TypeConversionOperator<T, U> {
 }
 
 impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
-    T: VecType<T> + Copy, U: VecType<U>, T: Cast<U> {
+    T: GenericVec<T> + Copy, U: GenericVec<U>, T: Cast<U> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get::<T>(self.input);
         let mut output = scratchpad.get_mut::<U>(self.output);

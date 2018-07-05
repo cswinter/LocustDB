@@ -16,7 +16,7 @@ pub struct MergeDeduplicatePartitioned<T> {
     pub t: PhantomData<T>,
 }
 
-impl<'a, T: VecType<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<T> {
+impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (deduplicated, merge_ops) = {
             let partitioning = scratchpad.get::<Premerge>(self.partitioning);
@@ -39,9 +39,9 @@ impl<'a, T: VecType<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<T> 
     }
 }
 
-pub fn merge_deduplicate_partitioned<'a, T: VecType<T> + 'a>(partitioning: &[Premerge],
-                                                             left: &[T],
-                                                             right: &[T]) -> (BoxedVec<'a>, Vec<MergeOp>) {
+pub fn merge_deduplicate_partitioned<'a, T: GenericVec<T> + 'a>(partitioning: &[Premerge],
+                                                                left: &[T],
+                                                                right: &[T]) -> (BoxedVec<'a>, Vec<MergeOp>) {
     let output_len_estimate = max(left.len(), right.len()) + min(left.len(), right.len()) / 2;
     let mut result = Vec::with_capacity(output_len_estimate);
     let mut ops = Vec::<MergeOp>::with_capacity(output_len_estimate);
@@ -73,6 +73,6 @@ pub fn merge_deduplicate_partitioned<'a, T: VecType<T> + 'a>(partitioning: &[Pre
             // println!("{:?}", ops.last().unwrap());
         }
     }
-    (TypedVec::owned(result), ops)
+    (AnyVec::owned(result), ops)
 }
 
