@@ -1,8 +1,7 @@
+use engine::*;
+use engine::vector_op::*;
 use std::cmp;
 use std::fmt;
-
-use engine::vector_op::*;
-use engine::*;
 
 
 pub struct QueryExecutor<'a> {
@@ -104,9 +103,9 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
                     assert!(!(streaming_input && nonstreaming_input),
-                    "Streaming and nonstreaming inputs to {:?}:\n{:?}",
-                    op,
-                    op.inputs().iter().map(|i| &self.ops[i.0]).collect::<Vec<_>>())
+                            "Streaming and nonstreaming inputs to {:?}:\n{:?}",
+                            op,
+                            op.inputs().iter().map(|i| &self.ops[i.0]).collect::<Vec<_>>())
                 }
                 for output in op.outputs() {
                     if op.can_stream_output(output) {
@@ -172,11 +171,15 @@ impl<'a> QueryExecutor<'a> {
         let iters = (max_length - 1) / batch_size + 1;
         let stream = self.stages[stage].stream;
         trace!("batch_size: {}, max_length: {}, column_length: {}, iters: {}", batch_size, max_length, column_length, iters);
+        if show {
+            println!("\n-- Stage {} --", stage);
+            println!("batch_size: {}, max_length: {}, column_length: {}, iters: {}", batch_size, max_length, column_length, iters);
+        }
         for i in 0..iters {
             for &(op, streamable) in &self.stages[stage].ops {
                 self.ops[op].execute(stream && streamable, scratchpad);
                 if show && i == 0 {
-                    println!("\n> {}", self.ops[op].display(true));
+                    println!("{}", self.ops[op].display(true));
                     for output in self.ops[op].outputs() {
                         let data = scratchpad.get_any(output);
                         println!("{}", data.display());
@@ -186,6 +189,9 @@ impl<'a> QueryExecutor<'a> {
                     self.ops[op].finalize(scratchpad);
                 }
             }
+        }
+        if show && iters > 1 {
+            println!("\n[{} more iterations]", iters - 1);
         }
     }
 }
