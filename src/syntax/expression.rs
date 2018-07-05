@@ -1,6 +1,6 @@
-use std::collections::HashSet;
-
 use ingest::raw_val::RawVal;
+use self::Expr::*;
+use std::collections::HashSet;
 
 
 #[derive(Debug, Clone)]
@@ -14,6 +14,7 @@ pub enum Expr {
 #[derive(Debug, Copy, Clone)]
 pub enum Func2Type {
     Equals,
+    NotEquals,
     LT,
     GT,
     And,
@@ -30,8 +31,6 @@ pub enum Func1Type {
     Negate,
     ToYear,
 }
-
-use self::Expr::*;
 
 impl Expr {
     pub fn add_colnames(&self, result: &mut HashSet<String>) {

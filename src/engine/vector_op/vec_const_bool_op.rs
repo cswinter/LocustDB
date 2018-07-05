@@ -1,8 +1,7 @@
-use std::fmt;
-use std::marker::PhantomData;
-
 use engine::*;
 use engine::vector_op::vector_operator::*;
+use std::fmt;
+use std::marker::PhantomData;
 
 
 #[derive(Debug)]
@@ -97,3 +96,30 @@ impl<'a> BoolOperation<&'a str, String> for EqualsString {
     fn symbol() -> &'static str { "==" }
 }
 
+
+#[derive(Debug)]
+pub struct NotEquals<T> { t: PhantomData<T> }
+
+impl<T: PartialEq> BoolOperation<T, T> for NotEquals<T> {
+    #[inline]
+    fn perform(l: &T, r: &T) -> u8 { (l != r) as u8 }
+    fn symbol() -> &'static str { "<>" }
+}
+
+#[derive(Debug)]
+pub struct NotEqualsInt<T> { t: PhantomData<T> }
+
+impl<T: Into<i64> + Copy> BoolOperation<T, i64> for NotEqualsInt<T> {
+    #[inline]
+    fn perform(l: &T, r: &i64) -> u8 { (Into::<i64>::into(*l) != *r) as u8 }
+    fn symbol() -> &'static str { "<>" }
+}
+
+#[derive(Debug)]
+pub struct NotEqualsString;
+
+impl<'a> BoolOperation<&'a str, String> for NotEqualsString {
+    #[inline]
+    fn perform(l: &&'a str, r: &String) -> u8 { (l != r) as u8 }
+    fn symbol() -> &'static str { "<>" }
+}

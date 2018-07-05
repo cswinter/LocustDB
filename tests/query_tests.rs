@@ -185,6 +185,22 @@ fn test_division() {
     )
 }
 
+#[test]
+fn test_not_equals() {
+    use Value::*;
+    test_query(
+        "select num, count(1) from default where num <> 0;",
+        &[
+            vec![Int(1), Int(49)],
+            vec![Int(2), Int(24)],
+            vec![Int(3), Int(11)],
+            vec![Int(4), Int(5)],
+            vec![Int(5), Int(2)],
+            vec![Int(8), Int(1)]
+        ],
+    )
+}
+
 
 // Tests are run in alphabetical order (why ;_;) and this one takes a few seconds to run, so prepend z to run last
 #[test]

@@ -1,9 +1,5 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use chrono::{NaiveDateTime, Datelike};
-
 use ::QueryError;
+use chrono::{Datelike, NaiveDateTime};
 use engine::aggregator::Aggregator;
 use engine::filter::Filter;
 use engine::types::*;
@@ -13,6 +9,8 @@ use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column::Column;
 use mem_store::integers::IntegerCodec;
+use std::collections::HashMap;
+use std::sync::Arc;
 use syntax::expression::*;
 
 
@@ -38,6 +36,7 @@ pub enum QueryPlan<'a> {
 
     LessThanVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     EqualsVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
+    NotEqualsVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     DivideVS(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
     AddVS(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>),
     And(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
@@ -125,6 +124,8 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             VecOperator::less_than_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("less_than")),
         QueryPlan::EqualsVS(left_type, lhs, rhs) =>
             VecOperator::equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
+        QueryPlan::NotEqualsVS(left_type, lhs, rhs) =>
+            VecOperator::not_equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
         QueryPlan::DivideVS(lhs, rhs) =>
             VecOperator::divide_vs(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("division")),
         QueryPlan::AddVS(lhs, t, c) =>
@@ -288,6 +289,39 @@ impl<'a> QueryPlan<'a> {
                         (plan, Type::new(BasicType::Boolean, None).mutable())
                     }
                     _ => bail!(QueryError::TypeError, "{:?} = {:?}", type_lhs, type_rhs)
+                }
+            }
+            Func2(NotEquals, ref lhs, ref rhs) => {
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                match (type_lhs.decoded, type_rhs.decoded) {
+                    (BasicType::String, BasicType::String) => {
+                        let plan = if type_rhs.is_scalar {
+                            if type_lhs.is_encoded() {
+                                let encoded = QueryPlan::EncodeStrConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
+                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                            } else {
+                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                            }
+                        } else {
+                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
+                        };
+                        (plan, Type::new(BasicType::Boolean, None).mutable())
+                    }
+                    (BasicType::Integer, BasicType::Integer) => {
+                        let plan = if type_rhs.is_scalar {
+                            if type_lhs.is_encoded() {
+                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
+                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                            } else {
+                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                            }
+                        } else {
+                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <>= constant")
+                        };
+                        (plan, Type::new(BasicType::Boolean, None).mutable())
+                    }
+                    _ => bail!(QueryError::TypeError, "{:?} <> {:?}", type_lhs, type_rhs)
                 }
             }
             Func2(Or, ref lhs, ref rhs) => {

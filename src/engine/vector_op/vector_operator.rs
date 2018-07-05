@@ -214,6 +214,17 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn not_equals_vs(t: EncodingType, lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
+        match t {
+            EncodingType::Str => Box::new(VecConstBoolOperator::<_, _, NotEqualsString>::new(lhs, rhs, output)),
+            EncodingType::U8 => Box::new(VecConstBoolOperator::<_, _, NotEqualsInt<u8>>::new(lhs, rhs, output)),
+            EncodingType::U16 => Box::new(VecConstBoolOperator::<_, _, NotEqualsInt<u16>>::new(lhs, rhs, output)),
+            EncodingType::U32 => Box::new(VecConstBoolOperator::<_, _, NotEqualsInt<u32>>::new(lhs, rhs, output)),
+            EncodingType::I64 => Box::new(VecConstBoolOperator::<_, _, NotEquals<i64>>::new(lhs, rhs, output)),
+            _ => panic!("not_equals_vs not supported for type {:?}", t),
+        }
+    }
+
     pub fn divide_vs(lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
         Box::new(DivideVS { lhs, rhs, output })
     }

@@ -1,15 +1,14 @@
 #![allow(unused_parens)]
 
+use engine::aggregator::Aggregator;
+use engine::query::*;
+use ingest::raw_val::RawVal;
+use nom::{digit, is_alphabetic, is_alphanumeric, multispace};
+use std::boxed::Box;
 use std::str;
 use std::str::FromStr;
-use nom::{digit, is_alphabetic, is_alphanumeric, multispace};
-
 use syntax::expression::*;
 use syntax::limit::LimitClause;
-use engine::query::*;
-use engine::aggregator::Aggregator;
-use ingest::raw_val::RawVal;
-use std::boxed::Box;
 use time;
 
 
@@ -301,7 +300,7 @@ named!(function_name<&[u8], Func2Type>,
 );
 
 named!(infix_function_name<&[u8], Func2Type>,
-    alt!( equals | and | or | greater | less | add | subtract | divide | multiply )
+    alt!( equals | not_equals | and | or | greater | less | add | subtract | divide | multiply )
 );
 
 named!(divide<&[u8], Func2Type>,
@@ -322,6 +321,10 @@ named!(subtract<&[u8], Func2Type>,
 
 named!(equals<&[u8], Func2Type>,
     map!( tag!("="), |_| Func2Type::Equals)
+);
+
+named!(not_equals<&[u8], Func2Type>,
+    map!( tag!("<>"), |_| Func2Type::NotEquals)
 );
 
 named!(greater<&[u8], Func2Type>,
@@ -430,8 +433,8 @@ mod tests {
     #[test]
     fn test_last_hour() {
         assert!(
-        format!("{:?}", parse_query("select * from default where $LAST_HOUR;".as_bytes())).starts_with(
-            "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func2(GT, ColName(\"timestamp\"), Const(Int(")
+            format!("{:?}", parse_query("select * from default where $LAST_HOUR;".as_bytes())).starts_with(
+                "Done([], Query { select: [ColName(\"*\")], table: \"default\", filter: Func2(GT, ColName(\"timestamp\"), Const(Int(")
         )
     }
 
