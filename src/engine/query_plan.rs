@@ -419,7 +419,7 @@ impl<'a> QueryPlan<'a> {
                     #[cfg(not(feature = "nerf"))]
                     let nerf = false;
 
-                    if total_width == 0 {
+                    if total_width == 0 && (!nerf || plan.is_none()) {
                         plan = Some(query_plan);
                     } else if adjusted_max > 0 || nerf {
                         plan = plan.map(|plan|

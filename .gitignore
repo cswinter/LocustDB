@@ -16,3 +16,6 @@ locustdb.iml
 
 # readline
 .locustdb_history
+
+# vim
+rusty-tags.vi

@@ -35,3 +35,4 @@ env_logger = "0.5.6"
 [features]
 default=[]
 trace=[]
+nerf=[]

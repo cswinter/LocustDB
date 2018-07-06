@@ -19,6 +19,8 @@ mod fmt_table;
 const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
 fn main() {
+    #[cfg(feature = "nerf")]
+    println!("NERFED!");
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
     let locustdb = LocustDB::memory_only();
