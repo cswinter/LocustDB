@@ -1,20 +1,18 @@
 extern crate csv;
 extern crate flate2;
 
+use mem_store::batch::Batch;
+use mem_store::column::*;
+use mem_store::column_builder::*;
+use mem_store::strings::fast_build_string_column;
+use scheduler::*;
+use self::flate2::read::GzDecoder;
 use std::boxed::Box;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::ops::BitOr;
 use std::str;
 use std::sync::Arc;
-
-use self::flate2::read::GzDecoder;
-
-use mem_store::batch::Batch;
-use mem_store::column::*;
-use mem_store::strings::fast_build_string_column;
-use mem_store::column_builder::*;
-use scheduler::*;
 use super::extractor;
 
 type IngestionTransform = HashMap<String, extractor::Extractor>;
@@ -59,8 +57,8 @@ impl IngestFile {
         self
     }
 
-    pub fn with_ignore_cols(mut self, ignore: &[&str]) -> IngestFile {
-        self.ignore_cols = ignore.into_iter().map(|&x| x.to_owned()).collect();
+    pub fn with_ignore_cols(mut self, ignore: &[String]) -> IngestFile {
+        self.ignore_cols = ignore.into_iter().map(|x| x.to_owned()).collect();
         self
     }
 

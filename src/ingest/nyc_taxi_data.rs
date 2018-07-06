@@ -61,10 +61,6 @@ pub fn nyc_extractors() -> Vec<(&'static str, extractor::Extractor)> {
     vec![
         ("pickup_datetime", extractor::date_time),
         ("dropoff_datetime", extractor::date_time),
-        ("pickup_longitude", extractor::multiply_by_1000),
-        ("pickup_latitude", extractor::multiply_by_1000),
-        ("dropoff_longitude", extractor::multiply_by_1000),
-        ("dropoff_latitude", extractor::multiply_by_1000),
         ("trip_distance", extractor::multiply_by_1000),
         ("fare_amount", extractor::multiply_by_100),
         ("extra", extractor::multiply_by_100),
@@ -83,39 +79,40 @@ pub fn nyc_extractors() -> Vec<(&'static str, extractor::Extractor)> {
     ]
 }
 
-pub fn dropped_cols() -> Vec<&'static str> {
+pub fn dropped_cols() -> Vec<String> {
     vec![
-        "pickup",
-        "dropoff",
-        "max_temperature",
-        "min_temperature",
-        "dropoff_borocode",
-        "dropoff_boroname",
-        "dropoff_cdeligibil",
-        "dropoff_ct2010",
-        "dropoff_ctlabel",
-        "dropoff_latitude",
-        "dropoff_longitude",
-        "dropoff_ntacode",
-        "dropoff_ntaname",
-        "dropoff_nyct2010_gid",
-        "pickup_borocode",
-        "pickup_boroname",
-        "pickup_boroct2010",
-        "pickup_ct2010",
-        "pickup_ctlabel",
-        "pickup_latitude",
-        "pickup_longitude",
-        "pickup_ntacode",
-        "pickup_nyct2010_gid",
-
-        "tolls_amount",
-        "fare_amount",
-        "tip_amount",
-        "extra",
-        "average_wind_speed",
-        "snow_depth",
-        "precipitation",
+        "pickup".to_string(),
+        "dropoff".to_string(),
+        "max_temperature".to_string(),
+        "min_temperature".to_string(),
+        "dropoff_borocode".to_string(),
+        "dropoff_boroname".to_string(),
+        "dropoff_cdeligibil".to_string(),
+        "dropoff_ct2010".to_string(),
+        "dropoff_ctlabel".to_string(),
+        "dropoff_latitude".to_string(),
+        "dropoff_longitude".to_string(),
+        "dropoff_ntacode".to_string(),
+        "dropoff_ntaname".to_string(),
+        "dropoff_nyct2010_gid".to_string(),
+        "pickup_borocode".to_string(),
+        "pickup_boroname".to_string(),
+        "pickup_boroct2010".to_string(),
+        "pickup_ct2010".to_string(),
+        "pickup_ctlabel".to_string(),
+        "pickup_latitude".to_string(),
+        "pickup_longitude".to_string(),
+        "pickup_ntacode".to_string(),
+        "pickup_nyct2010_gid".to_string(),
+        "dropoff_boroct2010".to_string(),
+        "dropoff_datetime".to_string(),
+        "tolls_amount".to_string(),
+        "fare_amount".to_string(),
+        "tip_amount".to_string(),
+        "extra".to_string(),
+        "average_wind_speed".to_string(),
+        "snow_depth".to_string(),
+        "precipitation".to_string(),
     ]
 }
 
@@ -125,4 +122,14 @@ pub fn ingest_file(file_path: &str, tablename: &str) -> IngestFile {
         .with_extractors(&nyc_extractors())
         .with_ignore_cols(&dropped_cols())
         .with_always_string(&["vendor_id", "store_and_fwd_flag", "payment_type"])
+}
+
+pub fn ingest_passenger_count(file_path: &str, tablename: &str) -> IngestFile {
+    let drop = nyc_colnames().iter()
+        .map(|x| x.to_string())
+        .filter(|x| x != "passenger_count")
+        .collect::<Vec<_>>();
+    IngestFile::new(file_path, tablename)
+        .with_col_names(nyc_colnames())
+        .with_ignore_cols(&drop)
 }

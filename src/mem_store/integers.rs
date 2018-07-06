@@ -1,32 +1,34 @@
-use std::convert::From;
-use std::fmt;
-use std::marker::PhantomData;
-use std::{u8, u16, u32};
-
-use heapsize::HeapSizeOf;
-
 use engine::*;
 use engine::typed_vec::AnyVec;
 use engine::types::*;
+use heapsize::HeapSizeOf;
 use ingest::raw_val::RawVal;
 use mem_store::*;
+use std::{u16, u32, u8};
+use std::convert::From;
+use std::env;
+use std::fmt;
+use std::marker::PhantomData;
 
 pub struct IntegerColumn;
 
 impl IntegerColumn {
     pub fn new_boxed(name: &str, mut values: Vec<i64>, min: i64, max: i64) -> Box<Column> {
+        // TODO(clemens): remove, this was just a hack to vary memory bandwidth for benchmarks
+        let min_width = env::var_os("LOCUSTDB_MIN_WIDTH")
+            .map(|x| x.to_str().unwrap().parse::<u8>().unwrap()).unwrap_or(0);
         let range = Some((0, max - min));
-        if min >= 0 && max <= From::from(u8::MAX) {
+        if min >= 0 && max <= From::from(u8::MAX) && min_width < 2 {
             Column::encoded(name, IntegerColumn::encode::<u8>(values, 0), IntegerCodec::<u8>::new(), Some((min, max)))
-        } else if max - min <= From::from(u8::MAX) {
+        } else if max - min <= From::from(u8::MAX) && min_width < 2 {
             Column::encoded(name, IntegerColumn::encode::<u8>(values, min), IntegerOffsetCodec::<u8>::new(min), range)
-        } else if min >= 0 && max <= From::from(u16::MAX) {
+        } else if min >= 0 && max <= From::from(u16::MAX) && min_width < 3 {
             Column::encoded(name, IntegerColumn::encode::<u16>(values, 0), IntegerCodec::<u16>::new(), Some((min, max)))
-        } else if max - min <= From::from(u16::MAX) {
+        } else if max - min <= From::from(u16::MAX) && min_width < 3 {
             Column::encoded(name, IntegerColumn::encode::<u16>(values, min), IntegerOffsetCodec::<u16>::new(min), range)
-        } else if min >= 0 && max <= From::from(u32::MAX) {
+        } else if min >= 0 && max <= From::from(u32::MAX) && min_width < 5 {
             Column::encoded(name, IntegerColumn::encode::<u32>(values, 0), IntegerCodec::<u32>::new(), Some((min, max)))
-        } else if max - min <= From::from(u32::MAX) {
+        } else if max - min <= From::from(u32::MAX) && min_width < 5 {
             Column::encoded(name, IntegerColumn::encode::<u32>(values, min), IntegerOffsetCodec::<u32>::new(min), range)
         } else {
             values.shrink_to_fit();

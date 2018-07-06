@@ -202,21 +202,7 @@ fn test_not_equals() {
 }
 
 
-// Tests are run in alphabetical order (why ;_;) and this one takes a few seconds to run, so prepend z to run last
-#[test]
-fn z_test_count_by_dropoff_boroct2010() {
-    test_query_nyc(
-        "select dropoff_boroct2010, count(1) from default;",
-        &[
-            vec![0.into(), 668.into()],
-            vec![1000201.into(), 1.into()],
-            vec![1000202.into(), 2.into()],
-            vec![1000600.into(), 2.into()],
-            vec![1000700.into(), 7.into()],
-        ],
-    )
-}
-
+// Tests are run in alphabetical order (why ;_;) and these take a few seconds to run, so prepend z to run last
 #[test]
 fn z_test_count_by_passenger_count_pickup_year_trip_distance() {
     use Value::*;
@@ -249,7 +235,6 @@ fn z_test_top_n() {
 
 #[test]
 fn z_test_sparse_filter() {
-    use Value::*;
     test_query_nyc(
         "select trip_id from default where (passenger_count = 5) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (store_and_fwd_flag = \"1\") limit 100;",
         &[],

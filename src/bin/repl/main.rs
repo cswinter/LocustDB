@@ -1,22 +1,20 @@
-extern crate locustdb;
-
-extern crate rustyline;
-extern crate heapsize;
-extern crate time;
-extern crate nom;
-extern crate futures;
 extern crate failure;
+extern crate futures;
+extern crate heapsize;
+extern crate locustdb;
+extern crate nom;
+extern crate rustyline;
+extern crate time;
+
+use failure::Fail;
+use futures::executor::block_on;
+use locustdb::{LocustDB, TableStats};
+use std::env;
+use std::fs;
+use time::precise_time_ns;
 
 mod print_results;
 mod fmt_table;
-
-use std::env;
-use std::fs;
-
-use futures::executor::block_on;
-use locustdb::{LocustDB, TableStats};
-use time::precise_time_ns;
-use failure::Fail;
 
 const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
@@ -24,13 +22,13 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
     let locustdb = LocustDB::memory_only();
-    println!("Loading {} into table test.", filename);
     let start_time = precise_time_ns();
+    println!("Loading {} into table trips.", filename);
     if filename == &"nyc" {
         let mut loads = Vec::new();
         for path in fs::read_dir("test_data/nyc-taxi-data").unwrap() {
             loads.push(locustdb.load_csv(
-                locustdb::nyc_taxi_data::ingest_file(path.unwrap().path().to_str().unwrap(), "test")
+                locustdb::nyc_taxi_data::ingest_file(path.unwrap().path().to_str().unwrap(), "trips")
                     .with_chunk_size(1 << 20)));
         }
         for l in loads {
@@ -41,7 +39,28 @@ fn main() {
         for x in &["aa", "ab", "ac", "ad", "ae"] {
             let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
             loads.push(locustdb.load_csv(
-                locustdb::nyc_taxi_data::ingest_file(&path, "test")
+                locustdb::nyc_taxi_data::ingest_file(&path, "trips")
+                    .with_chunk_size(1 << 20)));
+        }
+        for l in loads {
+            let _ = block_on(l);
+        }
+    } else if filename == &"passenger_count" {
+        let mut loads = Vec::new();
+        for path in fs::read_dir("test_data/nyc-taxi-data").unwrap() {
+            loads.push(locustdb.load_csv(
+                locustdb::nyc_taxi_data::ingest_passenger_count(path.unwrap().path().to_str().unwrap(), "trips")
+                    .with_chunk_size(1 << 20)));
+        }
+        for l in loads {
+            let _ = block_on(l);
+        }
+    } else if filename == &"passenger_count100m" {
+        let mut loads = Vec::new();
+        for x in &["aa", "ab", "ac", "ad", "ae"] {
+            let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
+            loads.push(locustdb.load_csv(
+                locustdb::nyc_taxi_data::ingest_passenger_count(&path, "trips")
                     .with_chunk_size(1 << 20)));
         }
         for l in loads {
@@ -49,10 +68,10 @@ fn main() {
         }
     } else {
         let ingestion_request = if filename.contains("nyc-taxi") {
-            locustdb::nyc_taxi_data::ingest_file(filename, "test")
+            locustdb::nyc_taxi_data::ingest_file(filename, "trips")
                 .with_chunk_size(LOAD_CHUNK_SIZE)
         } else {
-            locustdb::IngestFile::new(filename, "test")
+            locustdb::IngestFile::new(filename, "trips")
                 .with_chunk_size(LOAD_CHUNK_SIZE)
         };
         block_on(locustdb.load_csv(ingestion_request))
