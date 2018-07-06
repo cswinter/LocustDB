@@ -248,6 +248,15 @@ fn z_test_top_n() {
 }
 
 #[test]
+fn z_test_sparse_filter() {
+    use Value::*;
+    test_query_nyc(
+        "select trip_id from default where (passenger_count = 5) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (store_and_fwd_flag = \"1\") limit 100;",
+        &[],
+    )
+}
+
+#[test]
 fn z_test_group_by_trip_id() {
     use Value::*;
     test_query_nyc(
