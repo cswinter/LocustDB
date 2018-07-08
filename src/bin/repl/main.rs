@@ -20,7 +20,7 @@ const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
 fn main() {
     #[cfg(feature = "nerf")]
-    println!("NERFED!");
+        println!("NERFED!");
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
     let locustdb = LocustDB::memory_only();
@@ -116,7 +116,7 @@ fn repl(locustdb: &LocustDB) {
 
         let mut print_trace = false;
         let mut explain = false;
-        let mut show = false;
+        let mut show = vec![];
         let mut s: &str = &s;
         if s.starts_with(":explain") {
             explain = true;
@@ -127,8 +127,16 @@ fn repl(locustdb: &LocustDB) {
             s = &s[7..];
         }
         if s.starts_with(":show") {
-            show = true;
-            s = &s[6..];
+            show = if s.starts_with(":show(") {
+                let end = s.find(')').unwrap();
+                let partition = s[6..end].parse::<usize>().expect("must pass integer to :show(x) command");
+                s = &s[(end + 2)..];
+                println!("{}", s);
+                vec![partition]
+            } else {
+                s = &s[6..];
+                vec![0]
+            }
         }
         if s.starts_with(":recover") {
             locustdb.recover();
@@ -139,7 +147,7 @@ fn repl(locustdb: &LocustDB) {
             continue;
         }
 
-        let query = locustdb.run_query(s, explain, if show { vec![0] } else { vec![] });
+        let query = locustdb.run_query(s, explain, show);
         match block_on(query) {
             Ok((result, trace)) => {
                 if print_trace {
