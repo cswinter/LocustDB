@@ -3,65 +3,72 @@
 An experimental analytics database aiming to set a new standard for query performance on commodity hardware.
 See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogpost] for an overview of current capabilities.
 
-## How to Build
+## How to use
 
-LocustDB requires the latest nightly.
+1. [Install Rust](https://rustup.rs/)
+2. Clone the repository
 
-**Tests**
+```Bash
+git clone https://github.com/cswinter/LocustDB.git
+cd LocustDB
+```
 
-`cargo test`
+3. Run the repl!
 
-**Repl**
+```Bash
+RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nighly run --release --bin repl -- test_data/nyc-taxi.csv.gz
+```
 
-`cargo run --release --bin repl -- path/to/data.csv`
+Instead of `test_data/nyc-taxi.csv.gz`, you can also pass a path to any other `.csv` or gzipped `.csv.gz` file. The first line of the file will need to contain the names for each column. The datatypes for each column will be derived automatically, but things might break for columns that contain a mixture of numbers/strings/empty entries.
 
-**Repl (max performance)**
+You can pass the magic strings `nyc100m` or `nyc` to load the first 5 files (100m records) or full 1.46 billion taxi rides dataset which you will need to [download][nyc-taxi-trips] first (for the full dataset, you will need about 120GB of disk space and 60GB of RAM).
 
-`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo run --release --bin repl -- path/to/data.csv`
+## Running tests or benchmarks
 
-**Benchmarks**
+`cargo +nightly test`
 
-`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo bench`
+`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly bench`
 
 
-# Goals
+## Goals
 A vision for LocustDB.
 
-## Fast
+### Fast
 Query performance for analytics workloads is best-in-class on commodity hardware, both for data cached in memory and for data read from disk.
 
-## Cost-efficient
+### Cost-efficient
 LocustDB automatically achieves spectacular compression ratios, has minimal indexing overhead, and requires less machines to store the same amount of data than any other system. The trade-off between performance and storage efficiency is configurable.
 
-## Low latency
+### Low latency
 New data is available for queries within seconds.
 
-## Scalable
+### Scalable
 LocustDB scales seamlessly from a single machine to large clusters.
 
-## Flexible and easy to use
+### Flexible and easy to use
 LocustDB should be usable with minimal configuration or schema-setup as:
 - a highly available distributed analytics system continuously ingesting data and executing queries
 - a commandline tool/repl for loading and analysing data from CSV files
 - an embedded database/query engine included in other Rust programs via cargo
 
 
-# Non-goals
-Until LocustDB is production ready these are distracttions at best, if not wholly incompatible with the main goals.
+## Non-goals
+Until LocustDB is production ready these are distractions at best, if not wholly incompatible with the main goals.
 
-## Strong consistency and durability guarantees
+### Strong consistency and durability guarantees
 - small amounts of data may be lost during ingestion
 - when a node is unavailable, queries may return incomplete results
 - results returned by queries may not represent a consistent snapshot
 
-## High QPS
+### High QPS
 LocustDB does not efficiently execute queries inserting or operating on small amounts of data.
 
-## Full SQL support
+### Full SQL support
 - All data is append only and can only be deleted/expired in bulk.
 - LocustDB does not support queries that cannot be evaluated independently by each node (large joins, complex subqueries, precise set sizes, precise top n).
 
-## Support for cost-inefficient or specialised hardware
+### Support for cost-inefficient or specialised hardware
 LocustDB does not run on GPUs.
 
+[nyc-taxi-trips]: https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0
 [blogpost]: TODO
