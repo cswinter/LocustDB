@@ -16,7 +16,7 @@ cd LocustDB
 3. Run the repl!
 
 ```Bash
-RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nighly run --release --bin repl -- test_data/nyc-taxi.csv.gz
+RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- test_data/nyc-taxi.csv.gz
 ```
 
 Instead of `test_data/nyc-taxi.csv.gz`, you can also pass a path to any other `.csv` or gzipped `.csv.gz` file. The first line of the file will need to contain the names for each column. The datatypes for each column will be derived automatically, but things might break for columns that contain a mixture of numbers/strings/empty entries.
