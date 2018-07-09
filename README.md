@@ -61,7 +61,7 @@ LocustDB does not efficiently execute queries inserting or operating on small am
 - All data is append only and can only be deleted/expired in bulk.
 - LocustDB does not support queries that cannot be evaluated independently by each node (large joins, complex subqueries, precise set sizes, precise top n).
 
-## Support for cost-ineffective or specialised hardware
+## Support for cost-inefficient or specialised hardware
 LocustDB does not run on GPUs.
 
 [blogpost]: TODO
