@@ -71,4 +71,4 @@ LocustDB does not efficiently execute queries inserting or operating on small am
 LocustDB does not run on GPUs.
 
 [nyc-taxi-trips]: https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0
-[blogpost]: TODO
+[blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
