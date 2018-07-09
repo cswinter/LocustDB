@@ -30,5 +30,5 @@ Your basic steps to get going:
 [issues]: https://github.com/cswinter/LocustDB/issues
 [new-issue]: https://github.com/cswinter/LocustDB/issues/new
 [good-first-issue]: https://github.com/cswinter/LocustDB/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
-[blogpost]: TODO
+[blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
 [readme]: https://github.com/cswinter/LocustDB/blob/master/README.md
