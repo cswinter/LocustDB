@@ -1,6 +1,6 @@
 # Contributing to LocustDB
 
-Thank you for your interest in contributing to LocustDB! Good places to start are [this blog post][blogpost], the [README.md][readme] and the [issue tracker][issues].
+Thank you for your interest in contributing to LocustDB! Good places to start are [this blog post][blogpost], the [README.md][readme] and the [issue tracker][issues]. I can also recommend [this blogpost][diving-into], which describes a general strategy for making changes to a codebase you've never worked with before.
 
 If you have any question about LocustDB, feel free to ask on [gitter][gitter].
 
@@ -32,3 +32,4 @@ Your basic steps to get going:
 [good-first-issue]: https://github.com/cswinter/LocustDB/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
 [readme]: https://github.com/cswinter/LocustDB/blob/master/README.md
+[diving-into]: http://www.lihaoyi.com/post/DivingIntoOtherPeoplesCode.html
