@@ -16,6 +16,7 @@ named!(pub parse_query<&[u8], Query>, alt_complete!(full_query | simple_query));
 
 named!(full_query<&[u8], Query>,
     do_parse!(
+        opt!(multispace) >>
         tag_no_case!("select") >>
         multispace >>
         select: select_clauses >>
@@ -38,6 +39,7 @@ named!(full_query<&[u8], Query>,
 
 named!(simple_query<&[u8], Query>,
     do_parse!(
+        opt!(multispace) >>
         tag_no_case!("select") >>
         multispace >>
         select: select_clauses >>
