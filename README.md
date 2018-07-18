@@ -5,7 +5,7 @@ See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogp
 
 ## How to use
 
-1. [Install Rust](https://rustup.rs/)
+1. [Install Rust][rustup]
 2. Clone the repository
 
 ```Bash
@@ -22,6 +22,14 @@ RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release -
 Instead of `test_data/nyc-taxi.csv.gz`, you can also pass a path to any other `.csv` or gzipped `.csv.gz` file. The first line of the file will need to contain the names for each column. The datatypes for each column will be derived automatically, but things might break for columns that contain a mixture of numbers/strings/empty entries.
 
 You can pass the magic strings `nyc100m` or `nyc` to load the first 5 files (100m records) or full 1.46 billion taxi rides dataset which you will need to [download][nyc-taxi-trips] first (for the full dataset, you will need about 120GB of disk space and 60GB of RAM).
+
+### No such subcommand: +nightly
+
+If you run into this error, you likely have an old version of `cargo` installed (`cargo -V` has to resturn 1.0.0 at the very least). You should uninstall cargo/rust from your system and reinstall using [rustup][rustup]. On Unix, you can get a good install with the following command (restart your shell afterwards):
+
+```
+curl https://sh.rustup.rs -sSf | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh
+```
 
 ## Running tests or benchmarks
 
@@ -72,3 +80,4 @@ LocustDB does not run on GPUs.
 
 [nyc-taxi-trips]: https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
+[rustup]: https://rustup.rs/
