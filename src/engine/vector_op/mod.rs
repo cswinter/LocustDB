@@ -11,7 +11,7 @@ mod constant;
 mod constant_vec;
 mod count;
 mod merge_keep;
-mod decode;
+mod dict_lookup;
 mod division_vs;
 mod encode_const;
 mod exists;

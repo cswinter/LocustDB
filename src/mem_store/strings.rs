@@ -11,6 +11,7 @@ use heapsize::HeapSizeOf;
 use num::PrimInt;
 use seahash::SeaHasher;
 
+use engine::query_plan::QueryPlan;
 use engine::typed_vec::*;
 use engine::types::*;
 use ingest::raw_val::RawVal;
@@ -205,12 +206,8 @@ struct DictionaryEncoding<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> ColumnCodec<'a> for &'a DictionaryEncoding<T> {
-    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b {
-        let data = T::unwrap(data);
-        let result = <&str>::unwrap_mut(buffer);
-        for encoded_value in data {
-            result.push(self.mapping[encoded_value.cast_usize()].as_ref());
-        }
+    fn decode<'b>(&self, plan: Box<QueryPlan<'b>>) -> QueryPlan<'b> where 'a: 'b {
+        QueryPlan::DictLookup(plan, self.encoding_type(), &self.mapping)
     }
 
     fn encode_str(&self, s: &str) -> RawVal {

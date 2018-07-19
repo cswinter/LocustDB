@@ -1,7 +1,7 @@
 use std::fmt;
 
+use engine::query_plan::QueryPlan;
 use mem_store::*;
-use engine::*;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum EncodingType {
@@ -169,7 +169,7 @@ impl OpaqueCodec {
 }
 
 impl<'a> ColumnCodec<'a> for OpaqueCodec {
-    fn unwrap_decode<'b>(&self, _data: &AnyVec<'b>, _buffer: &mut AnyVec<'b>) where 'a: 'b { panic!("OpaqueCodec.unwrap_decode()") }
+    fn decode<'b>(&self, _plan: Box<QueryPlan<'b>>) -> QueryPlan<'b> where 'a: 'b { panic!("OpaqueCodec.decode()") }
     fn encoding_type(&self) -> EncodingType { self.encoding_type }
     fn decoded_type(&self) -> BasicType { self.decoded_type }
     fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }

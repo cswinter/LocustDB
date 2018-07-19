@@ -1,10 +1,10 @@
 use std::fmt;
 use std::sync::Arc;
-// use std::mem;
 
-use heapsize::HeapSizeOf;
+use engine::query_plan::QueryPlan;
+use engine::typed_vec::{AnyVec, BoxedVec};
 use engine::types::*;
-use engine::typed_vec::{BoxedVec, AnyVec};
+use heapsize::HeapSizeOf;
 use ingest::raw_val::RawVal;
 
 pub trait Column: HeapSizeOf + fmt::Debug + Send + Sync {
@@ -105,7 +105,7 @@ impl<T: HeapSizeOf> HeapSizeOf for PlainColumn<T> {
 pub type Codec<'a> = Arc<ColumnCodec<'a> + 'a>;
 
 pub trait ColumnCodec<'a>: fmt::Debug {
-    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b;
+    fn decode<'b>(&self, plan: Box<QueryPlan<'b>>) -> QueryPlan<'b> where 'a: 'b;
     fn encoding_type(&self) -> EncodingType;
     fn decoded_type(&self) -> BasicType;
     fn is_summation_preserving(&self) -> bool;
@@ -123,9 +123,7 @@ pub trait ColumnCodec<'a>: fmt::Debug {
 }
 
 impl<'a, T> ColumnCodec<'a> for &'a T where T: ColumnCodec<'static> {
-    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b {
-        (*self).unwrap_decode(data, buffer)
-    }
+    fn decode<'b>(&self, plan: Box<QueryPlan<'b>>) -> QueryPlan<'b> where 'a: 'b { (*self).decode(plan) }
     fn encoding_type(&self) -> EncodingType { (*self).encoding_type() }
     fn decoded_type(&self) -> BasicType { (*self).decoded_type() }
     fn is_summation_preserving(&self) -> bool { (*self).is_summation_preserving() }

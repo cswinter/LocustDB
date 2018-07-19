@@ -12,7 +12,7 @@ use regex::Regex;
 use engine::*;
 use engine::aggregator::Aggregator;
 use engine::typed_vec::AnyVec;
-use engine::types::{BasicType, EncodingType};
+use engine::types::EncodingType;
 use engine::vector_op::comparator::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
@@ -20,35 +20,35 @@ use mem_store::*;
 use engine::vector_op::addition_vs::AdditionVS;
 use engine::vector_op::bit_unpack::BitUnpackOperator;
 use engine::vector_op::bool_op::*;
-use engine::vector_op::merge_aggregate::MergeAggregate;
 use engine::vector_op::column_ops::*;
 use engine::vector_op::compact::Compact;
 use engine::vector_op::constant::Constant;
 use engine::vector_op::constant_vec::ConstantVec;
 use engine::vector_op::count::VecCount;
-use engine::vector_op::decode::Decode;
+use engine::vector_op::dict_lookup::DictLookup;
 use engine::vector_op::division_vs::DivideVS;
 use engine::vector_op::encode_const::*;
 use engine::vector_op::exists::Exists;
-use engine::vector_op::merge_keep::MergeKeep;
 use engine::vector_op::filter::Filter;
 use engine::vector_op::hashmap_grouping::HashMapGrouping;
+use engine::vector_op::merge::Merge;
+use engine::vector_op::merge_aggregate::MergeAggregate;
+use engine::vector_op::merge_deduplicate::MergeDeduplicate;
+use engine::vector_op::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
 use engine::vector_op::merge_drop::MergeDrop;
+use engine::vector_op::merge_keep::MergeKeep;
 use engine::vector_op::nonzero_compact::NonzeroCompact;
 use engine::vector_op::nonzero_indices::NonzeroIndices;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
+use engine::vector_op::partition::Partition;
 use engine::vector_op::select::Select;
 use engine::vector_op::sort_indices::SortIndices;
+use engine::vector_op::subpartition::SubPartition;
 use engine::vector_op::sum::VecSum;
 use engine::vector_op::to_year::ToYear;
-use engine::vector_op::merge::Merge;
 use engine::vector_op::top_n::TopN;
 use engine::vector_op::type_conversion::TypeConversionOperator;
 use engine::vector_op::vec_const_bool_op::*;
-use engine::vector_op::subpartition::SubPartition;
-use engine::vector_op::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
-use engine::vector_op::partition::Partition;
-use engine::vector_op::merge_deduplicate::MergeDeduplicate;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
@@ -87,7 +87,7 @@ pub trait VecOperator<'a>: fmt::Debug {
     fn display_op(&self, alternate: bool) -> String;
 }
 
-fn short_type_name<T: ? Sized>() -> String {
+fn short_type_name<T: ?Sized>() -> String {
     let full_name = unsafe { type_name::<T>() };
     let re = Regex::new(r"\w+::").unwrap();
     re.replace_all(full_name, "").into_owned()
@@ -147,11 +147,13 @@ impl<'a> VecOperator<'a> {
         Box::new(GetEncoded { col, output, batch_size: 0, current_index: 0 })
     }
 
-    pub fn decode(input: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {
-        match codec.decoded_type() {
-            BasicType::Integer => Box::new(Decode::<i64> { input, output, codec, t: PhantomData }),
-            BasicType::String => Box::new(Decode::<&str> { input, output, codec, t: PhantomData }),
-            t => panic!("decode not supported for type {:?}", t),
+    pub fn dict_lookup(indices: BufferRef, dictionary: &'a Vec<String>, output: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
+        match t {
+            EncodingType::U8 => Box::new(DictLookup::<'a, u8> { indices, output, dictionary, t: PhantomData }),
+            EncodingType::U16 => Box::new(DictLookup::<'a, u16> { indices, output, dictionary, t: PhantomData }),
+            EncodingType::U32 => Box::new(DictLookup::<'a, u32> { indices, output, dictionary, t: PhantomData }),
+            EncodingType::I64 => Box::new(DictLookup::<'a, i64> { indices, output, dictionary, t: PhantomData }),
+            _ => panic!("dict_lookup not supported for type {:?}", t),
         }
     }
 

@@ -1,14 +1,15 @@
-use engine::*;
-use engine::typed_vec::AnyVec;
-use engine::types::*;
-use heapsize::HeapSizeOf;
-use ingest::raw_val::RawVal;
-use mem_store::*;
 use std::{u16, u32, u8};
 use std::convert::From;
 use std::env;
 use std::fmt;
 use std::marker::PhantomData;
+
+use engine::*;
+use engine::query_plan::QueryPlan;
+use engine::types::*;
+use heapsize::HeapSizeOf;
+use ingest::raw_val::RawVal;
+use mem_store::*;
 
 pub struct IntegerColumn;
 
@@ -62,16 +63,13 @@ impl<T> IntegerOffsetCodec<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> ColumnCodec<'a> for IntegerOffsetCodec<T> {
-    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b {
-        let data = T::unwrap(data);
-        let result = <i64>::unwrap_mut(buffer);
-        for value in data {
-            result.push(value.to_i64().unwrap() + self.offset);
-        }
+    fn decode<'b>(&self, plan: Box<QueryPlan<'b>>) -> QueryPlan<'b> where 'a: 'b {
+        QueryPlan::AddVS(plan, self.encoding_type(),
+                         Box::new(QueryPlan::Constant(RawVal::Int(self.offset), false)))
     }
 
     fn encode_int(&self, val: i64) -> RawVal {
-        // TODO(clemens): Underflow. Check for this in query planner?
+        // TODO(clemens): underflow?
         RawVal::Int(val - self.offset)
     }
 
@@ -115,12 +113,8 @@ impl<T> IntegerCodec<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> ColumnCodec<'a> for IntegerCodec<T> {
-    fn unwrap_decode<'b>(&self, data: &AnyVec<'b>, buffer: &mut AnyVec<'b>) where 'a: 'b {
-        let data = T::unwrap(data);
-        let result = <i64>::unwrap_mut(buffer);
-        for value in data {
-            result.push(value.to_i64().unwrap());
-        }
+    fn decode<'b>(&self, plan: Box<QueryPlan<'b>>) -> QueryPlan<'b> where 'a: 'b {
+        QueryPlan::TypeConversion(plan, self.encoding_type(), EncodingType::I64)
     }
 
     fn encode_int(&self, val: i64) -> RawVal {

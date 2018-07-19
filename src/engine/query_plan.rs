@@ -20,7 +20,7 @@ pub enum QueryPlan<'a> {
     DecodeColumn(&'a Column),
     ReadBuffer(BufferRef),
 
-    Decode(Box<QueryPlan<'a>>, Codec<'a>),
+    DictLookup(Box<QueryPlan<'a>>, EncodingType, &'a Vec<String>),
     TypeConversion(Box<QueryPlan<'a>>, EncodingType, EncodingType),
 
     Exists(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>),
@@ -89,8 +89,8 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
         }
         QueryPlan::Constant(ref c, hide_value) =>
             VecOperator::constant(c.clone(), hide_value, result.named_buffer("constant")),
-        QueryPlan::Decode(plan, codec) =>
-            VecOperator::decode(prepare(*plan, result), result.named_buffer("decoded"), codec),
+        QueryPlan::DictLookup(plan, t, dict) =>
+            VecOperator::dict_lookup(prepare(*plan, result), dict, result.named_buffer("decoded"), t),
         QueryPlan::TypeConversion(plan, initial_type, target_type) => if initial_type == target_type {
             return prepare(*plan, result);
         } else {
@@ -195,7 +195,7 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
         (Aggregator::Sum, mut plan) => {
             output_location = result.named_buffer("sum");
             if !plan_type.is_summation_preserving() {
-                plan = QueryPlan::Decode(Box::new(plan), plan_type.codec.clone().unwrap());
+                plan = plan_type.codec.clone().unwrap().decode(Box::new(plan));
                 plan_type = plan_type.decoded();
             }
             (VecOperator::summation(prepare(plan, result),
@@ -216,7 +216,7 @@ pub fn order_preserving<'a>((plan, t): (QueryPlan<'a>, Type<'a>)) -> (QueryPlan<
         (plan, t)
     } else {
         let new_type = t.decoded();
-        (QueryPlan::Decode(Box::new(plan), t.codec.unwrap()), new_type)
+        (t.codec.unwrap().decode(Box::new(plan)), new_type)
     }
 }
 
@@ -347,7 +347,7 @@ impl<'a> QueryPlan<'a> {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if let Some(codec) = type_lhs.codec {
-                                plan_lhs = QueryPlan::Decode(Box::new(plan_lhs), codec);
+                                plan_lhs = codec.decode(Box::new(plan_lhs));
                             }
                             QueryPlan::DivideVS(Box::new(plan_lhs), Box::new(plan_rhs))
                         } else {
@@ -364,7 +364,7 @@ impl<'a> QueryPlan<'a> {
                     bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                 }
                 let decoded = match t.codec.clone() {
-                    Some(codec) => QueryPlan::Decode(Box::new(plan), codec),
+                    Some(codec) => codec.decode(Box::new(plan)),
                     None => plan,
                 };
                 (QueryPlan::ToYear(Box::new(decoded)), t.decoded())
@@ -382,9 +382,7 @@ impl<'a> QueryPlan<'a> {
                     let max_cardinality = QueryPlan::encoding_range(&gk_plan).map_or(1 << 63, |i| i.1);
                     let decoded_group_by = gk_type.codec.clone().map_or(
                         QueryPlan::EncodedGroupByPlaceholder,
-                        |codec| QueryPlan::Decode(
-                            Box::new(QueryPlan::EncodedGroupByPlaceholder),
-                            codec));
+                        |codec| codec.decode(Box::new(QueryPlan::EncodedGroupByPlaceholder)));
                     (gk_plan.clone(), gk_type.clone(), max_cardinality, vec![(decoded_group_by, gk_type.decoded())])
                 })
         } else {
@@ -441,9 +439,7 @@ impl<'a> QueryPlan<'a> {
                         EncodingType::I64,
                         plan_type.encoding_type());
                     if let Some(codec) = plan_type.codec.clone() {
-                        decode_plan = QueryPlan::Decode(
-                            Box::new(decode_plan),
-                            codec)
+                        decode_plan = codec.decode(Box::new(decode_plan));
                     }
                     decode_plans.push((decode_plan, plan_type.decoded()));
 
@@ -482,7 +478,9 @@ impl<'a> QueryPlan<'a> {
             DivideVS(ref left, box Constant(RawVal::Int(c), _)) =>
                 left.encoding_range().map(|(min, max)|
                     if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
-            Decode(ref plan, ref codec) => plan.encoding_range().and_then(|x| codec.decode_range(x)),
+            AddVS(ref left, _, box Constant(RawVal::Int(c), _)) =>
+                left.encoding_range().map(|(min, max)| (min + c, max + c)),
+            TypeConversion(ref left, _, _) => left.encoding_range(),
             _ => None, // TODO(clemens): many more cases where we can determine range
         }
     }

@@ -69,7 +69,7 @@ impl Query {
         for expr in &self.select {
             let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
             if let Some(codec) = plan_type.codec {
-                plan = QueryPlan::Decode(Box::new(plan), codec);
+                plan = codec.decode(Box::new(plan));
             }
             select.push(query_plan::prepare(plan, &mut executor));
         }
@@ -194,9 +194,8 @@ impl Query {
                 };
                 if t.is_encoded() {
                     let decoded = query_plan::prepare(
-                        QueryPlan::Decode(
-                            Box::new(QueryPlan::ReadBuffer(compacted)),
-                            t.codec.clone().unwrap()), &mut executor);
+                        t.codec.clone().unwrap().decode(Box::new(QueryPlan::ReadBuffer(compacted))),
+                        &mut executor);
                     select.push((decoded, t.decoded()));
                 } else {
                     select.push((compacted, t));

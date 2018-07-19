@@ -1,5 +1,5 @@
 mod batch_merging;
-mod query_plan;
+pub mod query_plan;
 pub mod vector_op;
 pub mod aggregator;
 pub mod filter;
