@@ -1,5 +1,5 @@
 extern crate env_logger;
-extern crate futures;
+extern crate futures_core;
 extern crate locustdb;
 extern crate log;
 

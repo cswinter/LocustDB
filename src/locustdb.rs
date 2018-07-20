@@ -1,18 +1,22 @@
+use std::str;
+use std::sync::Arc;
+
+use futures_channel::oneshot;
+use futures_core::*;
+use futures_util::FutureExt;
+use nom;
+
+use QueryError;
+use QueryResult;
 use disk_store::db::*;
 use disk_store::noop_storage::NoopStorage;
 use engine::query_task::QueryTask;
-use futures::*;
-use futures_channel::oneshot;
 use ingest::csv_loader::{CSVIngestionTask, IngestFile};
 use mem_store::table::TableStats;
-use nom;
-use QueryError;
-use QueryResult;
 use scheduler::*;
-use std::str;
-use std::sync::Arc;
 use syntax::parser;
 use trace::{Trace, TraceBuilder};
+
 
 pub struct LocustDB {
     inner_locustdb: Arc<InnerLocustDB>

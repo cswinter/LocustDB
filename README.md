@@ -37,6 +37,13 @@ curl https://sh.rustup.rs -sSf | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh
 
 `RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly bench`
 
+## Diskstore
+
+LocustDB has experimental support for persisting data to disk, and running queries on data stored on disk.
+This feature is disabled by default, and has to be enabled explicitly by passing `--features "rocksdb"` to cargo during compilartion.
+The database backend uses RocksDB, which is a somewhat complex C++ dependency that has to be compiled from source and requires gcc and various libraries to be available.
+You will have to manually install those on your system, instructions can be found [here][rocksdb-dependencies].
+You may also have to install various other random tools until compilation succeeds.
 
 ## Goals
 A vision for LocustDB.
@@ -81,3 +88,4 @@ LocustDB does not run on GPUs.
 [nyc-taxi-trips]: https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
 [rustup]: https://rustup.rs/
+[rocksdb-dependencies]: https://github.com/facebook/rocksdb/blob/master/INSTALL.md#dependencies

@@ -1,5 +1,5 @@
 extern crate failure;
-extern crate futures;
+extern crate futures_executor;
 extern crate heapsize;
 extern crate locustdb;
 extern crate nom;
@@ -7,7 +7,7 @@ extern crate rustyline;
 extern crate time;
 
 use failure::Fail;
-use futures::executor::block_on;
+use futures_executor::block_on;
 use locustdb::{LocustDB, TableStats};
 use std::env;
 use std::fs;

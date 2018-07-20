@@ -1,5 +1,12 @@
+use std::collections::{HashMap, VecDeque};
+use std::mem;
+use std::str;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::thread;
+
 use disk_store::db::*;
-use futures::*;
+use futures_core::*;
 use futures_channel::oneshot;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
@@ -7,12 +14,6 @@ use mem_store::batch::Batch;
 use mem_store::table::*;
 use num_cpus;
 use scheduler::*;
-use std::collections::{HashMap, VecDeque};
-use std::mem;
-use std::str;
-use std::sync::{Arc, Condvar, Mutex, RwLock};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
 use time;
 use trace::*;
 
