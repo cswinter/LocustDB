@@ -4,9 +4,10 @@ set -eu
 check_char='\xE2\x9C\x93'
 cross_char='\xE2\x9D\x8C'
 green='\033[0;32m'
+red='\033[0;31m'
 nc='\033[0m'
 check="$green$check_char$nc"
-cross="$green$cross_char$nc"
+cross="$red$cross_char$nc"
 errors=0
 
 : '
