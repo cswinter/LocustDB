@@ -1,9 +1,9 @@
 extern crate env_logger;
-extern crate futures;
+extern crate futures_executor;
 extern crate locustdb;
 extern crate log;
 
-use futures::executor::block_on;
+use futures_executor::block_on;
 use locustdb::*;
 use locustdb::nyc_taxi_data;
 use locustdb::Value;

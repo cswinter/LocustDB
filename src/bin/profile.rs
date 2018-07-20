@@ -1,8 +1,8 @@
 extern crate locustdb;
-extern crate futures;
+extern crate futures_executor;
 
 use locustdb::LocustDB;
-use futures::executor::block_on;
+use futures_executor::block_on;
 
 fn main() {
     let locustdb = LocustDB::memory_only();

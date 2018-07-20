@@ -4,8 +4,10 @@ name = "locustdb"
 version = "0.1.0"
 
 [dependencies]
-futures = "0.2.0-alpha"
-futures-channel = "0.2.0-alpha"
+futures-core = "0.2.1"
+futures-util = "0.2.1"
+futures-executor = "0.2.1"
+futures-channel = "0.2.1"
 csv = "1"
 heapsize = "0.3.8"
 itertools = "0.5.9"
@@ -31,8 +33,11 @@ fnv = "1.0.3"
 [dev-dependencies]
 env_logger = "0.5.6"
 
+['cfg(feature = "rocksdb")'.dependencies]
+rocksdb = "0.10.1"
 
 [features]
 default=[]
 trace=[]
 nerf=[]
+rocksdb=[]

@@ -1,7 +1,7 @@
-extern crate futures;
+extern crate futures_executor;
 extern crate locustdb;
 
-use futures::executor::block_on;
+use futures_executor::block_on;
 use locustdb::LocustDB;
 use locustdb::nyc_taxi_data;
 
