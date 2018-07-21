@@ -8,7 +8,7 @@ use nom;
 
 use QueryError;
 use QueryResult;
-use disk_store::db::*;
+use disk_store::interface::*;
 use disk_store::noop_storage::NoopStorage;
 use engine::query_task::QueryTask;
 use ingest::csv_loader::{CSVIngestionTask, IngestFile};
@@ -27,7 +27,7 @@ impl LocustDB {
         LocustDB::new(Box::new(NoopStorage), false, None)
     }
 
-    pub fn new(storage: Box<DB>, load_tabledata: bool, threads: Option<usize>) -> LocustDB {
+    pub fn new(storage: Box<DiskStore>, load_tabledata: bool, threads: Option<usize>) -> LocustDB {
         let locustdb = Arc::new(InnerLocustDB::new(storage, load_tabledata));
         InnerLocustDB::start_worker_threads(&locustdb, threads);
         LocustDB { inner_locustdb: locustdb }
@@ -95,7 +95,6 @@ impl LocustDB {
             nom::IResult::Incomplete(needed) => format!("Incomplete. Needed: {:?}", needed),
         }
     }
-
 
     pub fn recover(&self) {
         self.inner_locustdb.drop_pending_tasks();

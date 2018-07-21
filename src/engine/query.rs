@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::iter::Iterator;
+use std::sync::Arc;
+
 use ::QueryError;
 use engine::*;
 use engine::aggregator::*;
@@ -7,9 +12,6 @@ use engine::types::EncodingType;
 use engine::types::Type;
 use ingest::raw_val::RawVal;
 use mem_store::column::Column;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::iter::Iterator;
 use syntax::expression::*;
 use syntax::limit::*;
 
@@ -28,7 +30,7 @@ pub struct Query {
 
 impl Query {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool, show: bool)
+    pub fn run<'a>(&self, columns: &'a HashMap<String, Arc<Column>>, explain: bool, show: bool)
                    -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
         let len = columns.iter().next().unwrap().1.len();
@@ -93,7 +95,7 @@ impl Query {
     }
 
     #[inline(never)] // produces more useful profiles
-    pub fn run_aggregate<'a>(&self, columns: &HashMap<&'a str, &'a Column>, explain: bool, show: bool)
+    pub fn run_aggregate<'a>(&self, columns: &'a HashMap<String, Arc<Column>>, explain: bool, show: bool)
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 

@@ -5,6 +5,7 @@ use std::hash::BuildHasherDefault;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::str;
+use std::sync::Arc;
 use std::{u8, u16};
 
 use heapsize::HeapSizeOf;
@@ -25,12 +26,12 @@ type HashSetSea<K> = HashSet<K, BuildHasherDefault<SeaHasher>>;
 // TODO(clemens): this should depend on the batch size and element length
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
-pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &str, strings: T, len: usize) -> Box<Column> {
+pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &str, strings: T, len: usize) -> Arc<Column> {
     let mut unique_values = HashSetSea::default();
     for s in strings.clone() {
         unique_values.insert(s);
         if unique_values.len() == MAX_UNIQUE_STRINGS {
-            return Box::new(StringPacker::from_iterator(name, strings, len));
+            return Arc::new(StringPacker::from_iterator(name, strings, len));
         }
     }
     let dict_size = unique_values.len();
@@ -66,7 +67,7 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
 pub fn build_string_column(name: &str,
                            values: &[Option<Rc<String>>],
                            unique_values: UniqueValues<Option<Rc<String>>>)
-                           -> Box<Column> {
+                           -> Arc<Column> {
     if let Some(u) = unique_values.get_values() {
         let range = Some((0, u.len() as i64));
         // TODO(clemens): constant column when there is only one value
@@ -78,7 +79,7 @@ pub fn build_string_column(name: &str,
             Column::encoded(name, indices, DictionaryEncoding::<u16> { mapping: dictionary, t: PhantomData }, range)
         }
     } else {
-        Box::new(StringPacker::from_nullable_strings(name.to_owned(), values))
+        Arc::new(StringPacker::from_nullable_strings(name.to_owned(), values))
     }
 }
 

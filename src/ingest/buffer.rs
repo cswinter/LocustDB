@@ -4,12 +4,11 @@ use ingest::raw_val::RawVal;
 use ingest::input_column::InputColumn;
 use heapsize::HeapSizeOf;
 use std::cmp;
-use mem_store::batch::Batch;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Buffer {
-    buffer: HashMap<String, RawCol>,
-    length: usize,
+    pub buffer: HashMap<String, RawCol>,
+    pub length: usize,
 }
 
 impl Default for Buffer {
@@ -86,10 +85,3 @@ impl HeapSizeOf for Buffer {
     }
 }
 
-impl From<Buffer> for Batch {
-    fn from(buffer: Buffer) -> Self {
-        Batch::new(buffer.buffer.into_iter()
-            .map(|(name, raw_col)| raw_col.finalize(&name))
-            .collect())
-    }
-}

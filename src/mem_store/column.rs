@@ -22,15 +22,15 @@ pub trait Column: HeapSizeOf + fmt::Debug + Send + Sync {
 }
 
 impl Column {
-    pub fn plain<T: AnyVec<'static> + HeapSizeOf + 'static>(name: &str, data: T, range: Option<(i64, i64)>) -> Box<Column> {
-        Box::new(PlainColumn { name: name.to_owned(), data, range })
+    pub fn plain<T: AnyVec<'static> + HeapSizeOf + 'static>(name: &str, data: T, range: Option<(i64, i64)>) -> Arc<Column> {
+        Arc::new(PlainColumn { name: name.to_owned(), data, range })
     }
 
-    pub fn encoded<T, C>(name: &str, data: T, codec: C, range: Option<(i64, i64)>) -> Box<Column>
+    pub fn encoded<T, C>(name: &str, data: T, codec: C, range: Option<(i64, i64)>) -> Arc<Column>
         where T: AnyVec<'static> + HeapSizeOf + Sync + Send + 'static,
               C: HeapSizeOf + Sync + Send + 'static,
               for<'a> &'a C: ColumnCodec<'a> {
-        Box::new(PlainEncodedColumn { name: name.to_owned(), data, codec, range })
+        Arc::new(PlainEncodedColumn { name: name.to_owned(), data, codec, range })
     }
 }
 

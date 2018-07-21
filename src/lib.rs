@@ -23,6 +23,7 @@ extern crate serde;
 extern crate time;
 // extern crate tempdir;
 extern crate fnv;
+extern crate byteorder;
 
 #[macro_use]
 mod trace;

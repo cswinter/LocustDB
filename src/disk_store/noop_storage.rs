@@ -1,10 +1,12 @@
-use disk_store::db::*;
-use ingest::buffer::Buffer;
-use mem_store::table::Metadata;
+use std::sync::Arc;
+
+use mem_store::column::Column;
+use disk_store::interface::*;
 
 pub struct NoopStorage;
 
-impl DB for NoopStorage {
-    fn metadata(&self) -> Vec<&Metadata> { Vec::new() }
-    fn data(&self, _: &str) -> Vec<Buffer> { Vec::new() }
+impl DiskStore for NoopStorage {
+    fn load_metadata(&self) -> Vec<PartitionMetadata> { Vec::new() }
+    fn load_column_data(&self, _: PartitionID, _: &str) -> Vec<u8> { Vec::new() }
+    fn store_partition(&self, _: PartitionID, _: &str, _: &Vec<Arc<Column>>) {}
 }

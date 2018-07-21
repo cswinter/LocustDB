@@ -3,6 +3,7 @@ use std::convert::From;
 use std::env;
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use engine::*;
 use engine::query_plan::QueryPlan;
@@ -14,7 +15,7 @@ use mem_store::*;
 pub struct IntegerColumn;
 
 impl IntegerColumn {
-    pub fn new_boxed(name: &str, mut values: Vec<i64>, min: i64, max: i64) -> Box<Column> {
+    pub fn new_boxed(name: &str, mut values: Vec<i64>, min: i64, max: i64) -> Arc<Column> {
         // TODO(clemens): remove, this was just a hack to vary memory bandwidth for benchmarks
         let min_width = env::var_os("LOCUSTDB_MIN_WIDTH")
             .map(|x| x.to_str().unwrap().parse::<u8>().unwrap()).unwrap_or(0);

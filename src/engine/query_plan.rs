@@ -221,8 +221,8 @@ pub fn order_preserving<'a>((plan, t): (QueryPlan<'a>, Type<'a>)) -> (QueryPlan<
 }
 
 impl<'a> QueryPlan<'a> {
-    pub fn create_query_plan<'b>(expr: &Expr,
-                                 columns: &HashMap<&'b str, &'b Column>) -> Result<(QueryPlan<'b>, Type<'b>), QueryError> {
+    pub fn create_query_plan(expr: &Expr,
+                             columns: &'a HashMap<String, Arc<Column>>) -> Result<(QueryPlan<'a>, Type<'a>), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
         use self::Func1Type::*;
@@ -231,9 +231,9 @@ impl<'a> QueryPlan<'a> {
                 Some(c) => {
                     let t = c.full_type();
                     if c.get_encoded(0, 0).is_some() {
-                        (QueryPlan::ReadColumn(*c), t)
+                        (QueryPlan::ReadColumn(c.as_ref()), t)
                     } else {
-                        (QueryPlan::DecodeColumn(*c), t.decoded())
+                        (QueryPlan::DecodeColumn(c.as_ref()), t.decoded())
                     }
                 }
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
@@ -375,7 +375,7 @@ impl<'a> QueryPlan<'a> {
     }
 
     pub fn compile_grouping_key<'b>(exprs: &[Expr],
-                                    columns: &HashMap<&'b str, &'b Column>) -> Result<(QueryPlan<'b>, Type<'b>, i64, Vec<(QueryPlan<'b>, Type<'b>)>), QueryError> {
+                                    columns: &'b HashMap<String, Arc<Column>>) -> Result<(QueryPlan<'b>, Type<'b>, i64, Vec<(QueryPlan<'b>, Type<'b>)>), QueryError> {
         if exprs.len() == 1 {
             QueryPlan::create_query_plan(&exprs[0], columns)
                 .map(|(gk_plan, gk_type)| {

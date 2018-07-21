@@ -1,34 +1,33 @@
 use std::collections::HashMap;
+use std::mem;
 use std::ops::DerefMut;
 use std::str;
+use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
-use std;
 
-use disk_store::db::DB;
+use disk_store::interface::DiskStore;
+use disk_store::interface::PartitionID;
 use heapsize::HeapSizeOf;
 use ingest::buffer::Buffer;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
-use mem_store::batch::Batch;
+use mem_store::batch::Partition;
 
 
 pub struct Table {
     name: String,
     batch_size: usize,
-    #[allow(dead_code)]
-    metadata: RwLock<Metadata>,
-    batches: RwLock<Vec<Batch>>,
+    partitions: RwLock<Vec<Arc<Partition>>>,
     buffer: Mutex<Buffer>,
 }
 
 impl Table {
-    pub fn new(batch_size: usize, name: &str, metadata: Metadata) -> Table {
+    pub fn new(batch_size: usize, name: &str) -> Table {
         Table {
             name: name.to_string(),
             batch_size: batch_size_override(batch_size, name),
-            batches: RwLock::new(Vec::new()),
+            partitions: RwLock::new(Vec::new()),
             buffer: Mutex::new(Buffer::default()),
-            metadata: RwLock::new(metadata),
         }
     }
 
@@ -36,32 +35,25 @@ impl Table {
         &self.name
     }
 
-    pub fn snapshot(&self) -> Vec<Batch> {
-        let batches = self.batches.read().unwrap();
+    pub fn snapshot(&self) -> Vec<Arc<Partition>> {
+        let batches = self.partitions.read().unwrap();
         batches.clone()
     }
 
-    pub fn restore_from_db(batch_size: usize, storage: &DB) -> HashMap<String, Table> {
-        let tables = Table::load_table_metadata(batch_size, storage);
-        for table in tables.values() {
-            table.load_table_data(storage);
-        }
-        tables
-    }
-
-
-    pub fn load_table_metadata(batch_size: usize, storage: &DB) -> HashMap<String, Table> {
+    pub fn load_table_metadata(batch_size: usize, storage: &DiskStore) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
-        for md in storage.metadata() {
-            tables.insert(md.name.to_string(), Table::new(batch_size, &md.name, md.clone()));
+        for md in storage.load_metadata() {
+            let table = tables
+                .entry(md.tablename.clone())
+                .or_insert(Table::new(batch_size, &md.tablename));
+            table.insert_nonresident_partition(md.id, &md.columns);
         }
         tables
     }
 
-    pub fn load_table_data(&self, storage: &DB) {
-        for buffer in storage.data(&self.name) {
-            self.load_buffer(buffer);
-        }
+    pub fn insert_nonresident_partition(&self, id: PartitionID, columns: &[String]) {
+        let mut partitions = self.partitions.write().unwrap();
+        partitions.push(Arc::new(Partition::nonresident(id, columns)));
     }
 
     pub fn ingest(&self, row: Vec<(String, RawVal)>) {
@@ -81,9 +73,9 @@ impl Table {
         self.batch_if_needed(&mut buffer);
     }
 
-    pub fn load_batch(&self, batch: Batch) {
-        let mut batches = self.batches.write().unwrap();
-        batches.push(batch);
+    pub fn load_batch(&self, partition: Partition) {
+        let mut batches = self.partitions.write().unwrap();
+        batches.push(Arc::new(partition));
     }
 
     fn batch_if_needed(&self, buffer: &mut Buffer) {
@@ -92,43 +84,47 @@ impl Table {
     }
 
     fn batch(&self, buffer: &mut Buffer) {
-        let buffer = std::mem::replace(buffer, Buffer::default());
+        let buffer = mem::replace(buffer, Buffer::default());
         self.persist_batch(&buffer);
-        let new_batch = buffer.into();
-        let mut batches = self.batches.write().unwrap();
-        batches.push(new_batch);
+        // TODO(clemens): get unique partition ID
+        let new_partition = Partition::from_buffer(0, buffer);
+        let mut partitions = self.partitions.write().unwrap();
+        partitions.push(Arc::new(new_partition));
     }
 
-    fn load_buffer(&self, buffer: Buffer) {
+    /*fn load_buffer(&self, buffer: Buffer) {
         self.load_batch(buffer.into());
-    }
+    }*/
 
     fn persist_batch(&self, _batch: &Buffer) {}
 
     pub fn stats(&self) -> TableStats {
-        let batches = self.snapshot();
-        let size_per_column = Table::size_per_column(&batches);
+        let partitions = self.snapshot();
+        let size_per_column = Table::size_per_column(&partitions);
         let buffer = self.buffer.lock().unwrap();
         TableStats {
             name: self.name().to_string(),
-            rows: batches.iter().map(|b| b.cols().get(0).map_or(0, |c| c.len())).sum(),
-            batches: batches.len(),
-            batches_bytes: batches.heap_size_of_children(),
+            // TODO(clemens): fix
+            rows: 0,// batches.iter().map(|b| b.cols().get(0).map_or(0, |c| c.len())).sum(),
+            batches: partitions.len(),
+            batches_bytes: partitions.heap_size_of_children(),
             buffer_length: buffer.len(),
             buffer_bytes: buffer.heap_size_of_children(),
             size_per_column,
         }
     }
 
-    fn size_per_column(batches: &[Batch]) -> Vec<(String, usize)> {
-        let mut sizes: HashMap<&str, usize> = HashMap::default();
+    fn size_per_column(_batches: &[Arc<Partition>]) -> Vec<(String, usize)> {
+        // TODO(clemens): fix
+        vec![]
+        /*let mut sizes: HashMap<&str, usize> = HashMap::default();
         for batch in batches {
             for col in batch.cols() {
                 let heapsize = col.heap_size_of_children();
                 *sizes.entry(col.name()).or_insert(0) += heapsize;
             }
         }
-        sizes.iter().map(|(name, size)| (name.to_string(), *size)).collect()
+        sizes.iter().map(|(name, size)| (name.to_string(), *size)).collect()*/
     }
 }
 
@@ -139,7 +135,7 @@ fn batch_size_override(batch_size: usize, tablename: &str) -> usize {
 impl HeapSizeOf for Table {
     fn heap_size_of_children(&self) -> usize {
         let batches_size = {
-            let batches = self.batches.read().unwrap();
+            let batches = self.partitions.read().unwrap();
             batches.heap_size_of_children()
         };
         let buffer_size = {

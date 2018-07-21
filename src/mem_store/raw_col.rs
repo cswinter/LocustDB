@@ -1,5 +1,6 @@
 use std::iter::repeat;
 use std::ops::BitOr;
+use std::sync::Arc;
 
 use heapsize::HeapSizeOf;
 
@@ -52,7 +53,7 @@ impl RawCol {
         self.data.len()
     }
 
-    pub fn finalize(self, name: &str) -> Box<Column> {
+    pub fn finalize(self, name: &str) -> Arc<Column> {
         if self.types.contains_string {
             let mut builder = StringColBuilder::new();
             for v in self.data {
