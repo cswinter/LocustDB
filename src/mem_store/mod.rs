@@ -8,4 +8,5 @@ pub mod integers;
 pub mod strings;
 mod mixed_column;
 
-pub use self::column::{ColumnCodec, Column, PlainColumn, Codec};
+pub use self::column::{Column, Codec, CodecOp, DataSection};
+pub use self::integers::{integer_cast_codec, integer_offset_codec};

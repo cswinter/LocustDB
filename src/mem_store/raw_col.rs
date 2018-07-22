@@ -75,7 +75,7 @@ impl RawCol {
             }
             builder.finalize(name)
         } else {
-            Column::plain(name, self.data.len(), None)
+            Arc::new(Column::null(name, self.data.len()))
         }
     }
 }

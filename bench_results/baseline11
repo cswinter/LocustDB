@@ -1,0 +1,43 @@
+
+running 5 tests
+test engine::vector_op::subpartition::tests::test_multipass_grouping ... ignored
+test engine::vector_op::top_n::tests::test_heap_replace ... ignored
+test syntax::parser::tests::test_last_hour ... ignored
+test syntax::parser::tests::test_select_star ... ignored
+test syntax::parser::tests::test_to_year ... ignored
+
+test result: ok. 0 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 13 tests
+test count_by_passenger_count                              ... bench:  18,294,162 ns/iter (+/- 2,496,582)
+test count_by_vendor_id_and_passenger_count                ... bench:  76,762,635 ns/iter (+/- 3,339,295)
+test q1_count_cab_type                                     ... bench:  20,776,009 ns/iter (+/- 3,198,444)
+test q2_avg_total_amount_by_passenger_count                ... bench:  49,578,845 ns/iter (+/- 3,293,207)
+test q3_count_by_passenger_count_pickup_year               ... bench:  63,038,754 ns/iter (+/- 3,402,668)
+test q4_count_by_passenger_count_pickup_year_trip_distance ... bench: 208,468,489 ns/iter (+/- 3,078,098)
+test q5_sparse_filter                                      ... bench:  99,581,002 ns/iter (+/- 5,713,491)
+test q6_top_n                                              ... bench:  31,527,822 ns/iter (+/- 3,030,209)
+test q7_hashmap_grouping                                   ... bench: 311,869,086 ns/iter (+/- 6,209,690)
+test q8_group_by_trip_id                                   ... ignored
+test select_passenger_count_sparse_filter                  ... bench: 255,659,998 ns/iter (+/- 6,248,932)
+test select_star_limit_10000                               ... ignored
+test sum_total_amt_by_passenger_count                      ... bench:  44,787,624 ns/iter (+/- 3,711,254)
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 11 measured; 0 filtered out
+

@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use ::QueryError;
 use chrono::{Datelike, NaiveDateTime};
 use engine::aggregator::Aggregator;
@@ -8,89 +11,62 @@ use engine::vector_op::vector_operator::BufferRef;
 use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column::Column;
-use mem_store::integers::IntegerCodec;
-use std::collections::HashMap;
-use std::sync::Arc;
 use syntax::expression::*;
 
 
 #[derive(Debug, Clone)]
-pub enum QueryPlan<'a> {
-    ReadColumn(&'a Column),
-    DecodeColumn(&'a Column),
+pub enum QueryPlan {
+    ReadColumnSection(String, usize, Option<(i64, i64)>),
     ReadBuffer(BufferRef),
 
-    DictLookup(Box<QueryPlan<'a>>, EncodingType, &'a Vec<String>),
-    TypeConversion(Box<QueryPlan<'a>>, EncodingType, EncodingType),
+    DictLookup(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
+    InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>),
+    TypeConversion(Box<QueryPlan>, EncodingType, EncodingType),
 
-    Exists(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>),
-    NonzeroCompact(Box<QueryPlan<'a>>, EncodingType),
-    NonzeroIndices(Box<QueryPlan<'a>>, EncodingType, EncodingType),
-    Compact(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>, EncodingType),
+    Exists(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
+    NonzeroCompact(Box<QueryPlan>, EncodingType),
+    NonzeroIndices(Box<QueryPlan>, EncodingType, EncodingType),
+    Compact(Box<QueryPlan>, EncodingType, Box<QueryPlan>, EncodingType),
 
-    EncodeStrConstant(Box<QueryPlan<'a>>, Codec<'a>),
-    EncodeIntConstant(Box<QueryPlan<'a>>, Codec<'a>),
+    EncodeIntConstant(Box<QueryPlan>, Codec),
 
-    BitPack(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>, i64),
-    BitUnpack(Box<QueryPlan<'a>>, u8, u8),
+    BitPack(Box<QueryPlan>, Box<QueryPlan>, i64),
+    BitUnpack(Box<QueryPlan>, u8, u8),
 
-    LessThanVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    EqualsVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    NotEqualsVS(EncodingType, Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    DivideVS(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    AddVS(Box<QueryPlan<'a>>, EncodingType, Box<QueryPlan<'a>>),
-    And(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    Or(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>),
-    ToYear(Box<QueryPlan<'a>>),
+    LessThanVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
+    EqualsVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
+    NotEqualsVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
+    DivideVS(Box<QueryPlan>, Box<QueryPlan>),
+    AddVS(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
+    And(Box<QueryPlan>, Box<QueryPlan>),
+    Or(Box<QueryPlan>, Box<QueryPlan>),
+    ToYear(Box<QueryPlan>),
 
-    SortIndices(Box<QueryPlan<'a>>, bool),
-    TopN(Box<QueryPlan<'a>>, EncodingType, usize, bool),
+    SortIndices(Box<QueryPlan>, bool),
+    TopN(Box<QueryPlan>, EncodingType, usize, bool),
 
-    Select(Box<QueryPlan<'a>>, Box<QueryPlan<'a>>, EncodingType),
+    Select(Box<QueryPlan>, Box<QueryPlan>, EncodingType),
+    Filter(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
 
     EncodedGroupByPlaceholder,
 
     Constant(RawVal, bool),
 }
 
-pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> BufferRef {
+pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select(plan, indices, t) =>
             VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.named_buffer("selection")),
-        QueryPlan::DecodeColumn(col) => {
-            let column_buffer = result.named_buffer("decoded");
-            let column_op = VecOperator::get_decode(col, column_buffer);
-            match result.filter() {
-                Filter::BitVec(filter) => {
-                    result.push(column_op);
-                    VecOperator::filter(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("filtered"))
-                }
-                Filter::Indices(filter) => {
-                    result.push(column_op);
-                    VecOperator::select(col.basic_type().to_encoded(), column_buffer, filter, result.named_buffer("selection"))
-                }
-                Filter::None => column_op,
-            }
-        }
-        QueryPlan::ReadColumn(col) => {
-            let column_buffer = result.named_buffer("column");
-            let column_op = VecOperator::get_encoded(col, column_buffer);
-            match result.filter() {
-                Filter::BitVec(filter) => {
-                    result.push(column_op);
-                    VecOperator::filter(col.encoding_type(), column_buffer, filter, result.named_buffer("filtered"))
-                }
-                Filter::Indices(filter) => {
-                    result.push(column_op);
-                    VecOperator::select(col.encoding_type(), column_buffer, filter, result.named_buffer("selection"))
-                }
-                Filter::None => column_op,
-            }
-        }
+        QueryPlan::ReadColumnSection(colname, section, _) =>
+            VecOperator::read_column_data(colname, section, result.named_buffer("column")),
+        QueryPlan::Filter(plan, t, filter) =>
+            VecOperator::filter(t, prepare(*plan, result), prepare(*filter, result), result.named_buffer("filtered")),
         QueryPlan::Constant(ref c, hide_value) =>
             VecOperator::constant(c.clone(), hide_value, result.named_buffer("constant")),
         QueryPlan::DictLookup(plan, t, dict) =>
-            VecOperator::dict_lookup(prepare(*plan, result), dict, result.named_buffer("decoded"), t),
+            VecOperator::dict_lookup(prepare(*plan, result), prepare(*dict, result), result.named_buffer("decoded"), t),
+        QueryPlan::InverseDictLookup(dict, constant) =>
+            VecOperator::inverse_dict_lookup(prepare(*dict, result), prepare(*constant, result), result.named_buffer("encoded")),
         QueryPlan::TypeConversion(plan, initial_type, target_type) => if initial_type == target_type {
             return prepare(*plan, result);
         } else {
@@ -112,8 +88,6 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
             result.push(VecOperator::nonzero_compact(inplace, data_t));
             return inplace;
         }
-        QueryPlan::EncodeStrConstant(plan, codec) =>
-            VecOperator::encode_str_const(prepare(*plan, result), result.named_buffer("encoded"), codec),
         QueryPlan::EncodeIntConstant(plan, codec) =>
             VecOperator::encode_int_const(prepare(*plan, result), result.named_buffer("encoded"), codec),
         QueryPlan::BitPack(lhs, rhs, shift_amount) =>
@@ -162,7 +136,7 @@ pub fn prepare<'a>(plan: QueryPlan<'a>, result: &mut QueryExecutor<'a>) -> Buffe
 pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
                                     grouping_key_type: EncodingType,
                                     max_cardinality: usize,
-                                    result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type<'a>, BufferRef) {
+                                    result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type, BufferRef) {
     let unique_out = result.named_buffer("unique");
     let grouping_key_out = result.named_buffer("grouping_key");
     let cardinality_out = result.named_buffer("cardinality");
@@ -170,18 +144,18 @@ pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
         raw_grouping_key, unique_out, grouping_key_out, cardinality_out, grouping_key_type, max_cardinality));
     (Some(unique_out),
      grouping_key_out,
-     Type::encoded(Arc::new(OpaqueCodec::new(BasicType::Integer, grouping_key_type).set_positive_integer(true))),
+     Type::encoded(Codec::opaque(grouping_key_type, BasicType::Integer, false, false, true)),
      cardinality_out)
 }
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
-pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
-                                   mut plan_type: Type<'a>,
+pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan,
+                                   mut plan_type: Type,
                                    grouping_key: BufferRef,
                                    grouping_type: EncodingType,
                                    max_index: BufferRef,
                                    aggregator: Aggregator,
-                                   result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type<'a>), QueryError> {
+                                   result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type), QueryError> {
     let output_location;
     let (operation, t): (BoxedOperator<'a>, _) = match (aggregator, plan) {
         (Aggregator::Count, _) => {
@@ -189,13 +163,13 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
             (VecOperator::count(grouping_key,
                                 output_location,
                                 grouping_type,
-                                max_index, ),
-             Type::encoded(Arc::new(IntegerCodec::<u32>::new())))
+                                max_index),
+             Type::encoded(integer_cast_codec(EncodingType::U32)))
         }
         (Aggregator::Sum, mut plan) => {
             output_location = result.named_buffer("sum");
             if !plan_type.is_summation_preserving() {
-                plan = plan_type.codec.clone().unwrap().decode(Box::new(plan));
+                plan = *plan_type.codec.clone().unwrap().decode(Box::new(plan));
                 plan_type = plan_type.decoded();
             }
             (VecOperator::summation(prepare(plan, result),
@@ -211,36 +185,49 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan<'a>,
     Ok((output_location, t))
 }
 
-pub fn order_preserving<'a>((plan, t): (QueryPlan<'a>, Type<'a>)) -> (QueryPlan<'a>, Type<'a>) {
+pub fn order_preserving((plan, t): (QueryPlan, Type)) -> (QueryPlan, Type) {
     if t.is_order_preserving() {
         (plan, t)
     } else {
         let new_type = t.decoded();
-        (t.codec.unwrap().decode(Box::new(plan)), new_type)
+        (*t.codec.unwrap().decode(Box::new(plan)), new_type)
     }
 }
 
-impl<'a> QueryPlan<'a> {
-    pub fn create_query_plan(expr: &Expr,
-                             columns: &'a HashMap<String, Arc<Column>>) -> Result<(QueryPlan<'a>, Type<'a>), QueryError> {
+impl QueryPlan {
+    pub fn create_query_plan<'a>(
+        expr: &Expr,
+        filter: Filter,
+        columns: &'a HashMap<String, Arc<Column>>) -> Result<(QueryPlan, Type), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
         use self::Func1Type::*;
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    let t = c.full_type();
-                    if c.get_encoded(0, 0).is_some() {
-                        (QueryPlan::ReadColumn(c.as_ref()), t)
-                    } else {
-                        (QueryPlan::DecodeColumn(c.as_ref()), t.decoded())
-                    }
+                    let read_column = QueryPlan::ReadColumnSection(name.to_string(), 0, c.range());
+                    let plan = match filter {
+                        Filter::BitVec(filter) => {
+                            QueryPlan::Filter(
+                                Box::new(read_column),
+                                c.encoding_type(),
+                                Box::new(QueryPlan::ReadBuffer(filter)))
+                        }
+                        Filter::Indices(indices) => {
+                            QueryPlan::Select(
+                                Box::new(read_column),
+                                Box::new(QueryPlan::ReadBuffer(indices)),
+                                c.encoding_type())
+                        }
+                        Filter::None => read_column,
+                    };
+                    (plan, c.full_type())
                 }
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
             }
             Func2(LT, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
@@ -259,14 +246,14 @@ impl<'a> QueryPlan<'a> {
                 }
             }
             Func2(Equals, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeStrConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
-                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                                let encoded = type_lhs.codec.clone().unwrap().encode_str(Box::new(plan_rhs));
+                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), encoded)
                             } else {
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
@@ -292,14 +279,14 @@ impl<'a> QueryPlan<'a> {
                 }
             }
             Func2(NotEquals, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeStrConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
-                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                                let encoded = type_lhs.codec.clone().unwrap().encode_str(Box::new(plan_rhs));
+                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), encoded)
                             } else {
                                 QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
@@ -325,29 +312,29 @@ impl<'a> QueryPlan<'a> {
                 }
             }
             Func2(Or, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
                 (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
                 (QueryPlan::And(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
             Func2(Divide, ref lhs, ref rhs) => {
-                let (mut plan_lhs, mut type_lhs) = QueryPlan::create_query_plan(lhs, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, columns)?;
+                let (mut plan_lhs, mut type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if let Some(codec) = type_lhs.codec {
-                                plan_lhs = codec.decode(Box::new(plan_lhs));
+                                plan_lhs = *codec.decode(Box::new(plan_lhs));
                             }
                             QueryPlan::DivideVS(Box::new(plan_lhs), Box::new(plan_rhs))
                         } else {
@@ -359,12 +346,12 @@ impl<'a> QueryPlan<'a> {
                 }
             }
             Func1(ToYear, ref inner) => {
-                let (plan, t) = QueryPlan::create_query_plan(inner, columns)?;
+                let (plan, t) = QueryPlan::create_query_plan(inner, filter, columns)?;
                 if t.decoded != BasicType::Integer {
                     bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                 }
                 let decoded = match t.codec.clone() {
-                    Some(codec) => codec.decode(Box::new(plan)),
+                    Some(codec) => *codec.decode(Box::new(plan)),
                     None => plan,
                 };
                 (QueryPlan::ToYear(Box::new(decoded)), t.decoded())
@@ -374,15 +361,21 @@ impl<'a> QueryPlan<'a> {
         })
     }
 
-    pub fn compile_grouping_key<'b>(exprs: &[Expr],
-                                    columns: &'b HashMap<String, Arc<Column>>) -> Result<(QueryPlan<'b>, Type<'b>, i64, Vec<(QueryPlan<'b>, Type<'b>)>), QueryError> {
+    pub fn compile_grouping_key<'b>(
+        exprs: &[Expr],
+        filter: Filter,
+        columns: &'b HashMap<String, Arc<Column>>)
+        -> Result<(QueryPlan, Type, i64, Vec<(QueryPlan, Type)>), QueryError> {
         if exprs.len() == 1 {
-            QueryPlan::create_query_plan(&exprs[0], columns)
+            QueryPlan::create_query_plan(&exprs[0], filter, columns)
                 .map(|(gk_plan, gk_type)| {
-                    let max_cardinality = QueryPlan::encoding_range(&gk_plan).map_or(1 << 63, |i| i.1);
+                    let max_cardinality = QueryPlan::encoding_range(&gk_plan).map_or(1 << 62, |i| i.1);
+                    if QueryPlan::encoding_range(&gk_plan).is_none() {
+                        println!("Uknown range for {:?}", &gk_plan);
+                    }
                     let decoded_group_by = gk_type.codec.clone().map_or(
                         QueryPlan::EncodedGroupByPlaceholder,
-                        |codec| codec.decode(Box::new(QueryPlan::EncodedGroupByPlaceholder)));
+                        |codec| *codec.decode(Box::new(QueryPlan::EncodedGroupByPlaceholder)));
                     (gk_plan.clone(), gk_type.clone(), max_cardinality, vec![(decoded_group_by, gk_type.decoded())])
                 })
         } else {
@@ -392,7 +385,7 @@ impl<'a> QueryPlan<'a> {
             let mut decode_plans = Vec::with_capacity(exprs.len());
             let mut order_preserving = true;
             for expr in exprs.iter().rev() {
-                let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
+                let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
                 if let Some((min, max)) = QueryPlan::encoding_range(&query_plan) {
                     fn bits(max: i64) -> i64 {
                         ((max + 1) as f64).log2().ceil() as i64
@@ -439,7 +432,7 @@ impl<'a> QueryPlan<'a> {
                         EncodingType::I64,
                         plan_type.encoding_type());
                     if let Some(codec) = plan_type.codec.clone() {
-                        decode_plan = codec.decode(Box::new(decode_plan));
+                        decode_plan = *codec.decode(Box::new(decode_plan));
                     }
                     decode_plans.push((decode_plan, plan_type.decoded()));
 
@@ -454,9 +447,8 @@ impl<'a> QueryPlan<'a> {
             if let Some(plan) = plan {
                 if total_width <= 64 {
                     decode_plans.reverse();
-                    let t = Type::encoded(Arc::new(OpaqueCodec::new(BasicType::Integer, EncodingType::I64)
-                        .set_order_preserving(order_preserving)
-                        .set_positive_integer(true)));
+                    let t = Type::encoded(Codec::opaque(
+                        EncodingType::I64, BasicType::Integer, false, order_preserving, true));
                     return Ok((plan, t, largest_key, decode_plans));
                 }
             }
@@ -469,11 +461,12 @@ impl<'a> QueryPlan<'a> {
     fn encoding_range(&self) -> Option<(i64, i64)> {
         use self::QueryPlan::*;
         match *self {
-            ReadColumn(col) => col.range(),
+            ReadColumnSection(_, _, range) => range,
             ToYear(ref timestamps) => timestamps.encoding_range().map(|(min, max)|
                 (NaiveDateTime::from_timestamp(min, 0).year() as i64,
                  NaiveDateTime::from_timestamp(max, 0).year() as i64)
             ),
+            Filter(ref plan, _, _) => plan.encoding_range(),
             // TODO(clemens): this is just wrong
             DivideVS(ref left, box Constant(RawVal::Int(c), _)) =>
                 left.encoding_range().map(|(min, max)|

@@ -98,7 +98,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 aggregates.push(aggregated);
             }
 
-            let mut results = executor.prepare();
+            let mut results = executor.prepare_no_columns();
             executor.run(1, &mut results, batch1.show || batch2.show);
             let group_by_cols = group_by_cols.into_iter().map(|i| results.collect(i)).collect();
             let select = aggregates.into_iter().map(|i| results.collect(i)).collect();
@@ -140,7 +140,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     }
                     select[index] = merged_sort_cols;
 
-                    let mut results = executor.prepare();
+                    let mut results = executor.prepare_no_columns();
                     executor.run(1, &mut results, batch1.show || batch2.show);
                     let select = select.into_iter().map(|i| results.collect(i)).collect();
 

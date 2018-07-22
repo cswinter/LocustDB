@@ -26,7 +26,7 @@ impl<'a> VecOperator<'a> for MergeAggregate {
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.left, self.right, self.merge_ops] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.aggregated] }
-    fn can_stream_input(&self) -> bool { false }
+    fn can_stream_input(&self, _: BufferRef) -> bool { false }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 

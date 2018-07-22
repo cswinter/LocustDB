@@ -3,43 +3,13 @@ use engine::vector_op::vector_operator::*;
 use mem_store::*;
 
 #[derive(Debug)]
-pub struct EncodeStrConstant<'a> {
+pub struct EncodeIntConstant {
     pub constant: BufferRef,
     pub output: BufferRef,
-    pub codec: Codec<'a>,
+    pub codec: Codec,
 }
 
-impl<'a> VecOperator<'a> for EncodeStrConstant<'a> {
-    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
-
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let result = {
-            let constant = scratchpad.get_const::<String>(self.constant);
-            self.codec.encode_str(&constant)
-        };
-        scratchpad.set(self.output, AnyVec::constant(result));
-    }
-
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.constant] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
-    fn allocates(&self) -> bool { false }
-
-    fn display_op(&self, _: bool) -> String {
-        format!("encode({}; {:?})", self.constant, self.codec)
-    }
-}
-
-
-#[derive(Debug)]
-pub struct EncodeIntConstant<'a> {
-    pub constant: BufferRef,
-    pub output: BufferRef,
-    pub codec: Codec<'a>,
-}
-
-impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
+impl<'a> VecOperator<'a> for EncodeIntConstant {
     fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
 
     fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
@@ -50,7 +20,7 @@ impl<'a> VecOperator<'a> for EncodeIntConstant<'a> {
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.constant] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_input(&self, _: BufferRef) -> bool { true }
     fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { false }
 

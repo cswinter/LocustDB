@@ -222,7 +222,7 @@ impl RawCol {
             }
             builder.finalize(name)
         } else {
-            Column::plain(name, self.values.len(), None)
+            Arc::new(Column::null(name, self.values.len()))
         };
         self.clear();
         result

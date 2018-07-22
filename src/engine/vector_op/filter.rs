@@ -34,7 +34,7 @@ impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: GenericVec<T> {
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input, self.filter] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_input(&self, _: BufferRef) -> bool { true }
     fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { true }
 

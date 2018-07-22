@@ -57,7 +57,7 @@ impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T>
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.unique_out, self.grouping_key_out, self.cardinality_out] }
-    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_input(&self, _: BufferRef) -> bool { true }
     fn can_stream_output(&self, output: BufferRef) -> bool { output != self.unique_out }
     fn allocates(&self) -> bool { true }
 

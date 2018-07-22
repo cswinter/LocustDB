@@ -31,8 +31,8 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.data] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.data] }
-    fn can_stream_input(&self) -> bool { false }
+    fn outputs(&self) -> Vec<BufferRef> { vec![] }
+    fn can_stream_input(&self, _: BufferRef) -> bool { false }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { false }
 

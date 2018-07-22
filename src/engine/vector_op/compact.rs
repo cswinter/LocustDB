@@ -35,7 +35,7 @@ impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.data, self.select] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.data] }
-    fn can_stream_input(&self) -> bool { false }
+    fn can_stream_input(&self, _: BufferRef) -> bool { false }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { false }
 

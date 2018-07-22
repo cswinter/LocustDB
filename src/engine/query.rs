@@ -36,19 +36,19 @@ impl Query {
         let len = columns.iter().next().unwrap().1.len();
         let mut executor = QueryExecutor::default();
 
-        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, columns)?;
-        match filter_type.encoding_type() {
+        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, Filter::None, columns)?;
+        let mut filter = match filter_type.encoding_type() {
             EncodingType::BitVec => {
                 let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor);
-                executor.set_filter(Filter::BitVec(compiled_filter));
+                Filter::BitVec(compiled_filter)
             }
-            _ => {}
-        }
+            _ => Filter::None,
+        };
 
         let mut select = Vec::new();
         if let Some(index) = self.order_by_index {
             let (plan, plan_t) = query_plan::order_preserving(
-                QueryPlan::create_query_plan(&self.select[index], columns)?);
+                QueryPlan::create_query_plan(&self.select[index], filter, columns)?);
             // TODO(clemens): Reuse sort_column for result
             let sort_column = query_plan::prepare(plan.clone(), &mut executor);
             // TODO(clemens): better criterion
@@ -66,17 +66,17 @@ impl Query {
                         self.order_desc),
                     &mut executor)
             };
-            executor.set_filter(Filter::Indices(sort_indices));
+            filter = Filter::Indices(sort_indices);
         }
         for expr in &self.select {
-            let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
+            let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
             if let Some(codec) = plan_type.codec {
-                plan = codec.decode(Box::new(plan));
+                plan = *codec.decode(Box::new(plan));
             }
             select.push(query_plan::prepare(plan, &mut executor));
         }
 
-        let mut results = executor.prepare();
+        let mut results = executor.prepare(Query::column_data(columns));
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
         let select = select.into_iter().map(|i| results.collect(i)).collect();
 
@@ -102,18 +102,18 @@ impl Query {
         let mut executor = QueryExecutor::default();
 
         // Filter
-        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, columns)?;
-        match filter_type.encoding_type() {
+        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, Filter::None, columns)?;
+        let filter = match filter_type.encoding_type() {
             EncodingType::BitVec => {
-                let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor);
-                executor.set_filter(Filter::BitVec(compiled_filter));
+                let compiled_filter = query_plan::prepare(filter_plan, &mut executor);
+                Filter::BitVec(compiled_filter)
             }
-            _ => {}
-        }
+            _ => Filter::None,
+        };
 
         // Combine all group by columns into a single decodable grouping key
         let (grouping_key_plan, raw_grouping_key_type, max_grouping_key, decode_plans) =
-            QueryPlan::compile_grouping_key(&self.select, columns)?;
+            QueryPlan::compile_grouping_key(&self.select, filter, columns)?;
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
         // Reduce cardinality of grouping key if necessary and perform grouping
@@ -140,7 +140,7 @@ impl Query {
         let mut selector = None;
         let mut selector_index = None;
         for (i, &(aggregator, ref expr)) in self.aggregate.iter().enumerate() {
-            let (plan, plan_type) = QueryPlan::create_query_plan(expr, columns)?;
+            let (plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
@@ -182,7 +182,7 @@ impl Query {
         // Compact and decode aggregation results
         let mut select = Vec::new();
         {
-            let mut decode_compact = |aggregator: Aggregator, aggregate: BufferRef, t: Type<'a>, select: &mut Vec<(BufferRef, Type<'a>)>| {
+            let mut decode_compact = |aggregator: Aggregator, aggregate: BufferRef, t: Type, select: &mut Vec<(BufferRef, Type)>| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
                     Aggregator::Sum => query_plan::prepare(
@@ -196,7 +196,7 @@ impl Query {
                 };
                 if t.is_encoded() {
                     let decoded = query_plan::prepare(
-                        t.codec.clone().unwrap().decode(Box::new(QueryPlan::ReadBuffer(compacted))),
+                        *t.codec.clone().unwrap().decode(Box::new(QueryPlan::ReadBuffer(compacted))),
                         &mut executor);
                     select.push((decoded, t.decoded()));
                 } else {
@@ -269,7 +269,8 @@ impl Query {
             }).collect();
         }
 
-        let mut results = executor.prepare();
+        let mut results = executor.prepare(Query::column_data(columns));
+        // println!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
         let select_cols = select.iter().map(|&(i, _)| results.collect(i)).collect();
         let group_by_cols = grouping_columns.iter().map(|&(i, _)| results.collect(i)).collect();
@@ -331,7 +332,6 @@ impl Query {
         select_cols.chain(aggregate_cols).collect()
     }
 
-
     pub fn find_referenced_cols(&self) -> HashSet<String> {
         let mut colnames = HashSet::new();
         for expr in &self.select {
@@ -342,6 +342,13 @@ impl Query {
             expr.add_colnames(&mut colnames);
         }
         colnames
+    }
+
+    fn column_data<'a>(columns: &'a HashMap<String, Arc<Column>>)
+                       -> HashMap<String, Vec<&'a AnyVec<'a>>> {
+        columns.iter()
+            .map(|(name, column)| (name.to_string(), column.data_sections()))
+            .collect()
     }
 }
 

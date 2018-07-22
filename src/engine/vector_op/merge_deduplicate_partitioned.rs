@@ -30,7 +30,7 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.partitioning, self.left, self.right] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.deduplicated, self.merge_ops] }
-    fn can_stream_input(&self) -> bool { false }
+    fn can_stream_input(&self, _: BufferRef) -> bool { false }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 
