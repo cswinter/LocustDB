@@ -9,7 +9,7 @@ use self::rocksdb::*;
 use disk_store::interface::*;
 use mem_store::column::Column;
 
-struct RocksDB {
+pub struct RocksDB {
     db: DB,
 }
 
@@ -17,6 +17,7 @@ impl RocksDB {
     pub fn new(path: &str) -> RocksDB {
         let mut options = Options::default();
         options.create_if_missing(true);
+        options.create_missing_column_families(true);
         let db = DB::open_cf(&options, path, &vec!["metadata", "partitions"]).unwrap();
         RocksDB {
             db,
@@ -48,8 +49,9 @@ impl DiskStore for RocksDB {
         metadata
     }
 
-    fn load_column_data(&self, partition: PartitionID, column_name: &str) -> Vec<u8> {
-        panic!("")
+    fn load_column(&self, partition: PartitionID, column_name: &str) -> Column {
+        let data = self.db.get_cf(self.partitions(), &column_key(partition, column_name)).unwrap().unwrap();
+        deserialize(&data).unwrap()
     }
 
     fn store_partition(&self, partition: PartitionID, tablename: &str, columns: &Vec<Arc<Column>>) {
@@ -64,17 +66,21 @@ impl DiskStore for RocksDB {
         tx.put_cf(self.metadata(), &key, &serialize(&md).unwrap());
 
         for column in columns {
-            let mut key = Vec::new();
-            LittleEndian::write_u64(&mut key, partition as u64);
-            key.push('.' as u8);
-            key.extend(column.name().as_bytes());
-            // TODO(clemens): serialise column data
-            let data = Vec::new();
+            let key = column_key(partition, column.name());
+            let data = serialize(column.as_ref()).unwrap();
             tx.put_cf(self.partitions(), &key, &data);
         }
 
         self.db.write(tx);
     }
+}
+
+fn column_key(id: PartitionID, column_name: &str) -> Vec<u8> {
+    let mut key = vec![0; 8];
+    LittleEndian::write_u64(&mut key, id as u64);
+    key.push('.' as u8);
+    key.extend(column_name.as_bytes());
+    key
 }
 
 #[derive(Serialize, Deserialize, Debug)]

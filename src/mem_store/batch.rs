@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use heapsize::HeapSizeOf;
 use mem_store::*;
-use disk_store::interface::PartitionID;
+use disk_store::interface::*;
 use ingest::buffer::Buffer;
 
 
@@ -55,17 +55,16 @@ impl Partition {
                 .collect())
     }
 
-    pub fn get_cols(&self, referenced_cols: &HashSet<String>) -> HashMap<String, Arc<Column>> {
+    pub fn get_cols(&self, referenced_cols: &HashSet<String>, db: &DiskStore) -> HashMap<String, Arc<Column>> {
         let mut columns = HashMap::new();
         for handle in &self.cols {
             let mut handle = handle.lock().unwrap();
             if referenced_cols.contains(handle.name()) {
                 let column = match *handle {
-                    ColumnHandle::NonResident(ref _name) => {
-                        panic!("non resident!");
-                    }
+                    ColumnHandle::NonResident(ref name) => Arc::new(db.load_column(self.id, name)),
                     ColumnHandle::Resident(ref column) => column.clone(),
                 };
+                *handle = ColumnHandle::Resident(column.clone());
                 columns.insert(handle.name().to_string(), column);
             }
         }
@@ -80,6 +79,8 @@ impl Partition {
         }
         names
     }
+
+    pub fn id(&self) -> u64 { self.id }
 }
 
 impl HeapSizeOf for Partition {

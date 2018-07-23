@@ -114,6 +114,11 @@ impl Table {
         }
     }
 
+    pub fn max_partition_id(&self) -> u64 {
+        let mut partitions = self.partitions.read().unwrap();
+        partitions.iter().map(|p| p.id()).max().unwrap_or(0)
+    }
+
     fn size_per_column(_batches: &[Arc<Partition>]) -> Vec<(String, usize)> {
         // TODO(clemens): fix
         vec![]

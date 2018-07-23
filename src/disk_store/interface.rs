@@ -5,7 +5,7 @@ use mem_store::column::Column;
 
 pub trait DiskStore: Sync + Send + 'static {
     fn load_metadata(&self) -> Vec<PartitionMetadata>;
-    fn load_column_data(&self, partition: PartitionID, column_name: &str) -> Vec<u8>;
+    fn load_column(&self, partition: PartitionID, column_name: &str) -> Column;
     fn store_partition(&self, partition: PartitionID, tablename: &str, columns: &Vec<Arc<Column>>);
 }
 

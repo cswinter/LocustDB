@@ -7,6 +7,6 @@ pub struct NoopStorage;
 
 impl DiskStore for NoopStorage {
     fn load_metadata(&self) -> Vec<PartitionMetadata> { Vec::new() }
-    fn load_column_data(&self, _: PartitionID, _: &str) -> Vec<u8> { Vec::new() }
+    fn load_column(&self, _: PartitionID, _: &str) -> Column { panic!("Can't load column from NoopStorage!") }
     fn store_partition(&self, _: PartitionID, _: &str, _: &Vec<Arc<Column>>) {}
 }

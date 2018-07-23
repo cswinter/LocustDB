@@ -13,9 +13,11 @@ test_data/nyc-taxi-data
 .idea
 locustdb.iml
 
-
 # readline
 .locustdb_history
 
 # vim
 rusty-tags.vi
+
+# default rocksdb data dir
+rocksdb

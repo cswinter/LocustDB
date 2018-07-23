@@ -24,15 +24,21 @@ pub struct LocustDB {
 
 impl LocustDB {
     pub fn memory_only() -> LocustDB {
-        LocustDB::new(Box::new(NoopStorage), false, None)
+        LocustDB::new(Arc::new(NoopStorage), false, None)
     }
 
-    pub fn new(storage: Box<DiskStore>, load_tabledata: bool, threads: Option<usize>) -> LocustDB {
+    #[cfg(feature = "enable_rocksdb")]
+    pub fn disk_backed(db_path: &str) -> LocustDB {
+        use disk_store::rocksdb;
+        let storage = rocksdb::RocksDB::new(db_path);
+        LocustDB::new(Arc::new(storage), true, None)
+    }
+
+    pub fn new(storage: Arc<DiskStore>, load_tabledata: bool, threads: Option<usize>) -> LocustDB {
         let locustdb = Arc::new(InnerLocustDB::new(storage, load_tabledata));
         InnerLocustDB::start_worker_threads(&locustdb, threads);
         LocustDB { inner_locustdb: locustdb }
     }
-
 
     pub fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Box<Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
         let (sender, receiver) = oneshot::channel();
@@ -64,7 +70,8 @@ impl LocustDB {
                 Err(QueryError::NotImplemented(format!("Table {} does not exist!", &query.table))),
                 TraceBuilder::new("empty".to_owned()).finalize()))),
         };
-        let task = QueryTask::new(query, explain, show, data, SharedSender::new(sender));
+        let task = QueryTask::new(
+            query, explain, show, data, self.inner_locustdb.storage.clone(), SharedSender::new(sender));
         let trace_receiver = self.schedule(task);
         Box::new(receiver.join(trace_receiver))
     }

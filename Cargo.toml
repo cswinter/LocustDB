@@ -37,6 +37,7 @@ log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"
 flate2 = "1.0"
 fnv = "1.0.3"
 byteorder = "1.2.3"
+tempdir = "0.3.7"
 
 [dev-dependencies]
 env_logger = "0.5.6"

@@ -1,10 +1,12 @@
+use heapsize::HeapSizeOf;
+
 use engine::query_plan::QueryPlan;
 use engine::typed_vec::AnyVec;
 use engine::types::*;
-use heapsize::HeapSizeOf;
 use ingest::raw_val::RawVal;
 
-#[derive(Debug)]
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Column {
     name: String,
     len: usize,
@@ -59,7 +61,7 @@ impl HeapSizeOf for Column {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Codec {
     ops: Vec<CodecOp>,
     column_name: String,
@@ -191,7 +193,7 @@ impl Codec {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum CodecOp {
     Add(EncodingType, i64),
     ToI64(EncodingType),
@@ -257,7 +259,7 @@ impl CodecOp {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum DataSection {
     U8(Vec<u8>),
     U16(Vec<u16>),

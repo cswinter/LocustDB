@@ -21,7 +21,7 @@ extern crate regex;
 extern crate seahash;
 extern crate serde;
 extern crate time;
-// extern crate tempdir;
+extern crate tempdir;
 extern crate fnv;
 extern crate byteorder;
 

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::str;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 
@@ -21,8 +21,9 @@ use trace::*;
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
-    storage: Box<DiskStore>,
+    pub storage: Arc<DiskStore>,
 
+    next_partition_id: AtomicUsize,
     running: AtomicBool,
     idle_queue: Condvar,
     task_queue: Mutex<VecDeque<Arc<TaskState>>>,
@@ -42,17 +43,19 @@ impl Drop for TaskState {
 }
 
 impl InnerLocustDB {
-    pub fn new(storage: Box<DiskStore>, restore_tabledata: bool) -> InnerLocustDB {
+    pub fn new(storage: Arc<DiskStore>, restore_tabledata: bool) -> InnerLocustDB {
         let existing_tables = if restore_tabledata {
             Table::load_table_metadata(1 << 20, storage.as_ref())
         } else {
             HashMap::new()
         };
+        let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);
 
         InnerLocustDB {
             tables: RwLock::new(existing_tables),
             storage,
             running: AtomicBool::new(true),
+            next_partition_id: AtomicUsize::new(max_pid as usize + 1),
             idle_queue: Condvar::new(),
             task_queue: Mutex::new(VecDeque::new()),
         }
@@ -133,14 +136,13 @@ impl InnerLocustDB {
 
     pub fn store_partitions(&self, tablename: &str, partitions: Vec<Vec<Arc<Column>>>) {
         // TODO(clemens): pid needs to be unique across all invocations, compactions and restore from DB
-        let mut pid = 0;
         self.create_if_empty(tablename);
         let tables = self.tables.read().unwrap();
         let table = tables.get(tablename).unwrap();
         for partition in partitions {
+            let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
             self.storage.store_partition(pid, tablename, &partition);
             table.load_batch(Partition::new(pid, partition));
-            pid += 1;
         }
     }
 

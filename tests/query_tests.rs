@@ -2,12 +2,15 @@ extern crate env_logger;
 extern crate futures_executor;
 extern crate locustdb;
 extern crate log;
+extern crate tempdir;
 
 use futures_executor::block_on;
 use locustdb::*;
-use locustdb::nyc_taxi_data;
 use locustdb::Value;
+use locustdb::nyc_taxi_data;
 use std::cmp::min;
+use std::{thread, time};
+use tempdir::TempDir;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ =
@@ -254,4 +257,34 @@ fn z_test_group_by_trip_id() {
             vec![Int(4), Int(377955)]
         ],
     )
+}
+
+#[cfg(feature = "enable_rocksdb")]
+#[test]
+fn test_restore_from_disk() {
+    let _ = env_logger::try_init();
+    let tmp_dir = TempDir::new("rocks").unwrap();
+    {
+        let locustdb = LocustDB::disk_backed(tmp_dir.path().to_str().unwrap());
+        let load = block_on(locustdb.load_csv(
+            nyc_taxi_data::ingest_file("test_data/nyc-taxi.csv.gz", "default")
+                .with_chunk_size(999)));
+        load.unwrap().ok();
+        // Dropping the LocustDB object will cause all threads to be stopped
+        // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
+        // TODO(clemens): make drop better
+        thread::sleep(time::Duration::from_millis(250));
+    }
+    let locustdb = LocustDB::disk_backed(tmp_dir.path().to_str().unwrap());
+    let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
+    let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
+    let actual_rows = result.0.unwrap().rows;
+    use Value::*;
+    assert_eq!(&actual_rows[..min(5, actual_rows.len())], &[
+        vec![Int(0), Int(2013), Int(0), Int(2)],
+        vec![Int(0), Int(2013), Int(2), Int(1)],
+        vec![Int(1), Int(2013), Int(0), Int(1965)],
+        vec![Int(1), Int(2013), Int(1), Int(1167)],
+        vec![Int(1), Int(2013), Int(2), Int(824)]
+    ]);
 }
