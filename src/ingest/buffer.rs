@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use mem_store::raw_col::RawCol;
 use ingest::raw_val::RawVal;
 use ingest::input_column::InputColumn;
-use heapsize::HeapSizeOf;
 use std::cmp;
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, HeapSizeOf)]
 pub struct Buffer {
     pub buffer: HashMap<String, RawCol>,
     pub length: usize,
@@ -76,12 +76,6 @@ impl Buffer {
 
     pub fn len(&self) -> usize {
         self.length
-    }
-}
-
-impl HeapSizeOf for Buffer {
-    fn heap_size_of_children(&self) -> usize {
-        self.buffer.heap_size_of_children()
     }
 }
 

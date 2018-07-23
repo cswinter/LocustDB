@@ -2,14 +2,12 @@ use std::iter::repeat;
 use std::ops::BitOr;
 use std::sync::Arc;
 
-use heapsize::HeapSizeOf;
-
 use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column_builder::*;
 
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, HeapSizeOf)]
 pub struct RawCol {
     types: ColType,
     data: Vec<RawVal>,
@@ -80,13 +78,7 @@ impl RawCol {
     }
 }
 
-impl HeapSizeOf for RawCol {
-    fn heap_size_of_children(&self) -> usize {
-        self.data.heap_size_of_children()
-    }
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone, HeapSizeOf)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,

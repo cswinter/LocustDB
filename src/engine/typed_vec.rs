@@ -367,15 +367,11 @@ impl IntoUsize for i64 {
 }
 
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, HeapSizeOf)]
 pub enum MergeOp {
     TakeLeft,
     TakeRight,
     MergeRight,
-}
-
-impl HeapSizeOf for MergeOp {
-    fn heap_size_of_children(&self) -> usize { 0 }
 }
 
 impl Display for MergeOp {
@@ -391,14 +387,10 @@ impl GenericVec<MergeOp> for MergeOp {
 }
 
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, HeapSizeOf)]
 pub struct Premerge {
     pub left: u32,
     pub right: u32,
-}
-
-impl HeapSizeOf for Premerge {
-    fn heap_size_of_children(&self) -> usize { 0 }
 }
 
 impl Display for Premerge {

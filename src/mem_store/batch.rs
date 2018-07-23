@@ -14,6 +14,7 @@ pub struct Partition {
     cols: Vec<Mutex<ColumnHandle>>,
 }
 
+#[derive(HeapSizeOf)]
 pub enum ColumnHandle {
     NonResident(String),
     Resident(Arc<Column>),
@@ -88,14 +89,5 @@ impl HeapSizeOf for Partition {
         // TODO(clemens): fix
         // self.cols.heap_size_of_children()
         0
-    }
-}
-
-impl HeapSizeOf for ColumnHandle {
-    fn heap_size_of_children(&self) -> usize {
-        match self {
-            ColumnHandle::NonResident(ref name) => name.heap_size_of_children(),
-            ColumnHandle::Resident(ref col) => col.heap_size_of_children(),
-        }
     }
 }

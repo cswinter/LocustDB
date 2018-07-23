@@ -3,7 +3,7 @@ use engine::types::*;
 use ingest::raw_val::RawVal;
 
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, HeapSizeOf)]
 pub struct Codec {
     ops: Vec<CodecOp>,
     column_name: String,
@@ -135,7 +135,7 @@ impl Codec {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, HeapSizeOf)]
 pub enum CodecOp {
     Add(EncodingType, i64),
     ToI64(EncodingType),

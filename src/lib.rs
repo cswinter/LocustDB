@@ -13,6 +13,8 @@ extern crate failure;
 extern crate futures_core;
 extern crate futures_util;
 extern crate futures_channel;
+#[macro_use]
+extern crate heapsize_derive;
 extern crate heapsize;
 extern crate itertools;
 extern crate num;

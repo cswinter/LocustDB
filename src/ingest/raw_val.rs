@@ -2,7 +2,7 @@ use std::fmt;
 use engine::types::BasicType;
 
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, HeapSizeOf)]
 pub enum RawVal {
     Int(i64),
     Str(String),
