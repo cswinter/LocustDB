@@ -173,12 +173,12 @@ impl QueryTask {
             }
         }
 
-        // TODO(clemens): need to keep colstack alive, otherwise results may reference freed data
         match QueryTask::combine_results(batch_results, self.combined_limit()) {
             Ok(Some(result)) => self.push_result(result, rows_scanned, rows_collected, explains),
             Err(error) => self.fail_with(error),
             _ => {}
         }
+        // need to keep colstack alive, otherwise results may reference freed data
         self.push_colstack(colstack);
     }
 

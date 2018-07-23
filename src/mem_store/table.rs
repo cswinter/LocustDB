@@ -115,7 +115,7 @@ impl Table {
     }
 
     pub fn max_partition_id(&self) -> u64 {
-        let mut partitions = self.partitions.read().unwrap();
+        let partitions = self.partitions.read().unwrap();
         partitions.iter().map(|p| p.id()).max().unwrap_or(0)
     }
 
