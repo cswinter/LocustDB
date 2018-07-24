@@ -19,8 +19,8 @@ pub enum QueryPlan {
     ReadColumnSection(String, usize, Option<(i64, i64)>),
     ReadBuffer(BufferRef),
 
-    DictLookup(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
-    InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>),
+    DictLookup(Box<QueryPlan>, EncodingType, Box<QueryPlan>, Box<QueryPlan>),
+    InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>, Box<QueryPlan>),
     TypeConversion(Box<QueryPlan>, EncodingType, EncodingType),
 
     Exists(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
@@ -63,10 +63,18 @@ pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef
             VecOperator::filter(t, prepare(*plan, result), prepare(*filter, result), result.named_buffer("filtered")),
         QueryPlan::Constant(ref c, hide_value) =>
             VecOperator::constant(c.clone(), hide_value, result.named_buffer("constant")),
-        QueryPlan::DictLookup(plan, t, dict) =>
-            VecOperator::dict_lookup(prepare(*plan, result), prepare(*dict, result), result.named_buffer("decoded"), t),
-        QueryPlan::InverseDictLookup(dict, constant) =>
-            VecOperator::inverse_dict_lookup(prepare(*dict, result), prepare(*constant, result), result.named_buffer("encoded")),
+        QueryPlan::DictLookup(plan, t, dict_indices, dict_data) =>
+            VecOperator::dict_lookup(
+                prepare(*plan, result),
+                prepare(*dict_indices, result),
+                prepare(*dict_data, result),
+                result.named_buffer("decoded"), t),
+        QueryPlan::InverseDictLookup(dict_indices, dict_data, constant) =>
+            VecOperator::inverse_dict_lookup(
+                prepare(*dict_indices, result),
+                prepare(*dict_data, result),
+                prepare(*constant, result),
+                result.named_buffer("encoded")),
         QueryPlan::TypeConversion(plan, initial_type, target_type) => if initial_type == target_type {
             return prepare(*plan, result);
         } else {

@@ -57,9 +57,8 @@ pub enum DataSection {
     U8(Vec<u8>),
     U16(Vec<u16>),
     U32(Vec<u32>),
+    U64(Vec<u64>),
     I64(Vec<i64>),
-    // TODO(clemens): remove
-    String(Vec<String>),
     Null(usize),
 }
 
@@ -69,8 +68,8 @@ impl DataSection {
             DataSection::U8(ref x) => x,
             DataSection::U16(ref x) => x,
             DataSection::U32(ref x) => x,
+            DataSection::U64(ref x) => x,
             DataSection::I64(ref x) => x,
-            DataSection::String(ref x) => x,
             DataSection::Null(ref x) => x,
         }
     }

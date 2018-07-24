@@ -9,8 +9,6 @@ use locustdb::*;
 use locustdb::Value;
 use locustdb::nyc_taxi_data;
 use std::cmp::min;
-use std::{thread, time};
-use tempdir::TempDir;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ =
@@ -262,6 +260,8 @@ fn z_test_group_by_trip_id() {
 #[cfg(feature = "enable_rocksdb")]
 #[test]
 fn test_restore_from_disk() {
+    use std::{thread, time};
+    use tempdir::TempDir;
     let _ = env_logger::try_init();
     let tmp_dir = TempDir::new("rocks").unwrap();
     {

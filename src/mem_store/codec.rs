@@ -86,12 +86,14 @@ impl Codec {
                         None))
                 }
                 CodecOp::DictLookup(t) => {
-                    let dictionary = stack.pop().unwrap();
+                    let dict_data = stack.pop().unwrap();
+                    let dict_indices = stack.pop().unwrap();
                     let indices = stack.pop().unwrap();
                     Box::new(QueryPlan::DictLookup(
                         indices,
                         t,
-                        dictionary))
+                        dict_indices,
+                        dict_data))
                 }
                 CodecOp::UnpackStrings => unimplemented!(" unpack strings"),
                 CodecOp::Unknown => panic!("unkown decode plan!"),
@@ -109,10 +111,12 @@ impl Codec {
 
     pub fn encode_str(&self, string_const: Box<QueryPlan>) -> Box<QueryPlan> {
         match self.ops[..] {
-            [CodecOp::PushDataSection(1), CodecOp::DictLookup(EncodingType::U8)] =>
+            [CodecOp::PushDataSection(1), CodecOp::PushDataSection(2), CodecOp::DictLookup(_)] =>
                 Box::new(QueryPlan::InverseDictLookup(
                     Box::new(QueryPlan::ReadColumnSection(
                         self.column_name.to_string(), 1, None)),
+                    Box::new(QueryPlan::ReadColumnSection(
+                        self.column_name.to_string(), 2, None)),
                     string_const)),
             _ => panic!("encode_str not supported for {:?}", &self.ops),
         }

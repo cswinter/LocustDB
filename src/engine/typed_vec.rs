@@ -25,9 +25,9 @@ pub trait AnyVec<'a>: Send + Sync {
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b;
 
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
-    fn cast_ref_string(&self) -> &[String] { panic!(self.type_error("cast_ref_string")) }
     fn cast_ref_usize(&self) -> &[usize] { panic!(self.type_error("cast_ref_usize")) }
     fn cast_ref_i64(&self) -> &[i64] { panic!(self.type_error("cast_ref_i64")) }
+    fn cast_ref_u64(&self) -> &[u64] { panic!(self.type_error("cast_ref_u64")) }
     fn cast_ref_u32<'b>(&'b self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
     fn cast_ref_u16<'b>(&'b self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
     fn cast_ref_u8<'b>(&'b self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
@@ -39,6 +39,7 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
     fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> { panic!(self.type_error("cast_ref_mut_usize")) }
     fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { panic!(self.type_error("cast_ref_mut_i64")) }
+    fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> { panic!(self.type_error("cast_ref_mut_u64")) }
     fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
@@ -95,6 +96,11 @@ impl<'a> AnyVec<'a> for Vec<usize> {
 impl<'a> AnyVec<'a> for Vec<i64> {
     fn cast_ref_i64(&self) -> &[i64] { self }
     fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { self }
+}
+
+impl<'a> AnyVec<'a> for Vec<u64> {
+    fn cast_ref_u64(&self) -> &[u64] { self }
+    fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> { self }
 }
 
 impl<'a> AnyVec<'a> for Vec<u32> {
@@ -161,6 +167,10 @@ impl<'a> AnyVec<'a> for &'a [i64] {
     fn cast_ref_i64<'b>(&'b self) -> &'b [i64] { self }
 }
 
+impl<'a> AnyVec<'a> for &'a [u64] {
+    fn cast_ref_u64<'b>(&'b self) -> &'b [u64] { self }
+}
+
 impl<'a> AnyVec<'a> for &'a [u32] {
     fn cast_ref_u32<'b>(&'b self) -> &'b [u32] { self }
 }
@@ -223,52 +233,6 @@ impl<'a> AnyVec<'a> for RawVal {
     fn display(&self) -> String { format!("Scalar({})", self) }
 }
 
-// TODO(clemens): remove
-impl<'a> AnyVec<'a> for Vec<String> {
-    fn len(&self) -> usize { (*self).len() }
-    fn get_raw(&self, _i: usize) -> RawVal { panic!("") }
-    fn get_type(&self) -> EncodingType { EncodingType::Str }
-    fn sort_indices_desc(&self, _indices: &mut Vec<usize>) {}
-    fn sort_indices_asc(&self, _indices: &mut Vec<usize>) {}
-    fn type_error(&self, func_name: &str) -> String { format!("Constant.{}", func_name) }
-    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("Constant.extend") }
-    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b {
-        let to = min(to, self.len());
-        Box::new(&self[from..to])
-    }
-    fn cast_ref_string(&self) -> &[String] { self }
-
-    fn display(&self) -> String { format!("Strings({:?})", &self) }
-}
-
-// TODO(clemens): remove
-impl<'a> AnyVec<'a> for &'a [String] {
-    fn len(&self) -> usize { <[String]>::len(self) }
-    fn get_raw(&self, _: usize) -> RawVal { panic!("[string] get raw") }
-    fn get_type(&self) -> EncodingType { EncodingType::Str }
-    fn sort_indices_desc(&self, _indices: &mut Vec<usize>) {
-        panic!("asd;lkjfa'sd")
-    }
-    fn sort_indices_asc(&self, _indices: &mut Vec<usize>) {
-        panic!("asd;lkjfa'sd")
-    }
-    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b {
-        let to = min(to, self.len());
-        Box::new(&self[from..to])
-    }
-
-    fn cast_ref_string(&self) -> &[String] { self }
-
-    fn type_error(&self, func_name: &str) -> String { format!("[{:?}].{}", self.get_type(), func_name) }
-
-    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> {
-        // TODO(clemens): convert into owned
-        unimplemented!()
-    }
-
-    fn display(&self) -> String { format!("&{:?}{}", self.get_type(), display_slice(&self, 120)) }
-}
-
 pub trait GenericVec<T>: PartialEq + Ord + Copy + Debug + Display + Sync + Send + HeapSizeOf {
     fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [T] where T: 'a;
     fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<T> where T: 'a;
@@ -299,6 +263,13 @@ impl GenericVec<i64> for i64 {
     fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [i64] where i64: 'a { vec.cast_ref_i64() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<i64> where i64: 'a { vec.cast_ref_mut_i64() }
     fn wrap_one(value: i64) -> RawVal { RawVal::Int(value) }
+    fn t() -> EncodingType { EncodingType::I64 }
+}
+
+impl GenericVec<u64> for u64 {
+    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [u64] where u64: 'a { vec.cast_ref_u64() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<u64> where u64: 'a { vec.cast_ref_mut_u64() }
+    fn wrap_one(value: u64) -> RawVal { RawVal::Int(value as i64) }
     fn t() -> EncodingType { EncodingType::I64 }
 }
 

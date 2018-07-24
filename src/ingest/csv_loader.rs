@@ -12,6 +12,7 @@ use std::ops::BitOr;
 use std::str;
 use std::sync::Arc;
 use super::extractor;
+use stringpack::*;
 
 type IngestionTransform = HashMap<String, extractor::Extractor>;
 
@@ -291,35 +292,6 @@ impl BitOr for ColType {
             contains_int: self.contains_int | rhs.contains_int,
             contains_null: self.contains_null | rhs.contains_null,
         }
-    }
-}
-
-#[derive(Default)]
-pub struct IndexedPackedStrings {
-    data: Vec<(u32, u32)>,
-    backing_store: Vec<u8>,
-}
-
-impl IndexedPackedStrings {
-    pub fn push(&mut self, elem: &str) {
-        let bytes = elem.as_bytes();
-        self.data.push((self.backing_store.len() as u32, bytes.len() as u32));
-        self.backing_store.extend_from_slice(bytes);
-    }
-
-    pub fn clear(&mut self) {
-        self.data.clear();
-        self.backing_store.clear();
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item=&str> + Clone {
-        self.data.iter().map(move |&(i, len)| unsafe {
-            str::from_utf8_unchecked(&self.backing_store[i as usize..(i + len) as usize])
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
     }
 }
 

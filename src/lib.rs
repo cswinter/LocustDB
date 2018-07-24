@@ -38,6 +38,7 @@ mod engine;
 mod scheduler;
 mod locustdb;
 mod disk_store;
+mod stringpack;
 
 pub use engine::query_task::QueryOutput;
 pub use errors::QueryError;

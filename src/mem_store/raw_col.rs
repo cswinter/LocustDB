@@ -8,20 +8,20 @@ use mem_store::column_builder::*;
 
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, HeapSizeOf)]
-pub struct RawCol {
+pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
 }
 
-impl RawCol {
-    pub fn new() -> RawCol {
-        RawCol {
+impl MixedCol {
+    pub fn new() -> MixedCol {
+        MixedCol {
             types: ColType::nothing(),
             data: Vec::new(),
         }
     }
 
-    pub fn with_nulls(count: usize) -> RawCol {
+    pub fn with_nulls(count: usize) -> MixedCol {
         let mut c = Self::new();
         c.push_nulls(count);
         c

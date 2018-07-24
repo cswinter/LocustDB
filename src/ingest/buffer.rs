@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use mem_store::raw_col::RawCol;
+use mem_store::raw_col::MixedCol;
 use ingest::raw_val::RawVal;
 use ingest::input_column::InputColumn;
 use std::cmp;
@@ -7,7 +7,7 @@ use std::cmp;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, HeapSizeOf)]
 pub struct Buffer {
-    pub buffer: HashMap<String, RawCol>,
+    pub buffer: HashMap<String, MixedCol>,
     pub length: usize,
 }
 
@@ -25,7 +25,7 @@ impl Buffer {
         let len = self.len();
         for (name, input_val) in row {
             let buffered_col = self.buffer.entry(name)
-                .or_insert_with(|| RawCol::with_nulls(len));
+                .or_insert_with(|| MixedCol::with_nulls(len));
             buffered_col.push(input_val);
         }
         self.length += 1;
@@ -37,7 +37,7 @@ impl Buffer {
         let mut new_length = 0;
         for (name, input_col) in columns {
             let buffered_col = self.buffer.entry(name)
-                .or_insert_with(|| RawCol::with_nulls(len));
+                .or_insert_with(|| MixedCol::with_nulls(len));
             match input_col {
                 InputColumn::Int(vec) => buffered_col.push_ints(vec),
                 InputColumn::Str(vec) => buffered_col.push_strings(vec),
@@ -54,7 +54,7 @@ impl Buffer {
         let mut new_length = 0;
         for (name, input_vals) in columns {
             let buffered_col = self.buffer.entry(name)
-                .or_insert_with(|| RawCol::with_nulls(len));
+                .or_insert_with(|| MixedCol::with_nulls(len));
             for input_val in input_vals {
                 buffered_col.push(input_val);
             }

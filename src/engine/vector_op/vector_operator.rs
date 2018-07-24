@@ -152,18 +152,18 @@ impl<'a> VecOperator<'a> {
         Box::new(ReadColumnData { colname, section_index, output, batch_size: 0, current_index: 0 })
     }
 
-    pub fn dict_lookup(indices: BufferRef, dictionary: BufferRef, output: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
+    pub fn dict_lookup(indices: BufferRef, dict_indices: BufferRef, dict_data: BufferRef, output: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
         match t {
-            EncodingType::U8 => Box::new(DictLookup::<u8> { indices, output, dictionary, t: PhantomData }),
-            EncodingType::U16 => Box::new(DictLookup::<u16> { indices, output, dictionary, t: PhantomData }),
-            EncodingType::U32 => Box::new(DictLookup::<u32> { indices, output, dictionary, t: PhantomData }),
-            EncodingType::I64 => Box::new(DictLookup::<i64> { indices, output, dictionary, t: PhantomData }),
+            EncodingType::U8 => Box::new(DictLookup::<u8> { indices, output, dict_indices, dict_data, t: PhantomData }),
+            EncodingType::U16 => Box::new(DictLookup::<u16> { indices, output, dict_indices, dict_data, t: PhantomData }),
+            EncodingType::U32 => Box::new(DictLookup::<u32> { indices, output, dict_indices, dict_data, t: PhantomData }),
+            EncodingType::I64 => Box::new(DictLookup::<i64> { indices, output, dict_indices, dict_data, t: PhantomData }),
             _ => panic!("dict_lookup not supported for type {:?}", t),
         }
     }
 
-    pub fn inverse_dict_lookup(dictionary: BufferRef, constant: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(InverseDictLookup { dictionary, constant, output })
+    pub fn inverse_dict_lookup(dict_indices: BufferRef, dict_data: BufferRef, constant: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
+        Box::new(InverseDictLookup { dict_indices, dict_data, constant, output })
     }
 
     pub fn encode_int_const(constant: BufferRef, output: BufferRef, codec: Codec) -> BoxedOperator<'a> {
