@@ -39,9 +39,10 @@ impl DiskStore for RocksDB {
         let iter = self.db.iterator_cf(self.metadata(), IteratorMode::Start).unwrap();
         for (key, value) in iter {
             let partition_id = LittleEndian::read_u64(&key) as PartitionID;
-            let MetaData { tablename, columns } = deserialize(&value).unwrap();
+            let MetaData { tablename, len, columns } = deserialize(&value).unwrap();
             metadata.push(PartitionMetadata {
                 id: partition_id,
+                len,
                 tablename,
                 columns,
             })
@@ -61,17 +62,18 @@ impl DiskStore for RocksDB {
         LittleEndian::write_u64(&mut key, partition as u64);
         let md = MetaData {
             tablename: tablename.to_string(),
+            len: columns[0].len(),
             columns: columns.iter().map(|c| c.name().to_string()).collect(),
         };
-        tx.put_cf(self.metadata(), &key, &serialize(&md).unwrap());
+        tx.put_cf(self.metadata(), &key, &serialize(&md).unwrap()).unwrap();
 
         for column in columns {
             let key = column_key(partition, column.name());
             let data = serialize(column.as_ref()).unwrap();
-            tx.put_cf(self.partitions(), &key, &data);
+            tx.put_cf(self.partitions(), &key, &data).unwrap();
         }
 
-        self.db.write(tx);
+        self.db.write(tx).unwrap();
     }
 }
 
@@ -86,5 +88,6 @@ fn column_key(id: PartitionID, column_name: &str) -> Vec<u8> {
 #[derive(Serialize, Deserialize, Debug)]
 struct MetaData {
     tablename: String,
+    len: usize,
     columns: Vec<String>,
 }

@@ -13,7 +13,7 @@ use engine::aggregator::*;
 use engine::batch_merging::*;
 use engine::query::Query;
 use ingest::raw_val::RawVal;
-use mem_store::batch::Partition;
+use mem_store::partition::Partition;
 use mem_store::column::Column;
 use disk_store::interface::DiskStore;
 use scheduler::*;

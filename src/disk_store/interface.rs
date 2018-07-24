@@ -14,6 +14,7 @@ pub type PartitionID = u64;
 pub struct PartitionMetadata {
     pub id: PartitionID,
     pub tablename: String,
+    pub len: usize,
     pub columns: Vec<String>,
 }
 

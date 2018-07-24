@@ -5,13 +5,12 @@ use std::str;
 use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
-use disk_store::interface::DiskStore;
-use disk_store::interface::PartitionID;
+use disk_store::interface::*;
 use heapsize::HeapSizeOf;
 use ingest::buffer::Buffer;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
-use mem_store::batch::Partition;
+use mem_store::partition::Partition;
 
 
 pub struct Table {
@@ -46,14 +45,14 @@ impl Table {
             let table = tables
                 .entry(md.tablename.clone())
                 .or_insert(Table::new(batch_size, &md.tablename));
-            table.insert_nonresident_partition(md.id, &md.columns);
+            table.insert_nonresident_partition(&md);
         }
         tables
     }
 
-    pub fn insert_nonresident_partition(&self, id: PartitionID, columns: &[String]) {
+    pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
         let mut partitions = self.partitions.write().unwrap();
-        partitions.push(Arc::new(Partition::nonresident(id, columns)));
+        partitions.push(Arc::new(Partition::nonresident(md.id, md.len, &md.columns)));
     }
 
     pub fn ingest(&self, row: Vec<(String, RawVal)>) {
@@ -104,8 +103,7 @@ impl Table {
         let buffer = self.buffer.lock().unwrap();
         TableStats {
             name: self.name().to_string(),
-            // TODO(clemens): fix
-            rows: 0,// batches.iter().map(|b| b.cols().get(0).map_or(0, |c| c.len())).sum(),
+            rows: partitions.iter().map(|p| p.len()).sum(),
             batches: partitions.len(),
             batches_bytes: partitions.heap_size_of_children(),
             buffer_length: buffer.len(),
@@ -119,17 +117,14 @@ impl Table {
         partitions.iter().map(|p| p.id()).max().unwrap_or(0)
     }
 
-    fn size_per_column(_batches: &[Arc<Partition>]) -> Vec<(String, usize)> {
-        // TODO(clemens): fix
-        vec![]
-        /*let mut sizes: HashMap<&str, usize> = HashMap::default();
-        for batch in batches {
-            for col in batch.cols() {
-                let heapsize = col.heap_size_of_children();
-                *sizes.entry(col.name()).or_insert(0) += heapsize;
+    fn size_per_column(partitions: &[Arc<Partition>]) -> Vec<(String, usize)> {
+        let mut sizes: HashMap<String, usize> = HashMap::default();
+        for partition in partitions {
+            for (colname, size) in partition.heap_size_per_column() {
+                *sizes.entry(colname).or_insert(0) += size;
             }
         }
-        sizes.iter().map(|(name, size)| (name.to_string(), *size)).collect()*/
+        sizes.iter().map(|(name, size)| (name.to_string(), *size)).collect()
     }
 }
 

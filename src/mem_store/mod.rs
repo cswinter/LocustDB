@@ -1,6 +1,6 @@
 pub mod column;
 pub mod codec;
-pub mod batch;
+pub mod partition;
 pub mod value;
 pub mod column_builder;
 pub mod table;

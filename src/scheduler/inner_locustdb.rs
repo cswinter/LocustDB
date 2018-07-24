@@ -10,7 +10,7 @@ use futures_core::*;
 use futures_channel::oneshot;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
-use mem_store::batch::Partition;
+use mem_store::partition::Partition;
 use mem_store::table::*;
 use mem_store::*;
 use num_cpus;

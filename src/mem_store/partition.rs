@@ -11,6 +11,7 @@ use ingest::buffer::Buffer;
 
 pub struct Partition {
     id: PartitionID,
+    len: usize,
     cols: Vec<Mutex<ColumnHandle>>,
 }
 
@@ -33,15 +34,17 @@ impl Partition {
     pub fn new(id: PartitionID, cols: Vec<Arc<Column>>) -> Partition {
         Partition {
             id,
+            len: cols[0].len(),
             cols: cols.into_iter()
                 .map(|c| Mutex::new(ColumnHandle::Resident(c)))
                 .collect(),
         }
     }
 
-    pub fn nonresident(id: PartitionID, cols: &[String]) -> Partition {
+    pub fn nonresident(id: PartitionID, len: usize, cols: &[String]) -> Partition {
         Partition {
             id,
+            len,
             cols: cols.iter()
                 .map(|name| Mutex::new(ColumnHandle::NonResident(name.to_string())))
                 .collect(),
@@ -82,12 +85,20 @@ impl Partition {
     }
 
     pub fn id(&self) -> u64 { self.id }
+    pub fn len(&self) -> usize { self.len }
+
+    pub fn heap_size_per_column(&self) -> Vec<(String, usize)> {
+        self.cols.iter()
+            .map(|c| {
+                let c = c.lock().unwrap();
+                (c.name().to_string(), c.heap_size_of_children())
+            })
+            .collect()
+    }
 }
 
 impl HeapSizeOf for Partition {
     fn heap_size_of_children(&self) -> usize {
-        // TODO(clemens): fix
-        // self.cols.heap_size_of_children()
-        0
+        self.cols.iter().map(|c| c.lock().unwrap().heap_size_of_children()).sum()
     }
 }
