@@ -20,10 +20,16 @@ const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
 fn main() {
     #[cfg(feature = "nerf")]
-        println!("NERFED!");
+    println!("NERFED!");
+
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
+
+    #[cfg(feature = "enable_rocksdb")]
+    let locustdb = LocustDB::disk_backed("rocksdb");
+    #[cfg(not(feature = "enable_rocksdb"))]
     let locustdb = LocustDB::memory_only();
+
     let start_time = precise_time_ns();
     println!("Loading {} into table trips.", filename);
     if filename == &"nyc" {
@@ -47,6 +53,8 @@ fn main() {
         for l in loads {
             let _ = block_on(l);
         }
+    } else if filename == &"load_from_db" {
+        println!("Restoring data from db...");
     } else if filename == &"passenger_count" {
         let mut loads = Vec::new();
         for path in fs::read_dir("test_data/nyc-taxi-data").unwrap() {

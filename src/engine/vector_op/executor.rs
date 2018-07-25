@@ -2,18 +2,18 @@ use engine::*;
 use engine::vector_op::*;
 use std::cmp;
 use std::fmt;
+use std::collections::{HashMap, HashSet};
 
 
 pub struct QueryExecutor<'a> {
     ops: Vec<Box<VecOperator<'a> + 'a>>,
     stages: Vec<ExecutorStage>,
     encoded_group_by: Option<BufferRef>,
-    filter: Filter,
     count: usize,
     last_buffer: BufferRef,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct ExecutorStage {
     // Vec<(index to op, streamable output)>
     ops: Vec<(usize, bool)>,
@@ -40,15 +40,14 @@ impl<'a> QueryExecutor<'a> {
 
     pub fn encoded_group_by(&self) -> Option<BufferRef> { self.encoded_group_by }
 
-    pub fn filter(&self) -> Filter { self.filter }
-
-    pub fn set_filter(&mut self, filter: Filter) {
-        self.filter = filter;
+    pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a AnyVec<'a>>>) -> Scratchpad<'a> {
+        self.stages = self.partition();
+        Scratchpad::new(self.count, columns)
     }
 
-    pub fn prepare(&mut self) -> Scratchpad<'a> {
+    pub fn prepare_no_columns(&mut self) -> Scratchpad<'a> {
         self.stages = self.partition();
-        Scratchpad::new(self.count)
+        Scratchpad::new(self.count, HashMap::default())
     }
 
     pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
@@ -88,11 +87,8 @@ impl<'a> QueryExecutor<'a> {
                 let op = &self.ops[current];
                 ops.push(current);
 
-                if op.can_stream_input() {
-                    let mut streaming_input = false;
-                    let mut nonstreaming_input = false;
-                    for input in op.inputs() {
-                        // TODO(clemens): if a stage is streamed, any any of the inputs are (non-streamed) results need to break those up
+                for input in op.inputs() {
+                    if op.can_stream_input(input) {
                         for &p in &producers[input.0] {
                             let can_stream = self.ops[p].can_stream_output(input);
                             if !visited[p] && can_stream {
@@ -102,15 +98,11 @@ impl<'a> QueryExecutor<'a> {
                             }
                         }
                     }
-                    assert!(!(streaming_input && nonstreaming_input),
-                            "Streaming and nonstreaming inputs to {:?}:\n{:?}",
-                            op,
-                            op.inputs().iter().map(|i| &self.ops[i.0]).collect::<Vec<_>>())
                 }
                 for output in op.outputs() {
                     if op.can_stream_output(output) {
                         for &consumer in &consumes[output.0] {
-                            if !visited[consumer] && self.ops[consumer].can_stream_input() {
+                            if !visited[consumer] && self.ops[consumer].can_stream_input(output) {
                                 to_visit.push(consumer);
                                 visited[consumer] = true;
                                 stream = stream || self.ops[consumer].allocates();
@@ -126,8 +118,8 @@ impl<'a> QueryExecutor<'a> {
                 for output in self.ops[op].outputs() {
                     if self.ops[op].can_stream_output(output) {
                         for &consumer in &consumes[output.0] {
-                            streaming_consumers |= self.ops[consumer].can_stream_input();
-                            block_consumers |= !self.ops[consumer].can_stream_input();
+                            streaming_consumers |= self.ops[consumer].can_stream_input(output);
+                            block_consumers |= !self.ops[consumer].can_stream_input(output);
                         }
                     }
                     assert!(!streaming_consumers || !block_consumers);
@@ -138,7 +130,44 @@ impl<'a> QueryExecutor<'a> {
             let stage0 = stages.len() == 0;
             stages.push(ExecutorStage { ops, stream: stream && stage0 })
         }
-        stages
+
+        // TODO(clemens): need some kind of "anti-dependency" or "consume" marker to enforce ordering of e.g. NonzeroCompact
+        // ## Topological Sort ##
+        // Determine what stage each operation is in
+        let mut stage_for_op = vec![0; self.ops.len()];
+        for (i, stage) in stages.iter().enumerate() {
+            for (op, _) in &stage.ops {
+                stage_for_op[*op] = i;
+            }
+        }
+
+        // Determine what stages each stage depends on
+        let mut dependencies = Vec::new();
+        for stage in &stages {
+            let mut deps = HashSet::new();
+            for &(op, _) in &stage.ops {
+                for input in self.ops[op].inputs() {
+                    for &producer in &producers[input.0] {
+                        deps.insert(stage_for_op[producer]);
+                    }
+                }
+            }
+            dependencies.push(deps);
+        }
+
+        let mut visited = vec![false; stages.len()];
+        let mut total_order = Vec::new();
+        fn visit(stage_index: usize, dependencies: &Vec<HashSet<usize>>, stage: &Vec<ExecutorStage>, visited: &mut Vec<bool>, total_order: &mut Vec<ExecutorStage>) {
+            if visited[stage_index] { return; }
+            visited[stage_index] = true;
+            for &dependency in &dependencies[stage_index] {
+                visit(dependency, dependencies, stage, visited, total_order);
+            }
+            total_order.push(stage[stage_index].clone());
+        };
+        stages.iter().enumerate().for_each(|(i, _)|
+            visit(i, &dependencies, &stages, &mut visited, &mut total_order));
+        total_order
     }
 
     fn init_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>) -> (usize, usize) {
@@ -202,7 +231,6 @@ impl<'a> Default for QueryExecutor<'a> {
             ops: vec![],
             stages: vec![],
             encoded_group_by: None,
-            filter: Filter::None,
             count: 0,
             last_buffer: BufferRef(0xdeadbeef, "ERROR"),
         }

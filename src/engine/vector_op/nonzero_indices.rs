@@ -37,7 +37,7 @@ impl<'a, T: GenericIntVec<T> + IntoUsize, U: GenericIntVec<U>> VecOperator<'a> f
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_input(&self, _: BufferRef) -> bool { true }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 

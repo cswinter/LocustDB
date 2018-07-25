@@ -3,13 +3,20 @@ authors = ["Clemens Winter <clemenswinter1@gmail.com>", "David Fisher"]
 name = "locustdb"
 version = "0.1.0"
 
+[features]
+default=[]
+trace=[]
+nerf=[]
+enable_rocksdb=["rocksdb"]
+
 [dependencies]
+rocksdb = { version = "0.10.1", optional = true }
 futures-core = "0.2.1"
 futures-util = "0.2.1"
 futures-executor = "0.2.1"
 futures-channel = "0.2.1"
 csv = "1"
-heapsize = "0.3.8"
+heapsize = "0.4.2"
 itertools = "0.5.9"
 nom = "^3.2.1"
 num = "0.1.36"
@@ -17,9 +24,9 @@ regex = "0.2"
 rustyline = "1.0.0"
 serde_json = "0.9.6"
 time = "0.1.36"
-serde_derive = "1.0"
-serde = "1.0"
-bincode = "0.9.2"
+serde_derive = "1.0.70"
+serde = "1.0.70"
+bincode = "1.0.1"
 seahash = "3.0.5"
 bit-vec = "0.4.4"
 num_cpus = "1.0"
@@ -29,15 +36,10 @@ failure_derive = "0.1.1"
 log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
 flate2 = "1.0"
 fnv = "1.0.3"
+byteorder = "1.2.3"
+tempdir = "0.3.7"
+heapsize_derive = "0.1.4"
 
 [dev-dependencies]
 env_logger = "0.5.6"
 
-['cfg(feature = "rocksdb")'.dependencies]
-rocksdb = "0.10.1"
-
-[features]
-default=[]
-trace=[]
-nerf=[]
-rocksdb=[]

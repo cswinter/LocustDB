@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::mem;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 
@@ -12,8 +13,9 @@ use engine::aggregator::*;
 use engine::batch_merging::*;
 use engine::query::Query;
 use ingest::raw_val::RawVal;
-use mem_store::batch::Batch;
+use mem_store::partition::Partition;
 use mem_store::column::Column;
+use disk_store::interface::DiskStore;
 use scheduler::*;
 use syntax::expression::*;
 use time::precise_time_ns;
@@ -23,11 +25,12 @@ pub struct QueryTask {
     query: Query,
     explain: bool,
     show: Vec<usize>,
-    batches: Vec<Batch>,
+    partitions: Vec<Arc<Partition>>,
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
     aggregate: Vec<Aggregator>,
     start_time_ns: u64,
+    db: Arc<DiskStore>,
 
     // Lifetime is not actually static, but tied to the lifetime of this struct.
     // There is currently no good way to express this constraint in Rust.
@@ -45,6 +48,7 @@ pub struct QueryState<'a> {
     explains: Vec<String>,
     rows_scanned: usize,
     rows_collected: usize,
+    colstacks: Vec<Vec<HashMap<String, Arc<Column>>>>,
 }
 
 pub struct QueryOutput {
@@ -72,7 +76,7 @@ impl Default for QueryStats {
 
 
 impl QueryTask {
-    pub fn new(mut query: Query, explain: bool, show: Vec<usize>, source: Vec<Batch>, sender: SharedSender<QueryResult>) -> QueryTask {
+    pub fn new(mut query: Query, explain: bool, show: Vec<usize>, source: Vec<Arc<Partition>>, db: Arc<DiskStore>, sender: SharedSender<QueryResult>) -> QueryTask {
         let start_time_ns = precise_time_ns();
         if query.is_select_star() {
             query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
@@ -95,11 +99,12 @@ impl QueryTask {
             query,
             explain,
             show,
-            batches: source,
+            partitions: source,
             referenced_cols,
             output_colnames,
             aggregate,
             start_time_ns,
+            db,
 
             unsafe_state: Mutex::new(QueryState {
                 partial_results: Vec::new(),
@@ -107,6 +112,7 @@ impl QueryTask {
                 explains: Vec::new(),
                 rows_scanned: 0,
                 rows_collected: 0,
+                colstacks: Vec::new(),
             }),
             batch_index: AtomicUsize::new(0),
             completed: AtomicBool::new(false),
@@ -117,17 +123,18 @@ impl QueryTask {
     pub fn run(&self) {
         let mut rows_scanned = 0;
         let mut rows_collected = 0;
+        let mut colstack = Vec::new();
         let mut batch_results = Vec::<BatchResult>::new();
         let mut explains = Vec::new();
-        while let Some((batch, id)) = self.next_batch() {
+        while let Some((partition, id)) = self.next_partition() {
             trace_start!("Batch {}", id);
             let show = self.show.iter().any(|&x| x == id);
-            rows_scanned += batch.cols().get(0).map_or(0, |c| c.len());
-            let batch = QueryTask::prepare_batch(&self.referenced_cols, batch);
+            let cols = partition.get_cols(&self.referenced_cols, self.db.as_ref());
+            rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
             let (mut batch_result, explain) = match if self.aggregate.is_empty() {
-                self.query.run(&batch, self.explain, show)
+                self.query.run(unsafe { mem::transmute(&cols) }, self.explain, show)
             } else {
-                self.query.run_aggregate(&batch, self.explain, show)
+                self.query.run_aggregate(unsafe { mem::transmute(&cols) }, self.explain, show)
             } {
                 Ok(result) => result,
                 Err(error) => {
@@ -135,6 +142,7 @@ impl QueryTask {
                     return;
                 }
             };
+            colstack.push(cols);
             rows_collected += batch_result.len();
             if let Some(explain) = explain {
                 explains.push(explain);
@@ -170,6 +178,8 @@ impl QueryTask {
             Err(error) => self.fail_with(error),
             _ => {}
         }
+        // need to keep colstack alive, otherwise results may reference freed data
+        self.push_colstack(colstack);
     }
 
     fn combine_results(batch_results: Vec<BatchResult>, limit: usize) -> Result<Option<BatchResult>, QueryError> {
@@ -195,7 +205,7 @@ impl QueryTask {
             let result = mem::transmute::<_, BatchResult<'static>>(result);
             state.partial_results.push(result);
         }
-        if state.completed_batches == self.batches.len() || self.sufficient_rows(state.rows_collected) {
+        if state.completed_batches == self.partitions.len() || self.sufficient_rows(state.rows_collected) {
             let mut owned_results = Vec::with_capacity(0);
             mem::swap(&mut owned_results, &mut state.partial_results);
             // TODO(clemens): Handle empty table
@@ -212,6 +222,11 @@ impl QueryTask {
         }
     }
 
+    fn push_colstack(&self, colstack: Vec<HashMap<String, Arc<Column>>>) {
+        let mut state = self.unsafe_state.lock().unwrap();
+        state.colstacks.push(colstack);
+    }
+
     fn fail_with(&self, error: QueryError) {
         let mut _state = self.unsafe_state.lock().unwrap();
         if self.completed.load(Ordering::SeqCst) { return; }
@@ -220,7 +235,7 @@ impl QueryTask {
 
     fn fail_with_no_lock(&self, error: QueryError) {
         self.completed.store(true, Ordering::SeqCst);
-        self.batch_index.store(self.batches.len(), Ordering::SeqCst);
+        self.batch_index.store(self.partitions.len(), Ordering::SeqCst);
         self.sender.send(Err(error));
     }
 
@@ -229,9 +244,9 @@ impl QueryTask {
         unordered_select && self.combined_limit() < rows_collected
     }
 
-    fn next_batch(&self) -> Option<(&Batch, usize)> {
+    fn next_partition(&self) -> Option<(&Arc<Partition>, usize)> {
         let index = self.batch_index.fetch_add(1, Ordering::SeqCst);
-        self.batches.get(index).map(|b| (b, index))
+        self.partitions.get(index).map(|b| (b, index))
     }
 
     fn convert_to_output_format(&self,
@@ -267,16 +282,8 @@ impl QueryTask {
             stats: QueryStats {
                 runtime_ns: precise_time_ns() - self.start_time_ns,
                 rows_scanned,
-            }
+            },
         }
-    }
-
-    fn prepare_batch<'a>(referenced_cols: &'a HashSet<String>, source: &'a Batch) -> HashMap<&'a str, &'a Column> {
-        trace_start!("prepare_batch");
-        source.cols().iter()
-            .filter(|col| referenced_cols.contains(col.name()))
-            .map(|col| (col.name(), col.as_ref()))
-            .collect()
     }
 
     fn combined_limit(&self) -> usize {
@@ -288,16 +295,16 @@ impl Task for QueryTask {
     fn execute(&self) { self.run(); }
     fn completed(&self) -> bool {
         let batch_index = self.batch_index.load(Ordering::SeqCst);
-        self.completed.load(Ordering::SeqCst) || batch_index >= self.batches.len()
+        self.completed.load(Ordering::SeqCst) || batch_index >= self.partitions.len()
     }
     fn multithreaded(&self) -> bool { true }
 }
 
-fn find_all_cols(source: &[Batch]) -> Vec<String> {
+fn find_all_cols(source: &[Arc<Partition>]) -> Vec<String> {
     let mut cols = HashSet::new();
-    for batch in source {
-        for column in batch.cols() {
-            cols.insert(column.name().to_string());
+    for partition in source {
+        for name in partition.col_names() {
+            cols.insert(name);
         }
     }
 

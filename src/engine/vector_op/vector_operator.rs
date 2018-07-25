@@ -1,5 +1,6 @@
 use std::borrow::BorrowMut;
 use std::cell::{RefCell, Ref, RefMut};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::fmt;
 use std::intrinsics::type_name;
@@ -25,7 +26,7 @@ use engine::vector_op::compact::Compact;
 use engine::vector_op::constant::Constant;
 use engine::vector_op::constant_vec::ConstantVec;
 use engine::vector_op::count::VecCount;
-use engine::vector_op::dict_lookup::DictLookup;
+use engine::vector_op::dict_lookup::*;
 use engine::vector_op::division_vs::DivideVS;
 use engine::vector_op::encode_const::*;
 use engine::vector_op::exists::Exists;
@@ -70,7 +71,7 @@ pub trait VecOperator<'a>: fmt::Debug {
 
     fn inputs(&self) -> Vec<BufferRef>;
     fn outputs(&self) -> Vec<BufferRef>;
-    fn can_stream_input(&self) -> bool;
+    fn can_stream_input(&self, i: BufferRef) -> bool;
     fn can_stream_output(&self, i: BufferRef) -> bool;
     fn allocates(&self) -> bool;
 
@@ -95,19 +96,27 @@ fn short_type_name<T: ?Sized>() -> String {
 
 pub struct Scratchpad<'a> {
     buffers: Vec<RefCell<BoxedVec<'a>>>,
+    columns: HashMap<String, Vec<&'a AnyVec<'a>>>,
 }
 
 impl<'a> Scratchpad<'a> {
-    pub fn new(count: usize) -> Scratchpad<'a> {
+    pub fn new(count: usize, columns: HashMap<String, Vec<&'a AnyVec<'a>>>) -> Scratchpad<'a> {
         let mut buffers = Vec::with_capacity(count);
         for _ in 0..count {
             buffers.push(RefCell::new(AnyVec::empty(0)));
         }
-        Scratchpad { buffers }
+        Scratchpad {
+            buffers,
+            columns,
+        }
     }
 
     pub fn get_any(&self, index: BufferRef) -> Ref<AnyVec<'a>> {
         Ref::map(self.buffers[index.0].borrow(), |x| x.as_ref())
+    }
+
+    pub fn get_column_data(&self, name: &str, section_index: usize) -> &'a AnyVec<'a> {
+        self.columns[name][section_index]
     }
 
     pub fn get<T: GenericVec<T> + 'a>(&self, index: BufferRef) -> Ref<[T]> {
@@ -139,30 +148,26 @@ impl<'a> Scratchpad<'a> {
 use self::EncodingType::*;
 
 impl<'a> VecOperator<'a> {
-    pub fn get_decode(col: &'a Column, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(GetDecode { col, output })
+    pub fn read_column_data(colname: String, section_index: usize, output: BufferRef) -> BoxedOperator<'a> {
+        Box::new(ReadColumnData { colname, section_index, output, batch_size: 0, current_index: 0 })
     }
 
-    pub fn get_encoded(col: &'a Column, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(GetEncoded { col, output, batch_size: 0, current_index: 0 })
-    }
-
-    pub fn dict_lookup(indices: BufferRef, dictionary: &'a Vec<String>, output: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
+    pub fn dict_lookup(indices: BufferRef, dict_indices: BufferRef, dict_data: BufferRef, output: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
         match t {
-            EncodingType::U8 => Box::new(DictLookup::<'a, u8> { indices, output, dictionary, t: PhantomData }),
-            EncodingType::U16 => Box::new(DictLookup::<'a, u16> { indices, output, dictionary, t: PhantomData }),
-            EncodingType::U32 => Box::new(DictLookup::<'a, u32> { indices, output, dictionary, t: PhantomData }),
-            EncodingType::I64 => Box::new(DictLookup::<'a, i64> { indices, output, dictionary, t: PhantomData }),
+            EncodingType::U8 => Box::new(DictLookup::<u8> { indices, output, dict_indices, dict_data, t: PhantomData }),
+            EncodingType::U16 => Box::new(DictLookup::<u16> { indices, output, dict_indices, dict_data, t: PhantomData }),
+            EncodingType::U32 => Box::new(DictLookup::<u32> { indices, output, dict_indices, dict_data, t: PhantomData }),
+            EncodingType::I64 => Box::new(DictLookup::<i64> { indices, output, dict_indices, dict_data, t: PhantomData }),
             _ => panic!("dict_lookup not supported for type {:?}", t),
         }
     }
 
-    pub fn encode_int_const(constant: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {
-        Box::new(EncodeIntConstant { constant, output, codec })
+    pub fn inverse_dict_lookup(dict_indices: BufferRef, dict_data: BufferRef, constant: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
+        Box::new(InverseDictLookup { dict_indices, dict_data, constant, output })
     }
 
-    pub fn encode_str_const(constant: BufferRef, output: BufferRef, codec: Codec<'a>) -> BoxedOperator<'a> {
-        Box::new(EncodeStrConstant { constant, output, codec })
+    pub fn encode_int_const(constant: BufferRef, output: BufferRef, codec: Codec) -> BoxedOperator<'a> {
+        Box::new(EncodeIntConstant { constant, output, codec })
     }
 
     pub fn filter(t: EncodingType, input: BufferRef, filter: BufferRef, output: BufferRef) -> BoxedOperator<'a> {

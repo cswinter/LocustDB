@@ -1,28 +1,27 @@
 use std::iter::repeat;
 use std::ops::BitOr;
-
-use heapsize::HeapSizeOf;
+use std::sync::Arc;
 
 use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column_builder::*;
 
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct RawCol {
+#[derive(Serialize, Deserialize, PartialEq, Debug, HeapSizeOf)]
+pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
 }
 
-impl RawCol {
-    pub fn new() -> RawCol {
-        RawCol {
+impl MixedCol {
+    pub fn new() -> MixedCol {
+        MixedCol {
             types: ColType::nothing(),
             data: Vec::new(),
         }
     }
 
-    pub fn with_nulls(count: usize) -> RawCol {
+    pub fn with_nulls(count: usize) -> MixedCol {
         let mut c = Self::new();
         c.push_nulls(count);
         c
@@ -52,7 +51,7 @@ impl RawCol {
         self.data.len()
     }
 
-    pub fn finalize(self, name: &str) -> Box<Column> {
+    pub fn finalize(self, name: &str) -> Arc<Column> {
         if self.types.contains_string {
             let mut builder = StringColBuilder::new();
             for v in self.data {
@@ -74,18 +73,12 @@ impl RawCol {
             }
             builder.finalize(name)
         } else {
-            Column::plain(name, self.data.len(), None)
+            Arc::new(Column::null(name, self.data.len()))
         }
     }
 }
 
-impl HeapSizeOf for RawCol {
-    fn heap_size_of_children(&self) -> usize {
-        self.data.heap_size_of_children()
-    }
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone, HeapSizeOf)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,

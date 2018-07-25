@@ -13,6 +13,8 @@ extern crate failure;
 extern crate futures_core;
 extern crate futures_util;
 extern crate futures_channel;
+#[macro_use]
+extern crate heapsize_derive;
 extern crate heapsize;
 extern crate itertools;
 extern crate num;
@@ -21,8 +23,9 @@ extern crate regex;
 extern crate seahash;
 extern crate serde;
 extern crate time;
-// extern crate tempdir;
+extern crate tempdir;
 extern crate fnv;
+extern crate byteorder;
 
 #[macro_use]
 mod trace;
@@ -35,6 +38,7 @@ mod engine;
 mod scheduler;
 mod locustdb;
 mod disk_store;
+mod stringpack;
 
 pub use engine::query_task::QueryOutput;
 pub use errors::QueryError;

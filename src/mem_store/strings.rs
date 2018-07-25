@@ -1,20 +1,16 @@
 use std::collections::HashMap;
 use std::collections::hash_set::HashSet;
-use std::fmt;
 use std::hash::BuildHasherDefault;
-use std::marker::PhantomData;
 use std::rc::Rc;
 use std::str;
+use std::sync::Arc;
 use std::{u8, u16};
 
-use heapsize::HeapSizeOf;
 use num::PrimInt;
 use seahash::SeaHasher;
 
-use engine::query_plan::QueryPlan;
-use engine::typed_vec::*;
+use stringpack::*;
 use engine::types::*;
-use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column_builder::UniqueValues;
 
@@ -25,221 +21,134 @@ type HashSetSea<K> = HashSet<K, BuildHasherDefault<SeaHasher>>;
 // TODO(clemens): this should depend on the batch size and element length
 pub const MAX_UNIQUE_STRINGS: usize = 10000;
 
-pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &str, strings: T, len: usize) -> Box<Column> {
+pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &str, strings: T, len: usize) -> Arc<Column> {
     let mut unique_values = HashSetSea::default();
     for s in strings.clone() {
         unique_values.insert(s);
         if unique_values.len() == MAX_UNIQUE_STRINGS {
-            return Box::new(StringPacker::from_iterator(name, strings, len));
+            let packed = PackedStrings::from_iterator(strings);
+            return Arc::new(Column::new(
+                name,
+                len,
+                None,
+                string_pack_codec(),
+                vec![DataSection::U8(packed.into_vec())],
+            ));
         }
     }
     let dict_size = unique_values.len();
-    let mut mapping: Vec<String> = unique_values.into_iter().map(str::to_owned).collect::<Vec<_>>();
+    let mut mapping = unique_values.into_iter().collect::<Vec<_>>();
     mapping.sort();
+    let mut packed_mapping = IndexedPackedStrings::default();
+    for s in mapping {
+        packed_mapping.push(s);
+    }
     if dict_size <= From::from(u8::MAX) {
         let indices: Vec<u8> = {
             let mut dictionary: HashMapSea<&str, u8> = HashMapSea::default();
-            for (i, s) in mapping.iter().enumerate() {
+            for (i, s) in packed_mapping.iter().enumerate() {
                 dictionary.insert(&s, i as u8);
             }
             strings.map(|s| *dictionary.get(s).unwrap()).collect()
         };
-        Column::encoded(name,
-                        indices,
-                        DictionaryEncoding::<u8> { mapping, t: PhantomData },
-                        Some((0, dict_size as i64)))
+        let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
+        Arc::new(Column::new(
+            name,
+            indices.len(),
+            Some((0, dict_size as i64)),
+            dict_codec(EncodingType::U8),
+            vec![DataSection::U8(indices),
+                 DataSection::U64(dictionary_indices),
+                 DataSection::U8(dictionary_data)]))
     } else {
         let indices: Vec<u16> = {
             let mut dictionary: HashMapSea<&str, u16> = HashMapSea::default();
-            for (i, s) in mapping.iter().enumerate() {
+            for (i, s) in packed_mapping.iter().enumerate() {
                 dictionary.insert(&s, i as u16);
             }
             strings.map(|s| *dictionary.get(s).unwrap()).collect()
         };
-        Column::encoded(name,
-                        indices,
-                        DictionaryEncoding::<u16> { mapping, t: PhantomData },
-                        Some((0, dict_size as i64)))
+        let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
+        Arc::new(Column::new(
+            name,
+            indices.len(),
+            Some((0, dict_size as i64)),
+            dict_codec(EncodingType::U16),
+            vec![DataSection::U16(indices),
+                 DataSection::U64(dictionary_indices),
+                 DataSection::U8(dictionary_data)]))
     }
 }
 
 pub fn build_string_column(name: &str,
                            values: &[Option<Rc<String>>],
                            unique_values: UniqueValues<Option<Rc<String>>>)
-                           -> Box<Column> {
+                           -> Arc<Column> {
     if let Some(u) = unique_values.get_values() {
-        let range = Some((0, u.len() as i64));
         // TODO(clemens): constant column when there is only one value
         if u.len() <= From::from(u8::MAX) {
-            let (indices, dictionary) = DictEncodedStrings::construct_dictionary::<u8>(values, u);
-            Column::encoded(name, indices, DictionaryEncoding::<u8> { mapping: dictionary, t: PhantomData }, range)
+            let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u8>(values, u);
+            Arc::new(Column::new(
+                name,
+                indices.len(),
+                Some((0, dictionary_indices.len() as i64)),
+                dict_codec(EncodingType::U8),
+                vec![DataSection::U8(indices),
+                     DataSection::U64(dictionary_indices),
+                     DataSection::U8(dictionary_data)]))
         } else {
-            let (indices, dictionary) = DictEncodedStrings::construct_dictionary::<u16>(values, u);
-            Column::encoded(name, indices, DictionaryEncoding::<u16> { mapping: dictionary, t: PhantomData }, range)
+            let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u16>(values, u);
+            Arc::new(Column::new(
+                name,
+                indices.len(),
+                Some((0, dictionary_indices.len() as i64)),
+                dict_codec(EncodingType::U16),
+                vec![DataSection::U16(indices),
+                     DataSection::U64(dictionary_indices),
+                     DataSection::U8(dictionary_data)]))
         }
     } else {
-        Box::new(StringPacker::from_nullable_strings(name.to_owned(), values))
+        let packed = PackedStrings::from_nullable_strings(values);
+        Arc::new(Column::new(
+            name,
+            values.len(),
+            None,
+            string_pack_codec(),
+            vec![DataSection::U8(packed.into_vec())]))
     }
 }
 
-struct StringPacker {
-    name: String,
-    count: usize,
-    data: Vec<u8>,
-}
-
-// TODO(clemens): encode using variable size length + special value to represent null
-impl StringPacker {
-    pub fn from_nullable_strings(name: String, strings: &[Option<Rc<String>>]) -> StringPacker {
-        let mut sp = StringPacker { name, count: strings.len(), data: Vec::new() };
-        for string in strings {
-            match *string {
-                Some(ref string) => sp.push(string),
-                None => sp.push(""),
-            }
+pub fn dictionary_compress<T: PrimInt>(strings: &[Option<Rc<String>>],
+                                       unique_values: HashSet<Option<Rc<String>>>)
+                                       -> (Vec<T>, Vec<u64>, Vec<u8>) {
+    // TODO(clemens): handle null values
+    let mut mapping = unique_values.into_iter().map(|o| o.unwrap()).collect::<Vec<_>>();
+    mapping.sort();
+    let mut packed_mapping = IndexedPackedStrings::default();
+    for s in mapping {
+        packed_mapping.push(&s);
+    }
+    let encoded_values: Vec<T> = {
+        let mut reverse_mapping: HashMap<&str, T> = HashMap::default();
+        let mut index = T::zero();
+        for string in packed_mapping.iter() {
+            reverse_mapping.insert(string, index);
+            index = index + T::one();
         }
-        sp.shrink_to_fit();
-        sp
-    }
-
-    pub fn from_iterator<'a>(name: &str, strings: impl Iterator<Item=&'a str>, len: usize) -> StringPacker {
-        let mut sp = StringPacker { name: name.to_owned(), count: len, data: Vec::new() };
-        for string in strings {
-            sp.push(string);
-        }
-        sp.shrink_to_fit();
-        sp
-    }
-
-    pub fn push(&mut self, string: &str) {
-        for &byte in string.as_bytes().iter() {
-            self.data.push(byte);
-        }
-        self.data.push(0);
-    }
-
-    pub fn shrink_to_fit(&mut self) {
-        self.data.shrink_to_fit();
-    }
-
-    pub fn iter(&self) -> StringPackerIterator {
-        StringPackerIterator {
-            data: &self.data,
-            curr_index: 0,
-        }
-    }
+        strings.iter().map(|o| reverse_mapping[o.clone().unwrap().as_ref().as_str()]).collect()
+    };
+    let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
+    (encoded_values, dictionary_indices, dictionary_data)
 }
 
-impl Column for StringPacker {
-    fn name(&self) -> &str { &self.name }
-    fn len(&self) -> usize { self.count }
-    fn get_encoded(&self, _: usize, _: usize) -> Option<BoxedVec> { None }
-    fn decode(&self) -> BoxedVec { AnyVec::owned(self.iter().collect()) }
-    fn codec(&self) -> Option<Codec> { None }
-    fn encoding_type(&self) -> EncodingType { EncodingType::U8 }
-    fn basic_type(&self) -> BasicType { BasicType::String }
-    fn range(&self) -> Option<(i64, i64)> { None }
+pub fn dict_codec(index_type: EncodingType) -> Codec {
+    Codec::new(vec![
+        CodecOp::PushDataSection(1),
+        CodecOp::PushDataSection(2),
+        CodecOp::DictLookup(index_type),
+    ])
 }
 
-impl fmt::Debug for StringPacker {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[{}; U8; StringPacked]", &self.name)
-    }
-}
-
-impl HeapSizeOf for StringPacker {
-    fn heap_size_of_children(&self) -> usize {
-        self.data.heap_size_of_children()
-    }
-}
-
-pub struct StringPackerIterator<'a> {
-    data: &'a Vec<u8>,
-    curr_index: usize,
-}
-
-impl<'a> Iterator for StringPackerIterator<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<&'a str> {
-        if self.curr_index >= self.data.len() {
-            return None;
-        }
-
-        let mut index = self.curr_index;
-        while self.data[index] != 0 {
-            index += 1;
-        }
-        let result = unsafe { str::from_utf8_unchecked(&self.data[self.curr_index..index]) };
-        self.curr_index = index + 1;
-        Some(result)
-    }
-}
-
-struct DictEncodedStrings;
-
-impl DictEncodedStrings {
-    pub fn construct_dictionary<T: PrimInt>(strings: &[Option<Rc<String>>],
-                                            unique_values: HashSet<Option<Rc<String>>>)
-                                            -> (Vec<T>, Vec<String>) {
-        // TODO(clemens): handle null values
-        let mut mapping: Vec<String> =
-            unique_values.into_iter().map(|o| o.unwrap().to_string()).collect();
-        mapping.sort();
-        let encoded_values: Vec<T> = {
-            let mut reverse_mapping: HashMap<&String, T> = HashMap::default();
-            let mut index = T::zero();
-            for string in &mapping {
-                reverse_mapping.insert(string, index);
-                index = index + T::one();
-            }
-            strings.iter().map(|o| reverse_mapping[o.clone().unwrap().as_ref()]).collect()
-        };
-
-        (encoded_values, mapping)
-    }
-}
-
-struct DictionaryEncoding<T> {
-    mapping: Vec<String>,
-    t: PhantomData<T>,
-}
-
-impl<'a, T: GenericIntVec<T>> ColumnCodec<'a> for &'a DictionaryEncoding<T> {
-    fn decode<'b>(&self, plan: Box<QueryPlan<'b>>) -> QueryPlan<'b> where 'a: 'b {
-        QueryPlan::DictLookup(plan, self.encoding_type(), &self.mapping)
-    }
-
-    fn encode_str(&self, s: &str) -> RawVal {
-        // TODO(clemens): use binary search!
-        for (i, val) in self.mapping.iter().enumerate() {
-            if val == s {
-                return RawVal::Int(i as i64);
-            }
-        }
-        RawVal::Int(-1)
-    }
-
-    fn is_summation_preserving(&self) -> bool { false }
-    fn is_order_preserving(&self) -> bool { true }
-    fn is_positive_integer(&self) -> bool { true }
-    fn encoding_type(&self) -> EncodingType { T::t() }
-    fn decoded_type(&self) -> BasicType { BasicType::String }
-    fn decode_range(&self, _: (i64, i64)) -> Option<(i64, i64)> { None }
-}
-
-impl<T> fmt::Debug for DictionaryEncoding<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if f.alternate() {
-            write!(f, "StringDictionary({})", self.mapping.len())
-        } else {
-            write!(f, "StringDictionary")
-        }
-    }
-}
-
-impl<T> HeapSizeOf for DictionaryEncoding<T> {
-    fn heap_size_of_children(&self) -> usize {
-        self.mapping.heap_size_of_children()
-    }
+pub fn string_pack_codec() -> Codec {
+    Codec::new(vec![CodecOp::UnpackStrings])
 }

@@ -1,16 +1,18 @@
-use mem_store::integers::*;
-use mem_store::column::*;
-use mem_store::strings::*;
 use std::cmp;
 use std::i64;
 use std::hash::Hash;
 use std::collections::hash_set::HashSet;
 use std::rc::Rc;
+use std::sync::Arc;
+
+use mem_store::integers::*;
+use mem_store::column::*;
+use mem_store::strings::*;
 
 
-pub trait ColumnBuilder<T: ? Sized> {
+pub trait ColumnBuilder<T: ?Sized> {
     fn push(&mut self, elem: &T);
-    fn finalize(self, name: &str) -> Box<Column>;
+    fn finalize(self, name: &str) -> Arc<Column>;
 }
 
 
@@ -23,7 +25,7 @@ impl StringColBuilder {
     pub fn new() -> StringColBuilder {
         StringColBuilder {
             data: Vec::new(),
-            uniques: UniqueValues::new(MAX_UNIQUE_STRINGS)
+            uniques: UniqueValues::new(MAX_UNIQUE_STRINGS),
         }
     }
 }
@@ -35,7 +37,7 @@ impl ColumnBuilder<str> for StringColBuilder {
         self.uniques.insert(str_opt);
     }
 
-    fn finalize(self, name: &str) -> Box<Column> {
+    fn finalize(self, name: &str) -> Arc<Column> {
         build_string_column(name, &self.data, self.uniques)
     }
 }
@@ -66,7 +68,7 @@ impl ColumnBuilder<i64> for IntColBuilder {
         self.data.push(elem);
     }
 
-    fn finalize(self, name: &str) -> Box<Column> {
+    fn finalize(self, name: &str) -> Arc<Column> {
         IntegerColumn::new_boxed(name, self.data, self.min, self.max)
     }
 }

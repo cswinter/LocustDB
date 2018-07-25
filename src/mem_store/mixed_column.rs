@@ -2,7 +2,6 @@
 // use mem_store::column::*;
 use ingest::raw_val::RawVal;
 use mem_store::value::Val;
-use heapsize::HeapSizeOf;
 // use engine::types::Type;
 // use engine::typed_vec::TypedVec;
 
@@ -41,13 +40,8 @@ impl ColumnData for MixedColumn {
 
     fn decoded_type(&self) -> Type { Type::Val }
 }
-
-impl HeapSizeOf for MixedColumn {
-    fn heap_size_of_children(&self) -> usize {
-        self.values.heap_size_of_children()
-    }
-}
 */
+
 impl RawVal {
     pub fn to_val(&self) -> Val {
         match *self {
@@ -57,14 +51,4 @@ impl RawVal {
         }
     }
 }
-
-impl HeapSizeOf for RawVal {
-    fn heap_size_of_children(&self) -> usize {
-        match *self {
-            RawVal::Null | RawVal::Int(_) => 0,
-            RawVal::Str(ref r) => r.heap_size_of_children(),
-        }
-    }
-}
-
 

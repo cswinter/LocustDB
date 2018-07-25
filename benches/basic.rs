@@ -7,6 +7,7 @@ use futures_executor::block_on;
 use locustdb::LocustDB;
 use std::env;
 use std::path::Path;
+use std::sync::Arc;
 
 
 const DOWNLOAD_URL: &str = "https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0";
@@ -20,7 +21,7 @@ fn db() -> &'static LocustDB {
         match DB {
             Some(ref locustdb) => locustdb,
             None => {
-                let locustdb = LocustDB::new(Box::new(locustdb::NoopStorage), false, thread_count);
+                let locustdb = LocustDB::new(Arc::new(locustdb::NoopStorage), false, thread_count);
                 let mut loads = Vec::new();
                 for x in &["aa", "ab", "ac", "ad", "ae"] {
                     let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);

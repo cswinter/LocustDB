@@ -27,6 +27,7 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
     fn cast_ref_usize(&self) -> &[usize] { panic!(self.type_error("cast_ref_usize")) }
     fn cast_ref_i64(&self) -> &[i64] { panic!(self.type_error("cast_ref_i64")) }
+    fn cast_ref_u64(&self) -> &[u64] { panic!(self.type_error("cast_ref_u64")) }
     fn cast_ref_u32<'b>(&'b self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
     fn cast_ref_u16<'b>(&'b self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
     fn cast_ref_u8<'b>(&'b self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
@@ -38,6 +39,7 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
     fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> { panic!(self.type_error("cast_ref_mut_usize")) }
     fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { panic!(self.type_error("cast_ref_mut_i64")) }
+    fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> { panic!(self.type_error("cast_ref_mut_u64")) }
     fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
@@ -94,6 +96,11 @@ impl<'a> AnyVec<'a> for Vec<usize> {
 impl<'a> AnyVec<'a> for Vec<i64> {
     fn cast_ref_i64(&self) -> &[i64] { self }
     fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { self }
+}
+
+impl<'a> AnyVec<'a> for Vec<u64> {
+    fn cast_ref_u64(&self) -> &[u64] { self }
+    fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> { self }
 }
 
 impl<'a> AnyVec<'a> for Vec<u32> {
@@ -158,6 +165,10 @@ impl<'a> AnyVec<'a> for &'a [usize] {
 
 impl<'a> AnyVec<'a> for &'a [i64] {
     fn cast_ref_i64<'b>(&'b self) -> &'b [i64] { self }
+}
+
+impl<'a> AnyVec<'a> for &'a [u64] {
+    fn cast_ref_u64<'b>(&'b self) -> &'b [u64] { self }
 }
 
 impl<'a> AnyVec<'a> for &'a [u32] {
@@ -255,12 +266,18 @@ impl GenericVec<i64> for i64 {
     fn t() -> EncodingType { EncodingType::I64 }
 }
 
+impl GenericVec<u64> for u64 {
+    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [u64] where u64: 'a { vec.cast_ref_u64() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<u64> where u64: 'a { vec.cast_ref_mut_u64() }
+    fn wrap_one(value: u64) -> RawVal { RawVal::Int(value as i64) }
+    fn t() -> EncodingType { EncodingType::I64 }
+}
+
 impl GenericVec<usize> for usize {
     fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [usize] where usize: 'a { vec.cast_ref_usize() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<usize> where usize: 'a { vec.cast_ref_mut_usize() }
     fn t() -> EncodingType { EncodingType::USize }
 }
-
 
 impl<'c> GenericVec<&'c str> for &'c str {
     fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [&'c str] where &'c str: 'a {
@@ -321,15 +338,11 @@ impl IntoUsize for i64 {
 }
 
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, HeapSizeOf)]
 pub enum MergeOp {
     TakeLeft,
     TakeRight,
     MergeRight,
-}
-
-impl HeapSizeOf for MergeOp {
-    fn heap_size_of_children(&self) -> usize { 0 }
 }
 
 impl Display for MergeOp {
@@ -345,14 +358,10 @@ impl GenericVec<MergeOp> for MergeOp {
 }
 
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, HeapSizeOf)]
 pub struct Premerge {
     pub left: u32,
     pub right: u32,
-}
-
-impl HeapSizeOf for Premerge {
-    fn heap_size_of_children(&self) -> usize { 0 }
 }
 
 impl Display for Premerge {

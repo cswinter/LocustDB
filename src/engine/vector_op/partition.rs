@@ -26,7 +26,7 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Partition<T> {
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.left, self.right] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.partitioning] }
-    fn can_stream_input(&self) -> bool { false }
+    fn can_stream_input(&self, _: BufferRef) -> bool { false }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 

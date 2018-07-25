@@ -1,19 +1,18 @@
 extern crate csv;
 extern crate flate2;
 
-use mem_store::batch::Batch;
 use mem_store::column::*;
 use mem_store::column_builder::*;
 use mem_store::strings::fast_build_string_column;
 use scheduler::*;
 use self::flate2::read::GzDecoder;
-use std::boxed::Box;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::ops::BitOr;
 use std::str;
 use std::sync::Arc;
 use super::extractor;
+use stringpack::*;
 
 type IngestionTransform = HashMap<String, extractor::Extractor>;
 
@@ -74,7 +73,7 @@ pub fn ingest_file(filename: &str,
                    extractors: &IngestionTransform,
                    unzip: bool,
                    ignore_cols: &HashSet<String>,
-                   always_string: &HashSet<String>) -> Result<Vec<Batch>, String> {
+                   always_string: &HashSet<String>) -> Result<Vec<Vec<Arc<Column>>>, String> {
     // Can't combine these two branches because csv::Reader takes a type param which differs for creating from Reader/File
     if unzip {
         let f = File::open(filename).map_err(|x| x.to_string())?;
@@ -105,7 +104,7 @@ fn auto_ingest<T: Iterator<Item=csv::StringRecord>>(records: T,
                                                     batch_size: usize,
                                                     extractors: &IngestionTransform,
                                                     ignore_cols: &HashSet<String>,
-                                                    always_string: &HashSet<String>) -> Vec<Batch> {
+                                                    always_string: &HashSet<String>) -> Vec<Vec<Arc<Column>>> {
     let num_columns = colnames.len();
     let mut batches = Vec::new();
     let ignore = colnames.iter().map(|x| ignore_cols.contains(x)).collect::<Vec<_>>();
@@ -132,7 +131,7 @@ fn auto_ingest<T: Iterator<Item=csv::StringRecord>>(records: T,
     batches
 }
 
-fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &IngestionTransform, ignore: &[bool], string: &[bool]) -> Batch {
+fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &IngestionTransform, ignore: &[bool], string: &[bool]) -> Vec<Arc<Column>> {
     let mut mem_store = Vec::new();
     for (i, col) in cols.iter_mut().enumerate() {
         if !ignore[i] {
@@ -143,7 +142,7 @@ fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &Ingestion
             mem_store.push(new_column);
         }
     }
-    Batch::from(mem_store)
+    mem_store
 }
 
 pub struct CSVIngestionTask {
@@ -176,7 +175,7 @@ impl Task for CSVIngestionTask {
             &self.options.always_string);
         match batches {
             Ok(batches) => {
-                self.locustdb.load_batches(&self.options.tablename, batches);
+                self.locustdb.store_partitions(&self.options.tablename, batches);
                 self.sender.send(Ok(()));
             }
             Err(msg) => self.sender.send(Err(msg))
@@ -205,7 +204,7 @@ impl RawCol {
         self.values.push(elem);
     }
 
-    fn finalize(&mut self, name: &str, string: bool) -> Box<Column> {
+    fn finalize(&mut self, name: &str, string: bool) -> Arc<Column> {
         let result = if self.types.contains_string || string {
             fast_build_string_column(name, self.values.iter(), self.values.len())
         } else if self.types.contains_int {
@@ -224,13 +223,13 @@ impl RawCol {
             }
             builder.finalize(name)
         } else {
-            Column::plain(name, self.values.len(), None)
+            Arc::new(Column::null(name, self.values.len()))
         };
         self.clear();
         result
     }
 
-    fn extract(&mut self, name: &str, extractor: &extractor::Extractor) -> Box<Column> {
+    fn extract(&mut self, name: &str, extractor: &extractor::Extractor) -> Arc<Column> {
         let mut builder = IntColBuilder::new();
         for s in self.values.iter() {
             builder.push(&extractor(s));
@@ -293,35 +292,6 @@ impl BitOr for ColType {
             contains_int: self.contains_int | rhs.contains_int,
             contains_null: self.contains_null | rhs.contains_null,
         }
-    }
-}
-
-#[derive(Default)]
-pub struct IndexedPackedStrings {
-    data: Vec<(u32, u32)>,
-    backing_store: Vec<u8>,
-}
-
-impl IndexedPackedStrings {
-    pub fn push(&mut self, elem: &str) {
-        let bytes = elem.as_bytes();
-        self.data.push((self.backing_store.len() as u32, bytes.len() as u32));
-        self.backing_store.extend_from_slice(bytes);
-    }
-
-    pub fn clear(&mut self) {
-        self.data.clear();
-        self.backing_store.clear();
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item=&str> + Clone {
-        self.data.iter().map(move |&(i, len)| unsafe {
-            str::from_utf8_unchecked(&self.backing_store[i as usize..(i + len) as usize])
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
     }
 }
 

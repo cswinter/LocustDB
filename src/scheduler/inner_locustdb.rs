@@ -1,17 +1,18 @@
 use std::collections::{HashMap, VecDeque};
 use std::mem;
 use std::str;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 
-use disk_store::db::*;
+use disk_store::interface::*;
 use futures_core::*;
 use futures_channel::oneshot;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
-use mem_store::batch::Batch;
+use mem_store::partition::Partition;
 use mem_store::table::*;
+use mem_store::*;
 use num_cpus;
 use scheduler::*;
 use time;
@@ -20,8 +21,9 @@ use trace::*;
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
-    storage: Box<DB>,
+    pub storage: Arc<DiskStore>,
 
+    next_partition_id: AtomicUsize,
     running: AtomicBool,
     idle_queue: Condvar,
     task_queue: Mutex<VecDeque<Arc<TaskState>>>,
@@ -41,17 +43,19 @@ impl Drop for TaskState {
 }
 
 impl InnerLocustDB {
-    pub fn new(storage: Box<DB>, restore_tabledata: bool) -> InnerLocustDB {
+    pub fn new(storage: Arc<DiskStore>, restore_tabledata: bool) -> InnerLocustDB {
         let existing_tables = if restore_tabledata {
-            Table::load_table_metadata(20_000, storage.as_ref())
+            Table::load_table_metadata(1 << 20, storage.as_ref())
         } else {
-            Table::restore_from_db(20_000, storage.as_ref())
+            HashMap::new()
         };
+        let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);
 
         InnerLocustDB {
             tables: RwLock::new(existing_tables),
             storage,
             running: AtomicBool::new(true),
+            next_partition_id: AtomicUsize::new(max_pid as usize + 1),
             idle_queue: Condvar::new(),
             task_queue: Mutex::new(VecDeque::new()),
         }
@@ -64,7 +68,7 @@ impl InnerLocustDB {
         }
     }
 
-    pub fn snapshot(&self, table: &str) -> Option<Vec<Batch>> {
+    pub fn snapshot(&self, table: &str) -> Option<Vec<Arc<Partition>>> {
         let tables = self.tables.read().unwrap();
         tables.get(table).map(|t| t.snapshot())
     }
@@ -130,12 +134,15 @@ impl InnerLocustDB {
         trace_receiver
     }
 
-    pub fn load_batches(&self, table: &str, batches: Vec<Batch>) {
-        self.create_if_empty(table);
+    pub fn store_partitions(&self, tablename: &str, partitions: Vec<Vec<Arc<Column>>>) {
+        // TODO(clemens): pid needs to be unique across all invocations, compactions and restore from DB
+        self.create_if_empty(tablename);
         let tables = self.tables.read().unwrap();
-        let table = tables.get(table).unwrap();
-        for batch in batches {
-            table.load_batch(batch);
+        let table = tables.get(tablename).unwrap();
+        for partition in partitions {
+            let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
+            self.storage.store_partition(pid, tablename, &partition);
+            table.load_batch(Partition::new(pid, partition));
         }
     }
 
@@ -177,7 +184,9 @@ impl InnerLocustDB {
         if !exists {
             {
                 let mut tables = self.tables.write().unwrap();
-                tables.insert(table.to_string(), Table::new(10_000, table, Metadata { batch_count: 0, name: table.to_string() }));
+                tables.insert(
+                    table.to_string(),
+                    Table::new(1 << 20, table));
             }
             self.ingest("_meta_tables", vec![
                 ("timestamp".to_string(), RawVal::Int(time::now().to_timespec().sec)),

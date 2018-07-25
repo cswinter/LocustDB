@@ -82,7 +82,7 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> f
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.indices] }
-    fn can_stream_input(&self) -> bool { true }
+    fn can_stream_input(&self, _: BufferRef) -> bool { true }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 

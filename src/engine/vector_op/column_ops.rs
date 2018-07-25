@@ -1,43 +1,22 @@
 use engine::vector_op::vector_operator::*;
-use mem_store::*;
-
 
 #[derive(Debug)]
-pub struct GetDecode<'a> {
+pub struct ReadColumnData {
+    pub colname: String,
+    pub section_index: usize,
     pub output: BufferRef,
-    pub col: &'a Column
-}
 
-impl<'a> VecOperator<'a> for GetDecode<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, self.col.decode());
-    }
-
-    fn inputs(&self) -> Vec<BufferRef> { vec![] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self) -> bool { false }
-    // TODO(clemens): Make streaming possible
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
-    fn allocates(&self) -> bool { true }
-
-    fn display_op(&self, _: bool) -> String {
-        format!("decode({:?})", self.col)
-    }
-}
-
-#[derive(Debug)]
-pub struct GetEncoded<'a> {
-    pub col: &'a Column,
-    pub output: BufferRef,
     pub current_index: usize,
     pub batch_size: usize,
 }
 
-impl<'a> VecOperator<'a> for GetEncoded<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let result = self.col.get_encoded(self.current_index, self.current_index + self.batch_size);
+impl<'a> VecOperator<'a> for ReadColumnData {
+    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
+        let data_section = scratchpad.get_column_data(&self.colname, self.section_index);
+        let end = if streaming { self.current_index + self.batch_size } else { data_section.len() };
+        let result = data_section.slice_box(self.current_index, end);
         self.current_index += self.batch_size;
-        scratchpad.set(self.output, result.unwrap());
+        scratchpad.set(self.output, result);
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: bool, _: &mut Scratchpad<'a>) {
@@ -46,11 +25,11 @@ impl<'a> VecOperator<'a> for GetEncoded<'a> {
 
     fn inputs(&self) -> Vec<BufferRef> { vec![] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self) -> bool { false }
+    fn can_stream_input(&self, _: BufferRef) -> bool { false }
     fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {
-        format!("{:?}", self.col)
+        format!("{:?}.{}", self.colname, self.section_index)
     }
 }
