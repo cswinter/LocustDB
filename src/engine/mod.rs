@@ -14,7 +14,7 @@ pub use self::typed_vec::{
     AnyVec,
     GenericVec,
     GenericIntVec,
-    IntoUsize,
+    CastUsize,
     ConstType,
 };
 

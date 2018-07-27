@@ -15,7 +15,7 @@ pub struct HashMapGrouping<T: GenericIntVec<T>> {
     map: FnvHashMap<T, T>,
 }
 
-impl<T: GenericIntVec<T> + IntoUsize> HashMapGrouping<T> {
+impl<T: GenericIntVec<T> + CastUsize> HashMapGrouping<T> {
     pub fn boxed<'a>(input: BufferRef,
                      unique_out: BufferRef,
                      grouping_key_out: BufferRef,
@@ -31,7 +31,7 @@ impl<T: GenericIntVec<T> + IntoUsize> HashMapGrouping<T> {
     }
 }
 
-impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T> {
+impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for HashMapGrouping<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let count = {
             let raw_grouping_key = scratchpad.get::<T>(self.input);
@@ -49,7 +49,7 @@ impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for HashMapGrouping<T>
         scratchpad.set(self.cardinality_out, AnyVec::constant(count));
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         // TODO(clemens): Estimate capacities for unique + map?
         scratchpad.set(self.unique_out, AnyVec::owned(Vec::<T>::new()));
         scratchpad.set(self.grouping_key_out, AnyVec::owned(Vec::<T>::with_capacity(batch_size)));

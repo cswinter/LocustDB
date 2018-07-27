@@ -3,7 +3,7 @@ extern crate rocksdb;
 use std::sync::Arc;
 
 use bincode::{serialize, deserialize};
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, BigEndian};
 use self::rocksdb::*;
 
 use disk_store::interface::*;
@@ -18,10 +18,16 @@ impl RocksDB {
         let mut options = Options::default();
         options.create_if_missing(true);
         options.create_missing_column_families(true);
-        let db = DB::open_cf(&options, path, &vec!["metadata", "partitions"]).unwrap();
-        RocksDB {
-            db,
-        }
+
+        let mut partitions_options = Options::default();
+        #[cfg(feature = "enable_lz4")]
+            partitions_options.set_compression_type(DBCompressionType::None);
+
+        let db = DB::open_cf_descriptors(&options, path, vec![
+            ColumnFamilyDescriptor::new("metadata", Options::default()),
+            ColumnFamilyDescriptor::new("partitions", partitions_options),
+        ]).unwrap();
+        RocksDB { db }
     }
 
     fn metadata(&self) -> ColumnFamily {
@@ -38,7 +44,7 @@ impl DiskStore for RocksDB {
         let mut metadata = Vec::new();
         let iter = self.db.iterator_cf(self.metadata(), IteratorMode::Start).unwrap();
         for (key, value) in iter {
-            let partition_id = LittleEndian::read_u64(&key) as PartitionID;
+            let partition_id = BigEndian::read_u64(&key) as PartitionID;
             let MetaData { tablename, len, columns } = deserialize(&value).unwrap();
             metadata.push(PartitionMetadata {
                 id: partition_id,
@@ -59,14 +65,13 @@ impl DiskStore for RocksDB {
         let mut tx = WriteBatch::default();
 
         let mut key = [0; 8];
-        LittleEndian::write_u64(&mut key, partition as u64);
+        BigEndian::write_u64(&mut key, partition as u64);
         let md = MetaData {
             tablename: tablename.to_string(),
             len: columns[0].len(),
             columns: columns.iter().map(|c| c.name().to_string()).collect(),
         };
         tx.put_cf(self.metadata(), &key, &serialize(&md).unwrap()).unwrap();
-
         for column in columns {
             let key = column_key(partition, column.name());
             let data = serialize(column.as_ref()).unwrap();
@@ -79,7 +84,7 @@ impl DiskStore for RocksDB {
 
 fn column_key(id: PartitionID, column_name: &str) -> Vec<u8> {
     let mut key = vec![0; 8];
-    LittleEndian::write_u64(&mut key, id as u64);
+    BigEndian::write_u64(&mut key, id as u64);
     key.push('.' as u8);
     key.extend(column_name.as_bytes());
     key

@@ -24,7 +24,7 @@ impl<T> VecCount<T> {
     }
 }
 
-impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
+impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut result = scratchpad.get_mut::<u32>(self.output);
         let grouping = scratchpad.get::<T>(self.grouping);
@@ -39,7 +39,7 @@ impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for VecCount<T> {
         }
     }
 
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.output, AnyVec::owned(Vec::<u32>::with_capacity(0)));
     }
 

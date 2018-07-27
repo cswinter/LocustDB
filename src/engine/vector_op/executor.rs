@@ -112,7 +112,9 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
             ops.sort();
+            let mut has_streaming_producer = false;
             let ops = ops.into_iter().map(|op| {
+                has_streaming_producer |= self.ops[op].is_streaming_producer();
                 let mut streaming_consumers = false;
                 let mut block_consumers = false;
                 for output in self.ops[op].outputs() {
@@ -126,9 +128,8 @@ impl<'a> QueryExecutor<'a> {
                 }
                 (op, streaming_consumers)
             }).collect();
-            // TODO(clemens): Make streaming possible for stages other than zero (Need to be able to consume fully computed TypedVec in streaming fashion)
-            let stage0 = stages.len() == 0;
-            stages.push(ExecutorStage { ops, stream: stream && stage0 })
+            // TODO(clemens): Make streaming possible for stages reading from temp results
+            stages.push(ExecutorStage { ops, stream: stream && has_streaming_producer })
         }
 
         // TODO(clemens): need some kind of "anti-dependency" or "consume" marker to enforce ordering of e.g. NonzeroCompact
@@ -172,52 +173,57 @@ impl<'a> QueryExecutor<'a> {
 
     fn init_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>) -> (usize, usize) {
         trace!("INITIALIZING STAGE {}", stage);
-        let mut max_length = 0;
+        let mut max_input_length = 0;
+        let mut has_streaming_producer = false;
         for &(op, s) in &self.stages[stage].ops {
+            has_streaming_producer |= self.ops[op].is_streaming_producer();
             trace!("{:?}, streamable={}", &self.ops[op], s);
             for input in self.ops[op].inputs() {
-                max_length = cmp::max(max_length, scratchpad.get_any(input).len());
+                max_input_length = cmp::max(max_input_length, scratchpad.get_any(input).len());
                 trace!("{}: {}", input.0, scratchpad.get_any(input).len());
             }
         }
-        // TODO(clemens): this is kind of a hack, should have more rigorous way of figuring out when stage reads directly from columns
-        if max_length == 0 {
-            max_length = column_length;
+        // TODO(clemens): once we can stream from intermediary results this will be overestimate
+        if has_streaming_producer {
+            max_input_length = column_length;
         }
         let batch_size = if self.stages[stage].stream {
             1024
         } else {
-            max_length
+            max_input_length
         };
         for &(op, streamable) in &self.stages[stage].ops {
-            self.ops[op].init(max_length, if streamable { batch_size } else { max_length }, streamable, scratchpad);
+            self.ops[op].init(max_input_length, if streamable { batch_size } else { max_input_length }, scratchpad);
         }
-        (max_length, batch_size)
+        (max_input_length, batch_size)
     }
 
     fn run_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
         let (max_length, batch_size) = self.init_stage(column_length, stage, scratchpad);
-        let iters = (max_length - 1) / batch_size + 1;
         let stream = self.stages[stage].stream;
-        trace!("batch_size: {}, max_length: {}, column_length: {}, iters: {}", batch_size, max_length, column_length, iters);
         if show {
             println!("\n-- Stage {} --", stage);
-            println!("batch_size: {}, max_length: {}, column_length: {}, iters: {}", batch_size, max_length, column_length, iters);
+            println!("batch_size: {}, max_length: {}, column_length: {}, stream: {}", batch_size, max_length, column_length, stream);
         }
-        for i in 0..iters {
+        let mut has_more = true;
+        let mut iters = 0;
+        while has_more {
+            has_more = false;
             for &(op, streamable) in &self.stages[stage].ops {
                 self.ops[op].execute(stream && streamable, scratchpad);
-                if show && i == 0 {
+                if show && iters == 0 {
                     println!("{}", self.ops[op].display(true));
                     for output in self.ops[op].outputs() {
                         let data = scratchpad.get_any(output);
                         println!("{}", data.display());
                     }
                 }
-                if i + 1 == iters {
-                    self.ops[op].finalize(scratchpad);
-                }
+                has_more |= self.ops[op].has_more() && stream;
             }
+            iters += 1;
+        }
+        for &(op, _) in &self.stages[stage].ops {
+            self.ops[op].finalize(scratchpad);
         }
         if show && iters > 1 {
             println!("\n[{} more iterations]", iters - 1);

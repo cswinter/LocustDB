@@ -32,7 +32,7 @@ impl Column {
             name: name.to_string(),
             len,
             range: None,
-            codec: Codec::identity(EncodingType::Null),
+            codec: Codec::identity(BasicType::Null),
             data: vec![DataSection::Null(len)],
         }
     }
@@ -73,5 +73,25 @@ impl DataSection {
             DataSection::Null(ref x) => x,
         }
     }
+}
+
+impl From<Vec<u8>> for DataSection {
+    fn from(vec: Vec<u8>) -> Self { DataSection::U8(vec) }
+}
+
+impl From<Vec<u16>> for DataSection {
+    fn from(vec: Vec<u16>) -> Self { DataSection::U16(vec) }
+}
+
+impl From<Vec<u32>> for DataSection {
+    fn from(vec: Vec<u32>) -> Self { DataSection::U32(vec) }
+}
+
+impl From<Vec<u64>> for DataSection {
+    fn from(vec: Vec<u64>) -> Self { DataSection::U64(vec) }
+}
+
+impl From<Vec<i64>> for DataSection {
+    fn from(vec: Vec<i64>) -> Self { DataSection::I64(vec) }
 }
 

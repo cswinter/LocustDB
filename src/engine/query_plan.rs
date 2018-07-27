@@ -21,7 +21,8 @@ pub enum QueryPlan {
 
     DictLookup(Box<QueryPlan>, EncodingType, Box<QueryPlan>, Box<QueryPlan>),
     InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>, Box<QueryPlan>),
-    TypeConversion(Box<QueryPlan>, EncodingType, EncodingType),
+    Widen(Box<QueryPlan>, EncodingType, EncodingType),
+    LZ4Decode(Box<QueryPlan>, EncodingType),
 
     Exists(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
     NonzeroCompact(Box<QueryPlan>, EncodingType),
@@ -75,12 +76,13 @@ pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef
                 prepare(*dict_data, result),
                 prepare(*constant, result),
                 result.named_buffer("encoded")),
-        QueryPlan::TypeConversion(plan, initial_type, target_type) => if initial_type == target_type {
+        QueryPlan::Widen(plan, initial_type, target_type) => if initial_type == target_type {
             return prepare(*plan, result);
         } else {
             VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("casted"), initial_type, target_type)
         },
-
+        QueryPlan::LZ4Decode(plan, t) =>
+            VecOperator::lz4_decode(prepare(*plan, result), result.named_buffer("decoded"), t),
         QueryPlan::Exists(indices, t, max_index) =>
             VecOperator::exists(prepare(*indices, result), result.named_buffer("exists"), t, prepare(*max_index, result)),
         QueryPlan::Compact(data, data_t, select, select_t) => {
@@ -152,7 +154,7 @@ pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
         raw_grouping_key, unique_out, grouping_key_out, cardinality_out, grouping_key_type, max_cardinality));
     (Some(unique_out),
      grouping_key_out,
-     Type::encoded(Codec::opaque(grouping_key_type, BasicType::Integer, false, false, true)),
+     Type::encoded(Codec::opaque(grouping_key_type, BasicType::Integer, false, false, true, true)),
      cardinality_out)
 }
 
@@ -172,7 +174,7 @@ pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan,
                                 output_location,
                                 grouping_type,
                                 max_index),
-             Type::encoded(integer_cast_codec(EncodingType::U32)))
+             Type::encoded(Codec::integer_cast(EncodingType::U32)))
         }
         (Aggregator::Sum, mut plan) => {
             output_location = result.named_buffer("sum");
@@ -213,23 +215,29 @@ impl QueryPlan {
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    let read_column = QueryPlan::ReadColumnSection(name.to_string(), 0, c.range());
-                    let plan = match filter {
+                    let mut plan = QueryPlan::ReadColumnSection(name.to_string(), 0, c.range());
+                    let mut t = c.full_type();
+                    if !c.codec().is_fixed_width() {
+                        let (codec, fixed_width) = c.codec().ensure_fixed_width(Box::new(plan));
+                        t = Type::encoded(codec);
+                        plan = *fixed_width;
+                    }
+                    plan = match filter {
                         Filter::BitVec(filter) => {
                             QueryPlan::Filter(
-                                Box::new(read_column),
-                                c.encoding_type(),
+                                Box::new(plan),
+                                t.encoding_type(),
                                 Box::new(QueryPlan::ReadBuffer(filter)))
                         }
                         Filter::Indices(indices) => {
                             QueryPlan::Select(
-                                Box::new(read_column),
+                                Box::new(plan),
                                 Box::new(QueryPlan::ReadBuffer(indices)),
-                                c.encoding_type())
+                                t.encoding_type())
                         }
-                        Filter::None => read_column,
+                        Filter::None => plan,
                     };
-                    (plan, c.full_type())
+                    (plan, t)
                 }
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
             }
@@ -408,9 +416,9 @@ impl QueryPlan {
                                          plan_type.encoding_type(),
                                          Box::new(QueryPlan::Constant(RawVal::Int(-min), true)))
                     } else {
-                        QueryPlan::TypeConversion(Box::new(query_plan),
-                                                  plan_type.encoding_type(),
-                                                  EncodingType::I64)
+                        QueryPlan::Widen(Box::new(query_plan),
+                                         plan_type.encoding_type(),
+                                         EncodingType::I64)
                     };
 
                     #[cfg(feature = "nerf")]
@@ -435,7 +443,7 @@ impl QueryPlan {
                             EncodingType::I64,
                             Box::new(QueryPlan::Constant(RawVal::Int(min), true)));
                     }
-                    decode_plan = QueryPlan::TypeConversion(
+                    decode_plan = QueryPlan::Widen(
                         Box::new(decode_plan),
                         EncodingType::I64,
                         plan_type.encoding_type());
@@ -456,7 +464,7 @@ impl QueryPlan {
                 if total_width <= 64 {
                     decode_plans.reverse();
                     let t = Type::encoded(Codec::opaque(
-                        EncodingType::I64, BasicType::Integer, false, order_preserving, true));
+                        EncodingType::I64, BasicType::Integer, false, order_preserving, true, true));
                     return Ok((plan, t, largest_key, decode_plans));
                 }
             }
@@ -481,7 +489,8 @@ impl QueryPlan {
                     if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
             AddVS(ref left, _, box Constant(RawVal::Int(c), _)) =>
                 left.encoding_range().map(|(min, max)| (min + c, max + c)),
-            TypeConversion(ref left, _, _) => left.encoding_range(),
+            Widen(ref left, _, _) => left.encoding_range(),
+            LZ4Decode(ref plan, _) => plan.encoding_range(),
             _ => None, // TODO(clemens): many more cases where we can determine range
         }
     }

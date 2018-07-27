@@ -63,17 +63,18 @@ impl fmt::Display for BufferRef {
     }
 }
 
-
 pub trait VecOperator<'a>: fmt::Debug {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>);
     fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
-    fn init(&mut self, _total_count: usize, _batch_size: usize, _stream_outputs: bool, _scratchpad: &mut Scratchpad<'a>) {}
+    fn init(&mut self, _total_count: usize, _batch_size: usize, _scratchpad: &mut Scratchpad<'a>) {}
 
     fn inputs(&self) -> Vec<BufferRef>;
     fn outputs(&self) -> Vec<BufferRef>;
     fn can_stream_input(&self, i: BufferRef) -> bool;
     fn can_stream_output(&self, i: BufferRef) -> bool;
     fn allocates(&self) -> bool;
+    fn is_streaming_producer(&self) -> bool { false }
+    fn has_more(&self) -> bool { false }
 
     fn display(&self, full: bool) -> String {
         let mut s = String::new();
@@ -149,7 +150,7 @@ use self::EncodingType::*;
 
 impl<'a> VecOperator<'a> {
     pub fn read_column_data(colname: String, section_index: usize, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(ReadColumnData { colname, section_index, output, batch_size: 0, current_index: 0 })
+        Box::new(ReadColumnData { colname, section_index, output, batch_size: 0, current_index: 0, has_more: true })
     }
 
     pub fn dict_lookup(indices: BufferRef, dict_indices: BufferRef, dict_data: BufferRef, output: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
@@ -160,6 +161,26 @@ impl<'a> VecOperator<'a> {
             EncodingType::I64 => Box::new(DictLookup::<i64> { indices, output, dict_indices, dict_data, t: PhantomData }),
             _ => panic!("dict_lookup not supported for type {:?}", t),
         }
+    }
+
+    #[cfg(feature = "enable_lz4")]
+    pub fn lz4_decode(encoded: BufferRef, decoded: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
+        use engine::vector_op::lz4_decode::LZ4Decode;
+        use std::io::Read;
+        let reader: Box<Read> = Box::new(&[] as &[u8]);
+        match t {
+            EncodingType::U8 => Box::new(LZ4Decode::<'a, u8> { encoded, decoded, reader, has_more: true, t: PhantomData }),
+            EncodingType::U16 => Box::new(LZ4Decode::<'a, u16> { encoded, decoded, reader, has_more: true, t: PhantomData }),
+            EncodingType::U32 => Box::new(LZ4Decode::<'a, u32> { encoded, decoded, reader, has_more: true, t: PhantomData }),
+            EncodingType::U64 => Box::new(LZ4Decode::<'a, u64> { encoded, decoded, reader, has_more: true, t: PhantomData }),
+            EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded, reader, has_more: true, t: PhantomData }),
+            _ => panic!("dict_lookup not supported for type {:?}", t),
+        }
+    }
+
+    #[cfg(not(feature = "enable_lz4"))]
+    pub fn lz4_decode(_: BufferRef, _: BufferRef, _: EncodingType) -> BoxedOperator<'a> {
+        panic!("LZ4 is not enabled in this build of LocustDB. Recompile with `features enable_lz4`")
     }
 
     pub fn inverse_dict_lookup(dict_indices: BufferRef, dict_data: BufferRef, constant: BufferRef, output: BufferRef) -> BoxedOperator<'a> {

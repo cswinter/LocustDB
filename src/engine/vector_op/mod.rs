@@ -31,6 +31,8 @@ mod to_year;
 mod top_n;
 mod type_conversion;
 mod vec_const_bool_op;
+#[cfg(feature = "enable_lz4")]
+mod lz4_decode;
 pub mod merge_deduplicate_partitioned;
 pub mod partition;
 pub mod subpartition;

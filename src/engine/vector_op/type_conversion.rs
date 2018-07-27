@@ -34,7 +34,7 @@ impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
         }
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.output, Box::new(Vec::<U>::with_capacity(batch_size)));
     }
 

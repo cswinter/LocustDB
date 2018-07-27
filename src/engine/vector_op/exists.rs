@@ -12,13 +12,13 @@ pub struct Exists<T> {
     t: PhantomData<T>,
 }
 
-impl<T: GenericIntVec<T> + IntoUsize> Exists<T> {
+impl<T: GenericIntVec<T> + CastUsize> Exists<T> {
     pub fn boxed<'a>(input: BufferRef, output: BufferRef, max_index: BufferRef) -> BoxedOperator<'a> {
         Box::new(Exists::<T> { input, output, max_index, t: PhantomData })
     }
 }
 
-impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for Exists<T> {
+impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get::<T>(self.input);
         let mut exists = scratchpad.get_mut::<u8>(self.output);
@@ -34,7 +34,7 @@ impl<'a, T: GenericIntVec<T> + IntoUsize> VecOperator<'a> for Exists<T> {
         }
     }
 
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.output, AnyVec::owned(Vec::<u8>::with_capacity(0)));
     }
 

@@ -52,14 +52,26 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
             strings.map(|s| *dictionary.get(s).unwrap()).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
-        Arc::new(Column::new(
-            name,
-            indices.len(),
-            Some((0, dict_size as i64)),
-            dict_codec(EncodingType::U8),
-            vec![DataSection::U8(indices),
-                 DataSection::U64(dictionary_indices),
-                 DataSection::U8(dictionary_data)]))
+
+        if cfg!(feature = "enable_lz4") {
+            Arc::new(Column::new(
+                name,
+                indices.len(),
+                Some((0, dict_size as i64)),
+                dict_codec(EncodingType::U8).with_lz4(),
+                vec![DataSection::U8(unsafe { lz4::encode(&indices) }),
+                     DataSection::U64(dictionary_indices),
+                     DataSection::U8(dictionary_data)]))
+        } else {
+            Arc::new(Column::new(
+                name,
+                indices.len(),
+                Some((0, dict_size as i64)),
+                dict_codec(EncodingType::U8),
+                vec![DataSection::U8(indices),
+                     DataSection::U64(dictionary_indices),
+                     DataSection::U8(dictionary_data)]))
+        }
     } else {
         let indices: Vec<u16> = {
             let mut dictionary: HashMapSea<&str, u16> = HashMapSea::default();
@@ -69,14 +81,25 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
             strings.map(|s| *dictionary.get(s).unwrap()).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
-        Arc::new(Column::new(
-            name,
-            indices.len(),
-            Some((0, dict_size as i64)),
-            dict_codec(EncodingType::U16),
-            vec![DataSection::U16(indices),
-                 DataSection::U64(dictionary_indices),
-                 DataSection::U8(dictionary_data)]))
+        if cfg!(feature = "enable_lz4") {
+            Arc::new(Column::new(
+                name,
+                indices.len(),
+                Some((0, dict_size as i64)),
+                dict_codec(EncodingType::U8).with_lz4(),
+                vec![DataSection::U8(unsafe { lz4::encode(&indices) }),
+                     DataSection::U64(dictionary_indices),
+                     DataSection::U8(dictionary_data)]))
+        } else {
+            Arc::new(Column::new(
+                name,
+                indices.len(),
+                Some((0, dict_size as i64)),
+                dict_codec(EncodingType::U16),
+                vec![DataSection::U16(indices),
+                     DataSection::U64(dictionary_indices),
+                     DataSection::U8(dictionary_data)]))
+        }
     }
 }
 
