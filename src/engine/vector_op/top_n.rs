@@ -21,7 +21,7 @@ pub struct TopN<T, C> {
 }
 
 impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for TopN<T, C> {
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.indices, AnyVec::owned(Vec::<usize>::with_capacity(self.n)));
         scratchpad.set(self.keys, AnyVec::owned(Vec::<T>::with_capacity(self.n)));
     }

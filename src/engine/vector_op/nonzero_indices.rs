@@ -13,13 +13,13 @@ pub struct NonzeroIndices<T, U> {
     u: PhantomData<U>,
 }
 
-impl<T: GenericIntVec<T> + IntoUsize, U: GenericIntVec<U>> NonzeroIndices<T, U> {
+impl<T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> NonzeroIndices<T, U> {
     pub fn boxed<'a>(input: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
         Box::new(NonzeroIndices::<T, U> { input, output, t: PhantomData, u: PhantomData })
     }
 }
 
-impl<'a, T: GenericIntVec<T> + IntoUsize, U: GenericIntVec<U>> VecOperator<'a> for NonzeroIndices<T, U> {
+impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> for NonzeroIndices<T, U> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let exists = scratchpad.get::<T>(self.input);
         let mut unique = scratchpad.get_mut::<U>(self.output);
@@ -30,7 +30,7 @@ impl<'a, T: GenericIntVec<T> + IntoUsize, U: GenericIntVec<U>> VecOperator<'a> f
         }
     }
 
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         // TODO(clemens): output size estimate?
         scratchpad.set(self.output, AnyVec::owned(Vec::<U>::new()));
     }

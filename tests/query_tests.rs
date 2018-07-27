@@ -273,7 +273,7 @@ fn test_restore_from_disk() {
         // Dropping the LocustDB object will cause all threads to be stopped
         // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
         // TODO(clemens): make drop better
-        thread::sleep(time::Duration::from_millis(250));
+        thread::sleep(time::Duration::from_millis(1000));
     }
     let locustdb = LocustDB::disk_backed(tmp_dir.path().to_str().unwrap());
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";

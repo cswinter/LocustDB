@@ -270,7 +270,7 @@ impl GenericVec<u64> for u64 {
     fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [u64] where u64: 'a { vec.cast_ref_u64() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<u64> where u64: 'a { vec.cast_ref_mut_u64() }
     fn wrap_one(value: u64) -> RawVal { RawVal::Int(value as i64) }
-    fn t() -> EncodingType { EncodingType::I64 }
+    fn t() -> EncodingType { EncodingType::U64 }
 }
 
 impl GenericVec<usize> for usize {
@@ -300,9 +300,9 @@ impl<'c> GenericVec<&'c str> for &'c str {
 }
 
 
-pub trait GenericIntVec<T>: GenericVec<T> + Into<i64> + IntoUsize + PrimInt + Hash + 'static {}
+pub trait GenericIntVec<T>: GenericVec<T> + CastUsize + PrimInt + Hash + 'static {}
 
-impl<T> GenericIntVec<T> for T where T: GenericVec<T> + Into<i64> + IntoUsize + PrimInt + Copy + Hash + 'static {}
+impl<T> GenericIntVec<T> for T where T: GenericVec<T> + CastUsize + PrimInt + Copy + Hash + 'static {}
 
 pub trait ConstType<T> {
     fn unwrap(vec: &AnyVec) -> T;
@@ -317,26 +317,29 @@ impl ConstType<String> for String {
 }
 
 
-pub trait IntoUsize {
+pub trait CastUsize {
     fn cast_usize(&self) -> usize;
 }
 
-impl IntoUsize for u8 {
+impl CastUsize for u8 {
     fn cast_usize(&self) -> usize { *self as usize }
 }
 
-impl IntoUsize for u16 {
+impl CastUsize for u16 {
     fn cast_usize(&self) -> usize { *self as usize }
 }
 
-impl IntoUsize for u32 {
+impl CastUsize for u32 {
     fn cast_usize(&self) -> usize { *self as usize }
 }
 
-impl IntoUsize for i64 {
+impl CastUsize for i64 {
     fn cast_usize(&self) -> usize { *self as usize }
 }
 
+impl CastUsize for u64 {
+    fn cast_usize(&self) -> usize { *self as usize }
+}
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, HeapSizeOf)]
 pub enum MergeOp {

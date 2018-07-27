@@ -12,7 +12,7 @@ pub struct EncodeIntConstant {
 impl<'a> VecOperator<'a> for EncodeIntConstant {
     fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
 
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         let constant = scratchpad.get_const::<i64>(self.constant);
         let result = self.codec.encode_int(constant);
         scratchpad.set(self.output, AnyVec::constant(result));

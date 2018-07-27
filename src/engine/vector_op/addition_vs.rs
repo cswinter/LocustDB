@@ -23,7 +23,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for AdditionVS<T> {
         }
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.output, Box::new(Vec::<i64>::with_capacity(batch_size)));
     }
 

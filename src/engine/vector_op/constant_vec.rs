@@ -13,7 +13,7 @@ pub struct ConstantVec<'a> {
 impl<'a> VecOperator<'a> for ConstantVec<'a> {
     fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
 
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         let owned = mem::replace(&mut self.val, AnyVec::empty(0));
         scratchpad.set(self.output, owned);
     }

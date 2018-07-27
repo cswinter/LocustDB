@@ -28,7 +28,7 @@ impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: GenericVec<T> {
         trace!("filtered: {:?}", filtered);
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.output, AnyVec::owned(Vec::<T>::with_capacity(batch_size)));
     }
 

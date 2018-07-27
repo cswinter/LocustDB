@@ -32,7 +32,7 @@ impl<'a> VecOperator<'a> for BitUnpackOperator {
         }
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.output, AnyVec::owned(Vec::<i64>::with_capacity(batch_size)));
     }
 

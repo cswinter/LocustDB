@@ -13,7 +13,7 @@ pub struct Constant {
 impl<'a> VecOperator<'a> for Constant {
     fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
 
-    fn init(&mut self, _: usize, _: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         let result = AnyVec::constant(self.val.clone());
         scratchpad.set(self.output, result);
     }

@@ -8,6 +8,7 @@ pub struct ReadColumnData {
 
     pub current_index: usize,
     pub batch_size: usize,
+    pub has_more: bool,
 }
 
 impl<'a> VecOperator<'a> for ReadColumnData {
@@ -17,9 +18,10 @@ impl<'a> VecOperator<'a> for ReadColumnData {
         let result = data_section.slice_box(self.current_index, end);
         self.current_index += self.batch_size;
         scratchpad.set(self.output, result);
+        self.has_more = end < data_section.len();
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: bool, _: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, batch_size: usize, _: &mut Scratchpad<'a>) {
         self.batch_size = batch_size;
     }
 
@@ -28,6 +30,8 @@ impl<'a> VecOperator<'a> for ReadColumnData {
     fn can_stream_input(&self, _: BufferRef) -> bool { false }
     fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { false }
+    fn is_streaming_producer(&self) -> bool { true }
+    fn has_more(&self) -> bool { self.has_more }
 
     fn display_op(&self, _: bool) -> String {
         format!("{:?}.{}", self.colname, self.section_index)

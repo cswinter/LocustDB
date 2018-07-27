@@ -40,7 +40,7 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
         }
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set(self.output, AnyVec::owned(Vec::<u8>::with_capacity(batch_size)));
     }
 
