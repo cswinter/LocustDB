@@ -1,17 +1,9 @@
 use fmt_table::fmt_table;
 use locustdb::*;
+use locustdb::unit_fmt::*;
 
 pub fn print_query_result(results: &QueryOutput) {
     let rt = results.stats.runtime_ns;
-    let fmt_time = if rt < 10_000 {
-        format!("{}ns", rt)
-    } else if rt < 10_000_000 {
-        format!("{}μs", rt / 1000)
-    } else if rt < 10_000_000_000 {
-        format!("{}ms", rt / 1_000_000)
-    } else {
-        format!("{}s", rt / 1_000_000_000)
-    };
 
     println!();
     if results.query_plans.len() > 0 {
@@ -19,10 +11,10 @@ pub fn print_query_result(results: &QueryOutput) {
             println!("Query plan in {} batches{}", count, query_plan)
         }
     }
-    println!("Scanned {} rows in {} ({:.2}B rows/s)!",
-             results.stats.rows_scanned,
-             fmt_time,
-             results.stats.rows_scanned as f64 / rt as f64);
+    println!("Scanned {:.2} rows in {} ({:.2} rows/s)!",
+             short_scale(results.stats.rows_scanned as f64),
+             ns(rt as usize),
+             billion(results.stats.rows_scanned as f64 / rt as f64));
     println!("\n{}", format_results(&results.colnames, &results.rows));
     println!();
 }

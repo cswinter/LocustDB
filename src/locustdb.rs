@@ -12,7 +12,7 @@ use disk_store::interface::*;
 use disk_store::noop_storage::NoopStorage;
 use engine::query_task::QueryTask;
 use ingest::csv_loader::{CSVIngestionTask, IngestFile};
-use mem_store::table::TableStats;
+use mem_store::*;
 use scheduler::*;
 use syntax::parser;
 use trace::{Trace, TraceBuilder};
@@ -106,6 +106,13 @@ impl LocustDB {
     pub fn recover(&self) {
         self.inner_locustdb.drop_pending_tasks();
         InnerLocustDB::start_worker_threads(&self.inner_locustdb, None);
+    }
+
+    pub fn mem_tree(&self, depth: usize) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
+        let inner = self.inner_locustdb.clone();
+        let (task, receiver) = Task::from_fn(move || inner.mem_tree(depth));
+        self.schedule(task);
+        receiver
     }
 
     pub fn table_stats(&self) -> impl Future<Item=Vec<TableStats>, Error=oneshot::Canceled> {

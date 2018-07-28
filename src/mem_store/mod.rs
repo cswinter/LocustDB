@@ -1,18 +1,21 @@
-pub mod column;
 pub mod codec;
-pub mod partition;
-pub mod value;
+pub mod column;
 pub mod column_builder;
-pub mod table;
-pub mod raw_col;
 pub mod integers;
+pub mod partition;
+pub mod raw_col;
 pub mod strings;
+pub mod table;
+pub mod tree;
+pub mod value;
 #[cfg(feature = "enable_lz4")]
 pub mod lz4;
 mod mixed_column;
 
 pub use self::column::{Column, DataSection};
 pub use self::codec::{Codec, CodecOp};
+pub use self::tree::*;
+pub use self::table::TableStats;
 
 
 #[cfg(not(feature = "enable_lz4"))]

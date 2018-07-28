@@ -87,6 +87,25 @@ impl Partition {
     pub fn id(&self) -> u64 { self.id }
     pub fn len(&self) -> usize { self.len }
 
+    pub fn mem_tree(&self, coltrees: &mut HashMap<String, MemTreeColumn>, depth: usize) {
+        if depth == 0 { return; }
+        for col in &self.cols {
+            let col = col.lock().unwrap();
+            let mut coltree = coltrees.entry(col.name().to_string())
+                .or_insert(MemTreeColumn {
+                    name: col.name().to_string(),
+                    size_bytes: 0,
+                    size_percentage: 0.0,
+                    rows: 0,
+                    rows_percentage: 0.0,
+                    encodings: HashMap::default(),
+                });
+            if let ColumnHandle::Resident(ref col) = *col {
+                col.mem_tree(&mut coltree, depth);
+            }
+        }
+    }
+
     pub fn heap_size_per_column(&self) -> Vec<(String, usize)> {
         self.cols.iter()
             .map(|c| {

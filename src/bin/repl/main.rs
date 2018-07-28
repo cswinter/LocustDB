@@ -8,6 +8,7 @@ extern crate time;
 
 use failure::Fail;
 use futures_executor::block_on;
+use locustdb::unit_fmt::*;
 use locustdb::{LocustDB, TableStats};
 use std::env;
 use std::fs;
@@ -20,7 +21,7 @@ const LOAD_CHUNK_SIZE: usize = 1 << 16;
 
 fn main() {
     #[cfg(feature = "nerf")]
-    println!("NERFED!");
+        println!("NERFED!");
 
     let args: Vec<String> = env::args().collect();
     let filename = &args.get(1).expect("Specify data file as argument.");
@@ -96,10 +97,10 @@ fn main() {
 fn print_table_stats(stats: &[TableStats], start_time: u64) {
     println!("Loaded data in {:.1} seconds.", (precise_time_ns() - start_time) / 1_000_000_000);
     for table in stats {
-        let size = (table.batches_bytes + table.buffer_bytes) as f64 / 1024f64 / 1024f64;
-        println!("\n# Table `{}` ({} rows, {:.2} MiB) #", &table.name, table.rows, size);
+        let size = table.batches_bytes + table.buffer_bytes;
+        println!("\n# Table `{}` ({} rows, {:.2}) #", &table.name, table.rows, bite(size));
         for &(ref columname, heapsize) in &table.size_per_column {
-            println!("{}: {:.2}MiB", columname, heapsize as f64 / 1024. / 1024.);
+            println!("{}: {:.2}", columname, bite(heapsize));
         }
     }
 }
@@ -117,15 +118,28 @@ fn repl(locustdb: &LocustDB) {
         if s == "exit" {
             break;
         }
+        rl.add_history_entry(&s);
         if !s.ends_with(';') {
             s.push(';');
         }
-        rl.add_history_entry(&s);
 
         let mut print_trace = false;
         let mut explain = false;
         let mut show = vec![];
         let mut s: &str = &s;
+        if s.starts_with(":memtree") {
+            let depth = if s.starts_with(":memtree(") {
+                let end = s.find(')').unwrap();
+                s[9..end].parse::<usize>().expect("must pass integer to :memtree(x) command")
+            } else { 2 };
+            match block_on(locustdb.mem_tree(depth)) {
+                Ok(trees) => for tree in trees {
+                    println!("{}\n", &tree)
+                },
+                _ => println!("Error: Query execution was canceled!"),
+            }
+            continue;
+        }
         if s.starts_with(":explain") {
             explain = true;
             s = &s[9..];
@@ -139,7 +153,6 @@ fn repl(locustdb: &LocustDB) {
                 let end = s.find(')').unwrap();
                 let partition = s[6..end].parse::<usize>().expect("must pass integer to :show(x) command");
                 s = &s[(end + 2)..];
-                println!("{}", s);
                 vec![partition]
             } else {
                 s = &s[6..];
@@ -163,19 +176,21 @@ fn repl(locustdb: &LocustDB) {
                 }
                 match result {
                     Ok(output) => print_results::print_query_result(&output),
-                    Err(mut fail) => {
-                        println!("{}", fail);
-                        while let Some(cause) = fail.cause() {
-                            println!("{}", cause);
-                            if let Some(bt) = cause.backtrace() {
-                                println!("{}", bt);
-                            }
-                        }
-                    }
+                    Err(mut fail) => print_error(fail),
                 }
             }
             _ => println!("Error: Query execution was canceled!"),
         }
     }
     rl.save_history(".locustdb_history").ok();
+}
+
+fn print_error(fail: locustdb::QueryError) {
+    println!("{}", fail);
+    while let Some(cause) = fail.cause() {
+        println!("{}", cause);
+        if let Some(bt) = cause.backtrace() {
+            println!("{}", bt);
+        }
+    }
 }

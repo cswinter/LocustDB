@@ -241,6 +241,15 @@ impl Codec {
             }
         }
     }
+
+    pub fn signature(&self) -> String {
+        let mut s = String::new();
+        for op in &self.ops {
+            s += &op.signature();
+            s += " ";
+        }
+        s
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, HeapSizeOf)]
@@ -336,6 +345,18 @@ impl CodecOp {
             CodecOp::LZ4(_) => 1,
             CodecOp::UnpackStrings => 1,
             CodecOp::Unknown => panic!("Unknown.is_fixed_width()"),
+        }
+    }
+
+    fn signature(&self) -> String {
+        match self {
+            CodecOp::Add(t, _) => format!("Add({:?}, _)", t),
+            CodecOp::ToI64(t) => format!("ToI64({:?})", t),
+            CodecOp::PushDataSection(i) => format!("Data({})", i),
+            CodecOp::DictLookup(t) => format!("Dict({:?})", t),
+            CodecOp::LZ4(t) => format!("LZ4({:?})", t),
+            CodecOp::UnpackStrings => "StrUnpack".to_string(),
+            CodecOp::Unknown => "Unknown".to_string(),
         }
     }
 }

@@ -171,6 +171,11 @@ impl InnerLocustDB {
         task_queue.clear();
     }
 
+    pub fn mem_tree(&self, depth: usize) -> Vec<MemTreeTable> {
+        let tables = self.tables.read().unwrap();
+        tables.values().map(|table| { table.mem_tree(depth) }).collect()
+    }
+
     pub fn stats(&self) -> Vec<TableStats> {
         let tables = self.tables.read().unwrap();
         tables.values().map(|table| table.stats()).collect()
