@@ -36,8 +36,8 @@ impl Table {
     }
 
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
-        let batches = self.partitions.read().unwrap();
-        batches.clone()
+        let partitions = self.partitions.read().unwrap();
+        partitions.clone()
     }
 
     pub fn load_table_metadata(batch_size: usize, storage: &DiskStore) -> HashMap<String, Table> {
@@ -49,6 +49,15 @@ impl Table {
             table.insert_nonresident_partition(&md);
         }
         tables
+    }
+
+    pub fn restore(&self, id: PartitionID, col: Arc<Column>) {
+        for partition in self.partitions.read().unwrap().iter() {
+            if partition.id() == id {
+                partition.restore(col);
+                return;
+            }
+        }
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {

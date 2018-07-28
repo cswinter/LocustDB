@@ -140,6 +140,20 @@ fn repl(locustdb: &LocustDB) {
             }
             continue;
         }
+        if s.starts_with(":restore") {
+            let start = precise_time_ns();
+            match block_on(locustdb.bulk_load()) {
+                Ok(trees) => {
+                    println!("Restored DB from disk in {:.2}",
+                             ns((precise_time_ns() - start) as usize));
+                    for tree in trees {
+                        println!("{}\n", &tree)
+                    }
+                }
+                _ => println!("Error: Query execution was canceled!"),
+            }
+            continue;
+        }
         if s.starts_with(":explain") {
             explain = true;
             s = &s[9..];

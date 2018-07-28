@@ -152,6 +152,16 @@ impl InnerLocustDB {
         tables.get(table).unwrap().ingest(row)
     }
 
+    pub fn bulk_load(&self, start: PartitionID, end: PartitionID) {
+        let columns = self.storage.bulk_load(start, end);
+        for (id, col) in columns {
+            let c = Arc::new(col);
+            for table in self.tables.read().unwrap().values() {
+                table.restore(id, c.clone());
+            }
+        }
+    }
+
     #[allow(dead_code)]
     pub fn ingest_homogeneous(&self, table: &str, columns: HashMap<String, InputColumn>) {
         self.create_if_empty(table);
@@ -198,6 +208,10 @@ impl InnerLocustDB {
                 ("name".to_string(), RawVal::Str(table.to_string())),
             ]);
         }
+    }
+
+    pub fn max_partition_id(&self) -> u64 {
+        self.next_partition_id.load(Ordering::SeqCst) as u64
     }
 }
 
