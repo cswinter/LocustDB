@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures_channel::oneshot;
 use futures_core::*;
 use futures_util::FutureExt;
+use futures_executor::block_on;
 use nom;
 
 use QueryError;
@@ -101,6 +102,19 @@ impl LocustDB {
             nom::IResult::Error(err) => format!("Parse error: {:?}", err),
             nom::IResult::Incomplete(needed) => format!("Incomplete. Needed: {:?}", needed),
         }
+    }
+
+    pub fn bulk_load(&self) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
+        let max_partition = self.inner_locustdb.max_partition_id();
+        let mut receivers: Vec<Box<Future<Item=_, Error=_>>> = Vec::new();
+        for start in (0..max_partition).step_by(50) {
+            let inner = self.inner_locustdb.clone();
+            let (task, receiver) = Task::from_fn(move || inner.bulk_load(start, start + 50));
+            receivers.push(Box::new(receiver));
+            self.schedule(task);
+        }
+        receivers.into_iter().for_each(|r| { block_on(r).unwrap(); });
+        self.mem_tree(2)
     }
 
     pub fn recover(&self) {

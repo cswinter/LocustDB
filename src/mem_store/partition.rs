@@ -84,6 +84,15 @@ impl Partition {
         names
     }
 
+    pub fn restore(&self, col: Arc<Column>) {
+        for c in &self.cols {
+            let mut handle = c.lock().unwrap();
+            if handle.name() == col.name() {
+                *handle = ColumnHandle::Resident(col.clone());
+            }
+        }
+    }
+
     pub fn id(&self) -> u64 { self.id }
     pub fn len(&self) -> usize { self.len }
 
