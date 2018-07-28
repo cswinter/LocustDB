@@ -2,6 +2,9 @@ use mem_store::*;
 use engine::typed_vec::AnyVec;
 use engine::types::*;
 
+use heapsize::HeapSizeOf;
+
+
 #[derive(Debug, Serialize, Deserialize, HeapSizeOf)]
 pub struct Column {
     name: String,
@@ -49,10 +52,43 @@ impl Column {
     pub fn data_sections(&self) -> Vec<&AnyVec> {
         self.data.iter().map(|d| d.to_any_vec()).collect()
     }
+
+    pub fn mem_tree(&self, tree: &mut MemTreeColumn, depth: usize) {
+        if depth == 0 { return }
+        let size_bytes = self.heap_size_of_children();
+        tree.size_bytes += size_bytes;
+        tree.rows += self.len;
+        if depth > 1 {
+            let signature = self.codec().signature().to_string();
+            let codec_tree = tree.encodings
+                .entry(signature.clone())
+                .or_insert(MemTreeEncoding::default());
+            codec_tree.codec = signature;
+            codec_tree.size_bytes += size_bytes;
+            codec_tree.rows += self.len;
+            if depth > 2 && self.data.len() > 1 {
+                for (i, d) in self.data.iter().enumerate() {
+                    if codec_tree.sections.len() == i {
+                        codec_tree.sections.push(MemTreeSection {
+                            id: i,
+                            size_bytes: 0,
+                        });
+                    }
+                    codec_tree.sections[i].size_bytes += d.heap_size_of_children();
+                }
+            }
+        }
+    }
+
+    pub fn shrink_to_fit_ish(&mut self) {
+        for d in &mut self.data {
+            d.shrink_to_fit_ish();
+        }
+    }
 }
 
 
-#[derive(Debug, Serialize, Deserialize, HeapSizeOf)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum DataSection {
     U8(Vec<u8>),
     U16(Vec<u16>),
@@ -73,25 +109,88 @@ impl DataSection {
             DataSection::Null(ref x) => x,
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            DataSection::U8(ref x) => x.len(),
+            DataSection::U16(ref x) => x.len(),
+            DataSection::U32(ref x) => x.len(),
+            DataSection::U64(ref x) => x.len(),
+            DataSection::I64(ref x) => x.len(),
+            DataSection::Null(ref x) => *x,
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        match self {
+            DataSection::U8(ref x) => x.capacity(),
+            DataSection::U16(ref x) => x.capacity(),
+            DataSection::U32(ref x) => x.capacity(),
+            DataSection::U64(ref x) => x.capacity(),
+            DataSection::I64(ref x) => x.capacity(),
+            DataSection::Null(ref x) => *x,
+        }
+    }
+
+    pub fn shrink_to_fit_ish(&mut self) {
+        if self.capacity() / 10 > self.len() / 9 {
+            match self {
+                DataSection::U8(ref mut x) => x.shrink_to_fit(),
+                DataSection::U16(ref mut x) => x.shrink_to_fit(),
+                DataSection::U32(ref mut x) => x.shrink_to_fit(),
+                DataSection::U64(ref mut x) => x.shrink_to_fit(),
+                DataSection::I64(ref mut x) => x.shrink_to_fit(),
+                DataSection::Null(_) => {}
+            }
+        }
+    }
+}
+
+impl HeapSizeOf for DataSection {
+    fn heap_size_of_children(&self) -> usize {
+        match self {
+            DataSection::U8(ref x) => x.heap_size_of_children(),
+            DataSection::U16(ref x) => x.heap_size_of_children(),
+            DataSection::U32(ref x) => x.heap_size_of_children(),
+            DataSection::U64(ref x) => x.heap_size_of_children(),
+            DataSection::I64(ref x) => x.heap_size_of_children(),
+            DataSection::Null(_) => 0,
+        }
+    }
 }
 
 impl From<Vec<u8>> for DataSection {
-    fn from(vec: Vec<u8>) -> Self { DataSection::U8(vec) }
+    fn from(vec: Vec<u8>) -> Self {
+        assert_eq!(vec.len(), vec.capacity());
+        DataSection::U8(vec)
+    }
 }
 
 impl From<Vec<u16>> for DataSection {
-    fn from(vec: Vec<u16>) -> Self { DataSection::U16(vec) }
+    fn from(vec: Vec<u16>) -> Self {
+        assert_eq!(vec.len(), vec.capacity());
+        DataSection::U16(vec)
+    }
 }
 
 impl From<Vec<u32>> for DataSection {
-    fn from(vec: Vec<u32>) -> Self { DataSection::U32(vec) }
+    fn from(vec: Vec<u32>) -> Self {
+        assert_eq!(vec.len(), vec.capacity());
+        DataSection::U32(vec)
+    }
 }
 
 impl From<Vec<u64>> for DataSection {
-    fn from(vec: Vec<u64>) -> Self { DataSection::U64(vec) }
+    fn from(vec: Vec<u64>) -> Self {
+        assert_eq!(vec.len(), vec.capacity());
+        DataSection::U64(vec)
+    }
 }
 
 impl From<Vec<i64>> for DataSection {
-    fn from(vec: Vec<i64>) -> Self { DataSection::I64(vec) }
+    fn from(vec: Vec<i64>) -> Self {
+        assert_eq!(vec.len(), vec.capacity());
+        DataSection::I64(vec)
+    }
 }
 

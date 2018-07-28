@@ -11,6 +11,7 @@ use ingest::buffer::Buffer;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
 use mem_store::partition::Partition;
+use mem_store::*;
 
 
 pub struct Table {
@@ -96,6 +97,27 @@ impl Table {
     }*/
 
     fn persist_batch(&self, _batch: &Buffer) {}
+
+    pub fn mem_tree(&self, depth: usize) -> MemTreeTable {
+        assert!(depth > 0);
+        let mut tree = MemTreeTable {
+            name: self.name().to_string(),
+            rows: 0,
+            fully_resident: true,
+            size_bytes: 0,
+            columns: HashMap::default(),
+        };
+        let partitions = self.snapshot();
+        for partition in partitions {
+            partition.mem_tree(&mut tree.columns, if depth == 1 { 1 } else { depth - 1 });
+            tree.rows += partition.len();
+        }
+        tree.aggregate();
+        if depth == 1 {
+            tree.columns = HashMap::default();
+        }
+        tree
+    }
 
     pub fn stats(&self) -> TableStats {
         let partitions = self.snapshot();

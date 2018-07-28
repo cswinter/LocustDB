@@ -58,7 +58,10 @@ impl DiskStore for RocksDB {
 
     fn load_column(&self, partition: PartitionID, column_name: &str) -> Column {
         let data = self.db.get_cf(self.partitions(), &column_key(partition, column_name)).unwrap().unwrap();
-        deserialize(&data).unwrap()
+        let mut col: Column = deserialize(&data).unwrap();
+        // TODO(clemens): use serialisation library that makes this unnecessary
+        col.shrink_to_fit_ish();
+        col
     }
 
     fn store_partition(&self, partition: PartitionID, tablename: &str, columns: &Vec<Arc<Column>>) {
