@@ -117,7 +117,10 @@ impl<'a> Scratchpad<'a> {
     }
 
     pub fn get_column_data(&self, name: &str, section_index: usize) -> &'a AnyVec<'a> {
-        self.columns[name][section_index]
+        match self.columns.get(name) {
+            Some(ref col) => col[section_index],
+            None => panic!("No column of name {} ({:?})", name, self.columns.keys()),
+        }
     }
 
     pub fn get<T: GenericVec<T> + 'a>(&self, index: BufferRef) -> Ref<[T]> {

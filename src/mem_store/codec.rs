@@ -95,7 +95,9 @@ impl Codec {
             }*/
             ops.push(op);
         }
-        Codec::new(ops)
+        let mut codec = Codec::new(ops);
+        codec.set_column_name(&self.column_name);
+        codec
     }
 
     pub fn decode(&self, plan: Box<QueryPlan>) -> Box<QueryPlan> {

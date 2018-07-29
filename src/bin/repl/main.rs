@@ -25,7 +25,6 @@ fn main() {
         .about("Extremely fast analytics database")
         .arg(Arg::with_name("db-path")
             .help("Path to data directory")
-            .default_value("ldb")
             .long("db-path")
             .value_name("PATH")
             .takes_value(true))
@@ -59,12 +58,20 @@ fn main() {
     let tablename = matches.value_of("table").unwrap();
     let partition_size = value_t!(matches, "partition-size", u32).unwrap() as usize;
     let reduced_nyc = matches.is_present("reduced-nyc-taxi-rides");
-    let load = files.len() > 0;
+    let db_path = matches.value_of("db-path");
+    let file_count = files.len();
 
-    let locustdb = if cfg!(feature = "enable_rocksdb") {
-        LocustDB::disk_backed("rocksdb")
-    } else {
-        LocustDB::memory_only()
+    if matches.is_present("db-path") && !cfg!(feature = "enable_rocksdb") {}
+
+    let locustdb = match db_path {
+        Some(db_path) => if
+            cfg!(feature = "enable_rocksdb") {
+            LocustDB::disk_backed(db_path)
+        } else {
+            println!("WARNING: --db-path option passed, but RocksDB storage backend is not enabled in this build of LocustDB.");
+            LocustDB::memory_only()
+        },
+        None => LocustDB::memory_only()
     };
 
     let start_time = precise_time_ns();
@@ -78,14 +85,19 @@ fn main() {
         let opts = base_opts.with_partition_size(partition_size);
         let load = locustdb.load_csv(opts);
         loads.push(load);
-        println!("Loading {} into table {}.", file, tablename);
+        if file_count < 4 {
+            println!("Loading {} into table {}.", file, tablename);
+        }
+    }
+    if file_count >= 4 {
+        println!("Loading {} files into table {}.", file_count, tablename);
     }
     for l in loads {
         block_on(l)
             .expect("Ingestion crashed!")
             .expect("Failed to load file!");
     }
-    if load {
+    if file_count > 0 {
         println!("Loaded data in {:.3}.", ns((precise_time_ns() - start_time) as usize));
     }
 
@@ -97,7 +109,7 @@ fn table_stats(locustdb: &LocustDB) {
     let stats = block_on(locustdb.table_stats()).expect("!?!");
     for table in stats {
         let size = table.batches_bytes + table.buffer_bytes;
-        println!("\n# Table `{}` ({} rows, {:.2}) #", &table.name, table.rows, bite(size));
+        println!("\n# Table `{}` ({} rows, {}) #", &table.name, table.rows, bite(size));
         for &(ref columname, heapsize) in &table.size_per_column {
             println!("{}: {:.2}", columname, bite(heapsize));
         }
