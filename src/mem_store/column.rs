@@ -1,6 +1,7 @@
 use mem_store::*;
 use engine::typed_vec::AnyVec;
 use engine::types::*;
+use mem_store::lz4;
 
 use heapsize::HeapSizeOf;
 
@@ -40,6 +41,16 @@ impl Column {
         }
     }
 
+    pub fn lz4_encode(&mut self) {
+        if cfg!(feature = "enable_lz4") {
+            let (encoded, worth_it) = self.data[0].lz4_encode();
+            if worth_it {
+                self.data[0] = encoded;
+                self.codec = self.codec.with_lz4();
+            }
+        }
+    }
+
     pub fn name(&self) -> &str { &self.name }
     pub fn len(&self) -> usize { self.len }
     pub fn codec(&self) -> Codec { self.codec.clone() }
@@ -54,7 +65,7 @@ impl Column {
     }
 
     pub fn mem_tree(&self, tree: &mut MemTreeColumn, depth: usize) {
-        if depth == 0 { return }
+        if depth == 0 { return; }
         let size_bytes = self.heap_size_of_children();
         tree.size_bytes += size_bytes;
         tree.rows += self.len;
@@ -129,6 +140,43 @@ impl DataSection {
             DataSection::U64(ref x) => x.capacity(),
             DataSection::I64(ref x) => x.capacity(),
             DataSection::Null(ref x) => *x,
+        }
+    }
+
+    pub fn lz4_encode(&self) -> (DataSection, bool) {
+        let min_reduction = 90;
+        match self {
+            DataSection::U8(ref x) => {
+                let mut encoded = unsafe { lz4::encode(&x) };
+                encoded.shrink_to_fit();
+                let len = encoded.len();
+                (DataSection::U8(encoded), len * 100 < x.len() * min_reduction)
+            }
+            DataSection::U16(ref x) => {
+                let mut encoded = unsafe { lz4::encode(&x) };
+                encoded.shrink_to_fit();
+                let len = encoded.len();
+                (DataSection::U8(encoded), len * 100 < x.len() * 2 * min_reduction)
+            }
+            DataSection::U32(ref x) => {
+                let mut encoded = unsafe { lz4::encode(&x) };
+                encoded.shrink_to_fit();
+                let len = encoded.len();
+                (DataSection::U8(encoded), len * 100 < x.len() * 4 * min_reduction)
+            }
+            DataSection::U64(ref x) => {
+                let mut encoded = unsafe { lz4::encode(&x) };
+                encoded.shrink_to_fit();
+                let len = encoded.len();
+                (DataSection::U8(encoded), len * 100 < x.len() * 8 * min_reduction)
+            }
+            DataSection::I64(ref x) => {
+                let mut encoded = unsafe { lz4::encode(&x) };
+                encoded.shrink_to_fit();
+                let len = encoded.len();
+                (DataSection::U8(encoded), len * 100 < x.len() * 8 * min_reduction)
+            }
+            DataSection::Null(ref x) => (DataSection::Null(*x), false)
         }
     }
 

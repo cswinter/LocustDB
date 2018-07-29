@@ -60,6 +60,7 @@ impl DiskStore for RocksDB {
         let data = self.db.get_cf(self.partitions(), &column_key(partition, column_name)).unwrap().unwrap();
         let mut col: Column = deserialize(&data).unwrap();
         // TODO(clemens): use serialisation library that makes this unnecessary
+        // TODO(clemens): this doesn't even really work because the allocator can't easily use the freed memory
         col.shrink_to_fit_ish();
         col
     }

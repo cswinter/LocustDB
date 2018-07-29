@@ -43,7 +43,7 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
     for s in mapping {
         packed_mapping.push(s);
     }
-    if dict_size <= From::from(u8::MAX) {
+    let mut column = if dict_size <= From::from(u8::MAX) {
         let indices: Vec<u8> = {
             let mut dictionary: HashMapSea<&str, u8> = HashMapSea::default();
             for (i, s) in packed_mapping.iter().enumerate() {
@@ -52,26 +52,14 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
             strings.map(|s| *dictionary.get(s).unwrap()).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
-
-        if cfg!(feature = "enable_lz4") {
-            Arc::new(Column::new(
-                name,
-                indices.len(),
-                Some((0, dict_size as i64)),
-                dict_codec(EncodingType::U8).with_lz4(),
-                vec![DataSection::U8(unsafe { lz4::encode(&indices) }),
-                     DataSection::U64(dictionary_indices),
-                     DataSection::U8(dictionary_data)]))
-        } else {
-            Arc::new(Column::new(
-                name,
-                indices.len(),
-                Some((0, dict_size as i64)),
-                dict_codec(EncodingType::U8),
-                vec![DataSection::U8(indices),
-                     DataSection::U64(dictionary_indices),
-                     DataSection::U8(dictionary_data)]))
-        }
+        Column::new(
+            name,
+            indices.len(),
+            Some((0, dict_size as i64)),
+            dict_codec(EncodingType::U8),
+            vec![DataSection::U8(indices),
+                 DataSection::U64(dictionary_indices),
+                 DataSection::U8(dictionary_data)])
     } else {
         let indices: Vec<u16> = {
             let mut dictionary: HashMapSea<&str, u16> = HashMapSea::default();
@@ -81,26 +69,17 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
             strings.map(|s| *dictionary.get(s).unwrap()).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
-        if cfg!(feature = "enable_lz4") {
-            Arc::new(Column::new(
-                name,
-                indices.len(),
-                Some((0, dict_size as i64)),
-                dict_codec(EncodingType::U8).with_lz4(),
-                vec![DataSection::U8(unsafe { lz4::encode(&indices) }),
-                     DataSection::U64(dictionary_indices),
-                     DataSection::U8(dictionary_data)]))
-        } else {
-            Arc::new(Column::new(
-                name,
-                indices.len(),
-                Some((0, dict_size as i64)),
-                dict_codec(EncodingType::U16),
-                vec![DataSection::U16(indices),
-                     DataSection::U64(dictionary_indices),
-                     DataSection::U8(dictionary_data)]))
-        }
-    }
+        Column::new(
+            name,
+            indices.len(),
+            Some((0, dict_size as i64)),
+            dict_codec(EncodingType::U16),
+            vec![DataSection::U16(indices),
+                 DataSection::U64(dictionary_indices),
+                 DataSection::U8(dictionary_data)])
+    };
+    column.lz4_encode();
+    Arc::new(column)
 }
 
 pub fn build_string_column(name: &str,
@@ -108,7 +87,7 @@ pub fn build_string_column(name: &str,
                            unique_values: UniqueValues<Option<Rc<String>>>)
                            -> Arc<Column> {
     if let Some(u) = unique_values.get_values() {
-        // TODO(clemens): constant column when there is only one value
+// TODO(clemens): constant column when there is only one value
         if u.len() <= From::from(u8::MAX) {
             let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u8>(values, u);
             Arc::new(Column::new(
@@ -144,7 +123,7 @@ pub fn build_string_column(name: &str,
 pub fn dictionary_compress<T: PrimInt>(strings: &[Option<Rc<String>>],
                                        unique_values: HashSet<Option<Rc<String>>>)
                                        -> (Vec<T>, Vec<u64>, Vec<u8>) {
-    // TODO(clemens): handle null values
+// TODO(clemens): handle null values
     let mut mapping = unique_values.into_iter().map(|o| o.unwrap()).collect::<Vec<_>>();
     mapping.sort();
     let mut packed_mapping = IndexedPackedStrings::default();
