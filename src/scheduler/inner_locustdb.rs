@@ -43,12 +43,8 @@ impl Drop for TaskState {
 }
 
 impl InnerLocustDB {
-    pub fn new(storage: Arc<DiskStore>, restore_tabledata: bool) -> InnerLocustDB {
-        let existing_tables = if restore_tabledata {
-            Table::load_table_metadata(1 << 20, storage.as_ref())
-        } else {
-            HashMap::new()
-        };
+    pub fn new(storage: Arc<DiskStore>) -> InnerLocustDB {
+        let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref());
         let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);
 
         InnerLocustDB {

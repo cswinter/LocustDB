@@ -4,7 +4,7 @@ extern crate locustdb;
 extern crate test;
 
 use futures_executor::block_on;
-use locustdb::LocustDB;
+use locustdb::{LocustDB, Options};
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -21,7 +21,9 @@ fn db() -> &'static LocustDB {
         match DB {
             Some(ref locustdb) => locustdb,
             None => {
-                let locustdb = LocustDB::new(Arc::new(locustdb::NoopStorage), false, thread_count);
+                let mut opts = Options::default();
+                opts.threads = thread_count;
+                let locustdb = LocustDB::new(&opts);
                 let mut loads = Vec::new();
                 for x in &["aa", "ab", "ac", "ad", "ae"] {
                     let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);

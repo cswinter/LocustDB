@@ -45,6 +45,10 @@ fn main() {
             .long("partition-size")
             .value_name("INTEGER")
             .default_value("1048576"))
+        .arg(Arg::with_name("threads")
+            .help("Number of worker threads. [default=number of cores]")
+            .long("threads")
+            .value_name("INTEGER"))
         .arg(Arg::with_name("reduced-nyc-taxi-rides")
             .help("Set ingestion schema to load select set of columns from the 1.46 billion taxi ride dataset")
             .long("reduced-nyc-taxi-rides"))
@@ -59,20 +63,19 @@ fn main() {
     let partition_size = value_t!(matches, "partition-size", u32).unwrap() as usize;
     let reduced_nyc = matches.is_present("reduced-nyc-taxi-rides");
     let db_path = matches.value_of("db-path");
+    let threads = matches.value_of("threads");
     let file_count = files.len();
 
-    if matches.is_present("db-path") && !cfg!(feature = "enable_rocksdb") {}
+    if matches.is_present("db-path") && !cfg!(feature = "enable_rocksdb") {
+        println!("WARNING: --db-path option passed, but RocksDB storage backend is not enabled in this build of LocustDB.");
+    }
 
-    let locustdb = match db_path {
-        Some(db_path) => if
-            cfg!(feature = "enable_rocksdb") {
-            LocustDB::disk_backed(db_path)
-        } else {
-            println!("WARNING: --db-path option passed, but RocksDB storage backend is not enabled in this build of LocustDB.");
-            LocustDB::memory_only()
-        },
-        None => LocustDB::memory_only()
-    };
+    let mut options = locustdb::Options::default();
+    options.db_path = db_path.map(|x| x.to_string());
+    options.threads = threads.map(|x| x.parse()
+        .expect("Argument --threads must be a positive integer!"));
+
+    let locustdb = locustdb::LocustDB::new(&options);
 
     let start_time = precise_time_ns();
     let mut loads = Vec::new();
@@ -155,7 +158,7 @@ fn repl(locustdb: &LocustDB) {
             let start = precise_time_ns();
             match block_on(locustdb.bulk_load()) {
                 Ok(trees) => {
-                    println!("Restored DB from disk in {:.2}",
+                    println!("Restored DB from disk in {}",
                              ns((precise_time_ns() - start) as usize));
                     for tree in trees {
                         println!("{}\n", &tree)

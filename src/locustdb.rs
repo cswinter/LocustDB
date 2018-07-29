@@ -23,26 +23,23 @@ pub struct LocustDB {
     inner_locustdb: Arc<InnerLocustDB>
 }
 
+#[derive(Clone, Default)]
+pub struct Options {
+    pub threads: Option<usize>,
+    pub db_path: Option<String>,
+}
+
 impl LocustDB {
     pub fn memory_only() -> LocustDB {
-        LocustDB::new(Arc::new(NoopStorage), false, None)
+        LocustDB::new(&Options::default())
     }
 
-    #[cfg(feature = "enable_rocksdb")]
-    pub fn disk_backed(db_path: &str) -> LocustDB {
-        use disk_store::rocksdb;
-        let storage = rocksdb::RocksDB::new(db_path);
-        LocustDB::new(Arc::new(storage), true, None)
-    }
-
-    #[cfg(not(feature = "enable_rocksdb"))]
-    pub fn disk_backed(_: &str) -> LocustDB {
-        panic!("RocksDB stprage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
-    }
-
-    pub fn new(storage: Arc<DiskStore>, load_tabledata: bool, threads: Option<usize>) -> LocustDB {
-        let locustdb = Arc::new(InnerLocustDB::new(storage, load_tabledata));
-        InnerLocustDB::start_worker_threads(&locustdb, threads);
+    pub fn new(opts: &Options) -> LocustDB {
+        let disk_store = opts.db_path.as_ref()
+            .map(|path| LocustDB::persistent_storage(path))
+            .unwrap_or(Arc::new(NoopStorage));
+        let locustdb = Arc::new(InnerLocustDB::new(disk_store));
+        InnerLocustDB::start_worker_threads(&locustdb, opts.threads);
         LocustDB { inner_locustdb: locustdb }
     }
 
@@ -143,6 +140,17 @@ impl LocustDB {
 
     fn schedule<T: Task + 'static>(&self, task: T) -> impl Future<Item=Trace, Error=oneshot::Canceled> {
         self.inner_locustdb.schedule(task)
+    }
+
+    #[cfg(feature = "enable_rocksdb")]
+    pub fn persistent_storage(db_path: &str) -> Arc<DiskStore> {
+        use disk_store::rocksdb;
+        Arc::new(rocksdb::RocksDB::new(db_path))
+    }
+
+    #[cfg(not(feature = "enable_rocksdb"))]
+    pub fn persistent_storage(_: &str) -> Arc<DiskStore> {
+        panic!("RocksDB storage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
     }
 }
 
