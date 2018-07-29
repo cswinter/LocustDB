@@ -15,7 +15,7 @@ impl IntegerColumn {
         let min_width = env::var_os("LOCUSTDB_MIN_WIDTH")
             .map(|x| x.to_str().unwrap().parse::<u8>().unwrap()).unwrap_or(0);
         let original_range = Some((min, max));
-        if min >= 0 && max <= From::from(u8::MAX) && min_width < 2 {
+        let mut column = if min >= 0 && max <= From::from(u8::MAX) && min_width < 2 {
             IntegerColumn::create_col::<u8>(name, values, 0, min, max, EncodingType::U8)
         } else if max - min <= From::from(u8::MAX) && min_width < 2 {
             IntegerColumn::create_col::<u8>(name, values, min, min, max, EncodingType::U8)
@@ -29,25 +29,18 @@ impl IntegerColumn {
             IntegerColumn::create_col::<u32>(name, values, min, min, max, EncodingType::U32)
         } else {
             values.shrink_to_fit();
-            if cfg!(feature = "enable_lz4") {
-                Arc::new(Column::new(
-                    name,
-                    values.len(),
-                    original_range,
-                    Codec::lz4(EncodingType::I64),
-                    vec![DataSection::U8(unsafe { lz4::encode(&values) })]))
-            } else {
-                Arc::new(Column::new(
-                    name,
-                    values.len(),
-                    original_range,
-                    Codec::identity(BasicType::Integer),
-                    vec![DataSection::I64(values)]))
-            }
-        }
+            Column::new(
+                name,
+                values.len(),
+                original_range,
+                Codec::identity(BasicType::Integer),
+                vec![DataSection::I64(values)])
+        };
+        column.lz4_encode();
+        Arc::new(column)
     }
 
-    pub fn create_col<T>(name: &str, values: Vec<i64>, offset: i64, min: i64, max: i64, t: EncodingType) -> Arc<Column>
+    pub fn create_col<T>(name: &str, values: Vec<i64>, offset: i64, min: i64, max: i64, t: EncodingType) -> Column
         where T: GenericIntVec<T>, Vec<T>: Into<DataSection> {
         let values = IntegerColumn::encode::<T>(values, offset);
         let len = values.len();
@@ -57,17 +50,12 @@ impl IntegerColumn {
             Codec::integer_offset(t, offset)
         };
 
-        #[cfg(feature = "enable_lz4")]
-        let values = unsafe { lz4::encode(&values) };
-        #[cfg(feature = "enable_lz4")]
-        let codec = codec.with_lz4();
-
-        Arc::new(Column::new(
+        Column::new(
             name,
             len,
             Some((min - offset, max - offset)),
             codec,
-            vec![values.into()]))
+            vec![values.into()])
     }
 
     pub fn encode<T: GenericIntVec<T>>(values: Vec<i64>, offset: i64) -> Vec<T> {
@@ -78,4 +66,3 @@ impl IntegerColumn {
         encoded_vals
     }
 }
-
