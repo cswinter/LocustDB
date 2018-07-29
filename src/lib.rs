@@ -49,6 +49,7 @@ pub use ingest::extractor;
 pub use ingest::nyc_taxi_data;
 pub use ingest::raw_val::RawVal as Value;
 pub use locustdb::LocustDB as LocustDB;
+pub use locustdb::Options as Options;
 pub use mem_store::table::TableStats;
 pub use disk_store::noop_storage::NoopStorage;
 

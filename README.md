@@ -3,9 +3,9 @@
 An experimental analytics database aiming to set a new standard for query performance and storage efficiency on commodity hardware.
 See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogpost] for an overview of current capabilities.
 
-## How to use
+## Usage
 
-1. [Install Rust][rustup]
+1. Install Rust: [rustup.rs][rustup]
 2. Clone the repository
 
 ```Bash
@@ -13,15 +13,40 @@ git clone https://github.com/cswinter/LocustDB.git
 cd LocustDB
 ```
 
-3. Run the repl!
+3. Run the repl
 
 ```Bash
-RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- test_data/nyc-taxi.csv.gz
+RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-nyc-taxi-rides
 ```
 
-Instead of `test_data/nyc-taxi.csv.gz`, you can also pass a path to any other `.csv` or gzipped `.csv.gz` file. The first line of the file will need to contain the names for each column. The datatypes for each column will be derived automatically, but things might break for columns that contain a mixture of numbers/strings/empty entries.
+Additional usage info:
 
-You can pass the magic strings `nyc100m` or `nyc` to load the first 5 files (100m records) or full 1.46 billion taxi rides dataset which you will need to [download][nyc-taxi-trips] first (for the full dataset, you will need about 120GB of disk space and 60GB of RAM).
+```Bash
+$ RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --help
+LocustDB 0.1.0-alpha
+Clemens Winter <clemenswinter1@gmail.com>
+Massively parallel, high performance analytics database that will rapidly devour all of your data.
+
+USAGE:
+    repl [FLAGS] [OPTIONS]
+
+FLAGS:
+    -h, --help                      Prints help information
+        --reduced-nyc-taxi-rides    Set ingestion schema to load select set of columns from the 1.46 billion taxi ride
+                                    dataset
+    -V, --version                   Prints version information
+
+OPTIONS:
+        --db-path <PATH>              Path to data directory
+        --load <CSV_FILE>...          Load .csv or .csv.gz files into the database
+        --partition-size <INTEGER>    Number of rows per partition when loading new data [default: 1048576]
+        --table <NAME>                Name for the table populated with --load [default: default]
+        --threads <INTEGER>           Number of worker threads. [default: number of cores]
+```
+
+When loading csv files with `--load`, the first line of each file is assumed to be the column name. The type of each column will be derived automatically, but this might break for columns that contain a mixture of numbers/strings/empty entries.
+
+The `--reduced-nyc-taxi-rides` flag will configure the ingestion schema for loading the 1.46 billion taxi ride dataset which can be downloaded [here][nyc-taxi-trips]. Loading the full dataset requires about 120GB of disk space and 60GB of RAM.
 
 ### No such subcommand: +nightly
 
