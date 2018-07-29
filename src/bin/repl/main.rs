@@ -44,7 +44,7 @@ fn main() {
             .help("Number of rows per partition when loading new data")
             .long("partition-size")
             .value_name("INTEGER")
-            .default_value("65536"))
+            .default_value("1048576"))
         .arg(Arg::with_name("reduced-nyc-taxi-rides")
             .help("Set ingestion schema to load select set of columns from the 1.46 billion taxi ride dataset")
             .long("reduced-nyc-taxi-rides"))

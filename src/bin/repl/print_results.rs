@@ -11,7 +11,7 @@ pub fn print_query_result(results: &QueryOutput) {
             println!("Query plan in {} batches{}", count, query_plan)
         }
     }
-    println!("Scanned {:.2} rows in {} ({:.2} rows/s)!",
+    println!("Scanned {} rows in {} ({:.2} rows/s)!",
              short_scale(results.stats.rows_scanned as f64),
              ns(rt as usize),
              billion(results.stats.rows_scanned as f64 / rt as f64));
