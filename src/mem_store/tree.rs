@@ -73,7 +73,7 @@ impl fmt::Display for MemTreeTable {
                bite(self.size_bytes),
                self.rows, )?;
         if self.fully_resident {
-            write!(f, "  {:.2}/row", byte(self.size_bytes as f64 / self.rows as f64))?;
+            write!(f, "  {}/row", byte(self.size_bytes as f64 / self.rows as f64))?;
         };
         let mut columns = self.columns.values().collect::<Vec<_>>();
         columns.sort_by_key(|x| &x.name);
