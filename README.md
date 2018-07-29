@@ -25,7 +25,7 @@ Additional usage info:
 $ RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --help
 LocustDB 0.1.0-alpha
 Clemens Winter <clemenswinter1@gmail.com>
-Extremely fast analytics database
+Massively parallel, high performance analytics database that will rapidly devour all of your data.
 
 USAGE:
     repl [FLAGS] [OPTIONS]
@@ -37,10 +37,11 @@ FLAGS:
     -V, --version                   Prints version information
 
 OPTIONS:
-        --db-path <PATH>              Path to data directory [default: ldb]
+        --db-path <PATH>              Path to data directory
         --load <CSV_FILE>...          Load .csv or .csv.gz files into the database
-        --partition-size <INTEGER>    Number of rows per partition when loading new data [default: 65536]
+        --partition-size <INTEGER>    Number of rows per partition when loading new data [default: 1048576]
         --table <NAME>                Name for the table populated with --load [default: default]
+        --threads <INTEGER>           Number of worker threads. [default: number of cores]
 ```
 
 When loading csv files with `--load`, the first line of each file is assumed to be the column name. The type of each column will be derived automatically, but this might break for columns that contain a mixture of numbers/strings/empty entries.
