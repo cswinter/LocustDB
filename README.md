@@ -56,19 +56,22 @@ If you run into this error, you likely have an old version of `cargo` installed 
 curl https://sh.rustup.rs -sSf | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh
 ```
 
-## Running tests or benchmarks
+### Running tests or benchmarks
 
 `cargo +nightly test`
 
 `RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly bench`
 
-## Diskstore
-
-LocustDB has experimental support for persisting data to disk, and running queries on data stored on disk.
-This feature is disabled by default, and has to be enabled explicitly by passing `--features "rocksdb"` to cargo during compilartion.
+### Storage backend
+LocustDB has experimental support for persisting data to disk and running queries on data stored on disk.
+This feature is disabled by default, and has to be enabled explicitly by passing `--features "enable_rocksdb"` to cargo during compilation.
 The database backend uses RocksDB, which is a somewhat complex C++ dependency that has to be compiled from source and requires gcc and various libraries to be available.
 You will have to manually install those on your system, instructions can be found [here][rocksdb-dependencies].
 You may also have to install various other random tools until compilation succeeds.
+
+### LZ4
+
+Compile with `--feature "enable_lz4"` to enable an additional lz4 compression pass which can significantly reduce data size both on disk and in-memory, at the cost of slightly slower in-memory queries.
 
 ## Goals
 A vision for LocustDB.
