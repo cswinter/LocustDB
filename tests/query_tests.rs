@@ -16,7 +16,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.load_csv(
         IngestFile::new("test_data/tiny.csv", "default")
-            .with_chunk_size(40)));
+            .with_partition_size(40)));
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
@@ -26,7 +26,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.load_csv(
         IngestFile::new("test_data/edge_cases.csv", "default")
-            .with_chunk_size(3)));
+            .with_partition_size(3)));
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
@@ -36,7 +36,7 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     let locustdb = LocustDB::memory_only();
     let load = block_on(locustdb.load_csv(
         nyc_taxi_data::ingest_file("test_data/nyc-taxi.csv.gz", "default")
-            .with_chunk_size(999)));
+            .with_partition_size(999)));
     load.unwrap().ok();
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     let actual_rows = result.0.unwrap().rows;
@@ -268,7 +268,7 @@ fn test_restore_from_disk() {
         let locustdb = LocustDB::disk_backed(tmp_dir.path().to_str().unwrap());
         let load = block_on(locustdb.load_csv(
             nyc_taxi_data::ingest_file("test_data/nyc-taxi.csv.gz", "default")
-                .with_chunk_size(999)));
+                .with_partition_size(999)));
         load.unwrap().ok();
         // Dropping the LocustDB object will cause all threads to be stopped
         // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously

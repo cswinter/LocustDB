@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate clap;
 extern crate failure;
 extern crate futures_executor;
 extern crate heapsize;
@@ -9,93 +11,90 @@ extern crate time;
 use failure::Fail;
 use futures_executor::block_on;
 use locustdb::unit_fmt::*;
-use locustdb::{LocustDB, TableStats};
-use std::env;
-use std::fs;
+use locustdb::LocustDB;
 use time::precise_time_ns;
+use clap::{Arg, App};
 
 mod print_results;
 mod fmt_table;
 
-const LOAD_CHUNK_SIZE: usize = 1 << 16;
-
 fn main() {
-    #[cfg(feature = "nerf")]
+    let matches = App::new("LocustDB")
+        .version(crate_version!())
+        .author("Clemens Winter <clemenswinter1@gmail.com>")
+        .about("Extremely fast analytics database")
+        .arg(Arg::with_name("db-path")
+            .help("Path to data directory")
+            .default_value("ldb")
+            .long("db-path")
+            .value_name("PATH")
+            .takes_value(true))
+        .arg(Arg::with_name("load")
+            .help("Load .csv or .csv.gz files into the database")
+            .long("load")
+            .value_name("CSV_FILE")
+            .multiple(true)
+            .takes_value(true))
+        .arg(Arg::with_name("table")
+            .help("Name for the table populated with --load")
+            .long("table")
+            .value_name("NAME")
+            .default_value("default")
+            .takes_value(true))
+        .arg(Arg::with_name("partition-size")
+            .help("Number of rows per partition when loading new data")
+            .long("partition-size")
+            .value_name("INTEGER")
+            .default_value("65536"))
+        .arg(Arg::with_name("reduced-nyc-taxi-rides")
+            .help("Set ingestion schema to load select set of columns from the 1.46 billion taxi ride dataset")
+            .long("reduced-nyc-taxi-rides"))
+        .get_matches();
+
+    if cfg!(feature = "nerf") {
         println!("NERFED!");
+    }
 
-    let args: Vec<String> = env::args().collect();
-    let filename = &args.get(1).expect("Specify data file as argument.");
+    let files = matches.values_of("load").unwrap_or_default();
+    let tablename = matches.value_of("table").unwrap();
+    let partition_size = value_t!(matches, "partition-size", u32).unwrap() as usize;
+    let reduced_nyc = matches.is_present("reduced-nyc-taxi-rides");
+    let load = files.len() > 0;
 
-    #[cfg(feature = "enable_rocksdb")]
-    let locustdb = LocustDB::disk_backed("rocksdb");
-    #[cfg(not(feature = "enable_rocksdb"))]
-    let locustdb = LocustDB::memory_only();
+    let locustdb = if cfg!(feature = "enable_rocksdb") {
+        LocustDB::disk_backed("rocksdb")
+    } else {
+        LocustDB::memory_only()
+    };
 
     let start_time = precise_time_ns();
-    println!("Loading {} into table trips.", filename);
-    if filename == &"nyc" {
-        let mut loads = Vec::new();
-        for path in fs::read_dir("test_data/nyc-taxi-data").unwrap() {
-            loads.push(locustdb.load_csv(
-                locustdb::nyc_taxi_data::ingest_file(path.unwrap().path().to_str().unwrap(), "trips")
-                    .with_chunk_size(1 << 20)));
-        }
-        for l in loads {
-            let _ = block_on(l);
-        }
-    } else if filename == &"nyc100m" {
-        let mut loads = Vec::new();
-        for x in &["aa", "ab", "ac", "ad", "ae"] {
-            let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
-            loads.push(locustdb.load_csv(
-                locustdb::nyc_taxi_data::ingest_file(&path, "trips")
-                    .with_chunk_size(1 << 20)));
-        }
-        for l in loads {
-            let _ = block_on(l);
-        }
-    } else if filename == &"load_from_db" {
-        println!("Restoring data from db...");
-    } else if filename == &"passenger_count" {
-        let mut loads = Vec::new();
-        for path in fs::read_dir("test_data/nyc-taxi-data").unwrap() {
-            loads.push(locustdb.load_csv(
-                locustdb::nyc_taxi_data::ingest_passenger_count(path.unwrap().path().to_str().unwrap(), "trips")
-                    .with_chunk_size(1 << 20)));
-        }
-        for l in loads {
-            let _ = block_on(l);
-        }
-    } else if filename == &"passenger_count100m" {
-        let mut loads = Vec::new();
-        for x in &["aa", "ab", "ac", "ad", "ae"] {
-            let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
-            loads.push(locustdb.load_csv(
-                locustdb::nyc_taxi_data::ingest_passenger_count(&path, "trips")
-                    .with_chunk_size(1 << 20)));
-        }
-        for l in loads {
-            let _ = block_on(l);
-        }
-    } else {
-        let ingestion_request = if filename.contains("nyc-taxi") {
-            locustdb::nyc_taxi_data::ingest_file(filename, "trips")
-                .with_chunk_size(LOAD_CHUNK_SIZE)
+    let mut loads = Vec::new();
+    for file in files {
+        let mut base_opts = if reduced_nyc {
+            locustdb::nyc_taxi_data::ingest_file(&file, tablename)
         } else {
-            locustdb::IngestFile::new(filename, "trips")
-                .with_chunk_size(LOAD_CHUNK_SIZE)
+            locustdb::IngestFile::new(&file, &tablename)
         };
-        block_on(locustdb.load_csv(ingestion_request))
+        let opts = base_opts.with_partition_size(partition_size);
+        let load = locustdb.load_csv(opts);
+        loads.push(load);
+        println!("Loading {} into table {}.", file, tablename);
+    }
+    for l in loads {
+        block_on(l)
             .expect("Ingestion crashed!")
             .expect("Failed to load file!");
     }
-    let table_stats = block_on(locustdb.table_stats()).expect("!?!");
-    print_table_stats(&table_stats, start_time);
+    if load {
+        println!("Loaded data in {:.3}.", ns((precise_time_ns() - start_time) as usize));
+    }
+
+    table_stats(&locustdb);
     repl(&locustdb);
 }
 
-fn print_table_stats(stats: &[TableStats], start_time: u64) {
-    println!("Loaded data in {:.1} seconds.", (precise_time_ns() - start_time) / 1_000_000_000);
+fn table_stats(locustdb: &LocustDB) {
+    let stats = block_on(locustdb.table_stats()).expect("!?!");
     for table in stats {
         let size = table.batches_bytes + table.buffer_bytes;
         println!("\n# Table `{}` ({} rows, {:.2}) #", &table.name, table.rows, bite(size));

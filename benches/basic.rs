@@ -30,7 +30,7 @@ fn db() -> &'static LocustDB {
                     }
                     loads.push(locustdb.load_csv(
                         locustdb::nyc_taxi_data::ingest_file(&path, "test")
-                            .with_chunk_size(1 << 20)));
+                            .with_partition_size(1 << 20)));
                 }
                 for l in loads {
                     let _ = block_on(l);

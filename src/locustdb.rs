@@ -35,6 +35,11 @@ impl LocustDB {
         LocustDB::new(Arc::new(storage), true, None)
     }
 
+    #[cfg(not(feature = "enable_rocksdb"))]
+    pub fn disk_backed(_: &str) -> LocustDB {
+        panic!("RocksDB stprage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
+    }
+
     pub fn new(storage: Arc<DiskStore>, load_tabledata: bool, threads: Option<usize>) -> LocustDB {
         let locustdb = Arc::new(InnerLocustDB::new(storage, load_tabledata));
         InnerLocustDB::start_worker_threads(&locustdb, threads);

@@ -11,7 +11,7 @@ fn main() {
         let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
         loads.push(locustdb.load_csv(
             locustdb::nyc_taxi_data::ingest_file(&path, "test")
-                .with_chunk_size(1 << 20)));
+                .with_partition_size(1 << 20)));
     }
     for l in loads {
         let _ = block_on(l);

@@ -41,7 +41,7 @@ impl IngestFile {
         }
     }
 
-    pub fn with_chunk_size(mut self, chunk_size: usize) -> IngestFile {
+    pub fn with_partition_size(mut self, chunk_size: usize) -> IngestFile {
         self.chunk_size = chunk_size;
         self
     }
