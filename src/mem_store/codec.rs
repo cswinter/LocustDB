@@ -25,7 +25,7 @@ impl Codec {
         let is_summation_preserving = Codec::has_property(&ops, CodecOp::is_summation_preserving);
         let is_order_preserving = Codec::has_property(&ops, CodecOp::is_order_preserving);
         let is_positive_integer = Codec::has_property(&ops, CodecOp::is_positive_integer);
-        let is_fixed_width = Codec::has_property(&ops, CodecOp::is_fixed_width);
+        let is_fixed_width = Codec::has_property(&ops, CodecOp::is_elementwise_decodable);
         Codec {
             ops,
             column_name: "COLUMN_UNSPECIFIED".to_string(),
@@ -114,6 +114,9 @@ impl Codec {
                         t,
                         Box::new(QueryPlan::Constant(RawVal::Int(x), true))))
                 }
+                CodecOp::Delta(t) => {
+                    Box::new(QueryPlan::DeltaDecode(stack.pop().unwrap(), t))
+                }
                 CodecOp::ToI64(t) => {
                     Box::new(QueryPlan::Widen(
                         stack.pop().unwrap(),
@@ -149,7 +152,7 @@ impl Codec {
     }
 
     pub fn ensure_fixed_width(&self, plan: Box<QueryPlan>) -> (Codec, Box<QueryPlan>) {
-        let (fixed_width, rest) = self.ensure_property(CodecOp::is_fixed_width);
+        let (fixed_width, rest) = self.ensure_property(CodecOp::is_elementwise_decodable);
         let mut new_codec = if rest.is_empty() {
             Codec::identity(self.decoded_type())
         } else {
@@ -164,7 +167,7 @@ impl Codec {
     pub fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }
     pub fn is_order_preserving(&self) -> bool { self.is_order_preserving }
     pub fn is_positive_integer(&self) -> bool { self.is_positive_integer }
-    pub fn is_fixed_width(&self) -> bool { self.is_fixed_width }
+    pub fn is_elementwise_decodable(&self) -> bool { self.is_fixed_width }
 
     pub fn encode_str(&self, string_const: Box<QueryPlan>) -> Box<QueryPlan> {
         match self.ops[..] {
@@ -257,6 +260,7 @@ impl Codec {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, HeapSizeOf)]
 pub enum CodecOp {
     Add(EncodingType, i64),
+    Delta(EncodingType),
     ToI64(EncodingType),
     PushDataSection(usize),
     DictLookup(EncodingType),
@@ -269,6 +273,7 @@ impl CodecOp {
     fn input_type(&self) -> EncodingType {
         match *self {
             CodecOp::Add(t, _) => t,
+            CodecOp::Delta(t) => t,
             CodecOp::ToI64(t) => t,
             CodecOp::DictLookup(t) => t,
             CodecOp::LZ4(_) => EncodingType::U8,
@@ -281,6 +286,7 @@ impl CodecOp {
     fn output_type(&self) -> BasicType {
         match self {
             CodecOp::Add(_, _) => BasicType::Integer,
+            CodecOp::Delta(_) => BasicType::Integer,
             CodecOp::ToI64(_) => BasicType::Integer,
             CodecOp::DictLookup(_) => BasicType::String,
             CodecOp::LZ4(_) => BasicType::Integer,
@@ -293,6 +299,7 @@ impl CodecOp {
     fn is_summation_preserving(&self) -> bool {
         match self {
             CodecOp::Add(_, x) => *x == 0,
+            CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => false,
@@ -305,6 +312,7 @@ impl CodecOp {
     fn is_order_preserving(&self) -> bool {
         match self {
             CodecOp::Add(_, _) => true,
+            CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
@@ -317,6 +325,7 @@ impl CodecOp {
     fn is_positive_integer(&self) -> bool {
         match self {
             CodecOp::Add(_, _) => true,
+            CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true, // TODO(clemens): no it's not (hack to make grouping key work)
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
@@ -326,9 +335,10 @@ impl CodecOp {
         }
     }
 
-    fn is_fixed_width(&self) -> bool {
+    fn is_elementwise_decodable(&self) -> bool {
         match self {
             CodecOp::Add(_, _) => true,
+            CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
@@ -341,6 +351,7 @@ impl CodecOp {
     fn arg_count(&self) -> usize {
         match self {
             CodecOp::Add(_, _) => 1,
+            CodecOp::Delta(_) => 1,
             CodecOp::ToI64(_) => 1,
             CodecOp::PushDataSection(_) => 0,
             CodecOp::DictLookup(_) => 3,
@@ -352,7 +363,8 @@ impl CodecOp {
 
     fn signature(&self) -> String {
         match self {
-            CodecOp::Add(t, _) => format!("Add({:?}, _)", t),
+            CodecOp::Add(t, _) => format!("Add({:?})", t),
+            CodecOp::Delta(t) => format!("Delta({:?})", t),
             CodecOp::ToI64(t) => format!("ToI64({:?})", t),
             CodecOp::PushDataSection(i) => format!("Data({})", i),
             CodecOp::DictLookup(t) => format!("Dict({:?})", t),
@@ -378,7 +390,7 @@ mod tests {
             CodecOp::LZ4(EncodingType::U8),
             CodecOp::DictLookup(EncodingType::U16),
         ];
-        let (fixed_width, rest) = Codec::new(codec).ensure_property(CodecOp::is_fixed_width);
+        let (fixed_width, rest) = Codec::new(codec).ensure_property(CodecOp::is_elementwise_decodable);
         assert_eq!(fixed_width, vec![
             CodecOp::LZ4(EncodingType::U16),
         ]);

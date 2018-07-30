@@ -7,7 +7,6 @@ use futures_executor::block_on;
 use locustdb::{LocustDB, Options};
 use std::env;
 use std::path::Path;
-use std::sync::Arc;
 
 
 const DOWNLOAD_URL: &str = "https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0";

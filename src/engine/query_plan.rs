@@ -23,6 +23,7 @@ pub enum QueryPlan {
     InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>, Box<QueryPlan>),
     Widen(Box<QueryPlan>, EncodingType, EncodingType),
     LZ4Decode(Box<QueryPlan>, EncodingType),
+    DeltaDecode(Box<QueryPlan>, EncodingType),
 
     Exists(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
     NonzeroCompact(Box<QueryPlan>, EncodingType),
@@ -81,6 +82,8 @@ pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef
         } else {
             VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("casted"), initial_type, target_type)
         },
+        QueryPlan::DeltaDecode(plan, t) =>
+            VecOperator::delta_decode(prepare(*plan, result), result.named_buffer("decoded"), t),
         QueryPlan::LZ4Decode(plan, t) =>
             VecOperator::lz4_decode(prepare(*plan, result), result.named_buffer("decoded"), t),
         QueryPlan::Exists(indices, t, max_index) =>
@@ -217,7 +220,7 @@ impl QueryPlan {
                 Some(c) => {
                     let mut plan = QueryPlan::ReadColumnSection(name.to_string(), 0, c.range());
                     let mut t = c.full_type();
-                    if !c.codec().is_fixed_width() {
+                    if !c.codec().is_elementwise_decodable() {
                         let (codec, fixed_width) = c.codec().ensure_fixed_width(Box::new(plan));
                         t = Type::encoded(codec);
                         plan = *fixed_width;

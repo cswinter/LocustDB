@@ -26,6 +26,7 @@ use engine::vector_op::compact::Compact;
 use engine::vector_op::constant::Constant;
 use engine::vector_op::constant_vec::ConstantVec;
 use engine::vector_op::count::VecCount;
+use engine::vector_op::delta_decode::*;
 use engine::vector_op::dict_lookup::*;
 use engine::vector_op::division_vs::DivideVS;
 use engine::vector_op::encode_const::*;
@@ -177,13 +178,23 @@ impl<'a> VecOperator<'a> {
             EncodingType::U32 => Box::new(LZ4Decode::<'a, u32> { encoded, decoded, reader, has_more: true, t: PhantomData }),
             EncodingType::U64 => Box::new(LZ4Decode::<'a, u64> { encoded, decoded, reader, has_more: true, t: PhantomData }),
             EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded, reader, has_more: true, t: PhantomData }),
-            _ => panic!("dict_lookup not supported for type {:?}", t),
+            _ => panic!("lz4_decode not supported for type {:?}", t),
         }
     }
 
     #[cfg(not(feature = "enable_lz4"))]
     pub fn lz4_decode(_: BufferRef, _: BufferRef, _: EncodingType) -> BoxedOperator<'a> {
         panic!("LZ4 is not enabled in this build of LocustDB. Recompile with `features enable_lz4`")
+    }
+
+    pub fn delta_decode(encoded: BufferRef, decoded: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
+        match t {
+            EncodingType::U8 => Box::new(DeltaDecode::<u8> { encoded, decoded, previous: 0, t: PhantomData }),
+            EncodingType::U16 => Box::new(DeltaDecode::<u16> { encoded, decoded, previous: 0, t: PhantomData }),
+            EncodingType::U32 => Box::new(DeltaDecode::<u32> { encoded, decoded, previous: 0, t: PhantomData }),
+            EncodingType::I64 => Box::new(DeltaDecode::<i64> { encoded, decoded, previous: 0, t: PhantomData }),
+            _ => panic!("delta_decode not supported for type {:?}", t),
+        }
     }
 
     pub fn inverse_dict_lookup(dict_indices: BufferRef, dict_data: BufferRef, constant: BufferRef, output: BufferRef) -> BoxedOperator<'a> {

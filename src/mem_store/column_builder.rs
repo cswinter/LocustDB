@@ -47,6 +47,9 @@ pub struct IntColBuilder {
     data: Vec<i64>,
     min: i64,
     max: i64,
+    increasing: u64,
+    allow_delta_encode: bool,
+    last: i64,
 }
 
 impl IntColBuilder {
@@ -55,6 +58,9 @@ impl IntColBuilder {
             data: Vec::new(),
             min: i64::MAX,
             max: i64::MIN,
+            increasing: 0,
+            allow_delta_encode: true,
+            last: i64::MIN,
         }
     }
 }
@@ -65,11 +71,20 @@ impl ColumnBuilder<i64> for IntColBuilder {
         let elem = *elem;
         self.min = cmp::min(elem, self.min);
         self.max = cmp::max(elem, self.max);
+        if elem > self.last {
+            self.increasing += 1;
+        } else if elem.checked_sub(self.last).is_none() {
+            self.allow_delta_encode = false;
+        };
+        self.last = elem;
         self.data.push(elem);
     }
 
     fn finalize(self, name: &str) -> Arc<Column> {
-        IntegerColumn::new_boxed(name, self.data, self.min, self.max)
+        // TODO(clemens): heuristic for deciding delta encoding could probably be improved
+        let delta_encode = self.allow_delta_encode &&
+            (self.increasing * 10 > self.data.len() as u64 * 9 && cfg!(feature = "enable_lz4"));
+        IntegerColumn::new_boxed(name, self.data, self.min, self.max, delta_encode)
     }
 }
 
