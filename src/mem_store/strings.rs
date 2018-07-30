@@ -28,13 +28,15 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
         // TODO(clemens): len > 1000 || name == "string_packed" is a hack to make tests use dictionary encoding. Remove once we are able to group by string packed columns.
         if unique_values.len() == len / DICTIONARY_RATIO && (len > 1000 || name == "string_packed") {
             let packed = PackedStrings::from_iterator(strings);
-            return Arc::new(Column::new(
+            let mut column = Column::new(
                 name,
                 len,
                 None,
                 string_pack_codec(),
                 vec![DataSection::U8(packed.into_vec())],
-            ));
+            );
+            column.lz4_encode();
+            return Arc::new(column)
         }
     }
     let dict_size = unique_values.len();

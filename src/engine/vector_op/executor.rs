@@ -193,7 +193,12 @@ impl<'a> QueryExecutor<'a> {
             max_input_length
         };
         for &(op, streamable) in &self.stages[stage].ops {
-            self.ops[op].init(max_input_length, if streamable { batch_size } else { max_input_length }, scratchpad);
+            let buffer_length = if streamable {
+                batch_size
+            } else {
+                self.ops[op].custom_output_len().unwrap_or(max_input_length)
+            };
+            self.ops[op].init(max_input_length, buffer_length, scratchpad);
         }
         (max_input_length, batch_size)
     }

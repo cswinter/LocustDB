@@ -49,9 +49,14 @@ fn main() {
             .help("Number of worker threads. [default: number of cores]")
             .long("threads")
             .value_name("INTEGER"))
-        .arg(Arg::with_name("reduced-nyc-taxi-rides")
-            .help("Set ingestion schema to load select set of columns from the 1.46 billion taxi ride dataset")
-            .long("reduced-nyc-taxi-rides"))
+        .arg(Arg::with_name("reduced-trips")
+            .help("Set ingestion schema for select set of columns from nyc taxi ride dataset")
+            .long("reduced-trips")
+            .conflicts_with("trips"))
+        .arg(Arg::with_name("trips")
+            .help("Set ingestion schema for nyc taxi ride dataset")
+            .long("trips")
+            .conflicts_with("reduced-trips"))
         .get_matches();
 
     if cfg!(feature = "nerf") {
@@ -61,7 +66,8 @@ fn main() {
     let files = matches.values_of("load").unwrap_or_default();
     let tablename = matches.value_of("table").unwrap();
     let partition_size = value_t!(matches, "partition-size", u32).unwrap() as usize;
-    let reduced_nyc = matches.is_present("reduced-nyc-taxi-rides");
+    let reduced_nyc = matches.is_present("reduced-trips");
+    let full_nyc = matches.is_present("trips");
     let db_path = matches.value_of("db-path");
     let threads = matches.value_of("threads");
     let file_count = files.len();
@@ -82,6 +88,8 @@ fn main() {
     for file in files {
         let mut base_opts = if reduced_nyc {
             locustdb::nyc_taxi_data::ingest_reduced_file(&file, tablename)
+        } else if full_nyc {
+            locustdb::nyc_taxi_data::ingest_file(&file, tablename)
         } else {
             locustdb::IngestFile::new(&file, &tablename)
         };

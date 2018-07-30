@@ -59,8 +59,8 @@ impl Codec {
         Codec::new(vec![CodecOp::ToI64(t)])
     }
 
-    pub fn lz4(t: EncodingType) -> Codec {
-        Codec::new(vec![CodecOp::LZ4(t)])
+    pub fn lz4(t: EncodingType, decoded_length: usize) -> Codec {
+        Codec::new(vec![CodecOp::LZ4(t, decoded_length)])
     }
 
     pub fn opaque(encoding_type: EncodingType,
@@ -81,8 +81,8 @@ impl Codec {
         }
     }
 
-    pub fn with_lz4(&self) -> Codec {
-        let mut ops = vec![CodecOp::LZ4(self.encoding_type)];
+    pub fn with_lz4(&self, decoded_length: usize) -> Codec {
+        let mut ops = vec![CodecOp::LZ4(self.encoding_type, decoded_length)];
         for &op in &self.ops {
             /*match  op {
                 CodecOp::DictLookup(t)=>{
@@ -139,8 +139,8 @@ impl Codec {
                         dict_indices,
                         dict_data))
                 }
-                CodecOp::LZ4(t) =>
-                    Box::new(QueryPlan::LZ4Decode(stack.pop().unwrap(), t)),
+                CodecOp::LZ4(t, decoded_length) =>
+                    Box::new(QueryPlan::LZ4Decode(stack.pop().unwrap(), decoded_length, t)),
                 CodecOp::UnpackStrings =>
                     Box::new(QueryPlan::UnpackStrings(stack.pop().unwrap())),
                 CodecOp::Unknown => panic!("unkown decode plan!"),
@@ -265,7 +265,7 @@ pub enum CodecOp {
     ToI64(EncodingType),
     PushDataSection(usize),
     DictLookup(EncodingType),
-    LZ4(EncodingType),
+    LZ4(EncodingType, usize),
     UnpackStrings,
     Unknown,
 }
@@ -277,7 +277,7 @@ impl CodecOp {
             CodecOp::Delta(t) => t,
             CodecOp::ToI64(t) => t,
             CodecOp::DictLookup(t) => t,
-            CodecOp::LZ4(_) => EncodingType::U8,
+            CodecOp::LZ4(_, _) => EncodingType::U8,
             CodecOp::UnpackStrings => EncodingType::U8,
             CodecOp::PushDataSection(_) => panic!("PushDataSection.input_type()"),
             CodecOp::Unknown => panic!("Unknown.input_type()"),
@@ -290,7 +290,7 @@ impl CodecOp {
             CodecOp::Delta(_) => BasicType::Integer,
             CodecOp::ToI64(_) => BasicType::Integer,
             CodecOp::DictLookup(_) => BasicType::String,
-            CodecOp::LZ4(_) => BasicType::Integer,
+            CodecOp::LZ4(_, _) => BasicType::Integer,
             CodecOp::UnpackStrings => BasicType::String,
             CodecOp::PushDataSection(_) => panic!("PushDataSection.input_type()"),
             CodecOp::Unknown => panic!("Unknown.output_type()"),
@@ -304,7 +304,7 @@ impl CodecOp {
             CodecOp::ToI64(_) => true,
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => false,
-            CodecOp::LZ4(_) => false,
+            CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
             CodecOp::Unknown => panic!("Unknown.is_summation_preserving()"),
         }
@@ -317,9 +317,9 @@ impl CodecOp {
             CodecOp::ToI64(_) => true,
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
-            CodecOp::LZ4(_) => false,
+            CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
-            CodecOp::Unknown => panic!("Unknown.is_summation_preserving()"),
+            CodecOp::Unknown => panic!("Unknown.is_order_preserving()"),
         }
     }
 
@@ -330,7 +330,7 @@ impl CodecOp {
             CodecOp::ToI64(_) => true, // TODO(clemens): no it's not (hack to make grouping key work)
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
-            CodecOp::LZ4(_) => false,
+            CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
             CodecOp::Unknown => panic!("Unknown.is_positive_integer()"),
         }
@@ -343,7 +343,7 @@ impl CodecOp {
             CodecOp::ToI64(_) => true,
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
-            CodecOp::LZ4(_) => false,
+            CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
             CodecOp::Unknown => panic!("Unknown.is_fixed_width()"),
         }
@@ -356,7 +356,7 @@ impl CodecOp {
             CodecOp::ToI64(_) => 1,
             CodecOp::PushDataSection(_) => 0,
             CodecOp::DictLookup(_) => 3,
-            CodecOp::LZ4(_) => 1,
+            CodecOp::LZ4(_, _) => 1,
             CodecOp::UnpackStrings => 1,
             CodecOp::Unknown => panic!("Unknown.is_fixed_width()"),
         }
@@ -369,7 +369,7 @@ impl CodecOp {
             CodecOp::ToI64(t) => format!("ToI64({:?})", t),
             CodecOp::PushDataSection(i) => format!("Data({})", i),
             CodecOp::DictLookup(t) => format!("Dict({:?})", t),
-            CodecOp::LZ4(t) => format!("LZ4({:?})", t),
+            CodecOp::LZ4(t, _) => format!("LZ4({:?})", t),
             CodecOp::UnpackStrings => "StrUnpack".to_string(),
             CodecOp::Unknown => "Unknown".to_string(),
         }
@@ -384,22 +384,22 @@ mod tests {
     #[test]
     fn test_ensure_property() {
         let codec = vec![
-            CodecOp::LZ4(EncodingType::U16),
+            CodecOp::LZ4(EncodingType::U16, 20),
             CodecOp::PushDataSection(1),
-            CodecOp::LZ4(EncodingType::U64),
+            CodecOp::LZ4(EncodingType::U64, 1),
             CodecOp::PushDataSection(2),
-            CodecOp::LZ4(EncodingType::U8),
+            CodecOp::LZ4(EncodingType::U8, 3),
             CodecOp::DictLookup(EncodingType::U16),
         ];
         let (fixed_width, rest) = Codec::new(codec).ensure_property(CodecOp::is_elementwise_decodable);
         assert_eq!(fixed_width, vec![
-            CodecOp::LZ4(EncodingType::U16),
+            CodecOp::LZ4(EncodingType::U16, 20),
         ]);
         assert_eq!(rest, vec![
             CodecOp::PushDataSection(1),
-            CodecOp::LZ4(EncodingType::U64),
+            CodecOp::LZ4(EncodingType::U64, 1),
             CodecOp::PushDataSection(2),
-            CodecOp::LZ4(EncodingType::U8),
+            CodecOp::LZ4(EncodingType::U8, 3),
             CodecOp::DictLookup(EncodingType::U16),
         ]);
     }

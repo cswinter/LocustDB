@@ -11,6 +11,7 @@ use mem_store::lz4;
 pub struct LZ4Decode<'a, T> {
     pub encoded: BufferRef,
     pub decoded: BufferRef,
+    pub  decoded_len: usize,
     pub reader: Box<Read + 'a>,
     pub has_more: bool,
     pub t: PhantomData<T>,
@@ -43,6 +44,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for LZ4Decode<'a, T> {
     fn allocates(&self) -> bool { true }
     fn is_streaming_producer(&self) -> bool { true }
     fn has_more(&self) -> bool { self.has_more }
+    fn custom_output_len(&self) -> Option<usize> { Some(self.decoded_len) }
 
     fn display_op(&self, _: bool) -> String {
         format!("lz4_decode({})", self.encoded)

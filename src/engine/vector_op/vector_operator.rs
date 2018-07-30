@@ -77,6 +77,7 @@ pub trait VecOperator<'a>: fmt::Debug {
     fn allocates(&self) -> bool;
     fn is_streaming_producer(&self) -> bool { false }
     fn has_more(&self) -> bool { false }
+    fn custom_output_len(&self) -> Option<usize> { None }
 
     fn display(&self, full: bool) -> String {
         let mut s = String::new();
@@ -188,27 +189,27 @@ impl<'a> VecOperator<'a> {
     }
 
     #[cfg(feature = "enable_lz4")]
-    pub fn lz4_decode(encoded: BufferRef, decoded: BufferRef, t: EncodingType) -> BoxedOperator<'a> {
+    pub fn lz4_decode(encoded: BufferRef, decoded: BufferRef, decoded_len: usize, t: EncodingType) -> BoxedOperator<'a> {
         use engine::vector_op::lz4_decode::LZ4Decode;
         use std::io::Read;
         let reader: Box<Read> = Box::new(&[] as &[u8]);
         match t {
-            EncodingType::U8 => Box::new(LZ4Decode::<'a, u8> { encoded, decoded, reader, has_more: true, t: PhantomData }),
-            EncodingType::U16 => Box::new(LZ4Decode::<'a, u16> { encoded, decoded, reader, has_more: true, t: PhantomData }),
-            EncodingType::U32 => Box::new(LZ4Decode::<'a, u32> { encoded, decoded, reader, has_more: true, t: PhantomData }),
-            EncodingType::U64 => Box::new(LZ4Decode::<'a, u64> { encoded, decoded, reader, has_more: true, t: PhantomData }),
-            EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded, reader, has_more: true, t: PhantomData }),
+            EncodingType::U8 => Box::new(LZ4Decode::<'a, u8> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
+            EncodingType::U16 => Box::new(LZ4Decode::<'a, u16> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
+            EncodingType::U32 => Box::new(LZ4Decode::<'a, u32> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
+            EncodingType::U64 => Box::new(LZ4Decode::<'a, u64> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
+            EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
             _ => panic!("lz4_decode not supported for type {:?}", t),
         }
     }
 
-    pub fn unpack_strings(packed: BufferRef, unpacked: BufferRef) -> BoxedOperator<'a> {
-        Box::new(UnpackStrings::<'a> { packed, unpacked, iterator: None, has_more: true })
+    #[cfg(not(feature = "enable_lz4"))]
+    pub fn lz4_decode(_: BufferRef, _: BufferRef, _: usize, _: EncodingType) -> BoxedOperator<'a> {
+        panic!("LZ4 is not enabled in this build of LocustDB. Recompile with `features enable_lz4`")
     }
 
-    #[cfg(not(feature = "enable_lz4"))]
-    pub fn lz4_decode(_: BufferRef, _: BufferRef, _: EncodingType) -> BoxedOperator<'a> {
-        panic!("LZ4 is not enabled in this build of LocustDB. Recompile with `features enable_lz4`")
+    pub fn unpack_strings(packed: BufferRef, unpacked: BufferRef) -> BoxedOperator<'a> {
+        Box::new(UnpackStrings::<'a> { packed, unpacked, iterator: None, has_more: true })
     }
 
     pub fn delta_decode(encoded: BufferRef, decoded: BufferRef, t: EncodingType) -> BoxedOperator<'a> {

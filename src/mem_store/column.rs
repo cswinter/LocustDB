@@ -45,8 +45,8 @@ impl Column {
         if cfg!(feature = "enable_lz4") {
             let (encoded, worth_it) = self.data[0].lz4_encode();
             if worth_it {
+                self.codec = self.codec.with_lz4(self.data[0].len());
                 self.data[0] = encoded;
-                self.codec = self.codec.with_lz4();
             }
         }
     }
