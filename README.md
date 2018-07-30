@@ -31,10 +31,10 @@ USAGE:
     repl [FLAGS] [OPTIONS]
 
 FLAGS:
-    -h, --help                      Prints help information
-        --reduced-nyc-taxi-rides    Set ingestion schema to load select set of columns from the 1.46 billion taxi ride
-                                    dataset
-    -V, --version                   Prints version information
+    -h, --help             Prints help information
+        --reduced-trips    Set ingestion schema for select set of columns from nyc taxi ride dataset
+        --trips            Set ingestion schema for nyc taxi ride dataset
+    -V, --version          Prints version information
 
 OPTIONS:
         --db-path <PATH>              Path to data directory
@@ -71,7 +71,7 @@ You may also have to install various other random tools until compilation succee
 
 ### LZ4
 
-Compile with `--feature "enable_lz4"` to enable an additional lz4 compression pass which can significantly reduce data size both on disk and in-memory, at the cost of slightly slower in-memory queries.
+Compile with `--features "enable_lz4"` to enable an additional lz4 compression pass which can significantly reduce data size both on disk and in-memory, at the cost of slightly slower in-memory queries.
 
 ## Goals
 A vision for LocustDB.
