@@ -10,7 +10,7 @@ fn main() {
     for x in &["aa", "ab", "ac", "ad", "ae"] {
         let path = format!("test_data/nyc-taxi-data/trips_x{}.csv.gz", x);
         loads.push(locustdb.load_csv(
-            locustdb::nyc_taxi_data::ingest_file(&path, "test")
+            locustdb::nyc_taxi_data::ingest_reduced_file(&path, "test")
                 .with_partition_size(1 << 20)));
     }
     for l in loads {

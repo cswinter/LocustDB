@@ -23,6 +23,7 @@ pub enum QueryPlan {
     InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>, Box<QueryPlan>),
     Widen(Box<QueryPlan>, EncodingType, EncodingType),
     LZ4Decode(Box<QueryPlan>, EncodingType),
+    UnpackStrings(Box<QueryPlan>),
     DeltaDecode(Box<QueryPlan>, EncodingType),
 
     Exists(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
@@ -86,6 +87,8 @@ pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef
             VecOperator::delta_decode(prepare(*plan, result), result.named_buffer("decoded"), t),
         QueryPlan::LZ4Decode(plan, t) =>
             VecOperator::lz4_decode(prepare(*plan, result), result.named_buffer("decoded"), t),
+        QueryPlan::UnpackStrings(plan) =>
+            VecOperator::unpack_strings(prepare(*plan, result), result.named_buffer("unpacked")),
         QueryPlan::Exists(indices, t, max_index) =>
             VecOperator::exists(prepare(*indices, result), result.named_buffer("exists"), t, prepare(*max_index, result)),
         QueryPlan::Compact(data, data_t, select, select_t) => {
@@ -271,8 +274,8 @@ impl QueryPlan {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = type_lhs.codec.clone().unwrap().encode_str(Box::new(plan_rhs));
-                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), encoded)
+                                    let encoded = type_lhs.codec.clone().unwrap().encode_str(Box::new(plan_rhs));
+                                    QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), encoded)
                             } else {
                                 QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }

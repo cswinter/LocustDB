@@ -18,14 +18,15 @@ use mem_store::column_builder::UniqueValues;
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 type HashSetSea<K> = HashSet<K, BuildHasherDefault<SeaHasher>>;
 
-// TODO(clemens): this should depend on the batch size and element length
-pub const MAX_UNIQUE_STRINGS: usize = 10000;
+const DICTIONARY_RATIO: usize = 2;
 
 pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &str, strings: T, len: usize) -> Arc<Column> {
     let mut unique_values = HashSetSea::default();
     for s in strings.clone() {
         unique_values.insert(s);
-        if unique_values.len() == MAX_UNIQUE_STRINGS {
+        // TODO(clemens): is 2 the right constant? and should probably also depend on the length of the strings
+        // TODO(clemens): len > 1000 || name == "string_packed" is a hack to make tests use dictionary encoding. Remove once we are able to group by string packed columns.
+        if unique_values.len() == len / DICTIONARY_RATIO && (len > 1000 || name == "string_packed") {
             let packed = PackedStrings::from_iterator(strings);
             return Arc::new(Column::new(
                 name,

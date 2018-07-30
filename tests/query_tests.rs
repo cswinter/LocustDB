@@ -35,7 +35,7 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let load = block_on(locustdb.load_csv(
-        nyc_taxi_data::ingest_file("test_data/nyc-taxi.csv.gz", "default")
+        nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
             .with_partition_size(999)));
     load.unwrap().ok();
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
@@ -115,6 +115,14 @@ fn group_by_string_filter_string_eq() {
     test_query(
         "select first_name, count(1) from default where first_name = \"Adam\";",
         &[vec!["Adam".into(), 2.into()]],
+    )
+}
+
+#[test]
+fn test_string_packed_column() {
+    test_query_ec(
+        "select string_packed from default where string_packed = \"xyz\";",
+        &[vec!["xyz".into()]],
     )
 }
 
@@ -267,7 +275,7 @@ fn test_restore_from_disk() {
     {
         let locustdb = LocustDB::disk_backed(tmp_dir.path().to_str().unwrap());
         let load = block_on(locustdb.load_csv(
-            nyc_taxi_data::ingest_file("test_data/nyc-taxi.csv.gz", "default")
+            nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
                 .with_partition_size(999)));
         load.unwrap().ok();
         // Dropping the LocustDB object will cause all threads to be stopped

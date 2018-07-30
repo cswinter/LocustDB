@@ -50,6 +50,7 @@ use engine::vector_op::sum::VecSum;
 use engine::vector_op::to_year::ToYear;
 use engine::vector_op::top_n::TopN;
 use engine::vector_op::type_conversion::TypeConversionOperator;
+use engine::vector_op::unpack_strings::UnpackStrings;
 use engine::vector_op::vec_const_bool_op::*;
 
 
@@ -99,6 +100,7 @@ fn short_type_name<T: ?Sized>() -> String {
 pub struct Scratchpad<'a> {
     buffers: Vec<RefCell<BoxedVec<'a>>>,
     columns: HashMap<String, Vec<&'a AnyVec<'a>>>,
+    pinned: Vec<bool>,
 }
 
 impl<'a> Scratchpad<'a> {
@@ -110,6 +112,7 @@ impl<'a> Scratchpad<'a> {
         Scratchpad {
             buffers,
             columns,
+            pinned: vec![false; count],
         }
     }
 
@@ -147,6 +150,23 @@ impl<'a> Scratchpad<'a> {
     pub fn set(&mut self, index: BufferRef, vec: BoxedVec<'a>) {
         self.buffers[index.0] = RefCell::new(vec);
     }
+
+    pub fn pin(&mut self, index: BufferRef) {
+        self.pinned[index.0] = true;
+    }
+
+    pub fn collect_pinned(self) -> Vec<BoxedVec<'a>> {
+        self.buffers
+            .into_iter()
+            .zip(self.pinned.iter())
+            .filter_map(|(d, pinned)|
+                if *pinned {
+                    Some(d.into_inner())
+                } else {
+                    None
+                })
+            .collect()
+    }
 }
 
 
@@ -180,6 +200,10 @@ impl<'a> VecOperator<'a> {
             EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded, reader, has_more: true, t: PhantomData }),
             _ => panic!("lz4_decode not supported for type {:?}", t),
         }
+    }
+
+    pub fn unpack_strings(packed: BufferRef, unpacked: BufferRef) -> BoxedOperator<'a> {
+        Box::new(UnpackStrings::<'a> { packed, unpacked, iterator: None, has_more: true })
     }
 
     #[cfg(not(feature = "enable_lz4"))]

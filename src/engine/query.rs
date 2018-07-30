@@ -90,6 +90,7 @@ impl Query {
                 level: 0,
                 batch_count: 1,
                 show,
+                unsafe_referenced_buffers: results.collect_pinned(),
             },
              if explain { Some(format!("{}", executor)) } else { None }))
     }
@@ -284,13 +285,14 @@ impl Query {
             level: 0,
             batch_count: 1,
             show,
+            unsafe_referenced_buffers: results.collect_pinned(),
         };
         if let Err(err) = batch.validate() {
             error!("Query result failed validation: {}\n{}\nGroup By: {:?}\nSelect: {:?}", err, &executor, grouping_columns, select);
             Err(err)
         } else {
             Ok((
-                (batch),
+                batch,
                 if explain { Some(format!("{}", executor)) } else { None }
             ))
         }

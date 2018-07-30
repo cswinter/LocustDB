@@ -30,7 +30,7 @@ fn db() -> &'static LocustDB {
                         panic!("{} not found. Download dataset at {}", path, DOWNLOAD_URL);
                     }
                     loads.push(locustdb.load_csv(
-                        locustdb::nyc_taxi_data::ingest_file(&path, "test")
+                        locustdb::nyc_taxi_data::ingest_reduced_file(&path, "test")
                             .with_partition_size(1 << 20)));
                 }
                 for l in loads {

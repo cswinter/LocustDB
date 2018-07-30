@@ -56,6 +56,7 @@ impl BasicType {
 #[derive(Debug, Clone)]
 pub struct Type {
     pub decoded: BasicType,
+    // TODO(clemens): make this required, can use identity codec
     pub codec: Option<Codec>,
     pub is_scalar: bool,
     pub is_borrowed: bool,
@@ -94,11 +95,15 @@ impl Type {
     }
 
     pub fn is_encoded(&self) -> bool {
-        self.codec.is_some()
+        self.codec.as_ref().map_or(false, |c| !c.is_identity())
     }
 
     pub fn is_summation_preserving(&self) -> bool {
         self.codec.as_ref().map_or(true, |c| c.is_summation_preserving())
+    }
+
+    pub fn is_elementwise_decodable(&self) -> bool {
+        self.codec.as_ref().map_or(true, |c| c.is_elementwise_decodable())
     }
 
     pub fn is_order_preserving(&self) -> bool {

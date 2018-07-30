@@ -75,26 +75,23 @@ impl PackedStrings {
         self.data.shrink_to_fit();
     }
 
-    #[allow(dead_code)]
-    pub fn iter(&self) -> StringPackerIterator {
-        StringPackerIterator {
-            data: &self.data,
-            curr_index: 0,
-        }
-    }
-
     pub fn into_vec(self) -> Vec<u8> {
         self.data
     }
 }
 
-#[allow(dead_code)]
 pub struct StringPackerIterator<'a> {
-    data: &'a Vec<u8>,
+    data: &'a [u8],
     curr_index: usize,
 }
 
-#[allow(dead_code)]
+impl<'a> StringPackerIterator<'a> {
+    /// `data` must be valid encoding for StringPacker
+    pub unsafe fn from_slice(data: &'a [u8]) -> StringPackerIterator<'a> {
+        StringPackerIterator { data, curr_index: 0 }
+    }
+}
+
 impl<'a> Iterator for StringPackerIterator<'a> {
     type Item = &'a str;
 

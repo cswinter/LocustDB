@@ -81,7 +81,7 @@ fn main() {
     let mut loads = Vec::new();
     for file in files {
         let mut base_opts = if reduced_nyc {
-            locustdb::nyc_taxi_data::ingest_file(&file, tablename)
+            locustdb::nyc_taxi_data::ingest_reduced_file(&file, tablename)
         } else {
             locustdb::IngestFile::new(&file, &tablename)
         };

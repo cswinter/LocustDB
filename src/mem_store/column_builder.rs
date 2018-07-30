@@ -25,7 +25,7 @@ impl StringColBuilder {
     pub fn new() -> StringColBuilder {
         StringColBuilder {
             data: Vec::new(),
-            uniques: UniqueValues::new(MAX_UNIQUE_STRINGS),
+            uniques: UniqueValues::new(1 << 19),// TODO(clemens): use partition size
         }
     }
 }

@@ -15,6 +15,8 @@ pub struct BatchResult<'a> {
     pub level: u32,
     pub batch_count: usize,
     pub show: bool,
+    // Buffers that are referenced by query result - unsafe to drop before results are converted into owned values
+    pub unsafe_referenced_buffers: Vec<BoxedVec<'a>>,
 }
 
 impl<'a> BatchResult<'a> {
@@ -112,6 +114,11 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 level: batch1.level + 1,
                 batch_count: batch1.batch_count + batch2.batch_count,
                 show: batch1.show && batch2.show,
+                unsafe_referenced_buffers: {
+                    let mut urb = batch1.unsafe_referenced_buffers;
+                    urb.extend(batch2.unsafe_referenced_buffers.into_iter());
+                    urb
+                },
             })
         }
         // No aggregation
@@ -153,6 +160,11 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,
                         show: batch1.show && batch2.show,
+                        unsafe_referenced_buffers: {
+                            let mut urb = batch1.unsafe_referenced_buffers;
+                            urb.extend(batch2.unsafe_referenced_buffers.into_iter());
+                            urb
+                        },
                     })
                 }
                 // Select query
@@ -177,6 +189,11 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,
                         show: batch1.show && batch2.show,
+                        unsafe_referenced_buffers: {
+                            let mut urb = batch1.unsafe_referenced_buffers;
+                            urb.extend(batch2.unsafe_referenced_buffers.into_iter());
+                            urb
+                        },
                     })
                 }
             }

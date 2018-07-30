@@ -120,6 +120,13 @@ pub fn ingest_file(file_path: &str, tablename: &str) -> IngestFile {
     IngestFile::new(file_path, tablename)
         .with_col_names(nyc_colnames())
         .with_extractors(&nyc_extractors())
+        .with_always_string(&["vendor_id", "store_and_fwd_flag", "payment_type", "pickup_ntaname"])
+}
+
+pub fn ingest_reduced_file(file_path: &str, tablename: &str) -> IngestFile {
+    IngestFile::new(file_path, tablename)
+        .with_col_names(nyc_colnames())
+        .with_extractors(&nyc_extractors())
         .with_ignore_cols(&dropped_cols())
         .with_always_string(&["vendor_id", "store_and_fwd_flag", "payment_type", "pickup_ntaname"])
 }

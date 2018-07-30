@@ -140,9 +140,9 @@ impl Codec {
                         dict_data))
                 }
                 CodecOp::LZ4(t) =>
-                    Box::new(QueryPlan::LZ4Decode(
-                        stack.pop().unwrap(), t)),
-                CodecOp::UnpackStrings => unimplemented!(" unpack strings"),
+                    Box::new(QueryPlan::LZ4Decode(stack.pop().unwrap(), t)),
+                CodecOp::UnpackStrings =>
+                    Box::new(QueryPlan::UnpackStrings(stack.pop().unwrap())),
                 CodecOp::Unknown => panic!("unkown decode plan!"),
             };
             stack.push(plan);
@@ -168,6 +168,7 @@ impl Codec {
     pub fn is_order_preserving(&self) -> bool { self.is_order_preserving }
     pub fn is_positive_integer(&self) -> bool { self.is_positive_integer }
     pub fn is_elementwise_decodable(&self) -> bool { self.is_fixed_width }
+    pub fn is_identity(&self) -> bool { self.ops.is_empty() }
 
     pub fn encode_str(&self, string_const: Box<QueryPlan>) -> Box<QueryPlan> {
         match self.ops[..] {
