@@ -11,11 +11,14 @@ pub mod value;
 #[cfg(feature = "enable_lz4")]
 pub mod lz4;
 mod mixed_column;
+mod lru;
+mod lru_fork;
 
 pub use self::column::{Column, DataSection};
 pub use self::codec::{Codec, CodecOp};
 pub use self::tree::*;
 pub use self::table::TableStats;
+pub use self::lru::LRU;
 
 
 #[cfg(not(feature = "enable_lz4"))]

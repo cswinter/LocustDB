@@ -10,24 +10,26 @@ use heapsize::HeapSizeOf;
 use ingest::buffer::Buffer;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
-use mem_store::partition::Partition;
+use mem_store::partition::{Partition, ColumnKey};
 use mem_store::*;
 
 
 pub struct Table {
     name: String,
     batch_size: usize,
-    partitions: RwLock<Vec<Arc<Partition>>>,
+    partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     buffer: Mutex<Buffer>,
+    lru: LRU,
 }
 
 impl Table {
-    pub fn new(batch_size: usize, name: &str) -> Table {
+    pub fn new(batch_size: usize, name: &str, lru: LRU) -> Table {
         Table {
             name: name.to_string(),
             batch_size: batch_size_override(batch_size, name),
-            partitions: RwLock::new(Vec::new()),
+            partitions: RwLock::new(HashMap::new()),
             buffer: Mutex::new(Buffer::default()),
+            lru,
         }
     }
 
@@ -37,32 +39,34 @@ impl Table {
 
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
-        partitions.clone()
+        partitions.values().map(|p| p.clone()).collect()
     }
 
-    pub fn load_table_metadata(batch_size: usize, storage: &DiskStore) -> HashMap<String, Table> {
+    pub fn load_table_metadata(batch_size: usize, storage: &DiskStore, lru: &LRU) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
         for md in storage.load_metadata() {
             let table = tables
                 .entry(md.tablename.clone())
-                .or_insert(Table::new(batch_size, &md.tablename));
+                .or_insert(Table::new(batch_size, &md.tablename, lru.clone()));
             table.insert_nonresident_partition(&md);
         }
         tables
     }
 
     pub fn restore(&self, id: PartitionID, col: Arc<Column>) {
-        for partition in self.partitions.read().unwrap().iter() {
-            if partition.id() == id {
-                partition.restore(col);
-                return;
-            }
-        }
+        let partitions = self.partitions.read().unwrap();
+        partitions[&id].restore(col);
+    }
+
+    pub fn evict(&self, key: &ColumnKey)->usize {
+        let partitions = self.partitions.read().unwrap();
+        partitions[&key.0].evict(&key.1)
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
+        let partition = Arc::new(Partition::nonresident(md.id, md.len, &md.columns, self.lru.clone()));
         let mut partitions = self.partitions.write().unwrap();
-        partitions.push(Arc::new(Partition::nonresident(md.id, md.len, &md.columns)));
+        partitions.insert(md.id, partition);
     }
 
     pub fn ingest(&self, row: Vec<(String, RawVal)>) {
@@ -83,8 +87,8 @@ impl Table {
     }
 
     pub fn load_batch(&self, partition: Partition) {
-        let mut batches = self.partitions.write().unwrap();
-        batches.push(Arc::new(partition));
+        let mut partitions = self.partitions.write().unwrap();
+        partitions.insert(partition.id(), Arc::new(partition));
     }
 
     fn batch_if_needed(&self, buffer: &mut Buffer) {
@@ -96,9 +100,9 @@ impl Table {
         let buffer = mem::replace(buffer, Buffer::default());
         self.persist_batch(&buffer);
         // TODO(clemens): get unique partition ID
-        let new_partition = Partition::from_buffer(0, buffer);
+        let new_partition = Partition::from_buffer(0, buffer, self.lru.clone());
         let mut partitions = self.partitions.write().unwrap();
-        partitions.push(Arc::new(new_partition));
+        partitions.insert(new_partition.id(), Arc::new(new_partition));
     }
 
     /*fn load_buffer(&self, buffer: Buffer) {
@@ -145,7 +149,7 @@ impl Table {
 
     pub fn max_partition_id(&self) -> u64 {
         let partitions = self.partitions.read().unwrap();
-        partitions.iter().map(|p| p.id()).max().unwrap_or(0)
+        partitions.keys().max().map(|x| *x).unwrap_or(0)
     }
 
     fn size_per_column(partitions: &[Arc<Partition>]) -> Vec<(String, usize)> {

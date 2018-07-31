@@ -6,6 +6,7 @@ use futures_core::*;
 use futures_util::FutureExt;
 use futures_executor::block_on;
 use nom;
+use num_cpus;
 
 use QueryError;
 use QueryResult;
@@ -23,10 +24,11 @@ pub struct LocustDB {
     inner_locustdb: Arc<InnerLocustDB>
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Options {
-    pub threads: Option<usize>,
+    pub threads: usize,
     pub db_path: Option<String>,
+    pub mem_size_limit_tables: usize,
 }
 
 impl LocustDB {
@@ -38,8 +40,8 @@ impl LocustDB {
         let disk_store = opts.db_path.as_ref()
             .map(|path| LocustDB::persistent_storage(path))
             .unwrap_or(Arc::new(NoopStorage));
-        let locustdb = Arc::new(InnerLocustDB::new(disk_store));
-        InnerLocustDB::start_worker_threads(&locustdb, opts.threads);
+        let locustdb = Arc::new(InnerLocustDB::new(disk_store, opts));
+        InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB { inner_locustdb: locustdb }
     }
 
@@ -121,7 +123,7 @@ impl LocustDB {
 
     pub fn recover(&self) {
         self.inner_locustdb.drop_pending_tasks();
-        InnerLocustDB::start_worker_threads(&self.inner_locustdb, None);
+        InnerLocustDB::start_worker_threads(&self.inner_locustdb);
     }
 
     pub fn mem_tree(&self, depth: usize) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
@@ -159,3 +161,14 @@ impl Drop for LocustDB {
         self.inner_locustdb.stop();
     }
 }
+
+impl Default for Options {
+    fn default() -> Options {
+        Options {
+            threads: num_cpus::get(),
+            db_path: None,
+            mem_size_limit_tables: 1024 * 1024 * 1024 * 1024, // 1TB
+        }
+    }
+}
+

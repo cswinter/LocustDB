@@ -4,24 +4,30 @@ use std::str;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
+use std::time::Duration;
 
-use disk_store::interface::*;
 use futures_core::*;
 use futures_channel::oneshot;
+use heapsize::HeapSizeOf;
+use time;
+
+use disk_store::interface::*;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
 use mem_store::partition::Partition;
 use mem_store::table::*;
 use mem_store::*;
-use num_cpus;
 use scheduler::*;
-use time;
 use trace::*;
+use locustdb::Options;
 
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
+    lru: LRU,
     pub storage: Arc<DiskStore>,
+
+    opts: Options,
 
     next_partition_id: AtomicUsize,
     running: AtomicBool,
@@ -43,25 +49,32 @@ impl Drop for TaskState {
 }
 
 impl InnerLocustDB {
-    pub fn new(storage: Arc<DiskStore>) -> InnerLocustDB {
-        let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref());
+    pub fn new(storage: Arc<DiskStore>, opts: &Options) -> InnerLocustDB {
+        let lru = LRU::default();
+        let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref(), &lru);
         let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);
 
         InnerLocustDB {
             tables: RwLock::new(existing_tables),
+            lru,
             storage,
             running: AtomicBool::new(true),
+
+            opts: opts.clone(),
+
             next_partition_id: AtomicUsize::new(max_pid as usize + 1),
             idle_queue: Condvar::new(),
             task_queue: Mutex::new(VecDeque::new()),
         }
     }
 
-    pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>, threads: Option<usize>) {
-        for id in 0..threads.unwrap_or(num_cpus::get()) {
+    pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>) {
+        for id in 0..locustdb.opts.threads {
             let cloned = locustdb.clone();
             thread::spawn(move || InnerLocustDB::worker_loop(cloned, id));
         }
+        let cloned = locustdb.clone();
+        thread::spawn(move || InnerLocustDB::enforce_mem_limit(cloned));
     }
 
     pub fn snapshot(&self, table: &str) -> Option<Vec<Arc<Partition>>> {
@@ -78,7 +91,7 @@ impl InnerLocustDB {
 
     fn worker_loop(locustdb: Arc<InnerLocustDB>, thread_id: usize) {
         while locustdb.running.load(Ordering::SeqCst) {
-            if let Some(task) = locustdb.await_task() {
+            if let Some(task) = InnerLocustDB::await_task(locustdb.clone()) {
                 if let Some(ref tb) = *task.trace_builder.read().unwrap() {
                     tb.activate();
                 }
@@ -94,11 +107,11 @@ impl InnerLocustDB {
         drop(locustdb) // Make clippy happy
     }
 
-    fn await_task(&self) -> Option<Arc<TaskState>> {
-        let mut task_queue = self.task_queue.lock().unwrap();
+    fn await_task(ldb: Arc<InnerLocustDB>) -> Option<Arc<TaskState>> {
+        let mut task_queue = ldb.task_queue.lock().unwrap();
         while task_queue.is_empty() {
-            if !self.running.load(Ordering::SeqCst) { return None; }
-            task_queue = self.idle_queue.wait(task_queue).unwrap();
+            if !ldb.running.load(Ordering::SeqCst) { return None; }
+            task_queue = ldb.idle_queue.wait(task_queue).unwrap();
         }
         while let Some(task) = task_queue.pop_front() {
             if task.task.completed() {
@@ -108,7 +121,7 @@ impl InnerLocustDB {
                 task_queue.push_front(task.clone());
             }
             if !task_queue.is_empty() {
-                self.idle_queue.notify_one();
+                ldb.idle_queue.notify_one();
             }
             return Some(task);
         };
@@ -130,6 +143,7 @@ impl InnerLocustDB {
         trace_receiver
     }
 
+
     pub fn store_partitions(&self, tablename: &str, partitions: Vec<Vec<Arc<Column>>>) {
         // TODO(clemens): pid needs to be unique across all invocations, compactions and restore from DB
         self.create_if_empty(tablename);
@@ -138,7 +152,7 @@ impl InnerLocustDB {
         for partition in partitions {
             let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
             self.storage.store_partition(pid, tablename, &partition);
-            table.load_batch(Partition::new(pid, partition));
+            table.load_batch(Partition::new(pid, partition, self.lru.clone()));
         }
     }
 
@@ -197,12 +211,40 @@ impl InnerLocustDB {
                 let mut tables = self.tables.write().unwrap();
                 tables.insert(
                     table.to_string(),
-                    Table::new(1 << 20, table));
+                    Table::new(1 << 20, table, self.lru.clone()));
             }
             self.ingest("_meta_tables", vec![
                 ("timestamp".to_string(), RawVal::Int(time::now().to_timespec().sec)),
                 ("name".to_string(), RawVal::Str(table.to_string())),
             ]);
+        }
+    }
+
+    fn enforce_mem_limit(ldb: Arc<InnerLocustDB>) {
+        loop {
+            let mut mem_usage_bytes: usize = {
+                let tables = ldb.tables.read().unwrap();
+                tables.values().map(|table| table.heap_size_of_children()).sum()
+            };
+            if mem_usage_bytes > ldb.opts.mem_size_limit_tables {
+                info!("Evicting. mem_usage_bytes = {}", mem_usage_bytes);
+                while mem_usage_bytes > ldb.opts.mem_size_limit_tables {
+                    match ldb.lru.evict() {
+                        Some(victim) => {
+                            let tables = ldb.tables.read().unwrap();
+                            for t in tables.values() {
+                                mem_usage_bytes -= t.evict(&victim);
+                            }
+                        }
+                        None => {
+                            warn!("Failed to find column to evict!");
+                            break;
+                        }
+                    }
+                }
+                info!("mem_usage_bytes = {}", mem_usage_bytes);
+            }
+            thread::sleep(Duration::from_millis(1000));
         }
     }
 

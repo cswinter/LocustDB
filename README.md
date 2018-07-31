@@ -39,6 +39,7 @@ FLAGS:
 OPTIONS:
         --db-path <PATH>              Path to data directory
         --load <CSV_FILE>...          Load .csv or .csv.gz files into the database
+        --mem-limit-tables <GB>       Limit for in-memory size of tables in GiB [default: 64]
         --partition-size <INTEGER>    Number of rows per partition when loading new data [default: 1048576]
         --table <NAME>                Name for the table populated with --load [default: default]
         --threads <INTEGER>           Number of worker threads. [default: number of cores]

@@ -27,6 +27,8 @@ extern crate time;
 extern crate tempdir;
 extern crate fnv;
 extern crate byteorder;
+extern crate lru;
+
 
 #[macro_use]
 mod trace;

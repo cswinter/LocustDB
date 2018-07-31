@@ -7,6 +7,8 @@ extern crate locustdb;
 extern crate nom;
 extern crate rustyline;
 extern crate time;
+extern crate env_logger;
+extern crate log;
 
 use failure::Fail;
 use futures_executor::block_on;
@@ -19,6 +21,7 @@ mod print_results;
 mod fmt_table;
 
 fn main() {
+    env_logger::init();
     let matches = App::new("LocustDB")
         .version(crate_version!())
         .author("Clemens Winter <clemenswinter1@gmail.com>")
@@ -39,6 +42,12 @@ fn main() {
             .long("table")
             .value_name("NAME")
             .default_value("default")
+            .takes_value(true))
+        .arg(Arg::with_name("mem-limit-tables")
+            .help("Limit for in-memory size of tables in GiB")
+            .long("mem-limit-tables")
+            .value_name("GB")
+            .default_value("64")
             .takes_value(true))
         .arg(Arg::with_name("partition-size")
             .help("Number of rows per partition when loading new data")
@@ -78,8 +87,15 @@ fn main() {
 
     let mut options = locustdb::Options::default();
     options.db_path = db_path.map(|x| x.to_string());
-    options.threads = threads.map(|x| x.parse()
-        .expect("Argument --threads must be a positive integer!"));
+    for t in threads {
+        options.threads = t.parse()
+            .expect("Argument --threads must be a positive integer!");
+    }
+    options.mem_size_limit_tables = matches
+        .value_of("mem-limit-tables").unwrap()
+        .parse::<usize>()
+        .map(|x| x * 1024 * 1024 * 1024)
+        .expect("Argument --mem-limit-tables must be a positive integer!");
 
     let locustdb = locustdb::LocustDB::new(&options);
 

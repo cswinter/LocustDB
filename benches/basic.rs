@@ -21,7 +21,7 @@ fn db() -> &'static LocustDB {
             Some(ref locustdb) => locustdb,
             None => {
                 let mut opts = Options::default();
-                opts.threads = thread_count;
+                opts.threads = thread_count.unwrap_or(opts.threads);
                 let locustdb = LocustDB::new(&opts);
                 let mut loads = Vec::new();
                 for x in &["aa", "ab", "ac", "ad", "ae"] {

@@ -35,14 +35,14 @@ num_cpus = "1.0"
 chrono = "0.4.0"
 failure = "0.1.1"
 failure_derive = "0.1.1"
-log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
+log = { version = "0.4", features = ["max_level_trace", "release_max_level_debug"] }
 flate2 = "1.0"
 fnv = "1.0.3"
 byteorder = "1.2.3"
 tempdir = "0.3.7"
 heapsize_derive = "0.1.4"
 clap = "2.32.0"
-
-[dev-dependencies]
+lru = "0.1.7"
+scoped_threadpool = "0.1.9"
 env_logger = "0.5.6"
 
