@@ -110,8 +110,8 @@ impl Codec {
             let plan = match *op {
                 CodecOp::Add(t, x) => {
                     Box::new(QueryPlan::AddVS(
-                        stack.pop().unwrap(),
                         t,
+                        stack.pop().unwrap(),
                         Box::new(QueryPlan::Constant(RawVal::Int(x), true))))
                 }
                 CodecOp::Delta(t) => {

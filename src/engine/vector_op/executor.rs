@@ -1,12 +1,14 @@
-use engine::*;
-use engine::vector_op::*;
 use std::cmp;
 use std::fmt;
 use std::collections::{HashMap, HashSet};
 
+use engine::*;
+use engine::query_plan::QueryPlan;
+use engine::vector_op::*;
 
 pub struct QueryExecutor<'a> {
     ops: Vec<Box<VecOperator<'a> + 'a>>,
+    ops_cache: HashMap<[u8; 16], BufferRef>,
     stages: Vec<ExecutorStage>,
     encoded_group_by: Option<BufferRef>,
     count: usize,
@@ -50,6 +52,14 @@ impl<'a> QueryExecutor<'a> {
         Scratchpad::new(self.count, HashMap::default())
     }
 
+    pub fn get(&self, signature: &[u8; 16]) -> Option<Box<QueryPlan>> {
+        self.ops_cache.get(signature).map(|x| Box::new(QueryPlan::ReadBuffer(*x)))
+    }
+
+    pub fn cache_last(&mut self, signature: [u8; 16]) {
+        self.ops_cache.insert(signature, self.last_buffer);
+    }
+
     pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
         for stage in 0..self.stages.len() {
             self.run_stage(len, stage, scratchpad, show);
@@ -57,20 +67,39 @@ impl<'a> QueryExecutor<'a> {
     }
 
     fn partition(&self) -> Vec<ExecutorStage> {
-        let mut consumes = vec![vec![]; self.count];
+        // Construct execution graph
+        let mut consumers = vec![vec![]; self.count];
         let mut producers = vec![vec![]; self.count];
         for (i, op) in self.ops.iter().enumerate() {
             for input in op.inputs() {
-                consumes[input.0].push(i);
+                consumers[input.0].push(i);
             }
             for output in op.outputs() {
                 producers[output.0].push(i);
             }
         }
 
+        // Disable streaming output for operators that have streaming + nonstreaming consumers
+        let mut streaming_disabled = vec![false; self.ops.len()];
+        for (i, op) in self.ops.iter().enumerate() {
+            for output in op.outputs() {
+                if op.can_stream_output(output) {
+                    let mut streaming = false;
+                    let mut block = false;
+                    for &p in &consumers[output.0] {
+                        streaming |= self.ops[p].can_stream_input(output);
+                        block |= !self.ops[p].can_stream_input(output);
+                    }
+                    streaming_disabled[i] = streaming & block;
+                }
+            }
+        }
+
+        // Group operators into stages
         let mut visited = vec![false; self.ops.len()];
         let mut stages = vec![];
         loop {
+            // Find an op that hasn't been assigned to a stage yet
             let mut to_visit = vec![];
             for i in 0..self.ops.len() {
                 if !visited[i] {
@@ -87,10 +116,12 @@ impl<'a> QueryExecutor<'a> {
                 let op = &self.ops[current];
                 ops.push(current);
 
+                // Find producers that can be streamed
                 for input in op.inputs() {
                     if op.can_stream_input(input) {
                         for &p in &producers[input.0] {
-                            let can_stream = self.ops[p].can_stream_output(input);
+                            let can_stream =
+                                self.ops[p].can_stream_output(input) && !streaming_disabled[p];
                             if !visited[p] && can_stream {
                                 to_visit.push(p);
                                 visited[p] = true;
@@ -99,9 +130,10 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
                 }
+                // Find consumers that can be streamed to
                 for output in op.outputs() {
-                    if op.can_stream_output(output) {
-                        for &consumer in &consumes[output.0] {
+                    if op.can_stream_output(output) && !streaming_disabled[current] {
+                        for &consumer in &consumers[output.0] {
                             if !visited[consumer] && self.ops[consumer].can_stream_input(output) {
                                 to_visit.push(consumer);
                                 visited[consumer] = true;
@@ -119,14 +151,13 @@ impl<'a> QueryExecutor<'a> {
                 let mut block_consumers = false;
                 for output in self.ops[op].outputs() {
                     if self.ops[op].can_stream_output(output) {
-                        for &consumer in &consumes[output.0] {
+                        for &consumer in &consumers[output.0] {
                             streaming_consumers |= self.ops[consumer].can_stream_input(output);
                             block_consumers |= !self.ops[consumer].can_stream_input(output);
                         }
                     }
-                    assert!(!streaming_consumers || !block_consumers);
                 }
-                (op, streaming_consumers)
+                (op, streaming_consumers && !block_consumers)
             }).collect();
             // TODO(clemens): Make streaming possible for stages reading from temp results
             stages.push(ExecutorStage { ops, stream: stream && has_streaming_producer })
@@ -240,6 +271,7 @@ impl<'a> Default for QueryExecutor<'a> {
     fn default() -> QueryExecutor<'a> {
         QueryExecutor {
             ops: vec![],
+            ops_cache: HashMap::default(),
             stages: vec![],
             encoded_group_by: None,
             count: 0,
@@ -251,6 +283,14 @@ impl<'a> Default for QueryExecutor<'a> {
 impl<'a> fmt::Display for QueryExecutor<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let alternate = f.alternate();
+        if alternate {
+            write!(f, "### RAW OPS ###")?;
+            for op in &self.ops {
+                write!(f, "\n{}", op.display(alternate))?;
+            }
+
+            write!(f, "\n\n### STAGES ###")?;
+        }
         for (i, stage) in self.stages.iter().enumerate() {
             if stage.stream {
                 write!(f, "\n-- Stage {} (streaming) --", i)?;

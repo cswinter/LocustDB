@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ::QueryError;
 use chrono::{Datelike, NaiveDateTime};
+use crypto::digest::Digest;
+use crypto::md5::Md5;
+use itertools::Itertools;
+
+use ::QueryError;
 use engine::aggregator::Aggregator;
 use engine::filter::Filter;
 use engine::types::*;
@@ -40,7 +44,7 @@ pub enum QueryPlan {
     EqualsVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
     NotEqualsVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
     DivideVS(Box<QueryPlan>, Box<QueryPlan>),
-    AddVS(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
+    AddVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
     And(Box<QueryPlan>, Box<QueryPlan>),
     Or(Box<QueryPlan>, Box<QueryPlan>),
     ToYear(Box<QueryPlan>),
@@ -57,6 +61,23 @@ pub enum QueryPlan {
 }
 
 pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
+    _prepare(plan, false, result)
+}
+
+pub fn prepare_no_alias<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
+    _prepare(plan, true, result)
+}
+
+fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>) -> BufferRef {
+    trace!("{:?}", &plan);
+    let (plan, signature) = if no_alias {
+        (plan, [0; 16])
+    } else {
+        // TODO(clemens): O(n^2) :(   use visitor pattern?
+        let (box plan, signature) = replace_common_subexpression(plan, result);
+        (plan, signature)
+    };
+    trace!("{:?} {}", &plan, to_hex_string(&signature));
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select(plan, indices, t) =>
             VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.named_buffer("selection")),
@@ -118,8 +139,8 @@ pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef
             VecOperator::not_equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
         QueryPlan::DivideVS(lhs, rhs) =>
             VecOperator::divide_vs(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("division")),
-        QueryPlan::AddVS(lhs, t, c) =>
-            VecOperator::addition_vs(prepare(*lhs, result), prepare(*c, result), result.named_buffer("addition"), t),
+        QueryPlan::AddVS(left_type, lhs, rhs) =>
+            VecOperator::addition_vs(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("addition"), left_type),
         QueryPlan::Or(lhs, rhs) => {
             let inplace = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
@@ -146,6 +167,9 @@ pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef
         QueryPlan::ReadBuffer(buffer) => return buffer,
     };
     result.push(operation);
+    if signature != [0; 16] {
+        result.cache_last(signature);
+    }
     result.last_buffer()
 }
 
@@ -418,8 +442,8 @@ impl QueryPlan {
                     let adjusted_max = if subtract_offset { max - min } else { max };
                     order_preserving = order_preserving && plan_type.is_order_preserving();
                     let query_plan = if subtract_offset {
-                        QueryPlan::AddVS(Box::new(query_plan),
-                                         plan_type.encoding_type(),
+                        QueryPlan::AddVS(plan_type.encoding_type(),
+                                         Box::new(query_plan),
                                          Box::new(QueryPlan::Constant(RawVal::Int(-min), true)))
                     } else {
                         QueryPlan::Widen(Box::new(query_plan),
@@ -445,8 +469,8 @@ impl QueryPlan {
                         bits(adjusted_max) as u8);
                     if subtract_offset {
                         decode_plan = QueryPlan::AddVS(
-                            Box::new(decode_plan),
                             EncodingType::I64,
+                            Box::new(decode_plan),
                             Box::new(QueryPlan::Constant(RawVal::Int(min), true)));
                     }
                     decode_plan = QueryPlan::Widen(
@@ -493,7 +517,7 @@ impl QueryPlan {
             DivideVS(ref left, box Constant(RawVal::Int(c), _)) =>
                 left.encoding_range().map(|(min, max)|
                     if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
-            AddVS(ref left, _, box Constant(RawVal::Int(c), _)) =>
+            AddVS(_, ref left, box Constant(RawVal::Int(c), _)) =>
                 left.encoding_range().map(|(min, max)| (min + c, max + c)),
             Widen(ref left, _, _) => left.encoding_range(),
             LZ4Decode(ref plan, _, _) => plan.encoding_range(),
@@ -502,3 +526,227 @@ impl QueryPlan {
     }
 }
 
+fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -> (Box<QueryPlan>, [u8; 16]) {
+    unsafe {
+        use std::intrinsics::discriminant_value;
+        use self::QueryPlan::*;
+
+        let mut signature = [0u8; 16];
+        let mut hasher = Md5::new();
+        hasher.input(&discriminant_value(&plan).to_bytes());
+        let plan = match plan {
+            ReadColumnSection(name, index, range) => {
+                hasher.input_str(&name);
+                hasher.input(&index.to_bytes());
+                ReadColumnSection(name, index, range)
+            }
+            ReadBuffer(buffer) => {
+                hasher.input(&buffer.0.to_bytes());
+                ReadBuffer(buffer)
+            }
+            DictLookup(indices, t, offset_len, dict) => {
+                let (indices, s1) = replace_common_subexpression(*indices, executor);
+                let (offset_len, s2) = replace_common_subexpression(*offset_len, executor);
+                let (dict, s3) = replace_common_subexpression(*dict, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&s3);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                DictLookup(indices, t, offset_len, dict)
+            }
+            InverseDictLookup(dict_indices, dict_data, constant) => {
+                let (dict_indices, s1) = replace_common_subexpression(*dict_indices, executor);
+                let (dict_data, s2) = replace_common_subexpression(*dict_data, executor);
+                let (constant, s3) = replace_common_subexpression(*constant, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&s3);
+                InverseDictLookup(dict_indices, dict_data, constant)
+            }
+            Widen(plan, initial_type, target_type) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&discriminant_value(&initial_type).to_bytes());
+                hasher.input(&discriminant_value(&target_type).to_bytes());
+                Widen(plan, initial_type, target_type)
+            }
+            LZ4Decode(plan, decoded_len, t) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                LZ4Decode(plan, decoded_len, t)
+            }
+            UnpackStrings(plan) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                UnpackStrings(plan)
+            }
+            DeltaDecode(plan, t) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                DeltaDecode(plan, t)
+            }
+            Exists(indices, t, max_index) => {
+                let (indices, s1) = replace_common_subexpression(*indices, executor);
+                let (max_index, s2) = replace_common_subexpression(*max_index, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                Exists(indices, t, max_index)
+            }
+            NonzeroCompact(plan, t) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                NonzeroCompact(plan, t)
+            }
+            NonzeroIndices(plan, t1, t2) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&discriminant_value(&t1).to_bytes());
+                hasher.input(&discriminant_value(&t2).to_bytes());
+                NonzeroIndices(plan, t1, t2)
+            }
+            Compact(data, data_t, select, select_t) => {
+                let (data, s1) = replace_common_subexpression(*data, executor);
+                let (select, s2) = replace_common_subexpression(*select, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&data_t).to_bytes());
+                hasher.input(&discriminant_value(&select_t).to_bytes());
+                Compact(data, data_t, select, select_t)
+            }
+            EncodeIntConstant(plan, codec) => {
+                // TODO(clemens): codec needs to be part of signature (easy once we encode using actual query plan rather than codec)
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                EncodeIntConstant(plan, codec)
+            }
+            BitPack(lhs, rhs, shift_amount) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&shift_amount.to_bytes());
+                BitPack(lhs, rhs, shift_amount)
+            }
+            BitUnpack(inner, shift, width) => {
+                let (inner, s1) = replace_common_subexpression(*inner, executor);
+                hasher.input(&s1);
+                hasher.input(&shift.to_bytes());
+                hasher.input(&width.to_bytes());
+                BitUnpack(inner, shift, width)
+            }
+            LessThanVS(left_type, lhs, rhs) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&left_type).to_bytes());
+                LessThanVS(left_type, lhs, rhs)
+            }
+            EqualsVS(left_type, lhs, rhs) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&left_type).to_bytes());
+                EqualsVS(left_type, lhs, rhs)
+            }
+            NotEqualsVS(left_type, lhs, rhs) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&left_type).to_bytes());
+                NotEqualsVS(left_type, lhs, rhs)
+            }
+            DivideVS(lhs, rhs) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                DivideVS(lhs, rhs)
+            }
+            AddVS(left_type, lhs, rhs) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&left_type).to_bytes());
+                AddVS(left_type, lhs, rhs)
+            }
+            And(lhs, rhs) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                And(lhs, rhs)
+            }
+            Or(lhs, rhs) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                Or(lhs, rhs)
+            }
+            ToYear(plan) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                ToYear(plan)
+            }
+            SortIndices(plan, descending) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&[descending as u8]);
+                SortIndices(plan, descending)
+            }
+            TopN(plan, t, n, desc) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&n.to_bytes());
+                hasher.input(&[desc as u8]);
+                TopN(plan, t, n, desc)
+            }
+            Select(lhs, rhs, t) => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                Select(lhs, rhs, t)
+            }
+            Filter(plan, t, filter) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                let (filter, s2) = replace_common_subexpression(*filter, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&discriminant_value(&t).to_bytes());
+                Filter(plan, t, filter)
+            }
+            EncodedGroupByPlaceholder => EncodedGroupByPlaceholder,
+            Constant(val, show) => {
+                match val {
+                    RawVal::Int(i) => hasher.input(&i.to_bytes()),
+                    RawVal::Str(ref s) => hasher.input_str(s),
+                    RawVal::Null => {}
+                }
+                Constant(val, show)
+            }
+        };
+
+        hasher.result(&mut signature);
+        match executor.get(&signature) {
+            Some(plan) => (plan, signature),
+            None => (Box::new(plan), signature),
+        }
+    }
+}
+
+fn to_hex_string(bytes: &[u8]) -> String {
+    bytes.iter()
+        .map(|b| format!("{:02X}", b))
+        .join("")
+}

@@ -28,6 +28,7 @@ extern crate tempdir;
 extern crate fnv;
 extern crate byteorder;
 extern crate lru;
+extern crate crypto;
 
 
 #[macro_use]

@@ -60,7 +60,7 @@ impl Table {
 
     pub fn evict(&self, key: &ColumnKey)->usize {
         let partitions = self.partitions.read().unwrap();
-        partitions[&key.0].evict(&key.1)
+        partitions.get(&key.0).map(|p| p.evict(&key.1)).unwrap_or(0)
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {

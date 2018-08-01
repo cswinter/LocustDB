@@ -73,7 +73,7 @@ impl Query {
             if let Some(codec) = plan_type.codec {
                 plan = *codec.decode(Box::new(plan));
             }
-            select.push(query_plan::prepare(plan, &mut executor));
+            select.push(query_plan::prepare_no_alias(plan, &mut executor));
         }
 
         let mut results = executor.prepare(Query::column_data(columns));
@@ -223,7 +223,7 @@ impl Query {
         //  Reconstruct all group by columns from grouping
         let mut grouping_columns = Vec::with_capacity(decode_plans.len());
         for (decode_plan, t) in decode_plans {
-            let decoded = query_plan::prepare(decode_plan.clone(), &mut executor);
+            let decoded = query_plan::prepare_no_alias(decode_plan.clone(), &mut executor);
             grouping_columns.push((decoded, t));
         }
 
@@ -251,7 +251,7 @@ impl Query {
             };
 
             select = select.iter().map(|(s, t)| {
-                (query_plan::prepare(
+                (query_plan::prepare_no_alias(
                     QueryPlan::Select(
                         Box::new(QueryPlan::ReadBuffer(*s)),
                         Box::new(QueryPlan::ReadBuffer(sort_indices)),
@@ -260,7 +260,7 @@ impl Query {
                     &mut executor), t.clone())
             }).collect();
             grouping_columns = grouping_columns.iter().map(|(s, t)| {
-                (query_plan::prepare(
+                (query_plan::prepare_no_alias(
                     QueryPlan::Select(
                         Box::new(QueryPlan::ReadBuffer(*s)),
                         Box::new(QueryPlan::ReadBuffer(sort_indices)),
@@ -288,7 +288,7 @@ impl Query {
             unsafe_referenced_buffers: results.collect_pinned(),
         };
         if let Err(err) = batch.validate() {
-            error!("Query result failed validation: {}\n{}\nGroup By: {:?}\nSelect: {:?}", err, &executor, grouping_columns, select);
+            warn!("Query result failed validation: {}\n{:#}\nGroup By: {:?}\nSelect: {:?}", err, &executor, grouping_columns, select);
             Err(err)
         } else {
             Ok((
