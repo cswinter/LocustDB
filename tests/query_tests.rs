@@ -15,7 +15,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
         env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.load_csv(
-        IngestFile::new("test_data/tiny.csv", "default")
+        LoadOptions::new("test_data/tiny.csv", "default")
             .with_partition_size(40)));
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
@@ -25,7 +25,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.load_csv(
-        IngestFile::new("test_data/edge_cases.csv", "default")
+        LoadOptions::new("test_data/edge_cases.csv", "default")
             .with_partition_size(3)));
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);

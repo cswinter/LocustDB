@@ -13,7 +13,7 @@ use QueryResult;
 use disk_store::interface::*;
 use disk_store::noop_storage::NoopStorage;
 use engine::query_task::QueryTask;
-use ingest::csv_loader::{CSVIngestionTask, IngestFile};
+use ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
 use mem_store::*;
 use scheduler::*;
 use syntax::parser;
@@ -81,7 +81,7 @@ impl LocustDB {
         Box::new(receiver.join(trace_receiver))
     }
 
-    pub fn load_csv(&self, options: IngestFile) -> impl Future<Item=Result<(), String>, Error=oneshot::Canceled> {
+    pub fn load_csv(&self, options: LoadOptions) -> impl Future<Item=Result<(), String>, Error=oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
         let task = CSVIngestionTask::new(
             options,
@@ -110,10 +110,13 @@ impl LocustDB {
 
     pub fn bulk_load(&self) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
         let max_partition = self.inner_locustdb.max_partition_id();
+        let disk_store = &self.inner_locustdb.storage;
         let mut receivers: Vec<Box<Future<Item=_, Error=_>>> = Vec::new();
         for start in (0..max_partition).step_by(50) {
+            let disk_store = disk_store.clone();
             let inner = self.inner_locustdb.clone();
-            let (task, receiver) = Task::from_fn(move || inner.bulk_load(start, start + 50));
+            let (task, receiver) = Task::from_fn(
+                move || disk_store.bulk_load(&inner, start, start + 50));
             receivers.push(Box::new(receiver));
             self.schedule(task);
         }

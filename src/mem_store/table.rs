@@ -86,7 +86,7 @@ impl Table {
         self.batch_if_needed(&mut buffer);
     }
 
-    pub fn load_batch(&self, partition: Partition) {
+    pub fn load_partition(&self, partition: Partition) {
         let mut partitions = self.partitions.write().unwrap();
         partitions.insert(partition.id(), Arc::new(partition));
     }

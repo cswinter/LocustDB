@@ -107,7 +107,7 @@ fn main() {
         } else if full_nyc {
             locustdb::nyc_taxi_data::ingest_file(&file, tablename)
         } else {
-            locustdb::IngestFile::new(&file, &tablename)
+            locustdb::LoadOptions::new(&file, &tablename)
         };
         let opts = base_opts.with_partition_size(partition_size);
         let load = locustdb.load_csv(opts);

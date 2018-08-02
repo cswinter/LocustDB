@@ -144,16 +144,13 @@ impl InnerLocustDB {
     }
 
 
-    pub fn store_partitions(&self, tablename: &str, partitions: Vec<Vec<Arc<Column>>>) {
-        // TODO(clemens): pid needs to be unique across all invocations, compactions and restore from DB
+    pub fn store_partition(&self, tablename: &str, partition: Vec<Arc<Column>>) {
         self.create_if_empty(tablename);
         let tables = self.tables.read().unwrap();
         let table = tables.get(tablename).unwrap();
-        for partition in partitions {
-            let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
-            self.storage.store_partition(pid, tablename, &partition);
-            table.load_batch(Partition::new(pid, partition, self.lru.clone()));
-        }
+        let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
+        self.storage.store_partition(pid, tablename, &partition);
+        table.load_partition(Partition::new(pid, partition, self.lru.clone()));
     }
 
     pub fn ingest(&self, table: &str, row: Vec<(String, RawVal)>) {
@@ -162,13 +159,10 @@ impl InnerLocustDB {
         tables.get(table).unwrap().ingest(row)
     }
 
-    pub fn bulk_load(&self, start: PartitionID, end: PartitionID) {
-        let columns = self.storage.bulk_load(start, end);
-        for (id, col) in columns {
-            let c = Arc::new(col);
-            for table in self.tables.read().unwrap().values() {
-                table.restore(id, c.clone());
-            }
+    pub fn restore(&self, id: PartitionID, column: Column) {
+        let column = Arc::new(column);
+        for table in self.tables.read().unwrap().values() {
+            table.restore(id, column.clone());
         }
     }
 

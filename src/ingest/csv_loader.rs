@@ -16,24 +16,24 @@ use stringpack::*;
 
 type IngestionTransform = HashMap<String, extractor::Extractor>;
 
-pub struct IngestFile {
+pub struct Options {
     filename: String,
     tablename: String,
-    chunk_size: usize,
-    col_names: Option<Vec<String>>,
+    partition_size: usize,
+    colnames: Option<Vec<String>>,
     extractors: IngestionTransform,
     ignore_cols: HashSet<String>,
     always_string: HashSet<String>,
     unzip: bool,
 }
 
-impl IngestFile {
-    pub fn new(filename: &str, tablename: &str) -> IngestFile {
-        IngestFile {
+impl Options {
+    pub fn new(filename: &str, tablename: &str) -> Options {
+        Options {
             filename: filename.to_owned(),
             tablename: tablename.to_owned(),
-            chunk_size: 1 << 16,
-            col_names: None,
+            partition_size: 1 << 16,
+            colnames: None,
             extractors: HashMap::new(),
             ignore_cols: HashSet::new(),
             always_string: HashSet::new(),
@@ -41,75 +41,63 @@ impl IngestFile {
         }
     }
 
-    pub fn with_partition_size(mut self, chunk_size: usize) -> IngestFile {
-        self.chunk_size = chunk_size;
+    pub fn with_partition_size(mut self, chunk_size: usize) -> Options {
+        self.partition_size = chunk_size;
         self
     }
 
-    pub fn with_col_names(mut self, col_names: Vec<String>) -> IngestFile {
-        self.col_names = Some(col_names);
+    pub fn with_column_names(mut self, col_names: Vec<String>) -> Options {
+        self.colnames = Some(col_names);
         self
     }
 
-    pub fn with_extractors(mut self, extractors: &[(&str, extractor::Extractor)]) -> IngestFile {
+    pub fn with_extractors(mut self, extractors: &[(&str, extractor::Extractor)]) -> Options {
         self.extractors = extractors.iter().map(|&(col, extractor)| (col.to_owned(), extractor)).collect();
         self
     }
 
-    pub fn with_ignore_cols(mut self, ignore: &[String]) -> IngestFile {
+    pub fn with_ignore_cols(mut self, ignore: &[String]) -> Options {
         self.ignore_cols = ignore.into_iter().map(|x| x.to_owned()).collect();
         self
     }
 
-    pub fn with_always_string(mut self, always_string: &[&str]) -> IngestFile {
+    pub fn with_always_string(mut self, always_string: &[&str]) -> Options {
         self.always_string = always_string.into_iter().map(|&x| x.to_owned()).collect();
         self
     }
 }
 
-pub fn ingest_file(filename: &str,
-                   colnames: Option<Vec<String>>,
-                   chunk_size: usize,
-                   extractors: &IngestionTransform,
-                   unzip: bool,
-                   ignore_cols: &HashSet<String>,
-                   always_string: &HashSet<String>) -> Result<Vec<Vec<Arc<Column>>>, String> {
+pub fn ingest_file(ldb: &InnerLocustDB, opts: &Options) -> Result<(), String> {
     // Can't combine these two branches because csv::Reader takes a type param which differs for creating from Reader/File
-    if unzip {
-        let f = File::open(filename).map_err(|x| x.to_string())?;
+    if opts.unzip {
+        let f = File::open(&opts.filename).map_err(|x| x.to_string())?;
         let decoded = GzDecoder::new(f);
         let mut reader = csv::ReaderBuilder::new()
-            .has_headers(colnames.is_none())
+            .has_headers(opts.colnames.is_none())
             .from_reader(decoded);
-        let headers = match colnames {
-            Some(colnames) => colnames,
+        let headers = match opts.colnames {
+            Some(ref colnames) => colnames.clone(),
             None => reader.headers().unwrap().iter().map(str::to_owned).collect()
         };
-        Ok(auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors, ignore_cols, always_string))
+        auto_ingest(ldb, reader.records().map(|r| r.unwrap()), &headers, opts)
     } else {
         let mut reader = csv::ReaderBuilder::new()
-            .has_headers(colnames.is_none())
-            .from_path(filename)
+            .has_headers(opts.colnames.is_none())
+            .from_path(&opts.filename)
             .map_err(|x| x.to_string())?;
-        let headers = match colnames {
-            Some(colnames) => colnames,
+        let headers = match opts.colnames {
+            Some(ref colnames) => colnames.clone(),
             None => reader.headers().unwrap().iter().map(str::to_owned).collect()
         };
-        Ok(auto_ingest(reader.records().map(|r| r.unwrap()), &headers, chunk_size, extractors, ignore_cols, always_string))
+        auto_ingest(ldb, reader.records().map(|r| r.unwrap()), &headers, opts)
     }
 }
 
-fn auto_ingest<T: Iterator<Item=csv::StringRecord>>(records: T,
-                                                    colnames: &[String],
-                                                    batch_size: usize,
-                                                    extractors: &IngestionTransform,
-                                                    ignore_cols: &HashSet<String>,
-                                                    always_string: &HashSet<String>) -> Vec<Vec<Arc<Column>>> {
-    let num_columns = colnames.len();
-    let mut batches = Vec::new();
-    let ignore = colnames.iter().map(|x| ignore_cols.contains(x)).collect::<Vec<_>>();
-    let string = colnames.iter().map(|x| always_string.contains(x)).collect::<Vec<_>>();
-    let mut raw_cols = (0..num_columns).map(|_| RawCol::new()).collect::<Vec<_>>();
+fn auto_ingest<T>(ldb: &InnerLocustDB, records: T, colnames: &[String], opts: &Options) -> Result<(), String>
+    where T: Iterator<Item=csv::StringRecord> {
+    let ignore = colnames.iter().map(|x| opts.ignore_cols.contains(x)).collect::<Vec<_>>();
+    let string = colnames.iter().map(|x| opts.always_string.contains(x)).collect::<Vec<_>>();
+    let mut raw_cols = (0..colnames.len()).map(|_| RawCol::new()).collect::<Vec<_>>();
     let mut row_num = 0usize;
     for row in records {
         for (i, val) in row.iter().enumerate() {
@@ -118,17 +106,18 @@ fn auto_ingest<T: Iterator<Item=csv::StringRecord>>(records: T,
             }
         }
 
-        if row_num % batch_size == batch_size - 1 {
-            batches.push(create_batch(&mut raw_cols, colnames, extractors, &ignore, &string));
+        if row_num % opts.partition_size == opts.partition_size - 1 {
+            let partition = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
+            ldb.store_partition(&opts.tablename, partition);
         }
         row_num += 1;
     }
 
-    if row_num % batch_size != 0 {
-        batches.push(create_batch(&mut raw_cols, colnames, extractors, &ignore, &string));
+    if row_num % opts.partition_size != 0 {
+        let partition = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
+        ldb.store_partition(&opts.tablename, partition);
     }
-
-    batches
+    Ok(())
 }
 
 fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &IngestionTransform, ignore: &[bool], string: &[bool]) -> Vec<Arc<Column>> {
@@ -146,13 +135,13 @@ fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &Ingestion
 }
 
 pub struct CSVIngestionTask {
-    options: IngestFile,
+    options: Options,
     locustdb: Arc<InnerLocustDB>,
     sender: SharedSender<Result<(), String>>,
 }
 
 impl CSVIngestionTask {
-    pub fn new(options: IngestFile,
+    pub fn new(options: Options,
                locustdb: Arc<InnerLocustDB>,
                sender: SharedSender<Result<(), String>>) -> CSVIngestionTask {
         CSVIngestionTask {
@@ -165,21 +154,7 @@ impl CSVIngestionTask {
 
 impl Task for CSVIngestionTask {
     fn execute(&self) {
-        let batches = ingest_file(
-            &self.options.filename,
-            self.options.col_names.clone(),
-            self.options.chunk_size,
-            &self.options.extractors,
-            self.options.unzip,
-            &self.options.ignore_cols,
-            &self.options.always_string);
-        match batches {
-            Ok(batches) => {
-                self.locustdb.store_partitions(&self.options.tablename, batches);
-                self.sender.send(Ok(()));
-            }
-            Err(msg) => self.sender.send(Err(msg))
-        }
+        self.sender.send(ingest_file(&self.locustdb, &self.options))
     }
     fn completed(&self) -> bool { false }
     fn multithreaded(&self) -> bool { false }

@@ -8,6 +8,7 @@ use self::rocksdb::*;
 
 use disk_store::interface::*;
 use mem_store::column::Column;
+use scheduler::inner_locustdb::InnerLocustDB;
 
 pub struct RocksDB {
     db: DB,
@@ -65,19 +66,17 @@ impl DiskStore for RocksDB {
         col
     }
 
-    fn bulk_load(&self, start: PartitionID, end: PartitionID) -> Vec<(PartitionID, Column)> {
+    fn bulk_load(&self, ldb: &InnerLocustDB, start: PartitionID, end: PartitionID) {
         let mut key = [0; 8];
         BigEndian::write_u64(&mut key, start as u64);
-        let mut result = Vec::new();
         let iterator = self.db
             .iterator_cf(self.partitions(), IteratorMode::From(&key, Direction::Forward))
             .unwrap();
         for (key, value) in iterator {
             let id = BigEndian::read_u64(&key);
             if id >= end as u64 { break; }
-            result.push((id, deserialize(&value).unwrap()));
+            ldb.restore(id, deserialize(&value).unwrap());
         }
-        result
     }
 
     fn store_partition(&self, partition: PartitionID, tablename: &str, columns: &Vec<Arc<Column>>) {

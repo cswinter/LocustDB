@@ -47,7 +47,7 @@ pub mod unit_fmt;
 
 pub use engine::query_task::QueryOutput;
 pub use errors::QueryError;
-pub use ingest::csv_loader::IngestFile;
+pub use ingest::csv_loader::Options as LoadOptions;
 pub use ingest::extractor;
 pub use ingest::nyc_taxi_data;
 pub use ingest::raw_val::RawVal as Value;
