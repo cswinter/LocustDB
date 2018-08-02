@@ -2,12 +2,9 @@
 #[macro_use]
 extern crate nom;
 #[macro_use]
-extern crate serde_derive;
-#[macro_use]
 extern crate failure_derive;
 #[macro_use]
 extern crate log;
-extern crate bincode;
 extern crate chrono;
 extern crate failure;
 extern crate futures_core;
@@ -22,14 +19,14 @@ extern crate num;
 extern crate num_cpus;
 extern crate regex;
 extern crate seahash;
-extern crate serde;
 extern crate time;
 extern crate tempdir;
 extern crate fnv;
 extern crate byteorder;
 extern crate lru;
 extern crate crypto;
-
+#[cfg(feature = "enable_rocksdb")]
+extern crate capnp;
 
 #[macro_use]
 mod trace;
@@ -62,3 +59,10 @@ pub type QueryResult = Result<QueryOutput, QueryError>;
 pub use trace::_replace;
 #[doc(hidden)]
 pub use trace::_start;
+
+#[allow(warnings)]
+#[cfg(feature = "enable_rocksdb")]
+pub(crate) mod storage_format_capnp {
+    include!(concat!(env!("OUT_DIR"), "/storage_format_capnp.rs"));
+}
+

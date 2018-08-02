@@ -25,7 +25,7 @@ pub enum QueryPlan {
 
     DictLookup(Box<QueryPlan>, EncodingType, Box<QueryPlan>, Box<QueryPlan>),
     InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>, Box<QueryPlan>),
-    Widen(Box<QueryPlan>, EncodingType, EncodingType),
+    Cast(Box<QueryPlan>, EncodingType, EncodingType),
     LZ4Decode(Box<QueryPlan>, usize, EncodingType),
     UnpackStrings(Box<QueryPlan>),
     DeltaDecode(Box<QueryPlan>, EncodingType),
@@ -99,11 +99,8 @@ fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>)
                 prepare(*dict_data, result),
                 prepare(*constant, result),
                 result.named_buffer("encoded")),
-        QueryPlan::Widen(plan, initial_type, target_type) => if initial_type == target_type {
-            return prepare(*plan, result);
-        } else {
-            VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("casted"), initial_type, target_type)
-        },
+        QueryPlan::Cast(plan, initial_type, target_type) =>
+            VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("casted"), initial_type, target_type),
         QueryPlan::DeltaDecode(plan, t) =>
             VecOperator::delta_decode(prepare(*plan, result), result.named_buffer("decoded"), t),
         QueryPlan::LZ4Decode(plan, decoded_len, t) =>
@@ -417,7 +414,7 @@ impl QueryPlan {
                 .map(|(gk_plan, gk_type)| {
                     let max_cardinality = QueryPlan::encoding_range(&gk_plan).map_or(1 << 62, |i| i.1);
                     if QueryPlan::encoding_range(&gk_plan).is_none() {
-                        println!("Uknown range for {:?}", &gk_plan);
+                        println!("Unknown range for {:?}", &gk_plan);
                     }
                     let decoded_group_by = gk_type.codec.clone().map_or(
                         QueryPlan::EncodedGroupByPlaceholder,
@@ -446,9 +443,7 @@ impl QueryPlan {
                                          Box::new(query_plan),
                                          Box::new(QueryPlan::Constant(RawVal::Int(-min), true)))
                     } else {
-                        QueryPlan::Widen(Box::new(query_plan),
-                                         plan_type.encoding_type(),
-                                         EncodingType::I64)
+                        syntax::cast(query_plan, plan_type.encoding_type(), EncodingType::I64)
                     };
 
                     #[cfg(feature = "nerf")]
@@ -473,10 +468,7 @@ impl QueryPlan {
                             Box::new(decode_plan),
                             Box::new(QueryPlan::Constant(RawVal::Int(min), true)));
                     }
-                    decode_plan = QueryPlan::Widen(
-                        Box::new(decode_plan),
-                        EncodingType::I64,
-                        plan_type.encoding_type());
+                    decode_plan = syntax::cast(decode_plan, EncodingType::I64, plan_type.encoding_type());
                     if let Some(codec) = plan_type.codec.clone() {
                         decode_plan = *codec.decode(Box::new(decode_plan));
                     }
@@ -505,6 +497,9 @@ impl QueryPlan {
     }
 
     fn encoding_range(&self) -> Option<(i64, i64)> {
+        // TODO(clemens): need more principled approach - this currently doesn't work for all partially decodings
+        // Example: [LZ4, Add, Delta] will have as bottom decoding range the range after Delta, but without the Add :/
+        // This works in this case because we always have to decode the Delta, but is hard to reason about and has caused bugs
         use self::QueryPlan::*;
         match *self {
             ReadColumnSection(_, _, range) => range,
@@ -519,8 +514,9 @@ impl QueryPlan {
                     if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
             AddVS(_, ref left, box Constant(RawVal::Int(c), _)) =>
                 left.encoding_range().map(|(min, max)| (min + c, max + c)),
-            Widen(ref left, _, _) => left.encoding_range(),
+            Cast(ref left, _, _) => left.encoding_range(),
             LZ4Decode(ref plan, _, _) => plan.encoding_range(),
+            DeltaDecode(ref plan, _) => plan.encoding_range(),
             _ => None, // TODO(clemens): many more cases where we can determine range
         }
     }
@@ -563,12 +559,12 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s3);
                 InverseDictLookup(dict_indices, dict_data, constant)
             }
-            Widen(plan, initial_type, target_type) => {
+            Cast(plan, initial_type, target_type) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
                 hasher.input(&discriminant_value(&initial_type).to_bytes());
                 hasher.input(&discriminant_value(&target_type).to_bytes());
-                Widen(plan, initial_type, target_type)
+                Cast(plan, initial_type, target_type)
             }
             LZ4Decode(plan, decoded_len, t) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
@@ -749,4 +745,17 @@ fn to_hex_string(bytes: &[u8]) -> String {
     bytes.iter()
         .map(|b| format!("{:02X}", b))
         .join("")
+}
+
+mod syntax {
+    use super::*;
+    use super::QueryPlan::*;
+
+    pub fn cast(plan: QueryPlan, input_type: EncodingType, output_type: EncodingType) -> QueryPlan {
+        if input_type == output_type {
+            plan
+        } else {
+            Cast(Box::new(plan), input_type, output_type)
+        }
+    }
 }

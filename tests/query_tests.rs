@@ -11,8 +11,7 @@ use locustdb::nyc_taxi_data;
 use std::cmp::min;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
-    let _ =
-        env_logger::try_init();
+    let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/tiny.csv", "default")
@@ -23,7 +22,9 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    let locustdb = LocustDB::memory_only();
+    #[allow(unused_mut)]
+    let mut opts = Options::default();
+    let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/edge_cases.csv", "default")
             .with_partition_size(3)));
@@ -33,7 +34,10 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
 
 fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    let locustdb = LocustDB::memory_only();
+    #[allow(unused_mut)]
+    let mut opts = Options::default();
+    // opts.threads = 1;
+    let locustdb = LocustDB::new(&opts);
     let load = block_on(locustdb.load_csv(
         nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
             .with_partition_size(999)));
@@ -240,7 +244,7 @@ fn test_not_equals() {
 fn z_test_count_by_passenger_count_pickup_year_trip_distance() {
     use Value::*;
     test_query_nyc(
-        "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;",
+        "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default limit 10000;",
         &[
             vec![Int(0), Int(2013), Int(0), Int(2)],
             vec![Int(0), Int(2013), Int(2), Int(1)],
@@ -296,18 +300,20 @@ fn test_restore_from_disk() {
     use tempdir::TempDir;
     let _ = env_logger::try_init();
     let tmp_dir = TempDir::new("rocks").unwrap();
+    let mut opts = Options::default();
+    opts.db_path = Some(tmp_dir.path().to_str().unwrap().to_string());
     {
-        let locustdb = LocustDB::disk_backed(tmp_dir.path().to_str().unwrap());
+        let locustdb = LocustDB::new(&opts);
         let load = block_on(locustdb.load_csv(
             nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
                 .with_partition_size(999)));
         load.unwrap().ok();
-        // Dropping the LocustDB object will cause all threads to be stopped
-        // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
-        // TODO(clemens): make drop better
-        thread::sleep(time::Duration::from_millis(1000));
     }
-    let locustdb = LocustDB::disk_backed(tmp_dir.path().to_str().unwrap());
+    // Dropping the LocustDB object will cause all threads to be stopped
+    // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
+    // TODO(clemens): make drop better?
+    thread::sleep(time::Duration::from_millis(2000));
+    let locustdb = LocustDB::new(&opts);
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     let actual_rows = result.0.unwrap().rows;

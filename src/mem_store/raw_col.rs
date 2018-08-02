@@ -7,7 +7,7 @@ use mem_store::*;
 use mem_store::column_builder::*;
 
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, HeapSizeOf)]
+#[derive(PartialEq, Debug, HeapSizeOf)]
 pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
@@ -78,7 +78,7 @@ impl MixedCol {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone, HeapSizeOf)]
+#[derive(PartialEq, Debug, Copy, Clone, HeapSizeOf)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,

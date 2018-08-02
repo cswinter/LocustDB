@@ -96,7 +96,11 @@ impl Query {
     }
 
     #[inline(never)] // produces more useful profiles
-    pub fn run_aggregate<'a>(&self, columns: &'a HashMap<String, Arc<Column>>, explain: bool, show: bool)
+    pub fn run_aggregate<'a>(&self,
+                             columns: &'a HashMap<String, Arc<Column>>,
+                             explain: bool,
+                             show: bool,
+                             partition: usize)
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 
@@ -270,8 +274,11 @@ impl Query {
             }).collect();
         }
 
+        for c in columns {
+            debug!("{}: {:?}", partition, c);
+        }
         let mut results = executor.prepare(Query::column_data(columns));
-        // println!("{:#}", &executor);
+        debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
         let select_cols = select.iter().map(|&(i, _)| results.collect(i)).collect();
         let group_by_cols = grouping_columns.iter().map(|&(i, _)| results.collect(i)).collect();
@@ -288,7 +295,8 @@ impl Query {
             unsafe_referenced_buffers: results.collect_pinned(),
         };
         if let Err(err) = batch.validate() {
-            warn!("Query result failed validation: {}\n{:#}\nGroup By: {:?}\nSelect: {:?}", err, &executor, grouping_columns, select);
+            warn!("Query result failed validation (partition {}): {}\n{:#}\nGroup By: {:?}\nSelect: {:?}",
+                  partition, err, &executor, grouping_columns, select);
             Err(err)
         } else {
             Ok((

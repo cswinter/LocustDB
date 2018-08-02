@@ -5,7 +5,7 @@ use ingest::input_column::InputColumn;
 use std::cmp;
 
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, HeapSizeOf)]
+#[derive(PartialEq, Debug, HeapSizeOf)]
 pub struct Buffer {
     pub buffer: HashMap<String, MixedCol>,
     pub length: usize,

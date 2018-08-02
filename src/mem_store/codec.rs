@@ -3,7 +3,7 @@ use engine::types::*;
 use ingest::raw_val::RawVal;
 
 
-#[derive(Debug, Serialize, Deserialize, Clone, HeapSizeOf)]
+#[derive(Debug, Clone, HeapSizeOf)]
 pub struct Codec {
     ops: Vec<CodecOp>,
     column_name: String,
@@ -118,7 +118,7 @@ impl Codec {
                     Box::new(QueryPlan::DeltaDecode(stack.pop().unwrap(), t))
                 }
                 CodecOp::ToI64(t) => {
-                    Box::new(QueryPlan::Widen(
+                    Box::new(QueryPlan::Cast(
                         stack.pop().unwrap(),
                         t,
                         EncodingType::I64))
@@ -162,6 +162,7 @@ impl Codec {
         (new_codec, self.decode_ops(&fixed_width, plan))
     }
 
+    pub fn ops(&self) -> &[CodecOp] { &self.ops }
     pub fn encoding_type(&self) -> EncodingType { self.encoding_type }
     pub fn decoded_type(&self) -> BasicType { self.decoded_type }
     pub fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }
@@ -248,17 +249,17 @@ impl Codec {
         }
     }
 
-    pub fn signature(&self) -> String {
+    pub fn signature(&self, alternate: bool) -> String {
         let mut s = String::new();
         for op in &self.ops {
-            s += &op.signature();
+            s += &op.signature(alternate);
             s += " ";
         }
         s
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, HeapSizeOf)]
+#[derive(Debug, Clone, Copy, PartialEq, HeapSizeOf)]
 pub enum CodecOp {
     Add(EncodingType, i64),
     Delta(EncodingType),
@@ -362,14 +363,22 @@ impl CodecOp {
         }
     }
 
-    fn signature(&self) -> String {
+    fn signature(&self, alternate: bool) -> String {
         match self {
-            CodecOp::Add(t, _) => format!("Add({:?})", t),
+            CodecOp::Add(t, amount) => if alternate {
+                format!("Add({:?}, {})", t, amount)
+            } else {
+                format!("Add({:?})", t)
+            }
             CodecOp::Delta(t) => format!("Delta({:?})", t),
             CodecOp::ToI64(t) => format!("ToI64({:?})", t),
             CodecOp::PushDataSection(i) => format!("Data({})", i),
             CodecOp::DictLookup(t) => format!("Dict({:?})", t),
-            CodecOp::LZ4(t, _) => format!("LZ4({:?})", t),
+            CodecOp::LZ4(t, decoded_len) => if alternate {
+                format!("LZ4({:?}, {})", t, decoded_len)
+            } else {
+                format!("LZ4({:?})", t)
+            }
             CodecOp::UnpackStrings => "StrUnpack".to_string(),
             CodecOp::Unknown => "Unknown".to_string(),
         }

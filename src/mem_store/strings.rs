@@ -36,7 +36,7 @@ pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &st
                 vec![DataSection::U8(packed.into_vec())],
             );
             column.lz4_encode();
-            return Arc::new(column)
+            return Arc::new(column);
         }
     }
     let dict_size = unique_values.len();
@@ -146,14 +146,14 @@ pub fn dictionary_compress<T: PrimInt>(strings: &[Option<Rc<String>>],
     (encoded_values, dictionary_indices, dictionary_data)
 }
 
-pub fn dict_codec(index_type: EncodingType) -> Codec {
-    Codec::new(vec![
+pub fn dict_codec(index_type: EncodingType) -> Vec<CodecOp> {
+    vec![
         CodecOp::PushDataSection(1),
         CodecOp::PushDataSection(2),
         CodecOp::DictLookup(index_type),
-    ])
+    ]
 }
 
-pub fn string_pack_codec() -> Codec {
-    Codec::new(vec![CodecOp::UnpackStrings])
+pub fn string_pack_codec() -> Vec<CodecOp> {
+    vec![CodecOp::UnpackStrings]
 }

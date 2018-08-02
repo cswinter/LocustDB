@@ -10,6 +10,9 @@ pub struct IntegerColumn;
 
 impl IntegerColumn {
     pub fn new_boxed(name: &str, mut values: Vec<i64>, mut min: i64, mut max: i64, delta_encode: bool) -> Arc<Column> {
+        let original_range = Some((min, max));
+        let min0 = min;
+        let max0 = max;
         if delta_encode && values.len() > 0 {
             let mut previous = values[0];
             max = previous;
@@ -22,19 +25,18 @@ impl IntegerColumn {
                 if min > *curr { min = *curr }
             }
         }
-        let original_range = Some((min, max));
         let mut column = if min >= 0 && max <= From::from(u8::MAX) {
-            IntegerColumn::create_col::<u8>(name, values, 0, min, max, delta_encode, EncodingType::U8)
+            IntegerColumn::create_col::<u8>(name, values, 0, min0, max0, delta_encode, EncodingType::U8)
         } else if max - min <= From::from(u8::MAX) {
-            IntegerColumn::create_col::<u8>(name, values, min, min, max, delta_encode, EncodingType::U8)
+            IntegerColumn::create_col::<u8>(name, values, min, min0, max0, delta_encode, EncodingType::U8)
         } else if min >= 0 && max <= From::from(u16::MAX) {
-            IntegerColumn::create_col::<u16>(name, values, 0, min, max, delta_encode, EncodingType::U16)
+            IntegerColumn::create_col::<u16>(name, values, 0, min0, max0, delta_encode, EncodingType::U16)
         } else if max - min <= From::from(u16::MAX) {
-            IntegerColumn::create_col::<u16>(name, values, min, min, max, delta_encode, EncodingType::U16)
+            IntegerColumn::create_col::<u16>(name, values, min, min0, max0, delta_encode, EncodingType::U16)
         } else if min >= 0 && max <= From::from(u32::MAX) {
-            IntegerColumn::create_col::<u32>(name, values, 0, min, max, delta_encode, EncodingType::U32)
+            IntegerColumn::create_col::<u32>(name, values, 0, min0, max0, delta_encode, EncodingType::U32)
         } else if max - min <= From::from(u32::MAX) {
-            IntegerColumn::create_col::<u32>(name, values, min, min, max, delta_encode, EncodingType::U32)
+            IntegerColumn::create_col::<u32>(name, values, min, min0, max0, delta_encode, EncodingType::U32)
         } else {
             values.shrink_to_fit();
             if delta_encode {
@@ -43,14 +45,14 @@ impl IntegerColumn {
                     name,
                     values.len(),
                     original_range,
-                    Codec::new(vec![CodecOp::Delta(EncodingType::I64)]),
+                    vec![CodecOp::Delta(EncodingType::I64)],
                     vec![DataSection::I64(values)])
             } else {
                 Column::new(
                     name,
                     values.len(),
                     original_range,
-                    Codec::identity(BasicType::Integer),
+                    vec![],
                     vec![DataSection::I64(values)])
             }
         };
@@ -68,7 +70,6 @@ impl IntegerColumn {
             (false, true) => vec![CodecOp::Add(t, offset), CodecOp::Delta(EncodingType::I64)],
             (false, false) => vec![CodecOp::Add(t, offset)],
         };
-        let codec = Codec::new(codec);
 
         Column::new(
             name,

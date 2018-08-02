@@ -134,7 +134,7 @@ impl QueryTask {
             let (mut batch_result, explain) = match if self.aggregate.is_empty() {
                 self.query.run(unsafe { mem::transmute(&cols) }, self.explain, show)
             } else {
-                self.query.run_aggregate(unsafe { mem::transmute(&cols) }, self.explain, show)
+                self.query.run_aggregate(unsafe { mem::transmute(&cols) }, self.explain, show, id)
             } {
                 Ok(result) => result,
                 Err(error) => {

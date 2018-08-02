@@ -1,3 +1,5 @@
+use std::fmt;
+
 use mem_store::*;
 use engine::typed_vec::AnyVec;
 use engine::types::*;
@@ -6,7 +8,7 @@ use mem_store::lz4;
 use heapsize::HeapSizeOf;
 
 
-#[derive(Debug, Serialize, Deserialize, HeapSizeOf)]
+#[derive(HeapSizeOf)]
 pub struct Column {
     name: String,
     len: usize,
@@ -19,8 +21,13 @@ impl Column {
     pub fn new(name: &str,
                len: usize,
                range: Option<(i64, i64)>,
-               mut codec: Codec,
+               codec: Vec<CodecOp>,
                data: Vec<DataSection>) -> Column {
+        let mut codec = if codec.is_empty() {
+            Codec::identity(data[0].encoding_type().cast_to_basic())
+        } else {
+            Codec::new(codec)
+        };
         codec.set_column_name(name);
         Column {
             name: name.to_string(),
@@ -53,6 +60,7 @@ impl Column {
 
     pub fn name(&self) -> &str { &self.name }
     pub fn len(&self) -> usize { self.len }
+    pub fn data(&self) -> &[DataSection] { &self.data }
     pub fn codec(&self) -> Codec { self.codec.clone() }
     pub fn basic_type(&self) -> BasicType { self.codec.decoded_type() }
     pub fn encoding_type(&self) -> EncodingType { self.codec.encoding_type() }
@@ -70,7 +78,7 @@ impl Column {
         tree.size_bytes += size_bytes;
         tree.rows += self.len;
         if depth > 1 {
-            let signature = self.codec().signature().to_string();
+            let signature = self.codec().signature(false).to_string();
             let codec_tree = tree.encodings
                 .entry(signature.clone())
                 .or_insert(MemTreeEncoding::default());
@@ -98,8 +106,18 @@ impl Column {
     }
 }
 
+impl fmt::Debug for Column {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}[{}][{:?}] {:#}, [{:?}]",
+               &self.name,
+               self.len(),
+               self.range,
+               self.codec.signature(true),
+               self.data.iter().map(|d| d.len()).collect::<Vec<_>>())
+    }
+}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum DataSection {
     U8(Vec<u8>),
     U16(Vec<u16>),
@@ -140,6 +158,17 @@ impl DataSection {
             DataSection::U64(ref x) => x.capacity(),
             DataSection::I64(ref x) => x.capacity(),
             DataSection::Null(ref x) => *x,
+        }
+    }
+
+    pub fn encoding_type(&self) -> EncodingType {
+        match self {
+            DataSection::U8(_) => EncodingType::U8,
+            DataSection::U16(_) => EncodingType::U16,
+            DataSection::U32(_) => EncodingType::U32,
+            DataSection::U64(_) => EncodingType::U64,
+            DataSection::I64(_) => EncodingType::I64,
+            DataSection::Null(_) => EncodingType::Null,
         }
     }
 

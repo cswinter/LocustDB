@@ -181,7 +181,7 @@ impl HeapSizeOf for Table {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Metadata {
     pub name: String,
     pub batch_count: u64,

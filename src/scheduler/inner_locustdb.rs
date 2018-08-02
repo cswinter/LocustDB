@@ -84,6 +84,7 @@ impl InnerLocustDB {
 
     pub fn stop(&self) {
         // Acquire task_queue_guard to make sure that there are no threads that have checked self.running but not waited on idle_queue yet.
+        info!("Stopping database...");
         let _ = self.task_queue.lock();
         self.running.store(false, Ordering::SeqCst);
         self.idle_queue.notify_all();
@@ -215,7 +216,7 @@ impl InnerLocustDB {
     }
 
     fn enforce_mem_limit(ldb: Arc<InnerLocustDB>) {
-        loop {
+        while ldb.running.load(Ordering::SeqCst) {
             let mut mem_usage_bytes: usize = {
                 let tables = ldb.tables.read().unwrap();
                 tables.values().map(|table| table.heap_size_of_children()).sum()
@@ -244,6 +245,12 @@ impl InnerLocustDB {
 
     pub fn max_partition_id(&self) -> u64 {
         self.next_partition_id.load(Ordering::SeqCst) as u64
+    }
+}
+
+impl Drop for InnerLocustDB {
+    fn drop(&mut self) {
+        info!("Stopped");
     }
 }
 
