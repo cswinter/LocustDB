@@ -126,6 +126,18 @@ fn lt_filter_on_offset_encoded_column() {
 }
 
 #[test]
+fn test_group_by_limit() {
+    use Value::*;
+    test_query_ec(
+        "select enum, enum, count(0) from default limit 2;",
+        &[
+            vec![Str("aa".to_string()), Str("aa".to_string()), Int(5)],
+            vec![Str("bb".to_string()), Str("bb".to_string()), Int(3)],
+        ],
+    )
+}
+
+#[test]
 fn group_by_string_filter_string_eq() {
     test_query(
         "select first_name, count(1) from default where first_name = \"Adam\";",

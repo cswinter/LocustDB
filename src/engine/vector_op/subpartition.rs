@@ -78,7 +78,7 @@ mod tests {
     fn test_multipass_grouping() {
         let left1 = vec!["A", "A", "A", "C", "P"];
         let right1 = vec!["A", "A", "B", "C", "X", "X", "Z"];
-        let result = partition::<&str>(&left1, &right1, 10);
+        let result = partition::<&str>(&left1, &right1, 7);
         assert_eq!(result, vec![
             Premerge { left: 3, right: 2 },
             Premerge { left: 0, right: 1 },
