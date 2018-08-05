@@ -51,6 +51,7 @@ use engine::vector_op::to_year::ToYear;
 use engine::vector_op::top_n::TopN;
 use engine::vector_op::type_conversion::TypeConversionOperator;
 use engine::vector_op::unpack_strings::UnpackStrings;
+use engine::vector_op::unhexpack_strings::UnhexpackStrings;
 use engine::vector_op::vec_const_bool_op::*;
 
 
@@ -210,6 +211,10 @@ impl<'a> VecOperator<'a> {
 
     pub fn unpack_strings(packed: BufferRef, unpacked: BufferRef) -> BoxedOperator<'a> {
         Box::new(UnpackStrings::<'a> { packed, unpacked, iterator: None, has_more: true })
+    }
+
+    pub fn unhexpack_strings(packed: BufferRef, unpacked: BufferRef, stringstore: BufferRef, uppercase: bool, total_bytes: usize) -> BoxedOperator<'a> {
+        Box::new(UnhexpackStrings::<'a> { packed, unpacked, stringstore, uppercase, total_bytes, iterator: None, has_more: true })
     }
 
     pub fn delta_decode(encoded: BufferRef, decoded: BufferRef, t: EncodingType) -> BoxedOperator<'a> {

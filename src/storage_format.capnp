@@ -31,6 +31,7 @@ struct CodecOp {
         dictLookup @4 :EncodingType;
         lz4 @5 :LZ4;
         unpackStrings @6 :Void;
+        unhexpackStrings @7 :UnhexpackStrings;
     }
 }
 
@@ -53,6 +54,11 @@ struct Add {
 struct LZ4 {
     type @0 :EncodingType;
     lenDecoded @1 :UInt64;
+}
+
+struct UnhexpackStrings {
+    uppercase @0 :Bool;
+    totalBytes @1 :UInt64;
 }
 
 enum EncodingType {

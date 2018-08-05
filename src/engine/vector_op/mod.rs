@@ -30,6 +30,7 @@ mod sort_indices;
 mod sum;
 mod to_year;
 mod top_n;
+mod unhexpack_strings;
 mod unpack_strings;
 mod type_conversion;
 mod vec_const_bool_op;

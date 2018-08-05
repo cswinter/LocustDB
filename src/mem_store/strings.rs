@@ -8,6 +8,7 @@ use std::{u8, u16};
 
 use num::PrimInt;
 use seahash::SeaHasher;
+use hex;
 
 use stringpack::*;
 use engine::types::*;
@@ -20,20 +21,32 @@ type HashSetSea<K> = HashSet<K, BuildHasherDefault<SeaHasher>>;
 
 const DICTIONARY_RATIO: usize = 2;
 
-pub fn fast_build_string_column<'a, T: Iterator<Item=&'a str> + Clone>(name: &str, strings: T, len: usize) -> Arc<Column> {
+pub fn fast_build_string_column<'a, T>(name: &str,
+                                       strings: T,
+                                       len: usize,
+                                       lhex: bool,
+                                       uhex: bool,
+                                       total_bytes: usize)
+                                       -> Arc<Column> where T: Iterator<Item=&'a str> + Clone {
     let mut unique_values = HashSetSea::default();
     for s in strings.clone() {
         unique_values.insert(s);
         // TODO(clemens): is 2 the right constant? and should probably also depend on the length of the strings
         // TODO(clemens): len > 1000 || name == "string_packed" is a hack to make tests use dictionary encoding. Remove once we are able to group by string packed columns.
         if unique_values.len() == len / DICTIONARY_RATIO && (len > 1000 || name == "string_packed") {
-            let packed = PackedStrings::from_iterator(strings);
+            let (codec, data) = if (lhex || uhex) && total_bytes / len > 5 {
+                let packed = PackedBytes::from_iterator(strings.map(|s| hex::decode(s).unwrap()));
+                (vec![CodecOp::UnhexpackStrings(uhex, total_bytes)], DataSection::U8(packed.into_vec()))
+            } else {
+                let packed = PackedStrings::from_iterator(strings);
+                (string_pack_codec(), DataSection::U8(packed.into_vec()))
+            };
             let mut column = Column::new(
                 name,
                 len,
                 None,
-                string_pack_codec(),
-                vec![DataSection::U8(packed.into_vec())],
+                codec,
+                vec![data],
             );
             column.lz4_encode();
             return Arc::new(column);

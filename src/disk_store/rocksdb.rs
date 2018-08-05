@@ -131,6 +131,10 @@ fn deserialize_column(data: &[u8]) -> Column {
                 CodecOp::LZ4(deserialize_type(lz4.get_type().unwrap()), lz4.get_len_decoded() as usize)
             }
             UnpackStrings(_) => CodecOp::UnpackStrings,
+            UnhexpackStrings(uhps) => {
+                let uhps = uhps.unwrap();
+                CodecOp::UnhexpackStrings(uhps.get_uppercase(), uhps.get_total_bytes() as usize)
+            }
         }
     }).collect::<Vec<_>>();
 
@@ -229,6 +233,11 @@ fn serialize_column(col: &Column) -> Vec<u8> {
                         lz4.set_len_decoded(decoded_length as u64);
                     }
                     CodecOp::UnpackStrings => capnp_op.set_unpack_strings(()),
+                    CodecOp::UnhexpackStrings(uppercase, total_bytes) => {
+                        let mut uhps = capnp_op.init_unhexpack_strings();
+                        uhps.set_uppercase(uppercase);
+                        uhps.set_total_bytes(total_bytes as u64);
+                    }
                     CodecOp::Unknown => panic!("Trying to serialize CodecOp::Unkown"),
                 }
             }

@@ -28,6 +28,7 @@ pub enum QueryPlan {
     Cast(Box<QueryPlan>, EncodingType, EncodingType),
     LZ4Decode(Box<QueryPlan>, usize, EncodingType),
     UnpackStrings(Box<QueryPlan>),
+    UnhexpackStrings(Box<QueryPlan>, bool, usize),
     DeltaDecode(Box<QueryPlan>, EncodingType),
 
     Exists(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
@@ -107,6 +108,10 @@ fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>)
             VecOperator::lz4_decode(prepare(*plan, result), result.named_buffer("decoded"), decoded_len, t),
         QueryPlan::UnpackStrings(plan) =>
             VecOperator::unpack_strings(prepare(*plan, result), result.named_buffer("unpacked")),
+        QueryPlan::UnhexpackStrings(plan, uppercase, total_bytes) => {
+            let stringstore = result.named_buffer("stringstore");
+            VecOperator::unhexpack_strings(prepare(*plan, result), result.named_buffer("unpacked"), stringstore, uppercase, total_bytes)
+        }
         QueryPlan::Exists(indices, t, max_index) =>
             VecOperator::exists(prepare(*indices, result), result.named_buffer("exists"), t, prepare(*max_index, result)),
         QueryPlan::Compact(data, data_t, select, select_t) => {
@@ -576,6 +581,13 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
                 UnpackStrings(plan)
+            }
+            UnhexpackStrings(plan, uppercase, total_bytes) => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input(&total_bytes.to_bytes());
+                hasher.input(&[uppercase as u8]);
+                UnhexpackStrings(plan, uppercase, total_bytes)
             }
             DeltaDecode(plan, t) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);

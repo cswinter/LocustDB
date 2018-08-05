@@ -143,6 +143,8 @@ impl Codec {
                     Box::new(QueryPlan::LZ4Decode(stack.pop().unwrap(), decoded_length, t)),
                 CodecOp::UnpackStrings =>
                     Box::new(QueryPlan::UnpackStrings(stack.pop().unwrap())),
+                CodecOp::UnhexpackStrings(upper, total_bytes) =>
+                    Box::new(QueryPlan::UnhexpackStrings(stack.pop().unwrap(), upper, total_bytes)),
                 CodecOp::Unknown => panic!("unkown decode plan!"),
             };
             stack.push(plan);
@@ -268,6 +270,7 @@ pub enum CodecOp {
     DictLookup(EncodingType),
     LZ4(EncodingType, usize),
     UnpackStrings,
+    UnhexpackStrings(bool, usize),
     Unknown,
 }
 
@@ -280,6 +283,7 @@ impl CodecOp {
             CodecOp::DictLookup(t) => t,
             CodecOp::LZ4(_, _) => EncodingType::U8,
             CodecOp::UnpackStrings => EncodingType::U8,
+            CodecOp::UnhexpackStrings(_, _) => EncodingType::U8,
             CodecOp::PushDataSection(_) => panic!("PushDataSection.input_type()"),
             CodecOp::Unknown => panic!("Unknown.input_type()"),
         }
@@ -293,6 +297,7 @@ impl CodecOp {
             CodecOp::DictLookup(_) => BasicType::String,
             CodecOp::LZ4(_, _) => BasicType::Integer,
             CodecOp::UnpackStrings => BasicType::String,
+            CodecOp::UnhexpackStrings(_, _) => BasicType::String,
             CodecOp::PushDataSection(_) => panic!("PushDataSection.input_type()"),
             CodecOp::Unknown => panic!("Unknown.output_type()"),
         }
@@ -307,6 +312,7 @@ impl CodecOp {
             CodecOp::DictLookup(_) => false,
             CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
+            CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_summation_preserving()"),
         }
     }
@@ -320,6 +326,7 @@ impl CodecOp {
             CodecOp::DictLookup(_) => true,
             CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
+            CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_order_preserving()"),
         }
     }
@@ -333,6 +340,7 @@ impl CodecOp {
             CodecOp::DictLookup(_) => true,
             CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
+            CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_positive_integer()"),
         }
     }
@@ -346,6 +354,7 @@ impl CodecOp {
             CodecOp::DictLookup(_) => true,
             CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
+            CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_fixed_width()"),
         }
     }
@@ -359,6 +368,7 @@ impl CodecOp {
             CodecOp::DictLookup(_) => 3,
             CodecOp::LZ4(_, _) => 1,
             CodecOp::UnpackStrings => 1,
+            CodecOp::UnhexpackStrings(_, _) => 1,
             CodecOp::Unknown => panic!("Unknown.is_fixed_width()"),
         }
     }
@@ -380,6 +390,7 @@ impl CodecOp {
                 format!("LZ4({:?})", t)
             }
             CodecOp::UnpackStrings => "StrUnpack".to_string(),
+            CodecOp::UnhexpackStrings(_, _) => "StrHexUnpack".to_string(),
             CodecOp::Unknown => "Unknown".to_string(),
         }
     }

@@ -164,6 +164,9 @@ impl Task for CSVIngestionTask {
 struct RawCol {
     types: ColType,
     values: IndexedPackedStrings,
+    lhex: bool,
+    uhex: bool,
+    string_bytes: usize,
 }
 
 impl RawCol {
@@ -171,17 +174,24 @@ impl RawCol {
         RawCol {
             types: ColType::nothing(),
             values: IndexedPackedStrings::default(),
+            lhex: true,
+            uhex: true,
+            string_bytes: 0,
         }
     }
 
     fn push(&mut self, elem: &str) {
         self.types = self.types | ColType::determine(elem);
+        self.lhex = self.lhex && is_lowercase_hex(elem);
+        self.uhex = self.uhex && is_uppercase_hex(elem);
+        self.string_bytes += elem.as_bytes().len();
         self.values.push(elem);
     }
 
     fn finalize(&mut self, name: &str, string: bool) -> Arc<Column> {
         let result = if self.types.contains_string || string {
-            fast_build_string_column(name, self.values.iter(), self.values.len())
+            fast_build_string_column(name, self.values.iter(), self.values.len(),
+                                     self.lhex, self.uhex, self.string_bytes)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::new();
             for s in self.values.iter() {
@@ -217,6 +227,24 @@ impl RawCol {
         self.types = ColType::nothing();
         self.values.clear();
     }
+}
+
+fn is_lowercase_hex(string: &str) -> bool {
+    string.len() & 1 == 0 && string.chars().all(|c| {
+        c == '0' || c == '1' || c == '2' || c == '3' ||
+            c == '4' || c == '5' || c == '6' || c == '7' ||
+            c == '8' || c == '9' || c == 'a' || c == 'b' ||
+            c == 'c' || c == 'd' || c == 'e' || c == 'f'
+    })
+}
+
+fn is_uppercase_hex(string: &str) -> bool {
+    string.len() & 1 == 0 && string.chars().all(|c| {
+        c == '0' || c == '1' || c == '2' || c == '3' ||
+            c == '4' || c == '5' || c == '6' || c == '7' ||
+            c == '8' || c == '9' || c == 'A' || c == 'B' ||
+            c == 'C' || c == 'D' || c == 'E' || c == 'F'
+    })
 }
 
 

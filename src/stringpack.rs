@@ -110,3 +110,62 @@ impl<'a> Iterator for StringPackerIterator<'a> {
     }
 }
 
+// TODO(clemens): Unify with PackedStrings
+pub struct PackedBytes {
+    data: Vec<u8>,
+}
+
+impl PackedBytes {
+    pub fn from_iterator<'a>(bytes: impl Iterator<Item=Vec<u8>>) -> PackedBytes {
+        let mut data = Vec::<u8>::new();
+        for b in bytes {
+            let mut len = b.len();
+            while len > 254 {
+                data.push(255);
+                len -= 255;
+            }
+            data.push(len as u8);
+            data.extend_from_slice(&b);
+        }
+        data.shrink_to_fit();
+        PackedBytes { data }
+    }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        self.data
+    }
+}
+
+pub struct PackedBytesIterator<'a> {
+    data: &'a [u8],
+    curr_index: usize,
+}
+
+impl<'a> PackedBytesIterator<'a> {
+    pub fn from_slice(data: &'a [u8]) -> PackedBytesIterator<'a> {
+        PackedBytesIterator { data, curr_index: 0 }
+    }
+}
+
+impl<'a> Iterator for PackedBytesIterator<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<&'a [u8]> {
+        if self.curr_index >= self.data.len() {
+            return None;
+        }
+
+        let mut index = self.curr_index;
+        let mut len = 0usize;
+        while self.data[index] == 255 {
+            len += 255;
+            index += 1;
+        }
+        len += self.data[index] as usize;
+        index += 1;
+
+        let result = &self.data[index..(index + len)];
+        self.curr_index = index + len;
+        Some(result)
+    }
+}

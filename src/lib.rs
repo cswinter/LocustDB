@@ -25,6 +25,7 @@ extern crate fnv;
 extern crate byteorder;
 extern crate lru;
 extern crate crypto;
+extern crate hex;
 #[cfg(feature = "enable_rocksdb")]
 extern crate capnp;
 
