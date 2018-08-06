@@ -636,7 +636,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&shift_amount.to_bytes());
+                hasher.input(&(shift_amount as u64).to_bytes());
                 BitPack(lhs, rhs, shift_amount)
             }
             BitUnpack(inner, shift, width) => {
@@ -737,7 +737,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
             EncodedGroupByPlaceholder => EncodedGroupByPlaceholder,
             Constant(val, show) => {
                 match val {
-                    RawVal::Int(i) => hasher.input(&i.to_bytes()),
+                    RawVal::Int(i) => hasher.input(&(i as u64).to_bytes()),
                     RawVal::Str(ref s) => hasher.input_str(s),
                     RawVal::Null => {}
                 }
