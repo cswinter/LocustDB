@@ -49,12 +49,12 @@ impl Partition {
         }
     }
 
-    pub fn nonresident(id: PartitionID, len: usize, cols: &[String], lru: LRU) -> Partition {
+    pub fn nonresident(id: PartitionID, len: usize, cols: &[ColumnMetadata], lru: LRU) -> Partition {
         Partition {
             id,
             len,
             cols: cols.iter()
-                .map(|name| ((id, name.to_string()), Mutex::new(ColumnHandle::NonResident)))
+                .map(|c| ((id, c.name.to_string()), Mutex::new(ColumnHandle::NonResident)))
                 .collect(),
             lru,
         }

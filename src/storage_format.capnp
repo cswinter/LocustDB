@@ -3,7 +3,12 @@
 struct MetaData {
     tablename @0 :Text;
     len @1 :UInt64;
-    columns @2 :List(Text);
+    columns @2 :List(ColumnMetaData);
+}
+
+struct ColumnMetaData {
+    name @0 :Text;
+    sizeBytes @1 :UInt64;
 }
 
 struct Column {
