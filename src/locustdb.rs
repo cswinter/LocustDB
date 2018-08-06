@@ -109,18 +109,13 @@ impl LocustDB {
     }
 
     pub fn bulk_load(&self) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
-        let max_partition = self.inner_locustdb.max_partition_id();
         let disk_store = &self.inner_locustdb.storage;
-        let mut receivers: Vec<Box<Future<Item=_, Error=_>>> = Vec::new();
-        for start in (0..max_partition).step_by(50) {
-            let disk_store = disk_store.clone();
-            let inner = self.inner_locustdb.clone();
-            let (task, receiver) = Task::from_fn(
-                move || disk_store.bulk_load(&inner, start, start + 50));
-            receivers.push(Box::new(receiver));
-            self.schedule(task);
-        }
-        receivers.into_iter().for_each(|r| { block_on(r).unwrap(); });
+        let disk_store = disk_store.clone();
+        let inner = self.inner_locustdb.clone();
+        let (task, receiver) = Task::from_fn(
+            move || disk_store.bulk_load(&inner));
+        self.schedule(task);
+        block_on(receiver).unwrap();
         self.mem_tree(2)
     }
 

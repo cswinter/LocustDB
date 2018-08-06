@@ -2,11 +2,13 @@ extern crate rocksdb;
 extern crate capnp;
 
 use std::sync::Arc;
+use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
+use capnp::{serialize, Word, message};
+use heapsize::HeapSizeOf;
 use self::rocksdb::*;
 use storage_format_capnp::*;
-use capnp::{serialize, Word, message};
 
 use disk_store::interface::*;
 use mem_store::column::{Column, DataSection};
@@ -62,15 +64,12 @@ impl DiskStore for RocksDB {
         deserialize_column(&data)
     }
 
-    fn bulk_load(&self, ldb: &InnerLocustDB, start: PartitionID, end: PartitionID) {
-        let mut key = [0; 8];
-        BigEndian::write_u64(&mut key, start as u64);
+    fn bulk_load(&self, ldb: &InnerLocustDB) {
         let iterator = self.db
-            .iterator_cf(self.partitions(), IteratorMode::From(&key, Direction::Forward))
+            .iterator_cf(self.partitions(), IteratorMode::Start)
             .unwrap();
         for (key, value) in iterator {
-            let id = BigEndian::read_u64(&key);
-            if id >= end as u64 { break; }
+            let (id, _) = deserialize_column_key(&key);
             ldb.restore(id, deserialize_column(&value));
         }
     }
@@ -92,11 +91,17 @@ impl DiskStore for RocksDB {
 }
 
 fn column_key(id: PartitionID, column_name: &str) -> Vec<u8> {
-    let mut key = vec![0; 8];
-    BigEndian::write_u64(&mut key, id as u64);
-    key.push('.' as u8);
+    let mut key = Vec::new();
     key.extend(column_name.as_bytes());
+    let mut pid = vec![0; 8];
+    BigEndian::write_u64(&mut pid, id as u64);
+    key.extend(pid);
     key
+}
+
+fn deserialize_column_key(key: &[u8]) -> (PartitionID, String) {
+    let i = key.len() - 8;
+    (BigEndian::read_u64(&key[i..]), str::from_utf8(&key[..i]).unwrap().to_string())
 }
 
 fn deserialize_column(data: &[u8]) -> Column {
@@ -146,31 +151,31 @@ fn deserialize_column(data: &[u8]) -> Column {
                 let mut buffer = Vec::with_capacity(data.len() as usize);
                 buffer.extend(data);
                 DataSection::U8(buffer)
-            },
+            }
             U16(data) => {
                 let data = data.unwrap();
                 let mut buffer = Vec::with_capacity(data.len() as usize);
                 buffer.extend(data);
                 DataSection::U16(buffer)
-            },
+            }
             U32(data) => {
                 let data = data.unwrap();
                 let mut buffer = Vec::with_capacity(data.len() as usize);
                 buffer.extend(data);
                 DataSection::U32(buffer)
-            },
+            }
             U64(data) => {
                 let data = data.unwrap();
                 let mut buffer = Vec::with_capacity(data.len() as usize);
                 buffer.extend(data);
                 DataSection::U64(buffer)
-            },
+            }
             I64(data) => {
                 let data = data.unwrap();
                 let mut buffer = Vec::with_capacity(data.len() as usize);
                 buffer.extend(data);
                 DataSection::I64(buffer)
-            },
+            }
             Null(count) => DataSection::Null(count as usize),
         }
     }).collect::<Vec<_>>();
@@ -199,7 +204,12 @@ fn deserialize_meta_data(data: &[u8], partition_id: PartitionID) -> PartitionMet
         id: partition_id,
         len: meta_data.get_len() as usize,
         tablename: meta_data.get_tablename().unwrap().to_string(),
-        columns: meta_data.get_columns().unwrap().iter().map(|c| c.unwrap().to_string()).collect(),
+        columns: meta_data.get_columns().unwrap().iter().map(|c| {
+            ColumnMetadata {
+                name: c.get_name().unwrap().to_string(),
+                size_bytes: c.get_size_bytes() as usize,
+            }
+        }).collect(),
     }
 }
 
@@ -210,9 +220,11 @@ fn serialize_meta_data(tablename: &str, columns: &[Arc<Column>]) -> Vec<u8> {
         meta_data.set_len(columns[0].len() as u64);
         meta_data.set_tablename(tablename);
         {
-            let mut col_names = meta_data.reborrow().init_columns(columns.len() as u32);
+            let mut cols = meta_data.reborrow().init_columns(columns.len() as u32);
             for (i, column) in columns.iter().enumerate() {
-                col_names.set(i as u32, column.name());
+                let mut col = cols.reborrow().get(i as u32);
+                col.set_name(column.name());
+                col.set_size_bytes(column.heap_size_of_children() as u64);
             }
         }
     }
