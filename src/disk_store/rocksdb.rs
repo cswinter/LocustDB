@@ -141,11 +141,36 @@ fn deserialize_column(data: &[u8]) -> Column {
     let data_sections = column.get_data().unwrap().iter().map(|d| {
         use storage_format_capnp::data_section::Which::*;
         match d.which().unwrap() {
-            U8(data) => DataSection::U8(data.unwrap().iter().collect()),
-            U16(data) => DataSection::U16(data.unwrap().iter().collect()),
-            U32(data) => DataSection::U32(data.unwrap().iter().collect()),
-            U64(data) => DataSection::U64(data.unwrap().iter().collect()),
-            I64(data) => DataSection::I64(data.unwrap().iter().collect()),
+            U8(data) => {
+                let data = data.unwrap();
+                let mut buffer = Vec::with_capacity(data.len() as usize);
+                buffer.extend(data);
+                DataSection::U8(buffer)
+            },
+            U16(data) => {
+                let data = data.unwrap();
+                let mut buffer = Vec::with_capacity(data.len() as usize);
+                buffer.extend(data);
+                DataSection::U16(buffer)
+            },
+            U32(data) => {
+                let data = data.unwrap();
+                let mut buffer = Vec::with_capacity(data.len() as usize);
+                buffer.extend(data);
+                DataSection::U32(buffer)
+            },
+            U64(data) => {
+                let data = data.unwrap();
+                let mut buffer = Vec::with_capacity(data.len() as usize);
+                buffer.extend(data);
+                DataSection::U64(buffer)
+            },
+            I64(data) => {
+                let data = data.unwrap();
+                let mut buffer = Vec::with_capacity(data.len() as usize);
+                buffer.extend(data);
+                DataSection::I64(buffer)
+            },
             Null(count) => DataSection::Null(count as usize),
         }
     }).collect::<Vec<_>>();
