@@ -16,6 +16,9 @@ use scheduler::inner_locustdb::InnerLocustDB;
 use mem_store::codec::CodecOp;
 use engine::types::EncodingType as Type;
 
+use time;
+use unit_fmt::*;
+
 
 pub struct RocksDB {
     db: DB,
@@ -31,6 +34,14 @@ impl RocksDB {
         if cfg!(feature = "enable_lz4") {
             partitions_options.set_compression_type(DBCompressionType::None);
         }
+        partitions_options.set_write_buffer_size(128 * 1024 * 1024);
+        partitions_options.set_max_bytes_for_level_base(1024 * 1024 * 1024);
+        let mut block_opts = BlockBasedOptions::default();
+        block_opts.set_block_size(512 * 1024);
+        block_opts.set_cache_index_and_filter_blocks(true);
+        partitions_options.set_compaction_readahead_size(64 * 1024 * 1024);
+        partitions_options.set_block_based_table_factory(&block_opts);
+        partitions_options.set_advise_random_on_open(true);
 
         let db = DB::open_cf_descriptors(&options, path, vec![
             ColumnFamilyDescriptor::new("metadata", Options::default()),
@@ -68,9 +79,22 @@ impl DiskStore for RocksDB {
         let iterator = self.db
             .iterator_cf(self.partitions(), IteratorMode::Start)
             .unwrap();
+        let mut t = time::precise_time_ns();
+        let mut size_total = 0;
         for (key, value) in iterator {
-            let (id, _) = deserialize_column_key(&key);
-            ldb.restore(id, deserialize_column(&value));
+            let (id, name) = deserialize_column_key(&key);
+            let col = deserialize_column(&value);
+            let size = col.heap_size_of_children();
+            let now = time::precise_time_ns();
+            size_total += size;
+            let elapsed = now - t;
+            if elapsed > 1_000_000_000 {
+                debug!("restoring {}.{} {}", name, id, byte(size as f64));
+                debug!("{}/s", byte((1000000000 * size_total as u64 / elapsed) as f64));
+                t = now;
+                size_total = 0;
+            }
+            ldb.restore(id, col);
         }
     }
 
