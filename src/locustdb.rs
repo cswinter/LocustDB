@@ -29,6 +29,7 @@ pub struct Options {
     pub threads: usize,
     pub db_path: Option<String>,
     pub mem_size_limit_tables: usize,
+    pub max_readahead: usize,
 }
 
 impl LocustDB {
@@ -68,15 +69,24 @@ impl LocustDB {
                 TraceBuilder::new("empty".to_owned()).finalize()))),
         };
 
-        // TODO(clemens): A table may not exist on all nodes, so querying empty table is valid and should return empty result.
-        let data = match self.inner_locustdb.snapshot(&query.table) {
+        let mut data = match self.inner_locustdb.snapshot(&query.table) {
             Some(data) => data,
+            // TODO(clemens): A table may not exist on all nodes, so querying empty table is valid and should return empty result.
             None => return Box::new(future::ok((
                 Err(QueryError::NotImplemented(format!("Table {} does not exist!", &query.table))),
                 TraceBuilder::new("empty".to_owned()).finalize()))),
         };
+
+        self.inner_locustdb.disk_read_scheduler()
+            .schedule_sequential_read(&mut data, &query.find_referenced_cols());
+        let ldb = self.inner_locustdb.clone();
+        let (read_data, _) = Task::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
+        let _ = self.inner_locustdb.schedule(read_data);
+
         let task = QueryTask::new(
-            query, explain, show, data, self.inner_locustdb.storage.clone(), SharedSender::new(sender));
+            query, explain, show, data,
+            self.inner_locustdb.disk_read_scheduler().clone(),
+            SharedSender::new(sender));
         let trace_receiver = self.schedule(task);
         Box::new(receiver.join(trace_receiver))
     }
@@ -165,7 +175,8 @@ impl Default for Options {
         Options {
             threads: num_cpus::get(),
             db_path: None,
-            mem_size_limit_tables: 1024 * 1024 * 1024 * 1024, // 1TB
+            mem_size_limit_tables: 1024 * 1024 * 1024 * 1024, // 1 TiB
+            max_readahead: 256 * 1024 * 1024, // 256 MiB
         }
     }
 }

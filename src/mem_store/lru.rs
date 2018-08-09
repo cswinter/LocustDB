@@ -14,9 +14,9 @@ impl LRU {
         cache.get(column);
     }
 
-    pub fn put(&self, column: &ColumnKey) {
+    pub fn put(&self, column: ColumnKey) {
         let mut cache = self.cache.lock().unwrap();
-        cache.put(column.clone(), ());
+        cache.put(column, ());
     }
 
     pub fn evict(&self) -> Option<ColumnKey> {
