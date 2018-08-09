@@ -14,18 +14,20 @@ use time;
 use disk_store::interface::*;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
+use locustdb::Options;
+use mem_store::*;
 use mem_store::partition::Partition;
 use mem_store::table::*;
-use mem_store::*;
 use scheduler::*;
+use scheduler::disk_read_scheduler::DiskReadScheduler;
 use trace::*;
-use locustdb::Options;
 
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
     lru: LRU,
     pub storage: Arc<DiskStore>,
+    disk_read_scheduler: Arc<DiskReadScheduler>,
 
     opts: Options,
 
@@ -53,11 +55,13 @@ impl InnerLocustDB {
         let lru = LRU::default();
         let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref(), &lru);
         let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);
+        let disk_read_scheduler = Arc::new(DiskReadScheduler::new(storage.clone(), lru.clone()));
 
         InnerLocustDB {
             tables: RwLock::new(existing_tables),
             lru,
             storage,
+            disk_read_scheduler,
             running: AtomicBool::new(true),
 
             opts: opts.clone(),
@@ -143,7 +147,6 @@ impl InnerLocustDB {
         self.idle_queue.notify_one();
         trace_receiver
     }
-
 
     pub fn store_partition(&self, tablename: &str, partition: Vec<Arc<Column>>) {
         self.create_if_empty(tablename);
@@ -245,6 +248,10 @@ impl InnerLocustDB {
 
     pub fn max_partition_id(&self) -> u64 {
         self.next_partition_id.load(Ordering::SeqCst) as u64
+    }
+
+    pub fn disk_read_scheduler(&self) -> &Arc<DiskReadScheduler> {
+        &self.disk_read_scheduler
     }
 }
 

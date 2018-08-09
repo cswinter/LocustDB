@@ -15,8 +15,8 @@ use engine::query::Query;
 use ingest::raw_val::RawVal;
 use mem_store::partition::Partition;
 use mem_store::column::Column;
-use disk_store::interface::DiskStore;
 use scheduler::*;
+use scheduler::disk_read_scheduler::DiskReadScheduler;
 use syntax::expression::*;
 use time::precise_time_ns;
 
@@ -30,7 +30,7 @@ pub struct QueryTask {
     output_colnames: Vec<String>,
     aggregate: Vec<Aggregator>,
     start_time_ns: u64,
-    db: Arc<DiskStore>,
+    db: Arc<DiskReadScheduler>,
 
     // Lifetime is not actually static, but tied to the lifetime of this struct.
     // There is currently no good way to express this constraint in Rust.
@@ -76,7 +76,10 @@ impl Default for QueryStats {
 
 
 impl QueryTask {
-    pub fn new(mut query: Query, explain: bool, show: Vec<usize>, source: Vec<Arc<Partition>>, db: Arc<DiskStore>, sender: SharedSender<QueryResult>) -> QueryTask {
+    pub fn new(mut query: Query, explain: bool, show: Vec<usize>,
+               source: Vec<Arc<Partition>>,
+               db: Arc<DiskReadScheduler>,
+               sender: SharedSender<QueryResult>) -> QueryTask {
         let start_time_ns = precise_time_ns();
         if query.is_select_star() {
             query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
@@ -129,7 +132,7 @@ impl QueryTask {
         while let Some((partition, id)) = self.next_partition() {
             trace_start!("Batch {}", id);
             let show = self.show.iter().any(|&x| x == id);
-            let cols = partition.get_cols(&self.referenced_cols, self.db.as_ref());
+            let cols = partition.get_cols(&self.referenced_cols, &self.db);
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
             let (mut batch_result, explain) = match if self.aggregate.is_empty() {
                 self.query.run(unsafe { mem::transmute(&cols) }, self.explain, show)

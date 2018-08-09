@@ -75,7 +75,24 @@ impl DiskStore for RocksDB {
         deserialize_column(&data)
     }
 
+    fn load_column_range(&self, start: PartitionID, end: PartitionID, column_name: &str, ldb: &InnerLocustDB) {
+        // TODO(clemens): use ReadOptions.iterate_upper_bound once available
+        // TODO(clemens): this is potentially inefficient because it will read column of same name from all tables, tablename should be part of key.
+        let iterator = self.db
+            .iterator_cf(self.partitions(),
+                         IteratorMode::From(&column_key(start, column_name), Direction::Forward))
+            .unwrap();
+        for (key, value) in iterator {
+            let (id, name) = deserialize_column_key(&key);
+            if name != column_name || id > end { return; }
+            debug!("Loading {}.{}", name, id);
+            let col = deserialize_column(&value);
+            ldb.restore(id, col);
+        }
+    }
+
     fn bulk_load(&self, ldb: &InnerLocustDB) {
+        // TODO(clemens): use ReadOptions.readahead once available
         let iterator = self.db
             .iterator_cf(self.partitions(), IteratorMode::Start)
             .unwrap();
