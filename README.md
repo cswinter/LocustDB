@@ -16,7 +16,7 @@ cd LocustDB
 3. Run the repl
 
 ```Bash
-RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-nyc-taxi-rides
+RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
 ```
 
 Additional usage info:
@@ -47,7 +47,7 @@ OPTIONS:
 
 When loading csv files with `--load`, the first line of each file is assumed to be the column name. The type of each column will be derived automatically, but this might break for columns that contain a mixture of numbers/strings/empty entries.
 
-The `--reduced-nyc-taxi-rides` flag will configure the ingestion schema for loading the 1.46 billion taxi ride dataset which can be downloaded [here][nyc-taxi-trips]. Loading the full dataset requires about 120GB of disk space and 60GB of RAM.
+The `--reduced-trips` flag will configure the ingestion schema for loading the 1.46 billion taxi ride dataset which can be downloaded [here][nyc-taxi-trips]. Loading the full dataset requires about 120GB of disk space and 60GB of RAM.
 
 ### No such subcommand: +nightly
 
