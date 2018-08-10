@@ -25,7 +25,7 @@ impl<'a> VecOperator<'a> for DivideVS {
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
+    fn can_stream_input(&self, input: BufferRef) -> bool { input != self.rhs }
     fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { true }
 

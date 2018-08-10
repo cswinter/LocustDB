@@ -40,7 +40,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
 
     fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
+    fn can_stream_input(&self, input: BufferRef) -> bool { input != self.max_index }
     fn can_stream_output(&self, _: BufferRef) -> bool { false }
     fn allocates(&self) -> bool { true }
 
