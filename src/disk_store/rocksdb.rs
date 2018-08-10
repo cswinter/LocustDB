@@ -34,12 +34,12 @@ impl RocksDB {
         if cfg!(feature = "enable_lz4") {
             partitions_options.set_compression_type(DBCompressionType::None);
         }
-        partitions_options.set_write_buffer_size(128 * 1024 * 1024);
+        partitions_options.set_write_buffer_size(256 * 1024 * 1024);
         partitions_options.set_max_bytes_for_level_base(1024 * 1024 * 1024);
         let mut block_opts = BlockBasedOptions::default();
         block_opts.set_block_size(512 * 1024);
         block_opts.set_cache_index_and_filter_blocks(true);
-        partitions_options.set_compaction_readahead_size(64 * 1024 * 1024);
+        partitions_options.set_compaction_readahead_size(256 * 1024 * 1024);
         partitions_options.set_block_based_table_factory(&block_opts);
         partitions_options.set_advise_random_on_open(true);
 

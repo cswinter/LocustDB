@@ -25,6 +25,7 @@ struct DiskRun {
     start: PartitionID,
     end: PartitionID,
     columns: HashSet<String>,
+    bytes: usize,
 }
 
 impl DiskReadScheduler {
@@ -39,26 +40,31 @@ impl DiskReadScheduler {
         }
     }
 
-    pub fn schedule_sequential_read(&self, snapshot: &mut Vec<Arc<Partition>>, columns: &HashSet<String>) {
+    pub fn schedule_sequential_read(&self,
+                                    snapshot: &mut Vec<Arc<Partition>>,
+                                    columns: &HashSet<String>,
+                                    readahead: usize) {
         let mut task_queue = self.task_queue.lock().unwrap();
         snapshot.sort_unstable_by_key(|p| p.id());
         let mut current_run = DiskRun::default();
         let mut previous_partitionid = 0;
         for partition in snapshot {
-            if !partition.nonresidents_match(&current_run.columns, &columns) {
+            if current_run.bytes > readahead ||
+                !partition.nonresidents_match(&current_run.columns, &columns) {
                 if !current_run.columns.is_empty() {
                     current_run.end = previous_partitionid;
                     task_queue.push_back(current_run);
                 }
+                let columns = partition.non_residents(columns);
                 current_run = DiskRun {
                     start: partition.id(),
                     end: 0,
-                    columns: partition.non_residents(columns),
+                    bytes: partition.promise_load(&columns),
+                    columns,
                 };
-                partition.promise_load(&current_run.columns);
                 debug!("Starting new run: {:?}", &current_run);
             } else {
-                partition.promise_load(&current_run.columns);
+                current_run.bytes += partition.promise_load(&current_run.columns);
             }
             previous_partitionid = partition.id();
         }
@@ -80,7 +86,7 @@ impl DiskReadScheduler {
                 if handle.is_load_scheduled() {
                     let mut is_load_in_progress =
                         self.background_load_in_progress.lock().unwrap();
-                    while *is_load_in_progress && !handle.is_resident() {
+                    while *is_load_in_progress && !handle.is_resident() && handle.is_load_scheduled() {
                         debug!("Queuing for {}.{}", handle.name(), handle.id());
                         is_load_in_progress = self.background_load_wait_queue
                             .wait(is_load_in_progress).unwrap();
@@ -114,6 +120,7 @@ impl DiskReadScheduler {
                 }
             };
             self.service_sequential_read(next_read, ldb);
+            self.background_load_wait_queue.notify_all();
         }
     }
 
@@ -123,6 +130,5 @@ impl DiskReadScheduler {
         for col in &run.columns {
             self.disk_store.load_column_range(run.start, run.end, col, ldb);
         }
-        self.background_load_wait_queue.notify_all();
     }
 }
