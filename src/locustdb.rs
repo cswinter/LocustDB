@@ -24,14 +24,6 @@ pub struct LocustDB {
     inner_locustdb: Arc<InnerLocustDB>
 }
 
-#[derive(Clone)]
-pub struct Options {
-    pub threads: usize,
-    pub db_path: Option<String>,
-    pub mem_size_limit_tables: usize,
-    pub max_readahead: usize,
-}
-
 impl LocustDB {
     pub fn memory_only() -> LocustDB {
         LocustDB::new(&Options::default())
@@ -78,7 +70,9 @@ impl LocustDB {
         };
 
         self.inner_locustdb.disk_read_scheduler()
-            .schedule_sequential_read(&mut data, &query.find_referenced_cols());
+            .schedule_sequential_read(&mut data,
+                                      &query.find_referenced_cols(),
+                                      self.inner_locustdb.opts().readahead);
         let ldb = self.inner_locustdb.clone();
         let (read_data, _) = Task::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
         let _ = self.inner_locustdb.schedule(read_data);
@@ -170,13 +164,21 @@ impl Drop for LocustDB {
     }
 }
 
+#[derive(Clone)]
+pub struct Options {
+    pub threads: usize,
+    pub db_path: Option<String>,
+    pub mem_size_limit_tables: usize,
+    pub readahead: usize,
+}
+
 impl Default for Options {
     fn default() -> Options {
         Options {
             threads: num_cpus::get(),
             db_path: None,
-            mem_size_limit_tables: 1024 * 1024 * 1024 * 1024, // 1 TiB
-            max_readahead: 256 * 1024 * 1024, // 256 MiB
+            mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
+            readahead: 256 * 1024 * 1024, // 256 MiB
         }
     }
 }

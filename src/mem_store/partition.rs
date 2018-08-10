@@ -129,6 +129,7 @@ impl Partition {
             if handle.name() == col {
                 let mut maybe_column = handle.col.lock().unwrap();
                 let mem_size = handle.heap_size_of_children();
+                handle.resident.store(false, Ordering::SeqCst);
                 *maybe_column = None;
                 return mem_size;
             }

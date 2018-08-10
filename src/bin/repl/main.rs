@@ -22,6 +22,11 @@ mod fmt_table;
 
 fn main() {
     env_logger::init();
+
+    let mut options = locustdb::Options::default();
+    let default_mem_limit_tables = format!("{}", options.mem_size_limit_tables / 1024 / 1024 / 1024);
+    let default_readahead = format!("{}", options.readahead / 1024 / 1024);
+    let help_threads = format!("Number of worker threads. [default: number of cores ({})]", options.threads);
     let matches = App::new("LocustDB")
         .version(crate_version!())
         .author("Clemens Winter <clemenswinter1@gmail.com>")
@@ -47,15 +52,20 @@ fn main() {
             .help("Limit for in-memory size of tables in GiB")
             .long("mem-limit-tables")
             .value_name("GB")
-            .default_value("64")
+            .default_value(&default_mem_limit_tables)
             .takes_value(true))
         .arg(Arg::with_name("partition-size")
             .help("Number of rows per partition when loading new data")
             .long("partition-size")
-            .value_name("INTEGER")
-            .default_value("1048576"))
+            .value_name("ROWS")
+            .default_value("65536"))
+        .arg(Arg::with_name("readahead")
+            .help("How much data to load at a time when reading from disk during queries in MiB")
+            .long("readahead")
+            .value_name("BYTES")
+            .default_value(&default_readahead))
         .arg(Arg::with_name("threads")
-            .help("Number of worker threads. [default: number of cores]")
+            .help(&help_threads)
             .long("threads")
             .value_name("INTEGER"))
         .arg(Arg::with_name("reduced-trips")
@@ -85,7 +95,6 @@ fn main() {
         println!("WARNING: --db-path option passed, but RocksDB storage backend is not enabled in this build of LocustDB.");
     }
 
-    let mut options = locustdb::Options::default();
     options.db_path = db_path.map(|x| x.to_string());
     for t in threads {
         options.threads = t.parse()
@@ -96,6 +105,15 @@ fn main() {
         .parse::<usize>()
         .map(|x| x * 1024 * 1024 * 1024)
         .expect("Argument --mem-limit-tables must be a positive integer!");
+    options.readahead = matches
+        .value_of("readahead").unwrap()
+        .parse::<usize>()
+        .map(|x| x * 1024 * 1024)
+        .expect("Argument --readahead must be a positive integer!");
+
+    if options.readahead > options.mem_size_limit_tables {
+        println!("WARNING: `mem-limit-tables` should be at least as large as `readahead`");
+    }
 
     let locustdb = locustdb::LocustDB::new(&options);
 

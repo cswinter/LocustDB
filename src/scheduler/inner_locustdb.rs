@@ -235,7 +235,9 @@ impl InnerLocustDB {
                             }
                         }
                         None => {
-                            warn!("Failed to find column to evict!");
+                            if ldb.opts.mem_size_limit_tables > 0 {
+                                warn!("Table memory usage is {} but failed to find column to evict!", mem_usage_bytes);
+                            }
                             break;
                         }
                     }
@@ -248,6 +250,10 @@ impl InnerLocustDB {
 
     pub fn max_partition_id(&self) -> u64 {
         self.next_partition_id.load(Ordering::SeqCst) as u64
+    }
+
+    pub fn opts(&self)->&Options{
+        &self.opts
     }
 
     pub fn disk_read_scheduler(&self) -> &Arc<DiskReadScheduler> {
