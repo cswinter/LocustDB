@@ -121,6 +121,7 @@ impl DiskReadScheduler {
                     }
                     let column = Arc::new(column);
                     *maybe_column = Some(column.clone());
+                    handle.set_resident();
                     return column;
                 }
             }

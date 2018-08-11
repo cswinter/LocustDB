@@ -212,6 +212,10 @@ impl ColumnHandle {
         self.resident.load(Ordering::SeqCst)
     }
 
+    pub fn set_resident(&self) {
+        self.resident.store(true, Ordering::SeqCst);
+    }
+
     pub fn is_load_scheduled(&self) -> bool {
         self.load_scheduled.load(Ordering::SeqCst)
     }

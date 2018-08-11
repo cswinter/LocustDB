@@ -69,13 +69,15 @@ impl LocustDB {
                 TraceBuilder::new("empty".to_owned()).finalize()))),
         };
 
-        self.inner_locustdb.disk_read_scheduler()
-            .schedule_sequential_read(&mut data,
-                                      &query.find_referenced_cols(),
-                                      self.inner_locustdb.opts().readahead);
-        let ldb = self.inner_locustdb.clone();
-        let (read_data, _) = Task::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
-        let _ = self.inner_locustdb.schedule(read_data);
+        if self.inner_locustdb.opts().seq_disk_read {
+            self.inner_locustdb.disk_read_scheduler()
+                .schedule_sequential_read(&mut data,
+                                          &query.find_referenced_cols(),
+                                          self.inner_locustdb.opts().readahead);
+            let ldb = self.inner_locustdb.clone();
+            let (read_data, _) = Task::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
+            let _ = self.inner_locustdb.schedule(read_data);
+        }
 
         let task = QueryTask::new(
             query, explain, show, data,
@@ -171,6 +173,7 @@ pub struct Options {
     pub mem_size_limit_tables: usize,
     pub mem_lz4: bool,
     pub readahead: usize,
+    pub seq_disk_read: bool,
 }
 
 impl Default for Options {
@@ -181,6 +184,7 @@ impl Default for Options {
             mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
             mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB
+            seq_disk_read: false,
         }
     }
 }

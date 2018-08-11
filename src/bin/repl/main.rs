@@ -67,10 +67,15 @@ fn main() {
             .long("readahead")
             .value_name("MB")
             .default_value(&default_readahead))
+        .arg(Arg::with_name("seq-disk-read")
+            .help("Improves performance on HDDs, can hurt performance on SSD.")
+            .long("seq-disk-read")
+            .value_name("seq-disk-read"))
         .arg(Arg::with_name("threads")
             .help(&help_threads)
             .long("threads")
-            .value_name("INTEGER"))
+            .value_name("INTEGER")
+            .takes_value(true))
         .arg(Arg::with_name("reduced-trips")
             .help("Set ingestion schema for select set of columns from nyc taxi ride dataset")
             .long("reduced-trips")
@@ -114,6 +119,7 @@ fn main() {
         .map(|x| x * 1024 * 1024)
         .expect("Argument --readahead must be a positive integer!");
     options.mem_lz4 = matches.is_present("mem-lz4");
+    options.seq_disk_read = matches.is_present("seq-disk-read");
 
     if options.readahead > options.mem_size_limit_tables {
         println!("WARNING: `mem-limit-tables` should be at least as large as `readahead`");
