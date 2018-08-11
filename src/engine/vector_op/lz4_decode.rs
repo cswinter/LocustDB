@@ -11,7 +11,7 @@ use mem_store::lz4;
 pub struct LZ4Decode<'a, T> {
     pub encoded: BufferRef,
     pub decoded: BufferRef,
-    pub  decoded_len: usize,
+    pub decoded_len: usize,
     pub reader: Box<Read + 'a>,
     pub has_more: bool,
     pub t: PhantomData<T>,

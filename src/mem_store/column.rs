@@ -58,6 +58,14 @@ impl Column {
         }
     }
 
+    #[cfg(feature = "enable_lz4")]
+    pub fn lz4_decode(&mut self) {
+        if let CodecOp::LZ4(decoded_type, _) = self.codec.ops()[0] {
+            self.codec = self.codec.without_lz4();
+            self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);
+        }
+    }
+
     pub fn name(&self) -> &str { &self.name }
     pub fn len(&self) -> usize { self.len }
     pub fn data(&self) -> &[DataSection] { &self.data }
@@ -206,6 +214,41 @@ impl DataSection {
                 (DataSection::U8(encoded), len * 100 < x.len() * 8 * min_reduction)
             }
             DataSection::Null(ref x) => (DataSection::Null(*x), false)
+        }
+    }
+
+    #[cfg(feature = "enable_lz4")]
+    pub fn lz4_decode(&self, decoded_type: EncodingType, len: usize) -> DataSection {
+        match self {
+            DataSection::U8(encoded) => match decoded_type {
+                EncodingType::U8 => {
+                    let mut decoded = vec![0; len];
+                    unsafe { lz4::decode::<u8>(&mut lz4::decoder(encoded), &mut decoded); }
+                    DataSection::U8(decoded)
+                }
+                EncodingType::U16 => {
+                    let mut decoded = vec![0; len];
+                    unsafe { lz4::decode::<u16>(&mut lz4::decoder(encoded), &mut decoded); }
+                    DataSection::U16(decoded)
+                }
+                EncodingType::U32 => {
+                    let mut decoded = vec![0; len];
+                    unsafe { lz4::decode::<u32>(&mut lz4::decoder(encoded), &mut decoded); }
+                    DataSection::U32(decoded)
+                }
+                EncodingType::U64 => {
+                    let mut decoded = vec![0; len];
+                    unsafe { lz4::decode::<u64>(&mut lz4::decoder(encoded), &mut decoded); }
+                    DataSection::U64(decoded)
+                }
+                EncodingType::I64 => {
+                    let mut decoded = vec![0; len];
+                    unsafe { lz4::decode::<i64>(&mut lz4::decoder(encoded), &mut decoded); }
+                    DataSection::I64(decoded)
+                }
+                t => panic!("Unexpected type {:?} for lz4 decode", t),
+            }
+            _ => panic!("Trying to lz4 encode non u8 data section")
         }
     }
 

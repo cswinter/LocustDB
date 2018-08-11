@@ -135,7 +135,7 @@ impl QueryTask {
             let cols = partition.get_cols(&self.referenced_cols, &self.db);
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
             let (mut batch_result, explain) = match if self.aggregate.is_empty() {
-                self.query.run(unsafe { mem::transmute(&cols) }, self.explain, show)
+                self.query.run(unsafe { mem::transmute(&cols) }, self.explain, show, id)
             } else {
                 self.query.run_aggregate(unsafe { mem::transmute(&cols) }, self.explain, show, id)
             } {

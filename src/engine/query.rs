@@ -30,7 +30,7 @@ pub struct Query {
 
 impl Query {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self, columns: &'a HashMap<String, Arc<Column>>, explain: bool, show: bool)
+    pub fn run<'a>(&self, columns: &'a HashMap<String, Arc<Column>>, explain: bool, show: bool, partition: usize)
                    -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
         let len = columns.iter().next().unwrap().1.len();
@@ -76,7 +76,11 @@ impl Query {
             select.push(query_plan::prepare_no_alias(plan, &mut executor));
         }
 
+        for c in columns {
+            debug!("{}: {:?}", partition, c);
+        }
         let mut results = executor.prepare(Query::column_data(columns));
+        debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
         let select = select.into_iter().map(|i| results.collect(i)).collect();
 

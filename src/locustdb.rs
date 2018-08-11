@@ -169,6 +169,7 @@ pub struct Options {
     pub threads: usize,
     pub db_path: Option<String>,
     pub mem_size_limit_tables: usize,
+    pub mem_lz4: bool,
     pub readahead: usize,
 }
 
@@ -178,6 +179,7 @@ impl Default for Options {
             threads: num_cpus::get(),
             db_path: None,
             mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
+            mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB
         }
     }

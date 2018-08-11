@@ -55,7 +55,10 @@ impl InnerLocustDB {
         let lru = LRU::default();
         let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref(), &lru);
         let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);
-        let disk_read_scheduler = Arc::new(DiskReadScheduler::new(storage.clone(), lru.clone()));
+        let disk_read_scheduler = Arc::new(
+            DiskReadScheduler::new(storage.clone(),
+                                   lru.clone(),
+                                   !opts.mem_lz4));
 
         InnerLocustDB {
             tables: RwLock::new(existing_tables),

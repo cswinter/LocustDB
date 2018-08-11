@@ -54,6 +54,9 @@ fn main() {
             .value_name("GB")
             .default_value(&default_mem_limit_tables)
             .takes_value(true))
+        .arg(Arg::with_name("mem-lz4")
+            .help("Keep data cached in memory lz4 encoded. Decreases memory usage and query speeds.")
+            .long("mem-lz4"))
         .arg(Arg::with_name("partition-size")
             .help("Number of rows per partition when loading new data")
             .long("partition-size")
@@ -110,6 +113,7 @@ fn main() {
         .parse::<usize>()
         .map(|x| x * 1024 * 1024)
         .expect("Argument --readahead must be a positive integer!");
+    options.mem_lz4 = matches.is_present("mem-lz4");
 
     if options.readahead > options.mem_size_limit_tables {
         println!("WARNING: `mem-limit-tables` should be at least as large as `readahead`");

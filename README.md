@@ -32,6 +32,7 @@ USAGE:
 
 FLAGS:
     -h, --help             Prints help information
+        --mem-lz4          Keep data cached in memory lz4 encoded. Decreases memory usage and query speeds.
         --reduced-trips    Set ingestion schema for select set of columns from nyc taxi ride dataset
         --trips            Set ingestion schema for nyc taxi ride dataset
     -V, --version          Prints version information

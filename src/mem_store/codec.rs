@@ -84,18 +84,26 @@ impl Codec {
     pub fn with_lz4(&self, decoded_length: usize) -> Codec {
         let mut ops = vec![CodecOp::LZ4(self.encoding_type, decoded_length)];
         for &op in &self.ops {
-            /*match  op {
-                CodecOp::DictLookup(t)=>{
-                    let dict_data  = ops.pop().unwrap();
-                    let dict_indices = ops.pop().unwrap();
-                    ops.push(CodecOp::LZ4(EncodingType::U8));
-                    ops.push(dict_indices);
-                    ops.push(CodecOp::LZ4())
-                }
-            }*/
             ops.push(op);
         }
         let mut codec = Codec::new(ops);
+        codec.set_column_name(&self.column_name);
+        codec
+    }
+
+    pub fn without_lz4(&self) -> Codec {
+        let mut ops = Vec::with_capacity(self.ops.len() - 1);
+        for &op in &self.ops {
+            if let CodecOp::LZ4(..) = op {
+                continue;
+            }
+            ops.push(op);
+        }
+        let mut codec = if ops.is_empty() {
+            Codec::identity(self.decoded_type)
+        } else {
+            Codec::new(ops)
+        };
         codec.set_column_name(&self.column_name);
         codec
     }

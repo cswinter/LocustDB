@@ -40,7 +40,6 @@ impl IntegerColumn {
         } else {
             values.shrink_to_fit();
             if delta_encode {
-                // TODO(clemens): maybe pointless if it's still i64 after delta encode
                 Column::new(
                     name,
                     values.len(),

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use disk_store::interface::*;
 use heapsize::HeapSizeOf;
@@ -106,7 +106,7 @@ impl Partition {
         for handle in &self.cols {
             if cols.contains(handle.name()) {
                 handle.load_scheduled.store(true, Ordering::SeqCst);
-                total_size += handle.size_bytes;
+                total_size += handle.size_bytes();
             }
         }
         total_size
@@ -181,7 +181,7 @@ impl HeapSizeOf for Partition {
 
 pub struct ColumnHandle {
     key: (PartitionID, String),
-    size_bytes: usize,
+    size_bytes: AtomicUsize,
     resident: AtomicBool,
     load_scheduled: AtomicBool,
     col: Mutex<Option<Arc<Column>>>,
@@ -191,7 +191,7 @@ impl ColumnHandle {
     fn resident(id: PartitionID, col: Arc<Column>) -> ColumnHandle {
         ColumnHandle {
             key: (id, col.name().to_string()),
-            size_bytes: col.heap_size_of_children(),
+            size_bytes: AtomicUsize::new(col.heap_size_of_children()),
             resident: AtomicBool::new(true),
             load_scheduled: AtomicBool::new(false),
             col: Mutex::new(Some(col)),
@@ -201,7 +201,7 @@ impl ColumnHandle {
     fn non_resident(id: PartitionID, name: String, size_bytes: usize) -> ColumnHandle {
         ColumnHandle {
             key: (id, name),
-            size_bytes,
+            size_bytes: AtomicUsize::new(size_bytes),
             resident: AtomicBool::new(false),
             load_scheduled: AtomicBool::new(false),
             col: Mutex::new(None),
@@ -231,11 +231,19 @@ impl ColumnHandle {
     pub fn try_get(&self) -> MutexGuard<Option<Arc<Column>>> {
         self.col.lock().unwrap()
     }
+
+    pub fn size_bytes(&self) -> usize {
+        self.size_bytes.load(Ordering::SeqCst)
+    }
+
+    pub fn update_size_bytes(&self, size_bytes: usize) {
+        self.size_bytes.store(size_bytes, Ordering::SeqCst)
+    }
 }
 
 impl HeapSizeOf for ColumnHandle {
     fn heap_size_of_children(&self) -> usize {
-        if self.is_resident() { self.size_bytes } else { 0 }
+        if self.is_resident() { self.size_bytes() } else { 0 }
     }
 }
 

@@ -85,7 +85,6 @@ impl DiskStore for RocksDB {
         for (key, value) in iterator {
             let (id, name) = deserialize_column_key(&key);
             if name != column_name || id > end { return; }
-            debug!("Loading {}.{}", name, id);
             let col = deserialize_column(&value);
             ldb.restore(id, col);
         }
