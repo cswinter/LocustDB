@@ -154,7 +154,9 @@ impl InnerLocustDB {
         let table = tables.get(tablename).unwrap();
         let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
         self.storage.store_partition(pid, tablename, &partition);
-        table.load_partition(Partition::new(pid, partition, self.lru.clone()));
+        let (new_partition, keys) = Partition::new(pid, partition, self.lru.clone());
+        table.load_partition(new_partition);
+        for key in keys { self.lru.put(key); }
     }
 
     pub fn ingest(&self, table: &str, row: Vec<(String, RawVal)>) {
@@ -252,7 +254,7 @@ impl InnerLocustDB {
         self.next_partition_id.load(Ordering::SeqCst) as u64
     }
 
-    pub fn opts(&self)->&Options{
+    pub fn opts(&self) -> &Options {
         &self.opts
     }
 

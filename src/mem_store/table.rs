@@ -58,7 +58,7 @@ impl Table {
         partitions[&id].restore(col);
     }
 
-    pub fn evict(&self, key: &ColumnKey)->usize {
+    pub fn evict(&self, key: &ColumnKey) -> usize {
         let partitions = self.partitions.read().unwrap();
         partitions.get(&key.0).map(|p| p.evict(&key.1)).unwrap_or(0)
     }
@@ -100,9 +100,10 @@ impl Table {
         let buffer = mem::replace(buffer, Buffer::default());
         self.persist_batch(&buffer);
         // TODO(clemens): get unique partition ID
-        let new_partition = Partition::from_buffer(0, buffer, self.lru.clone());
+        let (new_partition, keys) = Partition::from_buffer(0, buffer, self.lru.clone());
         let mut partitions = self.partitions.write().unwrap();
         partitions.insert(new_partition.id(), Arc::new(new_partition));
+        for key in keys { self.lru.put(key); }
     }
 
     /*fn load_buffer(&self, buffer: Buffer) {

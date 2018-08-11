@@ -20,19 +20,21 @@ pub struct Partition {
 }
 
 impl Partition {
-    pub fn new(id: PartitionID, cols: Vec<Arc<Column>>, lru: LRU) -> Partition {
-        Partition {
+    pub fn new(id: PartitionID, cols: Vec<Arc<Column>>, lru: LRU) -> (Partition, Vec<ColumnKey>) {
+        let mut keys = Vec::with_capacity(cols.len());
+        (Partition {
             id,
             len: cols[0].len(),
             cols: cols.into_iter()
                 .map(|c| {
                     let key = (id, c.name().to_string());
-                    lru.put(key);
+                    // Can't put into lru directly, because then memory limit enforcer might try to evict unreachable column.
+                    keys.push(key);
                     ColumnHandle::resident(id, c)
                 })
                 .collect(),
             lru,
-        }
+        }, keys)
     }
 
     pub fn nonresident(id: PartitionID, len: usize, cols: &[ColumnMetadata], lru: LRU) -> Partition {
@@ -46,7 +48,7 @@ impl Partition {
         }
     }
 
-    pub fn from_buffer(id: PartitionID, buffer: Buffer, lru: LRU) -> Partition {
+    pub fn from_buffer(id: PartitionID, buffer: Buffer, lru: LRU) -> (Partition, Vec<ColumnKey>) {
         Partition::new(
             id,
             buffer.buffer.into_iter()
@@ -131,6 +133,7 @@ impl Partition {
                 let mem_size = handle.heap_size_of_children();
                 handle.resident.store(false, Ordering::SeqCst);
                 *maybe_column = None;
+                self.lru.remove(&handle.key);
                 return mem_size;
             }
         }
@@ -232,7 +235,7 @@ impl ColumnHandle {
 
 impl HeapSizeOf for ColumnHandle {
     fn heap_size_of_children(&self) -> usize {
-        if self.is_resident() { 0 } else { self.size_bytes }
+        if self.is_resident() { self.size_bytes } else { 0 }
     }
 }
 

@@ -19,6 +19,11 @@ impl LRU {
         cache.put(column, ());
     }
 
+    pub fn remove(&self, column: &ColumnKey) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.pop(column);
+    }
+
     pub fn evict(&self) -> Option<ColumnKey> {
         let mut cache = self.cache.lock().unwrap();
         cache.pop_lru().map(|x| x.0)

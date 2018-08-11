@@ -94,9 +94,11 @@ impl DiskReadScheduler {
                 } else {
                     debug!("Point lookup for {}.{}", handle.name(), handle.id());
                     let _ = self.reader_token.lock().unwrap();
+                    // Need to hold lock when we put new value into lru
+                    let mut maybe_column = handle.try_get();
                     self.lru.put(handle.key().clone());
                     let column = Arc::new(self.disk_store.load_column(handle.id(), handle.name()));
-                    *handle.try_get() = Some(column.clone());
+                    *maybe_column = Some(column.clone());
                     return column;
                 }
             }
