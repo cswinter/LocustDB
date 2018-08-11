@@ -62,7 +62,7 @@ fn main() {
         .arg(Arg::with_name("readahead")
             .help("How much data to load at a time when reading from disk during queries in MiB")
             .long("readahead")
-            .value_name("BYTES")
+            .value_name("MB")
             .default_value(&default_readahead))
         .arg(Arg::with_name("threads")
             .help(&help_threads)

@@ -37,12 +37,14 @@ FLAGS:
     -V, --version          Prints version information
 
 OPTIONS:
-        --db-path <PATH>              Path to data directory
-        --load <CSV_FILE>...          Load .csv or .csv.gz files into the database
-        --mem-limit-tables <GB>       Limit for in-memory size of tables in GiB [default: 64]
-        --partition-size <INTEGER>    Number of rows per partition when loading new data [default: 1048576]
-        --table <NAME>                Name for the table populated with --load [default: default]
-        --threads <INTEGER>           Number of worker threads. [default: number of cores]
+        --db-path <PATH>           Path to data directory
+        --load <CSV_FILE>...       Load .csv or .csv.gz files into the database
+        --mem-limit-tables <GB>    Limit for in-memory size of tables in GiB [default: 8]
+        --partition-size <ROWS>    Number of rows per partition when loading new data [default: 65536]
+        --readahead <MB>           How much data to load at a time when reading from disk during queries in MiB
+                                   [default: 256]
+        --table <NAME>             Name for the table populated with --load [default: default]
+        --threads <INTEGER>        Number of worker threads. [default: number of cores (12)]
 ```
 
 When loading csv files with `--load`, the first line of each file is assumed to be the column name. The type of each column will be derived automatically, but this might break for columns that contain a mixture of numbers/strings/empty entries.
