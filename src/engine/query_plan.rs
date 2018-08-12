@@ -61,6 +61,12 @@ pub enum QueryPlan {
     Constant(RawVal, bool),
 }
 
+impl QueryPlan {
+    fn is_constant(&self) -> bool {
+        if let QueryPlan::Constant(_, _) = self { true } else { false }
+    }
+}
+
 pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
     _prepare(plan, false, result)
 }
@@ -71,7 +77,7 @@ pub fn prepare_no_alias<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> 
 
 fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>) -> BufferRef {
     trace!("{:?}", &plan);
-    let (plan, signature) = if no_alias {
+    let (plan, signature) = if no_alias || plan.is_constant() {
         (plan, [0; 16])
     } else {
         // TODO(clemens): O(n^2) :(   use visitor pattern?
