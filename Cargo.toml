@@ -47,4 +47,5 @@ scoped_threadpool = "0.1.9"
 env_logger = "0.5.6"
 rust-crypto = "0.2.36"
 hex = "0.3.2"
+std-semaphore = "0.1.0"
 

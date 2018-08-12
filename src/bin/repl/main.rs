@@ -68,9 +68,8 @@ fn main() {
             .value_name("MB")
             .default_value(&default_readahead))
         .arg(Arg::with_name("seq-disk-read")
-            .help("Improves performance on HDDs, can hurt performance on SSD.")
-            .long("seq-disk-read")
-            .value_name("seq-disk-read"))
+            .help("Improves performance on HDD, can hurt performance on SSD.")
+            .long("seq-disk-read"))
         .arg(Arg::with_name("threads")
             .help(&help_threads)
             .long("threads")
@@ -96,7 +95,6 @@ fn main() {
     let reduced_nyc = matches.is_present("reduced-trips");
     let full_nyc = matches.is_present("trips");
     let db_path = matches.value_of("db-path");
-    let threads = matches.value_of("threads");
     let file_count = files.len();
 
     if matches.is_present("db-path") && !cfg!(feature = "enable_rocksdb") {
@@ -104,7 +102,7 @@ fn main() {
     }
 
     options.db_path = db_path.map(|x| x.to_string());
-    for t in threads {
+    for t in matches.value_of("threads") {
         options.threads = t.parse()
             .expect("Argument --threads must be a positive integer!");
     }
@@ -119,7 +117,10 @@ fn main() {
         .map(|x| x * 1024 * 1024)
         .expect("Argument --readahead must be a positive integer!");
     options.mem_lz4 = matches.is_present("mem-lz4");
-    options.seq_disk_read = matches.is_present("seq-disk-read");
+    if matches.is_present("seq-disk-read") {
+        options.seq_disk_read = true;
+        options.read_threads = 1;
+    }
 
     if options.readahead > options.mem_size_limit_tables {
         println!("WARNING: `mem-limit-tables` should be at least as large as `readahead`");

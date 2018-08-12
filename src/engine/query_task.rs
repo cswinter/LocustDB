@@ -307,7 +307,7 @@ fn find_all_cols(source: &[Arc<Partition>]) -> Vec<String> {
     let mut cols = HashSet::new();
     for partition in source {
         for name in partition.col_names() {
-            cols.insert(name);
+            cols.insert(name.to_string());
         }
     }
 

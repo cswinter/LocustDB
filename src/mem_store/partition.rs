@@ -68,10 +68,10 @@ impl Partition {
         columns
     }
 
-    pub fn col_names(&self) -> Vec<String> {
+    pub fn col_names(&self) -> Vec<&str> {
         let mut names = Vec::new();
         for handle in &self.cols {
-            names.push(handle.name().to_string());
+            names.push(handle.name());
         }
         names
     }

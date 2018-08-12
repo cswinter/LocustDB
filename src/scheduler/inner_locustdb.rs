@@ -58,6 +58,7 @@ impl InnerLocustDB {
         let disk_read_scheduler = Arc::new(
             DiskReadScheduler::new(storage.clone(),
                                    lru.clone(),
+                                   opts.read_threads,
                                    !opts.mem_lz4));
 
         InnerLocustDB {
@@ -87,6 +88,11 @@ impl InnerLocustDB {
     pub fn snapshot(&self, table: &str) -> Option<Vec<Arc<Partition>>> {
         let tables = self.tables.read().unwrap();
         tables.get(table).map(|t| t.snapshot())
+    }
+
+    pub fn full_snapshot(&self) -> Vec<Vec<Arc<Partition>>> {
+        let tables = self.tables.read().unwrap();
+        tables.values().map(|t| t.snapshot()).collect()
     }
 
     pub fn stop(&self) {

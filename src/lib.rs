@@ -28,6 +28,7 @@ extern crate crypto;
 extern crate hex;
 #[cfg(feature = "enable_rocksdb")]
 extern crate capnp;
+extern crate std_semaphore;
 
 #[macro_use]
 mod trace;

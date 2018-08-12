@@ -115,13 +115,21 @@ impl LocustDB {
     }
 
     pub fn bulk_load(&self) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
-        let disk_store = &self.inner_locustdb.storage;
-        let disk_store = disk_store.clone();
-        let inner = self.inner_locustdb.clone();
-        let (task, receiver) = Task::from_fn(
-            move || disk_store.bulk_load(&inner));
-        self.schedule(task);
-        block_on(receiver).unwrap();
+        for table in self.inner_locustdb.full_snapshot() {
+            self.inner_locustdb.disk_read_scheduler()
+                .schedule_bulk_load(table,
+                                    self.inner_locustdb.opts().readahead);
+        }
+        let mut receivers = Vec::new();
+        for _ in 0..self.inner_locustdb.opts().read_threads {
+            let ldb = self.inner_locustdb.clone();
+            let (read_data, receiver) = Task::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
+            let _ = self.inner_locustdb.schedule(read_data);
+            receivers.push(receiver);
+        }
+        for receiver in receivers {
+            block_on(receiver).unwrap();
+        }
         self.mem_tree(2)
     }
 
@@ -169,6 +177,7 @@ impl Drop for LocustDB {
 #[derive(Clone)]
 pub struct Options {
     pub threads: usize,
+    pub read_threads: usize,
     pub db_path: Option<String>,
     pub mem_size_limit_tables: usize,
     pub mem_lz4: bool,
@@ -180,6 +189,7 @@ impl Default for Options {
     fn default() -> Options {
         Options {
             threads: num_cpus::get(),
+            read_threads: num_cpus::get(),
             db_path: None,
             mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
             mem_lz4: true,

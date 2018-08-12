@@ -1,6 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Condvar};
 use std::collections::VecDeque;
+use std_semaphore::Semaphore;
 
 #[allow(unused_imports)]
 use heapsize::HeapSizeOf;
@@ -16,7 +17,7 @@ use scheduler::inner_locustdb::InnerLocustDB;
 pub struct DiskReadScheduler {
     disk_store: Arc<DiskStore>,
     task_queue: Mutex<VecDeque<DiskRun>>,
-    reader_token: Mutex<()>,
+    reader_semaphore: Semaphore,
     lru: LRU,
     #[allow(dead_code)]
     lz4_decode: bool,
@@ -34,11 +35,11 @@ struct DiskRun {
 }
 
 impl DiskReadScheduler {
-    pub fn new(disk_store: Arc<DiskStore>, lru: LRU, lz4_decode: bool) -> DiskReadScheduler {
+    pub fn new(disk_store: Arc<DiskStore>, lru: LRU, max_readers: usize, lz4_decode: bool) -> DiskReadScheduler {
         DiskReadScheduler {
             disk_store,
             task_queue: Mutex::default(),
-            reader_token: Mutex::default(),
+            reader_semaphore: Semaphore::new(max_readers as isize),
             lru,
             lz4_decode,
             background_load_wait_queue: Condvar::default(),
@@ -78,6 +79,38 @@ impl DiskReadScheduler {
         debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
     }
 
+    pub fn schedule_bulk_load(&self,
+                              mut snapshot: Vec<Arc<Partition>>,
+                              chunk_size: usize) {
+        let mut task_queue = self.task_queue.lock().unwrap();
+        snapshot.sort_unstable_by_key(|p| p.id());
+        let mut runs = HashMap::<&str, DiskRun>::default();
+        for partition in &snapshot {
+            for col in partition.col_names() {
+                let reached_chunk_size = {
+                    let mut run = runs.entry(col)
+                        .or_insert(DiskRun {
+                            start: partition.id(),
+                            end: partition.id(),
+                            bytes: 0,
+                            columns: [col.to_string()].iter().cloned().collect(),
+                        });
+                    run.bytes += partition.promise_load(&run.columns);
+                    run.end = partition.id();
+
+                    run.bytes > chunk_size
+                };
+                if reached_chunk_size {
+                    task_queue.push_back(runs.remove(col).unwrap());
+                }
+            }
+        }
+        for (_, run) in runs {
+            task_queue.push_back(run);
+        }
+        debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
+    }
+
     pub fn get_or_load(&self, handle: &ColumnHandle) -> Arc<Column> {
         loop {
             if handle.is_resident() {
@@ -107,7 +140,7 @@ impl DiskReadScheduler {
                     debug!("Point lookup for {}.{}", handle.name(), handle.id());
                     #[allow(unused_mut)]
                     let mut column = {
-                        let _ = self.reader_token.lock().unwrap();
+                        let _token = self.reader_semaphore.access();
                         self.disk_store.load_column(handle.id(), handle.name())
                     };
                     // Need to hold lock when we put new value into lru
@@ -129,9 +162,9 @@ impl DiskReadScheduler {
     }
 
     pub fn service_reads(&self, ldb: &InnerLocustDB) {
+        debug!("Waiting to service reads...");
         *self.background_load_in_progress.lock().unwrap() = true;
         debug!("Started servicing reads...");
-        // TODO(clemens): Ensure only one thread enters this function at a time
         loop {
             let next_read = {
                 let mut task_queue = self.task_queue.lock().unwrap();
@@ -150,7 +183,7 @@ impl DiskReadScheduler {
     }
 
     fn service_sequential_read(&self, run: DiskRun, ldb: &InnerLocustDB) {
-        let _ = self.reader_token.lock().unwrap();
+        let _token = self.reader_semaphore.access();
         debug!("Servicing read: {:?}", &run);
         for col in &run.columns {
             self.disk_store.load_column_range(run.start, run.end, col, ldb);
