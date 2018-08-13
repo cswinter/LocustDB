@@ -5,35 +5,36 @@ See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogp
 
 ## Usage
 
-1. Install Rust: [rustup.rs][rustup]
-2. Clone the repository
+Download the [latest binary release](latest-release), which can be run from the command line on most Linux systems, including Windows Subsystem for Linux. For example, to load the file `test_data/nyc-taxi.csv.gz` in this repository and start the repl run:
 
 ```Bash
-git clone https://github.com/cswinter/LocustDB.git
-cd LocustDB
+./locustdb --load test_data/nyc-taxi.csv.gz --trips
 ```
 
-3. Run the repl
+When loading `.csv` or `.csv.gz` files with `--load`, the first line of each file is assumed to be a header containing the names for all columns. The type of each column will be derived automatically, but this might break for columns that contain a mixture of numbers/strings/empty entries.
+
+To persist data to disk in LocustDB's internal storage format (which allows fast queries from disk after the initial load), specify the storage location with `--db-path`
+When creating/opening a persistent database, LocustDB will open a lot of files and might crash if the limit on the number of open files is too low.
+On Linux, you can check the current limit with `ulimit -n` and set a new limit with e.g. `ulimit -n 4096`.
+
+The `--trips` flag will configure the ingestion schema for loading the 1.46 billion taxi ride dataset which can be downloaded [here][nyc-taxi-trips].
+
+For additional usage info, invoke with `--help`:
 
 ```Bash
-RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
-```
-
-Additional usage info:
-
-```Bash
-$ RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --help
+$ ./locustdb --help
 LocustDB 0.1.0-alpha
 Clemens Winter <clemenswinter1@gmail.com>
 Massively parallel, high performance analytics database that will rapidly devour all of your data.
 
 USAGE:
-    repl [FLAGS] [OPTIONS]
+    locustdb [FLAGS] [OPTIONS]
 
 FLAGS:
     -h, --help             Prints help information
         --mem-lz4          Keep data cached in memory lz4 encoded. Decreases memory usage and query speeds.
         --reduced-trips    Set ingestion schema for select set of columns from nyc taxi ride dataset
+        --seq-disk-read    Improves performance on HDD, can hurt performance on SSD.
         --trips            Set ingestion schema for nyc taxi ride dataset
     -V, --version          Prints version information
 
@@ -47,35 +48,6 @@ OPTIONS:
         --table <NAME>             Name for the table populated with --load [default: default]
         --threads <INTEGER>        Number of worker threads. [default: number of cores (12)]
 ```
-
-When loading csv files with `--load`, the first line of each file is assumed to be the column name. The type of each column will be derived automatically, but this might break for columns that contain a mixture of numbers/strings/empty entries.
-
-The `--reduced-trips` flag will configure the ingestion schema for loading the 1.46 billion taxi ride dataset which can be downloaded [here][nyc-taxi-trips]. Loading the full dataset requires about 120GB of disk space and 60GB of RAM.
-
-### No such subcommand: +nightly
-
-If you run into this error, you likely have an old version of `cargo` installed (`cargo -V` has to resturn 1.0.0 at the very least). You should uninstall cargo/rust from your system and reinstall using [rustup][rustup]. On Unix, you can get a good install with the following command (restart your shell afterwards):
-
-```
-curl https://sh.rustup.rs -sSf | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh
-```
-
-### Running tests or benchmarks
-
-`cargo +nightly test`
-
-`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly bench`
-
-### Storage backend
-LocustDB has experimental support for persisting data to disk and running queries on data stored on disk.
-This feature is disabled by default, and has to be enabled explicitly by passing `--features "enable_rocksdb"` to cargo during compilation.
-The database backend uses RocksDB, which is a somewhat complex C++ dependency that has to be compiled from source and requires gcc and various libraries to be available.
-You will have to manually install those on your system, instructions can be found [here][rocksdb-dependencies].
-You may also have to install various other random tools until compilation succeeds.
-
-### LZ4
-
-Compile with `--features "enable_lz4"` to enable an additional lz4 compression pass which can significantly reduce data size both on disk and in-memory, at the cost of slightly slower in-memory queries.
 
 ## Goals
 A vision for LocustDB.
@@ -117,7 +89,51 @@ LocustDB does not efficiently execute queries inserting or operating on small am
 ### Support for cost-inefficient or specialised hardware
 LocustDB does not run on GPUs.
 
+
+## Compiling from source
+
+1. Install Rust: [rustup.rs][rustup]
+2. Clone the repository
+
+```Bash
+git clone https://github.com/cswinter/LocustDB.git
+cd LocustDB
+```
+
+3. Compile with `RUSTFLAGS="-Ccodegen-units=1"` and `CARGO_INCREMENTAL=0` for optimal performance:
+
+```Bash
+RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
+```
+
+### No such subcommand: +nightly
+
+If you run into this error, you likely have an old version of `cargo` installed (`cargo -V` has to resturn 1.0.0 at the very least). You should uninstall cargo/rust from your system and reinstall using [rustup][rustup]. On Unix, you can get a good install with the following command (restart your shell afterwards):
+
+```
+curl https://sh.rustup.rs -sSf | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh
+```
+
+### Running tests or benchmarks
+
+`cargo +nightly test`
+
+`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly bench`
+
+### Storage backend
+LocustDB has support for persisting data to disk and running queries on data stored on disk.
+This feature is disabled by default, and has to be enabled explicitly by passing `--features "enable_rocksdb"` to cargo during compilation.
+The database backend uses RocksDB, which is a somewhat complex C++ dependency that has to be compiled from source and requires gcc and various libraries to be available.
+You will have to manually install those on your system, instructions can be found [here][rocksdb-dependencies].
+You may also have to install various other random tools until compilation succeeds.
+
+### LZ4
+
+Compile with `--features "enable_lz4"` to enable an additional lz4 compression pass which can significantly reduce data size both on disk and in-memory, at the cost of slightly slower in-memory queries.
+
+
 [nyc-taxi-trips]: https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
 [rustup]: https://rustup.rs/
 [rocksdb-dependencies]: https://github.com/facebook/rocksdb/blob/master/INSTALL.md#dependencies
+[latest-release][https://github.com/cswinter/LocustDB/releases/download/v0.1.0-alpha/locustdb-0.1.0-alpha-x64-linux.0-alpha]
