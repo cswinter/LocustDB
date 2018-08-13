@@ -136,4 +136,4 @@ Compile with `--features "enable_lz4"` to enable an additional lz4 compression p
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
 [rustup]: https://rustup.rs/
 [rocksdb-dependencies]: https://github.com/facebook/rocksdb/blob/master/INSTALL.md#dependencies
-[latest-release][https://github.com/cswinter/LocustDB/releases/download/v0.1.0-alpha/locustdb-0.1.0-alpha-x64-linux.0-alpha]
+[latest-release]: https://github.com/cswinter/LocustDB/releases/download/v0.1.0-alpha/locustdb-0.1.0-alpha-x64-linux.0-alpha
