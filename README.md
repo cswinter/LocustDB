@@ -1,11 +1,11 @@
 # LocustDB [![Build Status](https://travis-ci.org/cswinter/LocustDB.svg?branch=master)](https://travis-ci.org/cswinter/LocustDB) [![Join the chat at https://gitter.im/LocustDB/Lobby](https://badges.gitter.im/LocustDB/Lobby.svg)](https://gitter.im/LocustDB/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 An experimental analytics database aiming to set a new standard for query performance and storage efficiency on commodity hardware.
-See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogpost] for an overview of current capabilities.
+See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogpost] and [How to Read 100s of Millions of Records per Second from a Single Disk][blogpost-2] for an overview of current capabilities.
 
 ## Usage
 
-Download the [latest binary release][latest-release], which can be run from the command line on most Linux systems, including Windows Subsystem for Linux. For example, to load the file `test_data/nyc-taxi.csv.gz` in this repository and start the repl run:
+Download the [latest binary release][latest-release], which can be run from the command line on most x64 Linux systems, including Windows Subsystem for Linux. For example, to load the file `test_data/nyc-taxi.csv.gz` in this repository and start the repl run:
 
 ```Bash
 ./locustdb --load test_data/nyc-taxi.csv.gz --trips
@@ -134,6 +134,7 @@ Compile with `--features "enable_lz4"` to enable an additional lz4 compression p
 
 [nyc-taxi-trips]: https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
+[blogpost-2]: https://clemenswinter.com/2018/08/13/how-read-100s-of-millions-of-records-per-second-from-a-single-disk/
 [rustup]: https://rustup.rs/
 [rocksdb-dependencies]: https://github.com/facebook/rocksdb/blob/master/INSTALL.md#dependencies
 [latest-release]: https://github.com/cswinter/LocustDB/releases/download/v0.1.0-alpha/locustdb-0.1.0-alpha-x64-linux.0-alpha
