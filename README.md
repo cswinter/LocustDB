@@ -5,7 +5,7 @@ See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogp
 
 ## Usage
 
-Download the [latest binary release](latest-release), which can be run from the command line on most Linux systems, including Windows Subsystem for Linux. For example, to load the file `test_data/nyc-taxi.csv.gz` in this repository and start the repl run:
+Download the [latest binary release][latest-release], which can be run from the command line on most Linux systems, including Windows Subsystem for Linux. For example, to load the file `test_data/nyc-taxi.csv.gz` in this repository and start the repl run:
 
 ```Bash
 ./locustdb --load test_data/nyc-taxi.csv.gz --trips
