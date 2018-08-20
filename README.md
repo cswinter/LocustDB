@@ -103,22 +103,14 @@ cd LocustDB
 3. Compile with `RUSTFLAGS="-Ccodegen-units=1"` and `CARGO_INCREMENTAL=0` for optimal performance:
 
 ```Bash
-RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
-```
-
-### No such subcommand: +nightly
-
-If you run into this error, you likely have an old version of `cargo` installed (`cargo -V` has to resturn 1.0.0 at the very least). You should uninstall cargo/rust from your system and reinstall using [rustup][rustup]. On Unix, you can get a good install with the following command (restart your shell afterwards):
-
-```
-curl https://sh.rustup.rs -sSf | RUSTUP_INIT_SKIP_PATH_CHECK=yes sh
+RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
 ```
 
 ### Running tests or benchmarks
 
-`cargo +nightly test`
+`cargo test`
 
-`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo +nightly bench`
+`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo bench`
 
 ### Storage backend
 LocustDB has support for persisting data to disk and running queries on data stored on disk.
