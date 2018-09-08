@@ -67,15 +67,15 @@ impl QueryPlan {
     }
 }
 
-pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
+pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef {
     _prepare(plan, false, result)
 }
 
-pub fn prepare_no_alias<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
+pub fn prepare_no_alias(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef {
     _prepare(plan, true, result)
 }
 
-fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>) -> BufferRef {
+fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> BufferRef {
     trace!("{:?}", &plan);
     let (plan, signature) = if no_alias || plan.is_constant() {
         (plan, [0; 16])
@@ -181,7 +181,7 @@ fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>)
     result.last_buffer()
 }
 
-pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
+pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
                                     grouping_key_type: EncodingType,
                                     max_cardinality: usize,
                                     result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type, BufferRef) {
@@ -197,7 +197,7 @@ pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
 }
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
-pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan,
+pub fn prepare_aggregation<'a>(plan: QueryPlan,
                                    mut plan_type: Type,
                                    grouping_key: BufferRef,
                                    grouping_type: EncodingType,
@@ -243,10 +243,10 @@ pub fn order_preserving((plan, t): (QueryPlan, Type)) -> (QueryPlan, Type) {
 }
 
 impl QueryPlan {
-    pub fn create_query_plan<'a>(
+    pub fn create_query_plan(
         expr: &Expr,
         filter: Filter,
-        columns: &'a HashMap<String, Arc<Column>>) -> Result<(QueryPlan, Type), QueryError> {
+        columns: &HashMap<String, Arc<Column>>) -> Result<(QueryPlan, Type), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
         use self::Func1Type::*;
@@ -358,7 +358,7 @@ impl QueryPlan {
                                 QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
                         } else {
-                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <>= constant")
+                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
                         };
                         (plan, Type::new(BasicType::Boolean, None).mutable())
                     }
@@ -369,7 +369,7 @@ impl QueryPlan {
                 let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
                 let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
-                    bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
+                    bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
                 (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
@@ -415,10 +415,10 @@ impl QueryPlan {
         })
     }
 
-    pub fn compile_grouping_key<'b>(
+    pub fn compile_grouping_key(
         exprs: &[Expr],
         filter: Filter,
-        columns: &'b HashMap<String, Arc<Column>>)
+        columns: &HashMap<String, Arc<Column>>)
         -> Result<(QueryPlan, Type, i64, Vec<(QueryPlan, Type)>), QueryError> {
         if exprs.len() == 1 {
             QueryPlan::create_query_plan(&exprs[0], filter, columns)
