@@ -81,10 +81,11 @@ impl IntegerColumn {
     pub fn encode<T: GenericIntVec<T>>(values: Vec<i64>, offset: i64) -> Vec<T> {
         let mut encoded_vals = Vec::with_capacity(values.len());
         for v in values {
-            if T::from(v - offset).is_none() {
-                println!("{} {}", v, offset);
+            let encoded_val = T::from(v - offset);
+            if encoded_val.is_none() {
+                unreachable!("{} {}", v, offset);
             }
-            encoded_vals.push(T::from(v - offset).unwrap());
+            encoded_vals.push(encoded_val.unwrap());
         }
         encoded_vals
     }

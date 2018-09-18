@@ -67,15 +67,15 @@ impl QueryPlan {
     }
 }
 
-pub fn prepare<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
+pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef {
     _prepare(plan, false, result)
 }
 
-pub fn prepare_no_alias<'a>(plan: QueryPlan, result: &mut QueryExecutor<'a>) -> BufferRef {
+pub fn prepare_no_alias(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef {
     _prepare(plan, true, result)
 }
 
-fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>) -> BufferRef {
+fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> BufferRef {
     trace!("{:?}", &plan);
     let (plan, signature) = if no_alias || plan.is_constant() {
         (plan, [0; 16])
@@ -181,7 +181,7 @@ fn _prepare<'a>(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor<'a>)
     result.last_buffer()
 }
 
-pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
+pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
                                     grouping_key_type: EncodingType,
                                     max_cardinality: usize,
                                     result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type, BufferRef) {
@@ -197,7 +197,7 @@ pub fn prepare_hashmap_grouping<'a>(raw_grouping_key: BufferRef,
 }
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
-pub fn prepare_aggregation<'a, 'b>(plan: QueryPlan,
+pub fn prepare_aggregation<'a>(plan: QueryPlan,
                                    mut plan_type: Type,
                                    grouping_key: BufferRef,
                                    grouping_type: EncodingType,
@@ -243,10 +243,10 @@ pub fn order_preserving((plan, t): (QueryPlan, Type)) -> (QueryPlan, Type) {
 }
 
 impl QueryPlan {
-    pub fn create_query_plan<'a>(
+    pub fn create_query_plan(
         expr: &Expr,
         filter: Filter,
-        columns: &'a HashMap<String, Arc<Column>>) -> Result<(QueryPlan, Type), QueryError> {
+        columns: &HashMap<String, Arc<Column>>) -> Result<(QueryPlan, Type), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
         use self::Func1Type::*;
@@ -358,7 +358,7 @@ impl QueryPlan {
                                 QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
                             }
                         } else {
-                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <>= constant")
+                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
                         };
                         (plan, Type::new(BasicType::Boolean, None).mutable())
                     }
@@ -369,7 +369,7 @@ impl QueryPlan {
                 let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
                 let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
-                    bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
+                    bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
                 (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
             }
@@ -415,10 +415,10 @@ impl QueryPlan {
         })
     }
 
-    pub fn compile_grouping_key<'b>(
+    pub fn compile_grouping_key(
         exprs: &[Expr],
         filter: Filter,
-        columns: &'b HashMap<String, Arc<Column>>)
+        columns: &HashMap<String, Arc<Column>>)
         -> Result<(QueryPlan, Type, i64, Vec<(QueryPlan, Type)>), QueryError> {
         if exprs.len() == 1 {
             QueryPlan::create_query_plan(&exprs[0], filter, columns)
@@ -540,15 +540,15 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
 
         let mut signature = [0u8; 16];
         let mut hasher = Md5::new();
-        hasher.input(&discriminant_value(&plan).to_bytes());
+        hasher.input(&discriminant_value(&plan).to_ne_bytes());
         let plan = match plan {
             ReadColumnSection(name, index, range) => {
                 hasher.input_str(&name);
-                hasher.input(&index.to_bytes());
+                hasher.input(&index.to_ne_bytes());
                 ReadColumnSection(name, index, range)
             }
             ReadBuffer(buffer) => {
-                hasher.input(&buffer.0.to_bytes());
+                hasher.input(&buffer.0.to_ne_bytes());
                 ReadBuffer(buffer)
             }
             DictLookup(indices, t, offset_len, dict) => {
@@ -558,7 +558,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s1);
                 hasher.input(&s2);
                 hasher.input(&s3);
-                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
                 DictLookup(indices, t, offset_len, dict)
             }
             InverseDictLookup(dict_indices, dict_data, constant) => {
@@ -573,14 +573,14 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
             Cast(plan, initial_type, target_type) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&initial_type).to_bytes());
-                hasher.input(&discriminant_value(&target_type).to_bytes());
+                hasher.input(&discriminant_value(&initial_type).to_ne_bytes());
+                hasher.input(&discriminant_value(&target_type).to_ne_bytes());
                 Cast(plan, initial_type, target_type)
             }
             LZ4Decode(plan, decoded_len, t) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
                 LZ4Decode(plan, decoded_len, t)
             }
             UnpackStrings(plan) => {
@@ -591,14 +591,14 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
             UnhexpackStrings(plan, uppercase, total_bytes) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&total_bytes.to_bytes());
+                hasher.input(&total_bytes.to_ne_bytes());
                 hasher.input(&[uppercase as u8]);
                 UnhexpackStrings(plan, uppercase, total_bytes)
             }
             DeltaDecode(plan, t) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
                 DeltaDecode(plan, t)
             }
             Exists(indices, t, max_index) => {
@@ -606,20 +606,20 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (max_index, s2) = replace_common_subexpression(*max_index, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
                 Exists(indices, t, max_index)
             }
             NonzeroCompact(plan, t) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
                 NonzeroCompact(plan, t)
             }
             NonzeroIndices(plan, t1, t2) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t1).to_bytes());
-                hasher.input(&discriminant_value(&t2).to_bytes());
+                hasher.input(&discriminant_value(&t1).to_ne_bytes());
+                hasher.input(&discriminant_value(&t2).to_ne_bytes());
                 NonzeroIndices(plan, t1, t2)
             }
             Compact(data, data_t, select, select_t) => {
@@ -627,8 +627,8 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (select, s2) = replace_common_subexpression(*select, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&data_t).to_bytes());
-                hasher.input(&discriminant_value(&select_t).to_bytes());
+                hasher.input(&discriminant_value(&data_t).to_ne_bytes());
+                hasher.input(&discriminant_value(&select_t).to_ne_bytes());
                 Compact(data, data_t, select, select_t)
             }
             EncodeIntConstant(plan, codec) => {
@@ -642,14 +642,14 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&(shift_amount as u64).to_bytes());
+                hasher.input(&(shift_amount as u64).to_ne_bytes());
                 BitPack(lhs, rhs, shift_amount)
             }
             BitUnpack(inner, shift, width) => {
                 let (inner, s1) = replace_common_subexpression(*inner, executor);
                 hasher.input(&s1);
-                hasher.input(&shift.to_bytes());
-                hasher.input(&width.to_bytes());
+                hasher.input(&shift.to_ne_bytes());
+                hasher.input(&width.to_ne_bytes());
                 BitUnpack(inner, shift, width)
             }
             LessThanVS(left_type, lhs, rhs) => {
@@ -657,7 +657,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_bytes());
+                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
                 LessThanVS(left_type, lhs, rhs)
             }
             EqualsVS(left_type, lhs, rhs) => {
@@ -665,7 +665,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_bytes());
+                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
                 EqualsVS(left_type, lhs, rhs)
             }
             NotEqualsVS(left_type, lhs, rhs) => {
@@ -673,7 +673,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_bytes());
+                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
                 NotEqualsVS(left_type, lhs, rhs)
             }
             DivideVS(lhs, rhs) => {
@@ -688,7 +688,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_bytes());
+                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
                 AddVS(left_type, lhs, rhs)
             }
             And(lhs, rhs) => {
@@ -719,8 +719,8 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
             TopN(plan, t, n, desc) => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t).to_bytes());
-                hasher.input(&n.to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
+                hasher.input(&n.to_ne_bytes());
                 hasher.input(&[desc as u8]);
                 TopN(plan, t, n, desc)
             }
@@ -729,7 +729,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
                 Select(lhs, rhs, t)
             }
             Filter(plan, t, filter) => {
@@ -737,13 +737,13 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (filter, s2) = replace_common_subexpression(*filter, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&t).to_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
                 Filter(plan, t, filter)
             }
             EncodedGroupByPlaceholder => EncodedGroupByPlaceholder,
             Constant(val, show) => {
                 match val {
-                    RawVal::Int(i) => hasher.input(&(i as u64).to_bytes()),
+                    RawVal::Int(i) => hasher.input(&(i as u64).to_ne_bytes()),
                     RawVal::Str(ref s) => hasher.input_str(s),
                     RawVal::Null => {}
                 }
