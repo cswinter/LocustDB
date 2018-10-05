@@ -470,7 +470,7 @@ dependencies = [
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.5.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "lru 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lru 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "lz4 1.22.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "nom 3.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -1108,7 +1108,7 @@ dependencies = [
 "checksum libloading 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "9c3ad660d7cb8c5822cd83d10897b0f1f1526792737a179e73896152f85b88c2"
 "checksum librocksdb-sys 5.14.2 (registry+https://github.com/rust-lang/crates.io-index)" = "474d805d72e23a06310fa5201dfe182dc4b80ab1f18bb2823c1ac17ff9dcbaa2"
 "checksum log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "89f010e843f2b1a31dbd316b3b8d443758bc634bed37aabade59c686d644e0a2"
-"checksum lru 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "f1422de50f19f1e08676a563ba667974c0fe487a5c02eea23890983997c0184a"
+"checksum lru 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)" = "5fb41c1934bda881f2ab7ad8afa2ec25b8e0453563bfb09854bf3c319b1c96c3"
 "checksum lz4 1.22.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fe55d2ebbc2e4fc987e6fbfc13f416d97b06d06e50bc1124d613aa790842f80c"
 "checksum lz4-sys 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a59044c3ba3994f3d2aa2270ddd6c5947922219501e67efde5604d36aad462b5"
 "checksum make-cmd 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a8ca8afbe8af1785e09636acb5a41e08a765f5f0340568716c18a8700ba3c0d3"

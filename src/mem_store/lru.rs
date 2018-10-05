@@ -1,5 +1,5 @@
 use std::sync::{Arc, Mutex};
-use mem_store::lru_fork::LruCache;
+use lru::LruCache;
 use mem_store::partition::ColumnKey;
 
 
@@ -33,7 +33,7 @@ impl LRU {
 impl Default for LRU {
     fn default() -> LRU {
         LRU {
-            cache: Arc::new(Mutex::new(LruCache::infinite_capacity()))
+            cache: Arc::new(Mutex::new(LruCache::unbounded()))
         }
     }
 }

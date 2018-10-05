@@ -12,7 +12,6 @@ pub mod value;
 pub mod lz4;
 mod mixed_column;
 mod lru;
-mod lru_fork;
 
 pub use self::column::{Column, DataSection};
 pub use self::codec::{Codec, CodecOp};
