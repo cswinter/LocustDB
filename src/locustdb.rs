@@ -13,6 +13,7 @@ use QueryResult;
 use disk_store::interface::*;
 use disk_store::noop_storage::NoopStorage;
 use engine::query_task::QueryTask;
+use ingest::colgen::GenTable;
 use ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
 use mem_store::*;
 use scheduler::*;
@@ -93,6 +94,13 @@ impl LocustDB {
             options,
             self.inner_locustdb.clone(),
             SharedSender::new(sender));
+        self.schedule(task);
+        receiver
+    }
+
+    pub fn gen_table(&self, opts: GenTable) -> impl Future<Item=(), Error=oneshot::Canceled> {
+        let inner = self.inner_locustdb.clone();
+        let (task, receiver) = Task::from_fn(move || inner.gen_table(&opts));
         self.schedule(task);
         receiver
     }

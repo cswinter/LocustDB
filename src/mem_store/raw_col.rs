@@ -53,17 +53,17 @@ impl MixedCol {
 
     pub fn finalize(self, name: &str) -> Arc<Column> {
         if self.types.contains_string {
-            let mut builder = StringColBuilder::new();
+            let mut builder = StringColBuilder::default();
             for v in self.data {
                 match v {
                     RawVal::Str(s) => builder.push(&s),
                     RawVal::Int(i) => builder.push(&i.to_string()),
-                    RawVal::Null => builder.push(""),
+                    RawVal::Null => builder.push(&""),
                 }
             }
-            builder.finalize(name)
+            ColumnBuilder::<String>::finalize(builder, name)
         } else if self.types.contains_int {
-            let mut builder = IntColBuilder::new();
+            let mut builder = IntColBuilder::default();
             for v in self.data {
                 match v {
                     RawVal::Str(_) => panic!("Unexpected string in int column!"),

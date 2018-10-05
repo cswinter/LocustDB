@@ -10,19 +10,18 @@ use mem_store::column::*;
 use mem_store::strings::*;
 
 
-pub trait ColumnBuilder<T: ?Sized> {
+pub trait ColumnBuilder<T: ?Sized>: Default {
     fn push(&mut self, elem: &T);
     fn finalize(self, name: &str) -> Arc<Column>;
 }
-
 
 pub struct StringColBuilder {
     data: Vec<Option<Rc<String>>>,
     uniques: UniqueValues<Option<Rc<String>>>,
 }
 
-impl StringColBuilder {
-    pub fn new() -> StringColBuilder {
+impl Default for StringColBuilder {
+    fn default() -> StringColBuilder {
         StringColBuilder {
             data: Vec::new(),
             uniques: UniqueValues::new(1 << 19),// TODO(clemens): use partition size
@@ -30,9 +29,9 @@ impl StringColBuilder {
     }
 }
 
-impl ColumnBuilder<str> for StringColBuilder {
-    fn push(&mut self, elem: &str) {
-        let str_opt = Some(Rc::new(elem.to_string()));
+impl<T: AsRef<str>> ColumnBuilder<T> for StringColBuilder {
+    fn push(&mut self, elem: &T) {
+        let str_opt = Some(Rc::new(elem.as_ref().to_string()));
         self.data.push(str_opt.clone());
         self.uniques.insert(str_opt);
     }
@@ -52,8 +51,8 @@ pub struct IntColBuilder {
     last: i64,
 }
 
-impl IntColBuilder {
-    pub fn new() -> IntColBuilder {
+impl Default for IntColBuilder {
+    fn default() -> IntColBuilder {
         IntColBuilder {
             data: Vec::new(),
             min: i64::MAX,

@@ -11,7 +11,7 @@ pub mod value;
 #[cfg(feature = "enable_lz4")]
 pub mod lz4;
 mod mixed_column;
-mod lru;
+pub(crate) mod lru;
 
 pub use self::column::{Column, DataSection};
 pub use self::codec::{Codec, CodecOp};

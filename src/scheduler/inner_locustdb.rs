@@ -12,6 +12,7 @@ use heapsize::HeapSizeOf;
 use time;
 
 use disk_store::interface::*;
+use ingest::colgen::GenTable;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
 use locustdb::Options;
@@ -208,6 +209,12 @@ impl InnerLocustDB {
     pub fn stats(&self) -> Vec<TableStats> {
         let tables = self.tables.read().unwrap();
         tables.values().map(|table| table.stats()).collect()
+    }
+
+    pub fn gen_table(&self, opts: &GenTable) {
+        let table = opts.gen(&self.lru, 0);
+        let mut tables = self.tables.write().unwrap();
+        tables.insert(table.name().to_string(), table);
     }
 
     fn create_if_empty(&self, table: &str) {

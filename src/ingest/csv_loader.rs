@@ -193,7 +193,7 @@ impl RawCol {
             fast_build_string_column(name, self.values.iter(), self.values.len(),
                                      self.lhex, self.uhex, self.string_bytes)
         } else if self.types.contains_int {
-            let mut builder = IntColBuilder::new();
+            let mut builder = IntColBuilder::default();
             for s in self.values.iter() {
                 let int = if s.is_empty() {
                     0
@@ -215,7 +215,7 @@ impl RawCol {
     }
 
     fn extract(&mut self, name: &str, extractor: &extractor::Extractor) -> Arc<Column> {
-        let mut builder = IntColBuilder::new();
+        let mut builder = IntColBuilder::default();
         for s in self.values.iter() {
             builder.push(&extractor(s));
         }

@@ -305,6 +305,38 @@ fn z_test_group_by_trip_id() {
     )
 }
 
+#[test]
+fn test_gen_table() {
+    use Value::*;
+    let _ = env_logger::try_init();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.gen_table(
+        locustdb::colgen::GenTable {
+            name: "test".to_string(),
+            partitions: 8,
+            partition_size: 2 << 14,
+            columns: vec![
+                ("yum".to_string(), locustdb::colgen::string_markov_chain(
+                    vec!["Walnut".to_string(), "Cashew".to_string(), "Hazelnut".to_string()],
+                    vec![
+                        vec![0., 0.5, 0.5],
+                        vec![0.1, 0.5, 0.4],
+                        vec![0.1, 0.9, 0.],
+                    ],
+                ))
+            ],
+        }
+    ));
+    let query = "SELECT yum, count(1) FROM test;";
+    let expected_rows = vec![
+        [Str("Cashew".to_string()), Int(162035)],
+        [Str("Hazelnut".to_string()), Int(76401)],
+        [Str("Walnut".to_string()), Int(23708)]
+    ];
+    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
+    assert_eq!(result.0.unwrap().rows, expected_rows);
+}
+
 #[cfg(feature = "enable_rocksdb")]
 #[test]
 fn test_restore_from_disk() {
