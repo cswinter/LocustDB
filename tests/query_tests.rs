@@ -337,6 +337,40 @@ fn test_gen_table() {
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
+#[test]
+fn test_column_with_null_partitions() {
+    use Value::*;
+    let _ = env_logger::try_init();
+    let mut opts = locustdb::Options::default();
+    opts.threads = 1;
+    let locustdb = LocustDB::new(&opts);
+    let _ = block_on(locustdb.gen_table(
+        locustdb::colgen::GenTable {
+            name: "test".to_string(),
+            partitions: 5,
+            partition_size: 1,
+            columns: vec![
+                ("partition_sparse".to_string(),
+                 locustdb::colgen::partition_sparse(
+                     0.5,
+                     locustdb::colgen::string_markov_chain(
+                         vec!["A".to_string(), "B".to_string()],
+                         vec![
+                             vec![0.3, 0.7],
+                             vec![0.3, 0.7],
+                         ],
+                     ))
+                )
+            ],
+        }
+    ));
+    let query = "SELECT partition_sparse FROM test;";
+    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
+    assert_eq!(result.rows.iter().filter(|&x| x == &[Null]).count(), 2);
+    assert_eq!(result.rows.iter().filter(|&x| x == &[Str("A".to_string())]).count(), 1);
+    assert_eq!(result.rows.iter().filter(|&x| x == &[Str("B".to_string())]).count(), 2);
+}
+
 #[cfg(feature = "enable_rocksdb")]
 #[test]
 fn test_restore_from_disk() {
@@ -370,3 +404,4 @@ fn test_restore_from_disk() {
         vec![Int(1), Int(2013), Int(2), Int(824)]
     ]);
 }
+

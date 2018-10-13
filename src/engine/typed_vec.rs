@@ -1,8 +1,3 @@
-use engine::types::*;
-use heapsize::HeapSizeOf;
-use ingest::raw_val::RawVal;
-use itertools::Itertools;
-use num::PrimInt;
 use std::cmp::min;
 use std::fmt::{Debug, Display, Write};
 use std::fmt;
@@ -10,9 +5,16 @@ use std::hash::Hash;
 use std::mem;
 use std::string;
 
+use num::PrimInt;
+
+use engine::types::*;
+use heapsize::HeapSizeOf;
+use ingest::raw_val::RawVal;
+use itertools::Itertools;
+use mem_store::value::Val;
+
 
 pub type BoxedVec<'a> = Box<AnyVec<'a> + 'a>;
-
 
 pub trait AnyVec<'a>: Send + Sync {
     fn len(&self) -> usize;
@@ -21,7 +23,7 @@ pub trait AnyVec<'a>: Send + Sync {
     fn sort_indices_desc(&self, indices: &mut Vec<usize>);
     fn sort_indices_asc(&self, indices: &mut Vec<usize>);
     fn type_error(&self, func_name: &str) -> String;
-    fn extend(&mut self, other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>>;
+    fn append_all(&mut self, other: &AnyVec<'a>, count: usize) -> Option<BoxedVec<'a>>;
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b;
 
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
@@ -31,6 +33,7 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_u32<'b>(&'b self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
     fn cast_ref_u16<'b>(&'b self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
     fn cast_ref_u8<'b>(&'b self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
+    fn cast_ref_mixed<'b>(&'b self) -> &'b [Val<'a>] { panic!(self.type_error("cast_ref_mixed")) }
     fn cast_ref_merge_op<'b>(&'b self) -> &[MergeOp] { panic!(self.type_error("cast_ref_merge_op")) }
     fn cast_ref_premerge<'b>(&'b self) -> &[Premerge] { panic!(self.type_error("cast_ref_merge_op")) }
     fn cast_str_const(&self) -> string::String { panic!(self.type_error("cast_str_const")) }
@@ -43,8 +46,11 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
+    fn cast_ref_mut_mixed<'b>(&'b mut self) -> &'b mut Vec<Val<'a>> { panic!(self.type_error("cast_ref_mut_mixed")) }
     fn cast_ref_mut_merge_op(&mut self) -> &mut Vec<MergeOp> { panic!(self.type_error("cast_ref_merge_op")) }
     fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { panic!(self.type_error("cast_ref_merge_op")) }
+
+    fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
 
     fn display(&self) -> String;
 }
@@ -73,11 +79,20 @@ impl<'a, T: GenericVec<T> + 'a> AnyVec<'a> for Vec<T> {
 
     fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
 
-    fn extend(&mut self, other: BoxedVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
-        // TODO(clemens): handle empty, null, type conversions to Mixed
-        let x = T::unwrap(other.as_ref());
-        self.extend_from_slice(&x[0..min(x.len(), count)]);
-        None
+    default fn append_all(&mut self, other: &AnyVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
+        if other.get_type() != self.get_type() {
+            let mut mixed = self.to_mixed();
+            if other.get_type() == EncodingType::Val {
+                mixed.extend(other.cast_ref_mixed().iter().take(count));
+            } else {
+                mixed.append_all(&other.to_mixed(), count);
+            }
+            Some(Box::new(mixed))
+        } else {
+            let x = T::unwrap(other);
+            self.extend_from_slice(&x[0..min(x.len(), count)]);
+            None
+        }
     }
 
     fn display(&self) -> String { format!("Vec<{:?}>{}", T::t(), display_slice(&self, 120)) }
@@ -86,6 +101,23 @@ impl<'a, T: GenericVec<T> + 'a> AnyVec<'a> for Vec<T> {
 impl<'a> AnyVec<'a> for Vec<&'a str> {
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { self }
     fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut Vec<&'a str> { self }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter().map(|s| Val::Str(*s)).collect()
+    }
+}
+
+impl<'a> AnyVec<'a> for Vec<Val<'a>> {
+    fn cast_ref_mixed<'b>(&'b self) -> &'b [Val<'a>] { self }
+    fn cast_ref_mut_mixed<'b>(&'b mut self) -> &'b mut Vec<Val<'a>> { self }
+
+    fn append_all(&mut self, other: &AnyVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
+        if other.get_type() == EncodingType::Val {
+            self.extend(other.cast_ref_mixed().iter().take(count));
+        } else {
+            self.extend(other.to_mixed().iter().take(count));
+        }
+        None
+    }
 }
 
 impl<'a> AnyVec<'a> for Vec<usize> {
@@ -96,6 +128,9 @@ impl<'a> AnyVec<'a> for Vec<usize> {
 impl<'a> AnyVec<'a> for Vec<i64> {
     fn cast_ref_i64(&self) -> &[i64] { self }
     fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { self }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter().map(|i| Val::Integer(*i)).collect()
+    }
 }
 
 impl<'a> AnyVec<'a> for Vec<u64> {
@@ -144,19 +179,21 @@ impl<'a, T: GenericVec<T> + 'a> AnyVec<'a> for &'a [T] {
         Box::new(&self[from..to])
     }
 
+    fn append_all(&mut self, _other: &AnyVec<'a>, _count: usize) -> Option<BoxedVec<'a>> {
+        panic!("append_all on borrow")
+    }
 
     fn type_error(&self, func_name: &str) -> String { format!("[{:?}].{}", T::t(), func_name) }
-
-    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> {
-        // TODO(clemens): convert into owned
-        unimplemented!()
-    }
 
     fn display(&self) -> String { format!("&{:?}{}", T::t(), display_slice(&self, 120)) }
 }
 
 impl<'a> AnyVec<'a> for &'a [&'a str] {
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { self }
+}
+
+impl<'a> AnyVec<'a> for &'a [Val<'a>] {
+    fn cast_ref_mixed<'b>(&'b self) -> &'b [Val<'a>] { self }
 }
 
 impl<'a> AnyVec<'a> for &'a [usize] {
@@ -202,8 +239,22 @@ impl<'a> AnyVec<'a> for usize {
     fn sort_indices_desc(&self, _indices: &mut Vec<usize>) { panic!("EmptyVector.sort_indices_desc") }
     fn sort_indices_asc(&self, _indices: &mut Vec<usize>) { panic!("EmptyVector.sort_indices_asc") }
     fn type_error(&self, func_name: &str) -> String { format!("EmptyVector.{}", func_name) }
-    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("EmptyVector.extend") }
-    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(from - min(to, *self)) }
+
+    fn append_all(&mut self, other: &AnyVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
+        if other.get_type() == EncodingType::Null {
+            *self += count;
+            None
+        } else {
+            let mut upcast = Box::new(vec![Val::Null; *self]);
+            upcast.append_all(other, count).or(Some(upcast))
+        }
+    }
+
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        vec![Val::Null; *self]
+    }
+
+    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(min(to, *self) - from) }
 
     fn display(&self) -> String { format!("null({})", self) }
 }
@@ -215,7 +266,7 @@ impl<'a> AnyVec<'a> for RawVal {
     fn sort_indices_desc(&self, _indices: &mut Vec<usize>) {}
     fn sort_indices_asc(&self, _indices: &mut Vec<usize>) {}
     fn type_error(&self, func_name: &str) -> String { format!("Constant.{}", func_name) }
-    fn extend(&mut self, _other: BoxedVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("Constant.extend") }
+    fn append_all(&mut self, _other: &AnyVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("Constant.extend") }
     fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(self.clone()) }
     fn cast_str_const(&self) -> string::String {
         match self {
@@ -297,6 +348,24 @@ impl<'c> GenericVec<&'c str> for &'c str {
     fn wrap_one(value: &'c str) -> RawVal { RawVal::Str(value.to_string()) }
 
     fn t() -> EncodingType { EncodingType::Str }
+}
+
+impl<'c> GenericVec<Val<'c>> for Val<'c> {
+    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [Val<'c>] where Val<'c>: 'a {
+        unsafe {
+            mem::transmute::<_, &'b [Val<'c>]>(vec.cast_ref_mixed())
+        }
+    }
+
+    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<Val<'c>> where RawVal: 'a {
+        unsafe {
+            mem::transmute::<_, &'b mut Vec<Val<'c>>>(vec.cast_ref_mut_mixed())
+        }
+    }
+
+    fn wrap_one(value: Val<'c>) -> RawVal { (&value).into() }
+
+    fn t() -> EncodingType { EncodingType::Val }
 }
 
 

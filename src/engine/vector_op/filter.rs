@@ -20,7 +20,7 @@ impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: GenericVec<T> {
         if stream { filtered.clear(); }
         for (d, &select) in data.iter().zip(filter.iter()) {
             if select > 0 {
-                filtered.push(*d);
+                filtered.push(d.clone());
             }
         }
         trace!("filter: {:?}", filter);

@@ -174,7 +174,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         let count = if col1.len() >= limit { 0 } else {
                             min(col2.len(), limit - col1.len())
                         };
-                        if let Some(newcol) = col1.extend(col2, count) {
+                        if let Some(newcol) = col1.append_all(&*col2, count) {
                             result.push(newcol)
                         } else {
                             result.push(col1)

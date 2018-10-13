@@ -3,7 +3,7 @@ use heapsize::HeapSizeOf;
 use std::convert::From;
 use ingest::raw_val::RawVal;
 
-#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Clone, Copy, Hash)]
 pub enum Val<'a> {
     Null,
     Bool(bool),

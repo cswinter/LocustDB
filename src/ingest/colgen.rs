@@ -38,6 +38,15 @@ pub fn string_markov_chain(
     })
 }
 
+pub fn partition_sparse(
+    null_probability: f64,
+    generator: Box<ColumnGenerator>) -> Box<ColumnGenerator> {
+    Box::new(PartitionSparse {
+        null_probability,
+        generator,
+    })
+}
+
 #[derive(Clone)]
 struct MarkovChain<T, S> {
     elem: Vec<T>,
@@ -51,11 +60,7 @@ unsafe impl<T: Sync + Send, S: ColumnBuilder<T>> Sync for MarkovChain<T, S> {}
 
 impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> {
     fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
-        let mut seed_bytes = [0u8; 16];
-        let mut hasher = Md5::new();
-        hasher.input(&seed.to_ne_bytes());
-        hasher.result(&mut seed_bytes);
-        let mut rng = rand::XorShiftRng::from_seed(seed_bytes);
+        let mut rng = seeded_rng(seed);
         let mut builder = S::default();
         let mut state = rng.gen_range(0, self.elem.len());
         let p = self.p_transition.iter()
@@ -67,6 +72,22 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> 
             builder.push(&self.elem[state]);
         }
         builder.finalize(name)
+    }
+}
+
+struct PartitionSparse {
+    null_probability: f64,
+    generator: Box<ColumnGenerator>,
+}
+
+impl ColumnGenerator for PartitionSparse {
+    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+        let mut rng = seeded_rng(seed);
+        if rng.gen::<f64>() < self.null_probability {
+            Arc::new(Column::null(name, length))
+        } else {
+            self.generator.generate(length, name, seed)
+        }
     }
 }
 
@@ -94,4 +115,12 @@ impl GenTable {
         }
         table
     }
+}
+
+fn seeded_rng(seed: u64) -> rand::XorShiftRng {
+    let mut seed_bytes = [0u8; 16];
+    let mut hasher = Md5::new();
+    hasher.input(&seed.to_ne_bytes());
+    hasher.result(&mut seed_bytes);
+    rand::XorShiftRng::from_seed(seed_bytes)
 }
