@@ -31,12 +31,12 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> f
         let mut indices = scratchpad.get_mut::<usize>(self.indices);
         let mut keys = scratchpad.get_mut::<T>(self.keys);
 
-        assert!(indices.len() == keys.len());
+        assert_eq!(indices.len(), keys.len());
         if indices.len() < indices.capacity() {
             let count = cmp::min(indices.capacity() - indices.len(), input.len());
-            for i in 0..count {
+            for (i, input) in input.iter().take(count).enumerate() {
                 indices.push(self.last_index + i);
-                keys.push(input[i]);
+                keys.push(*input);
             }
             if indices.capacity() == indices.len() {
                 // TODO(clemens): Optimize? (linear time heapify)

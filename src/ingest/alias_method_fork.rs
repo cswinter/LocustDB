@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 // Implementation of [Walker's Alias method](https://en.wikipedia.org/wiki/Alias_method)
 //
 // The Walker's Alias method algorithm is principally useful when you need to

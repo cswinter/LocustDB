@@ -39,7 +39,7 @@ impl Table {
 
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
-        partitions.values().map(|p| p.clone()).collect()
+        partitions.values().cloned().collect()
     }
 
     pub fn load_table_metadata(batch_size: usize, storage: &DiskStore, lru: &LRU) -> HashMap<String, Table> {
@@ -47,15 +47,15 @@ impl Table {
         for md in storage.load_metadata() {
             let table = tables
                 .entry(md.tablename.clone())
-                .or_insert(Table::new(batch_size, &md.tablename, lru.clone()));
+                .or_insert_with(|| Table::new(batch_size, &md.tablename, lru.clone()));
             table.insert_nonresident_partition(&md);
         }
         tables
     }
 
-    pub fn restore(&self, id: PartitionID, col: Arc<Column>) {
+    pub fn restore(&self, id: PartitionID, col: &Arc<Column>) {
         let partitions = self.partitions.read().unwrap();
-        partitions[&id].restore(col);
+        partitions[&id].restore(&col);
     }
 
     pub fn evict(&self, key: &ColumnKey) -> usize {
@@ -150,7 +150,7 @@ impl Table {
 
     pub fn max_partition_id(&self) -> u64 {
         let partitions = self.partitions.read().unwrap();
-        partitions.keys().max().map(|x| *x).unwrap_or(0)
+        partitions.keys().max().cloned().unwrap_or(0)
     }
 
     fn size_per_column(partitions: &[Arc<Partition>]) -> Vec<(String, usize)> {

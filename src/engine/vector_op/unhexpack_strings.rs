@@ -25,8 +25,7 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
         // TODO(clemens): method that checks whether buffer is pinned, and returns with lifetime 'a? allows getting rid of transmute below...
         let mut stringstore = scratchpad.get_mut::<u8>(self.stringstore);
         if streaming { decoded.clear() }
-        let iter = self.iterator.as_mut().unwrap();
-        while let Some(elem) = iter.next() {
+        for elem in self.iterator.as_mut().unwrap() {
             let string = if self.uppercase {
                 hex::encode_upper(elem)
             } else {

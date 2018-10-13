@@ -33,7 +33,7 @@ impl LocustDB {
     pub fn new(opts: &Options) -> LocustDB {
         let disk_store = opts.db_path.as_ref()
             .map(|path| LocustDB::persistent_storage(path))
-            .unwrap_or(Arc::new(NoopStorage));
+            .unwrap_or_else(|| Arc::new(NoopStorage));
         let locustdb = Arc::new(InnerLocustDB::new(disk_store, opts));
         InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB { inner_locustdb: locustdb }

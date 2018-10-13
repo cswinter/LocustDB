@@ -13,5 +13,5 @@ impl DiskStore for NoopStorage {
     }
     fn load_column_range(&self, _: PartitionID, _: PartitionID, _: &str, _: &InnerLocustDB) {}
     fn bulk_load(&self, _: &InnerLocustDB) {}
-    fn store_partition(&self, _: PartitionID, _: &str, _: &Vec<Arc<Column>>) {}
+    fn store_partition(&self, _: PartitionID, _: &str, _: &[Arc<Column>]) {}
 }

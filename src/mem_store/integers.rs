@@ -13,7 +13,7 @@ impl IntegerColumn {
         let original_range = Some((min, max));
         let min0 = min;
         let max0 = max;
-        if delta_encode && values.len() > 0 {
+        if delta_encode && values.is_empty() {
             let mut previous = values[0];
             max = previous;
             min = previous;

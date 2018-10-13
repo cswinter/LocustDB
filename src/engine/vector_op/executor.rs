@@ -66,6 +66,8 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
+    // TODO(clemens): Make this nicer?
+    #[allow(clippy::cyclomatic_complexity)]
     fn partition(&self) -> Vec<ExecutorStage> {
         // Construct execution graph
         let mut consumers = vec![vec![]; self.count];
@@ -101,10 +103,10 @@ impl<'a> QueryExecutor<'a> {
         loop {
             // Find an op that hasn't been assigned to a stage yet
             let mut to_visit = vec![];
-            for i in 0..self.ops.len() {
-                if !visited[i] {
+            for (i, visited) in visited.iter_mut().enumerate() {
+                if !*visited {
                     to_visit.push(i as usize);
-                    visited[i] = true;
+                    *visited = true;
                     break;
                 }
             }
@@ -189,7 +191,11 @@ impl<'a> QueryExecutor<'a> {
 
         let mut visited = vec![false; stages.len()];
         let mut total_order = Vec::new();
-        fn visit(stage_index: usize, dependencies: &Vec<HashSet<usize>>, stage: &Vec<ExecutorStage>, visited: &mut Vec<bool>, total_order: &mut Vec<ExecutorStage>) {
+        fn visit(stage_index: usize,
+                 dependencies: &[HashSet<usize>],
+                 stage: &[ExecutorStage],
+                 visited: &mut Vec<bool>,
+                 total_order: &mut Vec<ExecutorStage>) {
             if visited[stage_index] { return; }
             visited[stage_index] = true;
             for &dependency in &dependencies[stage_index] {
@@ -275,7 +281,7 @@ impl<'a> Default for QueryExecutor<'a> {
             stages: vec![],
             encoded_group_by: None,
             count: 0,
-            last_buffer: BufferRef(0xdeadbeef, "ERROR"),
+            last_buffer: BufferRef(0xdead_beef, "ERROR"),
         }
     }
 }
@@ -300,7 +306,7 @@ impl<'a> fmt::Display for QueryExecutor<'a> {
             for &(op, _) in &stage.ops {
                 write!(f, "\n{}", self.ops[op].display(alternate))?;
             }
-            write!(f, "\n")?;
+            writeln!(f)?;
         }
         Ok(())
     }

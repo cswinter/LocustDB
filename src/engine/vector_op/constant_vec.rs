@@ -25,7 +25,7 @@ impl<'a> VecOperator<'a> for ConstantVec<'a> {
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {
-        format!("ConstantVec")
+        "ConstantVec".to_string()
     }
 }
 

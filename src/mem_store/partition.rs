@@ -92,10 +92,8 @@ impl Partition {
                 if nonresidents.contains(handle.name()) {
                     return false;
                 }
-            } else {
-                if eligible.contains(handle.name()) && !nonresidents.contains(handle.name()) {
-                    return false;
-                }
+            } else if eligible.contains(handle.name()) && !nonresidents.contains(handle.name()) {
+                return false;
             }
         }
         true
@@ -112,7 +110,7 @@ impl Partition {
         total_size
     }
 
-    pub fn restore(&self, col: Arc<Column>) {
+    pub fn restore(&self, col: &Arc<Column>) {
         for handle in &self.cols {
             if handle.name() == col.name() {
                 let mut maybe_column = handle.col.lock().unwrap();
@@ -155,6 +153,7 @@ impl Partition {
                     rows: 0,
                     rows_percentage: 0.0,
                     encodings: HashMap::default(),
+                    fully_resident: false,
                 });
             if let Some(ref col) = *col {
                 col.mem_tree(&mut coltree, depth);

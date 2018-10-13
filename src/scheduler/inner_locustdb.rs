@@ -83,7 +83,7 @@ impl InnerLocustDB {
             thread::spawn(move || InnerLocustDB::worker_loop(cloned, id));
         }
         let cloned = locustdb.clone();
-        thread::spawn(move || InnerLocustDB::enforce_mem_limit(cloned));
+        thread::spawn(move || InnerLocustDB::enforce_mem_limit(&cloned));
     }
 
     pub fn snapshot(&self, table: &str) -> Option<Vec<Arc<Partition>>> {
@@ -106,7 +106,7 @@ impl InnerLocustDB {
 
     fn worker_loop(locustdb: Arc<InnerLocustDB>, thread_id: usize) {
         while locustdb.running.load(Ordering::SeqCst) {
-            if let Some(task) = InnerLocustDB::await_task(locustdb.clone()) {
+            if let Some(task) = InnerLocustDB::await_task(&locustdb) {
                 if let Some(ref tb) = *task.trace_builder.read().unwrap() {
                     tb.activate();
                 }
@@ -122,7 +122,7 @@ impl InnerLocustDB {
         drop(locustdb) // Make clippy happy
     }
 
-    fn await_task(ldb: Arc<InnerLocustDB>) -> Option<Arc<TaskState>> {
+    fn await_task(ldb: &Arc<InnerLocustDB>) -> Option<Arc<TaskState>> {
         let mut task_queue = ldb.task_queue.lock().unwrap();
         while task_queue.is_empty() {
             if !ldb.running.load(Ordering::SeqCst) { return None; }
@@ -178,7 +178,7 @@ impl InnerLocustDB {
     pub fn restore(&self, id: PartitionID, column: Column) {
         let column = Arc::new(column);
         for table in self.tables.read().unwrap().values() {
-            table.restore(id, column.clone());
+            table.restore(id, &column);
         }
     }
 
@@ -236,7 +236,7 @@ impl InnerLocustDB {
         }
     }
 
-    fn enforce_mem_limit(ldb: Arc<InnerLocustDB>) {
+    fn enforce_mem_limit(ldb: &Arc<InnerLocustDB>) {
         while ldb.running.load(Ordering::SeqCst) {
             let mut mem_usage_bytes: usize = {
                 let tables = ldb.tables.read().unwrap();

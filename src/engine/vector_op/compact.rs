@@ -26,7 +26,7 @@ impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact
         let mut j = 0;
         for (i, &s) in select.iter().take(data.len()).enumerate() {
             if s > U::zero() {
-                data[j] = data[i].clone();
+                data[j] = data[i];
                 j += 1;
             }
         }

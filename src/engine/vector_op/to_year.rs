@@ -1,3 +1,5 @@
+use std::i64;
+
 use chrono::{NaiveDateTime, Datelike};
 
 use engine::vector_op::vector_operator::*;
@@ -15,7 +17,7 @@ impl<'a> VecOperator<'a> for ToYear {
         let mut years = scratchpad.get_mut::<i64>(self.output);
         if stream { years.clear() }
         for ts in timestamps.iter() {
-            years.push(NaiveDateTime::from_timestamp(*ts, 0).year() as i64);
+            years.push(i64::from(NaiveDateTime::from_timestamp(*ts, 0).year()));
         }
     }
 

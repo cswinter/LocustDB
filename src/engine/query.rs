@@ -121,7 +121,9 @@ impl Query {
         };
 
         // Combine all group by columns into a single decodable grouping key
-        let (grouping_key_plan, raw_grouping_key_type, max_grouping_key, decode_plans) =
+        let ((grouping_key_plan, raw_grouping_key_type),
+            max_grouping_key,
+            decode_plans) =
             QueryPlan::compile_grouping_key(&self.select, filter, columns)?;
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
@@ -220,12 +222,12 @@ impl Query {
             }
 
             // TODO(clemens): is there a simpler way to do this?
-            selector_index.map(|i| {
+            if let Some(i) = selector_index {
                 let (aggregator, aggregate, ref t) = aggregation_results[i];
                 decode_compact(aggregator, aggregate, t.clone(), &mut select);
                 let last = select.pop().unwrap();
                 select.insert(i, last);
-            });
+            }
         }
 
         //  Reconstruct all group by columns from grouping

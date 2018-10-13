@@ -6,10 +6,8 @@ pub fn print_query_result(results: &QueryOutput) {
     let rt = results.stats.runtime_ns;
 
     println!();
-    if results.query_plans.len() > 0 {
-        for (query_plan, count) in &results.query_plans {
-            println!("Query plan in {} batches{}", count, query_plan)
-        }
+    for (query_plan, count) in &results.query_plans {
+        println!("Query plan in {} batches{}", count, query_plan)
     }
     println!("Scanned {} rows in {} ({:.2} rows/s)!",
              short_scale(results.stats.rows_scanned as f64),

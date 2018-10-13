@@ -14,15 +14,8 @@ pub struct MixedCol {
 }
 
 impl MixedCol {
-    pub fn new() -> MixedCol {
-        MixedCol {
-            types: ColType::nothing(),
-            data: Vec::new(),
-        }
-    }
-
     pub fn with_nulls(count: usize) -> MixedCol {
-        let mut c = Self::new();
+        let mut c = Self::default();
         c.push_nulls(count);
         c
     }
@@ -74,6 +67,15 @@ impl MixedCol {
             builder.finalize(name)
         } else {
             Arc::new(Column::null(name, self.data.len()))
+        }
+    }
+}
+
+impl Default for MixedCol {
+    fn default() -> MixedCol {
+        MixedCol {
+            types: ColType::nothing(),
+            data: Vec::new(),
         }
     }
 }

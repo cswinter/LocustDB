@@ -102,7 +102,7 @@ fn main() {
     }
 
     options.db_path = db_path.map(|x| x.to_string());
-    for t in matches.value_of("threads") {
+    if let Some(t) = matches.value_of("threads") {
         options.threads = t.parse()
             .expect("Argument --threads must be a positive integer!");
     }
@@ -257,7 +257,7 @@ fn repl(locustdb: &LocustDB) {
                 }
                 match result {
                     Ok(output) => print_results::print_query_result(&output),
-                    Err(mut fail) => print_error(fail),
+                    Err(mut fail) => print_error(&fail),
                 }
             }
             _ => println!("Error: Query execution was canceled!"),
@@ -266,7 +266,7 @@ fn repl(locustdb: &LocustDB) {
     rl.save_history(".locustdb_history").ok();
 }
 
-fn print_error(fail: locustdb::QueryError) {
+fn print_error(fail: &locustdb::QueryError) {
     println!("{}", fail);
     while let Some(cause) = fail.cause() {
         println!("{}", cause);

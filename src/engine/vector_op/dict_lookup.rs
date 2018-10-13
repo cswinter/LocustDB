@@ -27,7 +27,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DictLookup<T> {
         for i in indices.iter() {
             let offset_len = dict_indices[i.cast_usize()];
             let offset = (offset_len >> 24) as usize;
-            let len = (offset_len & 0xffffff) as usize;
+            let len = (offset_len & 0x00ff_ffff) as usize;
             // TODO(clemens): eliminate transmute?
             let string = unsafe {
                 mem::transmute(str::from_utf8_unchecked(&dict_data[offset..(offset + len)]))
@@ -68,11 +68,11 @@ impl<'a> VecOperator<'a> for InverseDictLookup {
             let dict_data = scratchpad.get::<u8>(self.dict_data);
             for (i, offset_len) in dict_indices.iter().enumerate() {
                 let offset = (offset_len >> 24) as usize;
-                let len = (offset_len & 0xffffff) as usize;
+                let len = (offset_len & 0x00ff_ffff) as usize;
                 let entry = unsafe {
                     str::from_utf8_unchecked(&dict_data[offset..(offset + len)])
                 };
-                if entry == &constant {
+                if *entry == constant {
                     result = i as i64;
                     break;
                 }

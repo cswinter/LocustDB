@@ -20,7 +20,7 @@ pub enum EncodingType {
 }
 
 impl EncodingType {
-    pub fn cast_to_basic(&self) -> BasicType {
+    pub fn cast_to_basic(self) -> BasicType {
         match self {
             EncodingType::Str => BasicType::String,
             EncodingType::I64 => BasicType::Integer,
@@ -42,8 +42,8 @@ pub enum BasicType {
 }
 
 impl BasicType {
-    pub fn to_encoded(&self) -> EncodingType {
-        match *self {
+    pub fn to_encoded(self) -> EncodingType {
+        match self {
             BasicType::String => EncodingType::Str,
             BasicType::Integer => EncodingType::I64,
             BasicType::Val => EncodingType::Val,

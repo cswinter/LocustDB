@@ -16,8 +16,7 @@ impl<'a> VecOperator<'a> for UnpackStrings<'a> {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut decoded = scratchpad.get_mut::<&'a str>(self.unpacked);
         if streaming { decoded.clear() }
-        let iter = self.iterator.as_mut().unwrap();
-        while let Some(elem) = iter.next() {
+        for elem in self.iterator.as_mut().unwrap() {
             decoded.push(elem);
             if decoded.capacity() == decoded.len() { return; }
         }

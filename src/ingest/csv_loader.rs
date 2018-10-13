@@ -125,7 +125,7 @@ fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &Ingestion
     for (i, col) in cols.iter_mut().enumerate() {
         if !ignore[i] {
             let new_column = match extractors.get(&colnames[i]) {
-                Some(extractor) => col.extract(&colnames[i], extractor),
+                Some(extractor) => col.extract(&colnames[i], *extractor),
                 None => col.finalize(&colnames[i], string[i]),
             };
             mem_store.push(new_column);
@@ -214,7 +214,7 @@ impl RawCol {
         result
     }
 
-    fn extract(&mut self, name: &str, extractor: &extractor::Extractor) -> Arc<Column> {
+    fn extract(&mut self, name: &str, extractor: extractor::Extractor) -> Arc<Column> {
         let mut builder = IntColBuilder::default();
         for s in self.values.iter() {
             builder.push(&extractor(s));

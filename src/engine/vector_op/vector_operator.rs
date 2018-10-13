@@ -57,6 +57,8 @@ use engine::vector_op::vec_const_bool_op::*;
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
+pub type TypedBufferRef = (BufferRef, EncodingType);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BufferRef(pub usize, pub &'static str);
 
@@ -351,6 +353,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_year(input: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
         Box::new(ToYear { input, output })
     }
@@ -594,12 +597,10 @@ impl<'a> VecOperator<'a> {
         Box::new(MergeAggregate { merge_ops, left, right, aggregated: aggregated_out, aggregator })
     }
 
-    pub fn merge(left: BufferRef,
-                 right: BufferRef,
+    pub fn merge((left, left_t): TypedBufferRef,
+                 (right, right_t): TypedBufferRef,
                  merged_out: BufferRef,
                  ops_out: BufferRef,
-                 left_t: EncodingType,
-                 right_t: EncodingType,
                  limit: usize,
                  desc: bool) -> BoxedOperator<'a> {
         if desc {

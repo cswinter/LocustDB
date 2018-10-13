@@ -2,9 +2,12 @@ language: rust
 rust:
   - nightly
 cache: cargo
+before_script:
+  - rustup component add clippy-preview
 script:
 - cargo test
 - cargo check --bench basic
+- cargo clippy
 notifications:
   email:
     on_success: never

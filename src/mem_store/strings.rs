@@ -65,7 +65,7 @@ pub fn fast_build_string_column<'a, T>(name: &str,
             for (i, s) in packed_mapping.iter().enumerate() {
                 dictionary.insert(&s, i as u8);
             }
-            strings.map(|s| *dictionary.get(s).unwrap()).collect()
+            strings.map(|s| dictionary[s]).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
         Column::new(
@@ -82,7 +82,7 @@ pub fn fast_build_string_column<'a, T>(name: &str,
             for (i, s) in packed_mapping.iter().enumerate() {
                 dictionary.insert(&s, i as u16);
             }
-            strings.map(|s| *dictionary.get(s).unwrap()).collect()
+            strings.map(|s| dictionary[s]).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
         Column::new(

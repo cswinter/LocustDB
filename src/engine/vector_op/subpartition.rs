@@ -44,6 +44,7 @@ fn subpartition<'a, T: GenericVec<T> + 'a>(
     let mut result = Vec::with_capacity(2 * partitioning.len());
     let mut i = 0;
     let mut j = 0;
+    #[allow(clippy::explicit_counter_loop)] // false positive
     for group in partitioning {
         let i_max = i + group.left as usize;
         let j_max = j + group.right as usize;

@@ -1,3 +1,6 @@
+// background_load_in_progress used with condition variable
+#![allow(clippy::mutex_atomic)]
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Condvar};
 use std::collections::VecDeque;
@@ -127,36 +130,34 @@ impl DiskReadScheduler {
                 } else {
                     debug!("{}.{} was not resident!", handle.name(), handle.id());
                 }
-            } else {
-                if handle.is_load_scheduled() {
-                    let mut is_load_in_progress =
-                        self.background_load_in_progress.lock().unwrap();
-                    while *is_load_in_progress && !handle.is_resident() && handle.is_load_scheduled() {
-                        debug!("Queuing for {}.{}", handle.name(), handle.id());
-                        is_load_in_progress = self.background_load_wait_queue
-                            .wait(is_load_in_progress).unwrap();
-                    }
-                } else {
-                    debug!("Point lookup for {}.{}", handle.name(), handle.id());
-                    #[allow(unused_mut)]
-                    let mut column = {
-                        let _token = self.reader_semaphore.access();
-                        self.disk_store.load_column(handle.id(), handle.name())
-                    };
-                    // Need to hold lock when we put new value into lru
-                    let mut maybe_column = handle.try_get();
-                    self.lru.put(handle.key().clone());
-                    #[cfg(feature = "enable_lz4")] {
-                        if self.lz4_decode {
-                            column.lz4_decode();
-                            handle.update_size_bytes(column.heap_size_of_children());
-                        }
-                    }
-                    let column = Arc::new(column);
-                    *maybe_column = Some(column.clone());
-                    handle.set_resident();
-                    return column;
+            } else if handle.is_load_scheduled() {
+                let mut is_load_in_progress =
+                    self.background_load_in_progress.lock().unwrap();
+                while *is_load_in_progress && !handle.is_resident() && handle.is_load_scheduled() {
+                    debug!("Queuing for {}.{}", handle.name(), handle.id());
+                    is_load_in_progress = self.background_load_wait_queue
+                        .wait(is_load_in_progress).unwrap();
                 }
+            } else {
+                debug!("Point lookup for {}.{}", handle.name(), handle.id());
+                #[allow(unused_mut)]
+                let mut column = {
+                    let _token = self.reader_semaphore.access();
+                    self.disk_store.load_column(handle.id(), handle.name())
+                };
+                // Need to hold lock when we put new value into lru
+                let mut maybe_column = handle.try_get();
+                self.lru.put(handle.key().clone());
+                #[cfg(feature = "enable_lz4")] {
+                    if self.lz4_decode {
+                        column.lz4_decode();
+                        handle.update_size_bytes(column.heap_size_of_children());
+                    }
+                }
+                let column = Arc::new(column);
+                *maybe_column = Some(column.clone());
+                handle.set_resident();
+                return column;
             }
         }
     }
@@ -177,12 +178,12 @@ impl DiskReadScheduler {
                     }
                 }
             };
-            self.service_sequential_read(next_read, ldb);
+            self.service_sequential_read(&next_read, ldb);
             self.background_load_wait_queue.notify_all();
         }
     }
 
-    fn service_sequential_read(&self, run: DiskRun, ldb: &InnerLocustDB) {
+    fn service_sequential_read(&self, run: &DiskRun, ldb: &InnerLocustDB) {
         let _token = self.reader_semaphore.access();
         debug!("Servicing read: {:?}", &run);
         for col in &run.columns {

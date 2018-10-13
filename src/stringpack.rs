@@ -23,7 +23,7 @@ impl IndexedPackedStrings {
     pub fn iter(&self) -> impl Iterator<Item=&str> + Clone {
         self.data.iter().map(move |&offset_len| unsafe {
             let offset = (offset_len >> 24) as usize;
-            let len = (offset_len & 0xffffff) as usize;
+            let len = (offset_len & 0x00ff_ffff) as usize;
             str::from_utf8_unchecked(&self.backing_store[offset..(offset + len)])
         })
     }
@@ -116,7 +116,7 @@ pub struct PackedBytes {
 }
 
 impl PackedBytes {
-    pub fn from_iterator<'a>(bytes: impl Iterator<Item=Vec<u8>>) -> PackedBytes {
+    pub fn from_iterator(bytes: impl Iterator<Item=Vec<u8>>) -> PackedBytes {
         let mut data = Vec::<u8>::new();
         for b in bytes {
             let mut len = b.len();

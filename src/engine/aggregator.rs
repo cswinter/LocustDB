@@ -5,7 +5,7 @@ pub enum Aggregator {
 }
 
 impl Aggregator {
-    pub fn combine_i64(&self, accumulator: i64, elem: i64) -> i64 {
+    pub fn combine_i64(self, accumulator: i64, elem: i64) -> i64 {
         accumulator + elem
     }
 }

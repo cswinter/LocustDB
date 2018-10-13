@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::f64;
 use unit_fmt::*;
 
 pub struct MemTreeTable {
@@ -16,6 +17,7 @@ pub struct MemTreeColumn {
     pub size_percentage: f64,
     pub rows: usize,
     pub rows_percentage: f64,
+    pub fully_resident: bool,
     pub encodings: HashMap<String, MemTreeEncoding>,
 }
 
@@ -40,19 +42,23 @@ impl MemTreeTable {
     pub fn aggregate(&mut self) {
         self.size_bytes = self.columns.values().map(|x| x.size_bytes).sum();
         for col in self.columns.values_mut() {
-            col.aggregate(self.size_bytes as f64, self.rows as f64);
-            self.fully_resident &= col.rows_percentage == 100.0;
+            col.aggregate(self.size_bytes as f64, self.rows);
+            self.fully_resident &= col.fully_resident;
         }
     }
 }
 
 impl MemTreeColumn {
-    pub fn aggregate(&mut self, table_size: f64, table_rows: f64) {
+    pub fn aggregate(&mut self, table_size: f64, table_rows: usize) {
         self.size_percentage = 100.0 * self.size_bytes as f64 / table_size;
-        self.rows_percentage = 100.0 * self.rows as f64 / table_rows;
+        self.rows_percentage = 100.0 * self.rows as f64 / table_rows as f64;
         for encoding in self.encodings.values_mut() {
-            encoding.aggregate(self.size_bytes as f64, table_size, self.rows as f64, table_rows);
+            encoding.aggregate(self.size_bytes as f64,
+                               table_size,
+                               self.rows as f64,
+                               table_rows as f64);
         }
+        self.fully_resident = self.rows == table_rows;
     }
 }
 
@@ -82,7 +88,7 @@ impl fmt::Display for MemTreeTable {
             let branch = if terminal { "└─" } else { "├─" };
             let continuation = if terminal { "  " } else { "│ " };
             let mut prefix = branch;
-            for line in format!("{}", column).split("\n") {
+            for line in format!("{}", column).split('\n') {
                 write!(f, "\n{} {}", prefix, line)?;
                 prefix = continuation;
             }
@@ -95,8 +101,8 @@ impl fmt::Display for MemTreeColumn {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let residency = if self.rows == 0 {
             "nonresident".to_string()
-        } else if self.rows_percentage == 100.0 {
-            format!("fully resident")
+        } else if self.fully_resident {
+            "fully resident".to_string()
         } else {
             format!("{:.2} resident", percent(self.rows_percentage))
         };
@@ -115,7 +121,7 @@ impl fmt::Display for MemTreeColumn {
             let branch = if terminal { "└─" } else { "├─" };
             let continuation = if terminal { "  " } else { "│ " };
             let mut prefix = branch;
-            for line in format!("{}", encoding).split("\n") {
+            for line in format!("{}", encoding).split('\n') {
                 write!(f, "\n{} {}", prefix, line)?;
                 prefix = continuation;
             }

@@ -133,12 +133,18 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     let right = batch2.select.into_iter().map(|vec| { set("right", vec, &mut executor) }).collect::<Vec<_>>();
                     let ops = executor.named_buffer("take_left");
                     let merged_sort_cols = executor.named_buffer("merged_sort_cols");
-                    executor.push(VecOperator::merge(left[index], right[index], merged_sort_cols, ops, left_t[index], right_t[index], limit, batch1.desc));
+                    executor.push(VecOperator::merge(
+                        (left[index], left_t[index]),
+                        (right[index], right_t[index]),
+                        merged_sort_cols,
+                        ops,
+                        limit,
+                        batch1.desc));
 
                     let mut select = Vec::with_capacity(left.len());
                     for (i, (&left, right)) in left.iter().zip(right).enumerate() {
                         if i == index {
-                            select.push(BufferRef(0xdeadbeef, "MERGE_ERROR"));
+                            select.push(BufferRef(0xdead_beef, "MERGE_ERROR"));
                         } else {
                             let merged = executor.named_buffer("merged_sort_cols");
                             executor.push(VecOperator::merge_keep(ops, left, right, merged, left_t[i], right_t[i]));

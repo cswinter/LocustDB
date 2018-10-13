@@ -1,4 +1,4 @@
-#![feature(fn_traits, integer_atomics, refcell_replace_swap, specialization, trait_alias, core_intrinsics, box_patterns, int_to_from_bytes)]
+#![feature(fn_traits, integer_atomics, refcell_replace_swap, specialization, trait_alias, core_intrinsics, box_patterns, int_to_from_bytes, tool_lints)]
 #[macro_use]
 extern crate nom;
 #[macro_use]

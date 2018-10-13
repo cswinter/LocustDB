@@ -38,6 +38,6 @@ pub fn int(field: &str) -> i64 {
 
 pub fn date_time(field: &str) -> i64 {
     Utc.datetime_from_str(field, "%Y-%m-%d %H:%M:%S")
-        .expect(&format!("Failed to parse {} as date time", &field))
+        .unwrap_or_else(|_| panic!("Failed to parse {} as date time", &field))
         .timestamp()
 }

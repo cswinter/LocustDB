@@ -18,7 +18,7 @@ pub fn second(quantity: usize) -> UnitFormatter {
 }
 
 pub fn billion(quantity: f64) -> UnitFormatter {
-    short_scale(quantity * 1000000000.0)
+    short_scale(quantity * 1_000_000_000.0)
 }
 
 pub fn short_scale(quantity: f64) -> UnitFormatter {

@@ -89,7 +89,7 @@ impl Column {
             let signature = self.codec().signature(false).to_string();
             let codec_tree = tree.encodings
                 .entry(signature.clone())
-                .or_insert(MemTreeEncoding::default());
+                .or_insert_with(MemTreeEncoding::default);
             codec_tree.codec = signature;
             codec_tree.size_bytes += size_bytes;
             codec_tree.rows += self.len;

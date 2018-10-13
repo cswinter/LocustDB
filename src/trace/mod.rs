@@ -17,7 +17,7 @@ thread_local!(
 #[cfg(feature = "trace")]
 macro_rules! trace_start {
     ( $( $x:expr),* ) => (
-        #[cfg_attr(feature = "cargo-clippy", allow(useless_format))]
+        #[allow(clippy::seless_format)]
         let _guard = $crate::_start(format!( $( $x ),* ).to_owned());
     )
 }
@@ -25,7 +25,7 @@ macro_rules! trace_start {
 #[cfg(feature = "trace")]
 macro_rules! trace_replace {
     ( $( $x:expr),* ) => (
-        #[cfg_attr(feature = "cargo-clippy", allow(useless_format))]
+        #[allow(clippy::useless_format)]
         let _guard = $crate::_replace(format!( $( $x ),* ).to_owned());
     )
 }
@@ -35,14 +35,14 @@ macro_rules! trace_start {
     // Drop refs to args (which is no-op) to prevent unused variable warnings.
     ( $( $x:expr),* ) => {
         $(
-            #[cfg_attr(feature="cargo-clippy", allow(drop_ref))]
+            #[allow(clippy::drop_ref)]
             drop(& $x);
         )*
     }
 }
 
 #[cfg(not(feature = "trace"))]
-#[cfg_attr(feature = "cargo-clippy", allow(drop_ref))]
+#[allow(clippy::drop_ref)]
 #[allow(unused_macros)]
 macro_rules! trace_replace {
     // Drop refs to args (which is no-op) to prevent unused variable warnings.

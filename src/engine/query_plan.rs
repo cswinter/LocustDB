@@ -18,6 +18,8 @@ use mem_store::column::Column;
 use syntax::expression::*;
 
 
+type TypedPlan = (QueryPlan, Type);
+
 #[derive(Debug, Clone)]
 pub enum QueryPlan {
     ReadColumnSection(String, usize, Option<(i64, i64)>),
@@ -182,9 +184,9 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Buff
 }
 
 pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
-                                    grouping_key_type: EncodingType,
-                                    max_cardinality: usize,
-                                    result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type, BufferRef) {
+                                grouping_key_type: EncodingType,
+                                max_cardinality: usize,
+                                result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type, BufferRef) {
     let unique_out = result.named_buffer("unique");
     let grouping_key_out = result.named_buffer("grouping_key");
     let cardinality_out = result.named_buffer("cardinality");
@@ -198,12 +200,12 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
 pub fn prepare_aggregation<'a>(plan: QueryPlan,
-                                   mut plan_type: Type,
-                                   grouping_key: BufferRef,
-                                   grouping_type: EncodingType,
-                                   max_index: BufferRef,
-                                   aggregator: Aggregator,
-                                   result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type), QueryError> {
+                               mut plan_type: Type,
+                               grouping_key: BufferRef,
+                               grouping_type: EncodingType,
+                               max_index: BufferRef,
+                               aggregator: Aggregator,
+                               result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type), QueryError> {
     let output_location;
     let (operation, t): (BoxedOperator<'a>, _) = match (aggregator, plan) {
         (Aggregator::Count, _) => {
@@ -419,7 +421,7 @@ impl QueryPlan {
         exprs: &[Expr],
         filter: Filter,
         columns: &HashMap<String, Arc<Column>>)
-        -> Result<(QueryPlan, Type, i64, Vec<(QueryPlan, Type)>), QueryError> {
+        -> Result<(TypedPlan, i64, Vec<TypedPlan>), QueryError> {
         if exprs.len() == 1 {
             QueryPlan::create_query_plan(&exprs[0], filter, columns)
                 .map(|(gk_plan, gk_type)| {
@@ -430,7 +432,9 @@ impl QueryPlan {
                     let decoded_group_by = gk_type.codec.clone().map_or(
                         QueryPlan::EncodedGroupByPlaceholder,
                         |codec| *codec.decode(Box::new(QueryPlan::EncodedGroupByPlaceholder)));
-                    (gk_plan.clone(), gk_type.clone(), max_cardinality, vec![(decoded_group_by, gk_type.decoded())])
+                    ((gk_plan.clone(), gk_type.clone()),
+                     max_cardinality,
+                     vec![(decoded_group_by, gk_type.decoded())])
                 })
         } else {
             let mut total_width = 0;
@@ -498,7 +502,7 @@ impl QueryPlan {
                     decode_plans.reverse();
                     let t = Type::encoded(Codec::opaque(
                         EncodingType::I64, BasicType::Integer, false, order_preserving, true, true));
-                    return Ok((plan, t, largest_key, decode_plans));
+                    return Ok(((plan, t), largest_key, decode_plans));
                 }
             }
             // TODO(clemens): add more grouping key widths (u32. u16?)
@@ -515,8 +519,8 @@ impl QueryPlan {
         match *self {
             ReadColumnSection(_, _, range) => range,
             ToYear(ref timestamps) => timestamps.encoding_range().map(|(min, max)|
-                (NaiveDateTime::from_timestamp(min, 0).year() as i64,
-                 NaiveDateTime::from_timestamp(max, 0).year() as i64)
+                (i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
+                 i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
             ),
             Filter(ref plan, _, _) => plan.encoding_range(),
             // TODO(clemens): this is just wrong
