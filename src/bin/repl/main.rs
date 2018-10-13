@@ -182,6 +182,9 @@ fn repl(locustdb: &LocustDB) {
         if let Some('\r') = s.chars().next_back() {
             s.pop();
         }
+        if s.trim() == "" {
+            continue;
+        }
         if s == "exit" {
             break;
         }
