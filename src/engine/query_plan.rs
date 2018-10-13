@@ -194,7 +194,7 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
         raw_grouping_key, unique_out, grouping_key_out, cardinality_out, grouping_key_type, max_cardinality));
     (Some(unique_out),
      grouping_key_out,
-     Type::encoded(Codec::opaque(grouping_key_type, BasicType::Integer, false, false, true, true)),
+     Type::encoded(Codec::opaque(EncodingType::U32, BasicType::Integer, false, false, true, true)),
      cardinality_out)
 }
 
@@ -427,7 +427,7 @@ impl QueryPlan {
                 .map(|(gk_plan, gk_type)| {
                     let max_cardinality = QueryPlan::encoding_range(&gk_plan).map_or(1 << 62, |i| i.1);
                     if QueryPlan::encoding_range(&gk_plan).is_none() {
-                        println!("Unknown range for {:?}", &gk_plan);
+                        warn!("Unknown range for {:?}", &gk_plan);
                     }
                     let decoded_group_by = gk_type.codec.clone().map_or(
                         QueryPlan::EncodedGroupByPlaceholder,

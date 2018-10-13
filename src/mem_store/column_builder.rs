@@ -24,7 +24,7 @@ impl Default for StringColBuilder {
     fn default() -> StringColBuilder {
         StringColBuilder {
             data: Vec::new(),
-            uniques: UniqueValues::new(1 << 19),// TODO(clemens): use partition size
+            uniques: UniqueValues::new(1 << 22), // TODO(clemens): Limit?
         }
     }
 }
