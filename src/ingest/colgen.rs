@@ -3,9 +3,11 @@ use std::sync::Arc;
 
 use crypto::digest::Digest;
 use crypto::md5::Md5;
+use hex;
 use ingest::alias_method_fork::*;
 use rand::Rng;
 use rand::SeedableRng;
+use rand::distributions::{Alphanumeric, Standard};
 use rand;
 
 use mem_store::column::*;
@@ -35,6 +37,17 @@ pub fn string_markov_chain(
         elem: elements,
         p_transition: transition_probabilities,
         s: PhantomData::<StringColBuilder>,
+    })
+}
+
+pub fn random_hex_string(length: usize) -> Box<ColumnGenerator> {
+    Box::new(HexString { length })
+}
+
+pub fn random_string(min_length: usize, max_length: usize) -> Box<ColumnGenerator> {
+    Box::new(RandomString {
+        min_length,
+        max_length,
     })
 }
 
@@ -88,6 +101,40 @@ impl ColumnGenerator for PartitionSparse {
         } else {
             self.generator.generate(length, name, seed)
         }
+    }
+}
+
+struct HexString {
+    length: usize,
+}
+
+impl ColumnGenerator for HexString {
+    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+        let mut rng = seeded_rng(seed);
+        let mut builder = StringColBuilder::default();
+        for _ in 0..length {
+            let bytes: Vec<u8> = rng.sample_iter(&Standard).take(self.length).collect();
+            builder.push(&hex::encode(&bytes));
+        }
+        ColumnBuilder::<&str>::finalize(builder, name)
+    }
+}
+
+struct RandomString {
+    min_length: usize,
+    max_length: usize,
+}
+
+impl ColumnGenerator for RandomString {
+    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+        let mut rng = seeded_rng(seed);
+        let mut builder = StringColBuilder::default();
+        for _ in 0..length {
+            let len = rng.gen_range(self.min_length, self.max_length + 1);
+            let string: String = rng.sample_iter::<char, _>(&Alphanumeric).take(len).collect();
+            builder.push(&string);
+        }
+        ColumnBuilder::<&str>::finalize(builder, name)
     }
 }
 

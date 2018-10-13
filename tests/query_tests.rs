@@ -371,6 +371,34 @@ fn test_column_with_null_partitions() {
     assert_eq!(result.rows.iter().filter(|&x| x == &[Str("B".to_string())]).count(), 2);
 }
 
+#[test]
+fn test_group_by_string() {
+    use Value::*;
+    let _ = env_logger::try_init();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.gen_table(
+        locustdb::colgen::GenTable {
+            name: "test".to_string(),
+            partitions: 3,
+            partition_size: 4196,
+            columns: vec![
+                ("hex".to_string(),
+                 locustdb::colgen::random_hex_string(8)),
+                ("scrambled".to_string(),
+                 locustdb::colgen::random_string(2, 16))
+            ],
+        }
+    ));
+    let query = "SELECT scrambled, count(1) FROM test LIMIT 3;";
+    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
+    let expected_rows = vec![
+        [Str("006j267n".to_string()), Int(1)],
+        [Str("00w".to_string()), Int(1)],
+        [Str("0198E".to_string()), Int(1)],
+    ];
+    assert_eq!(result.rows, expected_rows);
+}
+
 #[cfg(feature = "enable_rocksdb")]
 #[test]
 fn test_restore_from_disk() {

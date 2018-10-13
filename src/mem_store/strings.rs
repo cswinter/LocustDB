@@ -4,7 +4,7 @@ use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 use std::str;
 use std::sync::Arc;
-use std::{u8, u16};
+use std::{u8, u16, u32};
 
 use num::PrimInt;
 use seahash::SeaHasher;
@@ -102,44 +102,58 @@ pub fn build_string_column(name: &str,
                            values: &[Option<Rc<String>>],
                            unique_values: UniqueValues<Option<Rc<String>>>)
                            -> Arc<Column> {
+    // TODO(clemens): constant column when there is only one value
+    // TODO(clemens): Improve criterion for dictionary encoding
     if let Some(u) = unique_values.get_values() {
-// TODO(clemens): constant column when there is only one value
-        if u.len() <= From::from(u8::MAX) {
-            let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u8>(values, u);
-            Arc::new(Column::new(
-                name,
-                indices.len(),
-                Some((0, dictionary_indices.len() as i64)),
-                dict_codec(EncodingType::U8),
-                vec![DataSection::U8(indices),
-                     DataSection::U64(dictionary_indices),
-                     DataSection::U8(dictionary_data)]))
-        } else {
-            let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u16>(values, u);
-            Arc::new(Column::new(
-                name,
-                indices.len(),
-                Some((0, dictionary_indices.len() as i64)),
-                dict_codec(EncodingType::U16),
-                vec![DataSection::U16(indices),
-                     DataSection::U64(dictionary_indices),
-                     DataSection::U8(dictionary_data)]))
+        if u.len() * 2 < values.len() {
+            return if u.len() <= From::from(u8::MAX) {
+                let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u8>(values, u);
+                Arc::new(Column::new(
+                    name,
+                    indices.len(),
+                    Some((0, dictionary_indices.len() as i64)),
+                    dict_codec(EncodingType::U8),
+                    vec![DataSection::U8(indices),
+                         DataSection::U64(dictionary_indices),
+                         DataSection::U8(dictionary_data)]))
+            } else if u.len() <= From::from(u16::MAX) {
+                let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u16>(values, u);
+                Arc::new(Column::new(
+                    name,
+                    indices.len(),
+                    Some((0, dictionary_indices.len() as i64)),
+                    dict_codec(EncodingType::U16),
+                    vec![DataSection::U16(indices),
+                         DataSection::U64(dictionary_indices),
+                         DataSection::U8(dictionary_data)]))
+            } else if u.len() <= u32::MAX as usize {
+                let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u32>(values, u);
+                Arc::new(Column::new(
+                    name,
+                    indices.len(),
+                    Some((0, dictionary_indices.len() as i64)),
+                    dict_codec(EncodingType::U32),
+                    vec![DataSection::U32(indices),
+                         DataSection::U64(dictionary_indices),
+                         DataSection::U8(dictionary_data)]))
+            } else {
+                panic!("Partition with more than 2^32 elements")
+            };
         }
-    } else {
-        let packed = PackedStrings::from_nullable_strings(values);
-        Arc::new(Column::new(
-            name,
-            values.len(),
-            None,
-            string_pack_codec(),
-            vec![DataSection::U8(packed.into_vec())]))
     }
+    let packed = PackedStrings::from_nullable_strings(values);
+    Arc::new(Column::new(
+        name,
+        values.len(),
+        None,
+        string_pack_codec(),
+        vec![DataSection::U8(packed.into_vec())]))
 }
 
 pub fn dictionary_compress<T: PrimInt>(strings: &[Option<Rc<String>>],
                                        unique_values: HashSet<Option<Rc<String>>>)
                                        -> (Vec<T>, Vec<u64>, Vec<u8>) {
-// TODO(clemens): handle null values
+    // TODO(clemens): handle null values
     let mut mapping = unique_values.into_iter().map(|o| o.unwrap()).collect::<Vec<_>>();
     mapping.sort();
     let mut packed_mapping = IndexedPackedStrings::default();

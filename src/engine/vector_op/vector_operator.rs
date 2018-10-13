@@ -480,6 +480,7 @@ impl<'a> VecOperator<'a> {
             EncodingType::U16 => HashMapGrouping::<u16>::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality),
             EncodingType::U32 => HashMapGrouping::<u32>::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality),
             EncodingType::I64 => HashMapGrouping::<i64>::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality),
+            EncodingType::Str => HashMapGrouping::<&str>::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality),
             t => panic!("unsupported type {:?} for grouping key", t),
         }
     }
