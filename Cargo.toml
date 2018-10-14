@@ -32,7 +32,7 @@ time = "0.1.36"
 seahash = "3.0.5"
 bit-vec = "0.4.4"
 num_cpus = "1.0"
-chrono = "0.4.0"
+chrono = "0.4.6"
 failure = "0.1.1"
 failure_derive = "0.1.1"
 log = { version = "0.4", features = ["max_level_trace", "release_max_level_debug"] }
@@ -50,4 +50,4 @@ hex = "0.3.2"
 std-semaphore = "0.1.0"
 aliasmethod = "0.1.0"
 rand = "0.5.5"
-
+sqlparser = { git = "https://github.com/virattara/sqlparser-rs.git" }
