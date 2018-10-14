@@ -5,7 +5,6 @@ use futures_channel::oneshot;
 use futures_core::*;
 use futures_util::FutureExt;
 use futures_executor::block_on;
-use nom;
 use num_cpus;
 
 use QueryError;
@@ -43,23 +42,13 @@ impl LocustDB {
         let (sender, receiver) = oneshot::channel();
 
         // TODO(clemens): perform compilation and table snapshot in asynchronous task?
-        let query = match parser::parse_query(query.as_bytes()) {
-            nom::IResult::Done(remaining, query) => {
-                if !remaining.is_empty() {
-                    let error = match str::from_utf8(remaining) {
-                        Ok(chars) => QueryError::SytaxErrorCharsRemaining(chars.to_owned()),
-                        Err(_) => QueryError::SyntaxErrorBytesRemaining(remaining.to_vec()),
-                    };
-                    return Box::new(future::ok((Err(error), TraceBuilder::new("empty".to_owned()).finalize())));
-                }
-                query
-            }
-            nom::IResult::Error(err) => return Box::new(future::ok((
-                Err(QueryError::ParseError(format!("{:?}", err))),
-                TraceBuilder::new("empty".to_owned()).finalize()))),
-            nom::IResult::Incomplete(needed) => return Box::new(future::ok((
-                Err(QueryError::ParseError(format!("Incomplete. Needed: {:?}", needed))),
-                TraceBuilder::new("empty".to_owned()).finalize()))),
+        let query = match parser::parse_query(query) {
+            Ok(query) => query,
+            Err(err) => {
+                return Box::new(future::ok((
+                Err(err),
+                TraceBuilder::new("empty".to_owned()).finalize())));
+            },
         };
 
         let mut data = match self.inner_locustdb.snapshot(&query.table) {
@@ -106,19 +95,9 @@ impl LocustDB {
     }
 
     pub fn ast(&self, query: &str) -> String {
-        match parser::parse_query(query.as_bytes()) {
-            nom::IResult::Done(remaining, query) => {
-                if !remaining.is_empty() {
-                    match str::from_utf8(remaining) {
-                        Ok(chars) => format!("Chars remaining: {}", chars),
-                        Err(_) => format!("Bytes remaining: {:?}", &remaining),
-                    }
-                } else {
-                    format!("{:#?}", query)
-                }
-            }
-            nom::IResult::Error(err) => format!("Parse error: {:?}", err),
-            nom::IResult::Incomplete(needed) => format!("Incomplete. Needed: {:?}", needed),
+        match parser::parse_query(query) {
+            Ok(query) => format!("{:?}", query),
+            Err(err) => format!("{:?}", err),
         }
     }
 

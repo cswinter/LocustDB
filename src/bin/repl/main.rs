@@ -9,6 +9,7 @@ extern crate rustyline;
 extern crate time;
 extern crate env_logger;
 extern crate log;
+extern crate sqlparser;
 
 use failure::Fail;
 use futures_executor::block_on;
