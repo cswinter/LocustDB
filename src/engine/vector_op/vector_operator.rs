@@ -33,6 +33,7 @@ use engine::vector_op::encode_const::*;
 use engine::vector_op::exists::Exists;
 use engine::vector_op::filter::Filter;
 use engine::vector_op::hashmap_grouping::HashMapGrouping;
+use engine::vector_op::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
 use engine::vector_op::merge::Merge;
 use engine::vector_op::merge_aggregate::MergeAggregate;
 use engine::vector_op::merge_deduplicate::MergeDeduplicate;
@@ -44,14 +45,16 @@ use engine::vector_op::nonzero_indices::NonzeroIndices;
 use engine::vector_op::parameterized_vec_vec_int_op::*;
 use engine::vector_op::partition::Partition;
 use engine::vector_op::select::Select;
+use engine::vector_op::slice_pack::*;
+use engine::vector_op::slice_unpack::*;
 use engine::vector_op::sort_indices::SortIndices;
 use engine::vector_op::subpartition::SubPartition;
 use engine::vector_op::sum::VecSum;
 use engine::vector_op::to_year::ToYear;
 use engine::vector_op::top_n::TopN;
 use engine::vector_op::type_conversion::TypeConversionOperator;
-use engine::vector_op::unpack_strings::UnpackStrings;
 use engine::vector_op::unhexpack_strings::UnhexpackStrings;
+use engine::vector_op::unpack_strings::UnpackStrings;
 use engine::vector_op::vec_const_bool_op::*;
 
 
@@ -122,6 +125,10 @@ impl<'a> Scratchpad<'a> {
 
     pub fn get_any(&self, index: BufferRef) -> Ref<AnyVec<'a>> {
         Ref::map(self.buffers[index.0].borrow(), |x| x.as_ref())
+    }
+
+    pub fn get_any_mut(&self, index: BufferRef) -> RefMut<AnyVec<'a> + 'a> {
+        RefMut::map(self.buffers[index.0].borrow_mut(), |x| x.borrow_mut())
     }
 
     pub fn get_column_data(&self, name: &str, section_index: usize) -> &'a AnyVec<'a> {
@@ -329,6 +336,14 @@ impl<'a> VecOperator<'a> {
         Box::new(BitUnpackOperator::new(inner, output, shift, width))
     }
 
+    pub fn slice_pack(input: BufferRef, output: BufferRef, stride: usize, offset: usize) -> BoxedOperator<'a> {
+        Box::new(SlicePackString { input, output, stride, offset })
+    }
+
+    pub fn slice_unpack(input: BufferRef, output: BufferRef, stride: usize, offset: usize) -> BoxedOperator<'a> {
+        Box::new(SliceUnpackString { input, output, stride, offset })
+    }
+
     pub fn type_conversion(inner: BufferRef, output: BufferRef, initial_type: EncodingType, target_type: EncodingType) -> BoxedOperator<'a> {
         use self::EncodingType::*;
         match (initial_type, target_type) {
@@ -481,6 +496,7 @@ impl<'a> VecOperator<'a> {
             EncodingType::U32 => HashMapGrouping::<u32>::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality),
             EncodingType::I64 => HashMapGrouping::<i64>::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality),
             EncodingType::Str => HashMapGrouping::<&str>::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality),
+            EncodingType::ByteSlices(columns) => HashMapGroupingByteSlices::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, columns),
             t => panic!("unsupported type {:?} for grouping key", t),
         }
     }

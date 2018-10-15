@@ -380,21 +380,40 @@ fn test_group_by_string() {
         locustdb::colgen::GenTable {
             name: "test".to_string(),
             partitions: 3,
-            partition_size: 4196,
+            partition_size: 4096 + 100,
             columns: vec![
                 ("hex".to_string(),
                  locustdb::colgen::random_hex_string(8)),
                 ("scrambled".to_string(),
-                 locustdb::colgen::random_string(2, 16))
+                 locustdb::colgen::random_string(2, 4)),
             ],
         }
     ));
+
     let query = "SELECT scrambled, count(1) FROM test LIMIT 3;";
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
     let expected_rows = vec![
-        [Str("006j267n".to_string()), Int(1)],
-        [Str("00w".to_string()), Int(1)],
-        [Str("0198E".to_string()), Int(1)],
+        [Str("00".to_string()), Int(2)],
+        [Str("008V".to_string()), Int(1)],
+        [Str("00dz".to_string()), Int(1)],
+    ];
+    assert_eq!(result.rows, expected_rows);
+
+    let query = "SELECT scrambled, scrambled, count(1) FROM test LIMIT 3;";
+    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
+    let expected_rows = vec![
+        [Str("00".to_string()), Str("00".to_string()), Int(2)],
+        [Str("008V".to_string()), Str("008V".to_string()), Int(1)],
+        [Str("00dz".to_string()), Str("00dz".to_string()), Int(1)],
+    ];
+    assert_eq!(result.rows, expected_rows);
+
+    let query = "SELECT scrambled, hex, count(1) FROM test LIMIT 3;";
+    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
+    let expected_rows = vec![
+        [Str("00".to_string()), Str("b0c836e5fbef7d51".to_string()), Int(1)],
+        [Str("00".to_string()), Str("ffcabba4d5975ef9".to_string()), Int(1)],
+        [Str("008V".to_string()), Str("36027c032adaf264".to_string()), Int(1)],
     ];
     assert_eq!(result.rows, expected_rows);
 }
