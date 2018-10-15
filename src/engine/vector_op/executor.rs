@@ -13,6 +13,7 @@ pub struct QueryExecutor<'a> {
     encoded_group_by: Option<BufferRef>,
     count: usize,
     last_buffer: BufferRef,
+    shared_buffers: HashMap<&'static str, BufferRef>,
 }
 
 #[derive(Default, Clone)]
@@ -28,6 +29,16 @@ impl<'a> QueryExecutor<'a> {
         self.count += 1;
         self.last_buffer = buffer;
         buffer
+    }
+
+    pub fn shared_buffer(&mut self, name: &'static str) -> BufferRef {
+        if self.shared_buffers.get(name).is_none() {
+            let buffer = BufferRef(self.count, name);
+            self.count += 1;
+            self.last_buffer = buffer;
+            self.shared_buffers.insert(name, buffer);
+        }
+        self.shared_buffers[name]
     }
 
     pub fn last_buffer(&self) -> BufferRef { self.last_buffer }
@@ -282,6 +293,7 @@ impl<'a> Default for QueryExecutor<'a> {
             encoded_group_by: None,
             count: 0,
             last_buffer: BufferRef(0xdead_beef, "ERROR"),
+            shared_buffers: HashMap::default(),
         }
     }
 }
