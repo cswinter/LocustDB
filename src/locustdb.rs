@@ -45,9 +45,9 @@ impl LocustDB {
         let query = match parser::parse_query(query) {
             Ok(query) => query,
             Err(err) => {
-                return Box::new(future::ok((
-                Err(err),
-                TraceBuilder::new("empty".to_owned()).finalize())));
+                return Box::new(future::ok(
+                    (Err(err), 
+                    TraceBuilder::new("empty".to_owned()).finalize())));
             },
         };
 
@@ -96,7 +96,7 @@ impl LocustDB {
 
     pub fn ast(&self, query: &str) -> String {
         match parser::parse_query(query) {
-            Ok(query) => format!("{:?}", query),
+            Ok(query) => format!("{:#?}", query),
             Err(err) => format!("{:?}", err),
         }
     }
