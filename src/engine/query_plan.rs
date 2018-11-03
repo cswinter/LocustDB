@@ -24,7 +24,7 @@ type TypedPlan = (QueryPlan, Type);
 #[derive(Debug, Clone)]
 pub enum QueryPlan {
     ReadColumnSection(String, usize, Option<(i64, i64)>),
-    ReadBuffer(BufferRef),
+    ReadBuffer(BufferRef<Any>),
 
     DictLookup(Box<QueryPlan>, EncodingType, Box<QueryPlan>, Box<QueryPlan>),
     InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>, Box<QueryPlan>),
@@ -75,15 +75,15 @@ impl QueryPlan {
     }
 }
 
-pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef {
+pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef<Any> {
     _prepare(plan, false, result)
 }
 
-pub fn prepare_no_alias(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef {
+pub fn prepare_no_alias(plan: QueryPlan, result: &mut QueryExecutor) -> BufferRef<Any> {
     _prepare(plan, true, result)
 }
 
-fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> BufferRef {
+fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> BufferRef<Any> {
     trace!("{:?}", &plan);
     let (plan, signature) = if no_alias || plan.is_constant() {
         (plan, [0; 16])
@@ -95,101 +95,163 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Buff
     trace!("{:?} {}", &plan, to_hex_string(&signature));
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select(plan, indices, t) =>
-            VecOperator::select(t, prepare(*plan, result), prepare(*indices, result), result.named_buffer("selection")),
+            VecOperator::select((prepare(*plan, result), t),
+                                prepare(*indices, result).usize(),
+                                result.tagged_buffer("selection", t)),
         QueryPlan::ReadColumnSection(colname, section, _) =>
             VecOperator::read_column_data(colname, section, result.named_buffer("column")),
         QueryPlan::Filter(plan, t, filter) =>
-            VecOperator::filter(t, prepare(*plan, result), prepare(*filter, result), result.named_buffer("filtered")),
+            VecOperator::filter((prepare(*plan, result), t),
+                                prepare(*filter, result).u8(),
+                                result.tagged_buffer("filtered", t)),
         QueryPlan::Constant(ref c, hide_value) =>
-            VecOperator::constant(c.clone(), hide_value, result.named_buffer("constant")),
+            VecOperator::constant(c.clone(), hide_value, result.named_buffer("constant").raw_val()),
         QueryPlan::DictLookup(plan, t, dict_indices, dict_data) =>
             VecOperator::dict_lookup(
-                prepare(*plan, result),
-                prepare(*dict_indices, result),
-                prepare(*dict_data, result),
-                result.named_buffer("decoded"), t),
+                (prepare(*plan, result), t),
+                prepare(*dict_indices, result).u64(),
+                prepare(*dict_data, result).u8(),
+                result.named_buffer("decoded").str()),
         QueryPlan::InverseDictLookup(dict_indices, dict_data, constant) =>
             VecOperator::inverse_dict_lookup(
-                prepare(*dict_indices, result),
-                prepare(*dict_data, result),
-                prepare(*constant, result),
-                result.named_buffer("encoded")),
+                prepare(*dict_indices, result).u64(),
+                prepare(*dict_data, result).u8(),
+                prepare(*constant, result).string(),
+                result.named_buffer("encoded").raw_val()),
         QueryPlan::Cast(plan, initial_type, target_type) =>
-            VecOperator::type_conversion(prepare(*plan, result), result.named_buffer("casted"), initial_type, target_type),
+            VecOperator::type_conversion(
+                (prepare(*plan, result), initial_type),
+                (result.named_buffer("casted"), target_type)),
         QueryPlan::DeltaDecode(plan, t) =>
-            VecOperator::delta_decode(prepare(*plan, result), result.named_buffer("decoded"), t),
+            VecOperator::delta_decode(
+                (prepare(*plan, result), t),
+                result.named_buffer("decoded").i64()),
         QueryPlan::LZ4Decode(plan, decoded_len, t) =>
-            VecOperator::lz4_decode(prepare(*plan, result), result.named_buffer("decoded"), decoded_len, t),
+            VecOperator::lz4_decode(
+                prepare(*plan, result).u8(),
+                (result.named_buffer("decoded"), t),
+                decoded_len),
         QueryPlan::UnpackStrings(plan) =>
-            VecOperator::unpack_strings(prepare(*plan, result), result.named_buffer("unpacked")),
+            VecOperator::unpack_strings(
+                prepare(*plan, result).u8(),
+                result.named_buffer("unpacked").str()),
         QueryPlan::UnhexpackStrings(plan, uppercase, total_bytes) => {
-            let stringstore = result.named_buffer("stringstore");
-            VecOperator::unhexpack_strings(prepare(*plan, result), result.named_buffer("unpacked"), stringstore, uppercase, total_bytes)
+            let stringstore = result.named_buffer("stringstore").u8();
+            VecOperator::unhexpack_strings(
+                prepare(*plan, result).u8(),
+                result.named_buffer("unpacked").str(),
+                stringstore, uppercase, total_bytes)
         }
         QueryPlan::Exists(indices, t, max_index) =>
-            VecOperator::exists(prepare(*indices, result), result.named_buffer("exists"), t, prepare(*max_index, result)),
+            VecOperator::exists(
+                (prepare(*indices, result), t),
+                result.named_buffer("exists").u8(),
+                prepare(*max_index, result).i64()),
         QueryPlan::Compact(data, data_t, select, select_t) => {
             let inplace = prepare(*data, result);
-            let op = VecOperator::compact(inplace, prepare(*select, result), data_t, select_t);
+            let op = VecOperator::compact((inplace, data_t), (prepare(*select, result), select_t));
             result.push(op);
             return inplace;
         }
         QueryPlan::NonzeroIndices(indices, indices_t, output_t) =>
-            VecOperator::nonzero_indices(prepare(*indices, result), result.named_buffer("nonzero_indices"), indices_t, output_t),
+            VecOperator::nonzero_indices(
+                (prepare(*indices, result), indices_t),
+                (result.named_buffer("nonzero_indices"), output_t)),
         QueryPlan::NonzeroCompact(data, data_t) => {
             let inplace = prepare(*data, result);
-            result.push(VecOperator::nonzero_compact(inplace, data_t));
+            result.push(VecOperator::nonzero_compact((inplace, data_t)));
             return inplace;
         }
         QueryPlan::EncodeIntConstant(plan, codec) =>
-            VecOperator::encode_int_const(prepare(*plan, result), result.named_buffer("encoded"), codec),
+            VecOperator::encode_int_const(
+                prepare(*plan, result).i64(),
+                result.named_buffer("encoded").i64(),
+                codec),
         QueryPlan::BitPack(lhs, rhs, shift_amount) =>
-            VecOperator::bit_shift_left_add(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("bitpacked"), shift_amount),
+            VecOperator::bit_shift_left_add(
+                prepare(*lhs, result).i64(),
+                prepare(*rhs, result).i64(),
+                result.named_buffer("bitpacked").i64(),
+                shift_amount),
         QueryPlan::BitUnpack(inner, shift, width) =>
-            VecOperator::bit_unpack(prepare(*inner, result), result.named_buffer("unpacked"), shift, width),
+            VecOperator::bit_unpack(
+                prepare(*inner, result).i64(),
+                result.named_buffer("unpacked").i64(),
+                shift,
+                width),
 
         QueryPlan::SlicePack(input, _type, stride, offset) =>
-            VecOperator::slice_pack(prepare(*input, result), result.shared_buffer("slicepack"), stride, offset),
+            VecOperator::slice_pack(
+                prepare(*input, result).str(),
+                result.shared_buffer("slicepack"),
+                stride,
+                offset),
         QueryPlan::SliceUnpack(input, _, stride, offset) =>
-            VecOperator::slice_unpack(prepare(*input, result), result.named_buffer("unpacked"), stride, offset),
+            VecOperator::slice_unpack(
+                prepare(*input, result),
+                result.named_buffer("unpacked").str(),
+                stride,
+                offset),
 
         QueryPlan::Convergence(plans) => {
             return plans.into_iter().map(|p| prepare(*p, result)).collect::<Vec<_>>()[0];
         }
 
         QueryPlan::LessThanVS(left_type, lhs, rhs) =>
-            VecOperator::less_than_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("less_than")),
+            VecOperator::less_than_vs(
+                (prepare(*lhs, result), left_type),
+                prepare(*rhs, result).i64(),
+                result.named_buffer("less_than").u8()),
         QueryPlan::EqualsVS(left_type, lhs, rhs) =>
-            VecOperator::equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
+            VecOperator::equals_vs(
+                (prepare(*lhs, result), left_type),
+                (prepare(*rhs, result), left_type),
+                result.named_buffer("equals").u8()),
         QueryPlan::NotEqualsVS(left_type, lhs, rhs) =>
-            VecOperator::not_equals_vs(left_type, prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("equals")),
+            VecOperator::not_equals_vs(
+                (prepare(*lhs, result), left_type),
+                (prepare(*rhs, result), left_type),
+                result.named_buffer("equals").u8()),
         QueryPlan::DivideVS(lhs, rhs) =>
-            VecOperator::divide_vs(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("division")),
+            VecOperator::divide_vs(
+                prepare(*lhs, result).i64(),
+                prepare(*rhs, result).i64(),
+                result.named_buffer("division").i64()),
         QueryPlan::AddVS(left_type, lhs, rhs) =>
-            VecOperator::addition_vs(prepare(*lhs, result), prepare(*rhs, result), result.named_buffer("addition"), left_type),
+            VecOperator::addition_vs(
+                (prepare(*lhs, result), left_type),
+                prepare(*rhs, result).i64(),
+                result.named_buffer("addition").i64()),
         QueryPlan::Or(lhs, rhs) => {
             let inplace = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
             // Probably same issue as this: https://github.com/rust-lang/rust/issues/49936
-            let operation = VecOperator::or(inplace, prepare(*rhs, result));
+            let operation = VecOperator::or(inplace.u8(), prepare(*rhs, result).u8());
             result.push(operation);
             return inplace;
         }
         QueryPlan::And(lhs, rhs) => {
-            let inplace: BufferRef = prepare(*lhs, result);
+            let inplace: BufferRef<Any> = prepare(*lhs, result);
             // If we don't assign to `operation` and pass expression directly to push, we trigger an infinite loop in the compiler
             // Probably same issue as this: https://github.com/rust-lang/rust/issues/49936
-            let operation = VecOperator::and(inplace, prepare(*rhs, result));
+            let operation = VecOperator::and(inplace.u8(), prepare(*rhs, result).u8());
             result.push(operation);
             return inplace;
         }
         QueryPlan::ToYear(plan) =>
-            VecOperator::to_year(prepare(*plan, result), result.named_buffer("year")),
+            VecOperator::to_year(prepare(*plan, result).i64(), result.named_buffer("year").i64()),
         QueryPlan::EncodedGroupByPlaceholder => return result.encoded_group_by().unwrap(),
         QueryPlan::SortIndices(plan, descending) =>
-            VecOperator::sort_indices(prepare(*plan, result), result.named_buffer("permutation"), descending),
+            VecOperator::sort_indices(
+                prepare(*plan, result),
+                result.named_buffer("permutation").usize(),
+                descending),
         QueryPlan::TopN(plan, t, n, desc) =>
-            VecOperator::top_n(prepare(*plan, result), result.named_buffer("tmp_keys"), result.named_buffer("top_n"), t, n, desc),
+            VecOperator::top_n(
+                (prepare(*plan, result), t),
+                (result.named_buffer("tmp_keys"), t),
+                result.named_buffer("top_n").usize(),
+                n, desc),
         QueryPlan::ReadBuffer(buffer) => return buffer,
     };
     result.push(operation);
@@ -199,19 +261,20 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Buff
     result.last_buffer()
 }
 
-pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
+pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef<Any>,
                                 grouping_key_type: EncodingType,
                                 max_cardinality: usize,
-                                result: &mut QueryExecutor) -> (Option<BufferRef>, BufferRef, Type, BufferRef) {
+                                result: &mut QueryExecutor)
+                                -> (Option<BufferRef<Any>>, BufferRef<Any>, Type, BufferRef<Any>) {
     let unique_out = result.named_buffer("unique");
     let grouping_key_out = result.named_buffer("grouping_key");
     let cardinality_out = result.named_buffer("cardinality");
     result.push(
-        VecOperator::hash_map_grouping(raw_grouping_key,
-                                       unique_out, grouping_key_out,
-                                       cardinality_out,
-                                       grouping_key_type,
-                                       max_cardinality, ));
+        VecOperator::hash_map_grouping((raw_grouping_key, grouping_key_type),
+                                       (unique_out, grouping_key_type),
+                                       grouping_key_out.u32(),
+                                       cardinality_out.i64(),
+                                       max_cardinality));
     (Some(unique_out),
      grouping_key_out,
      Type::encoded(Codec::opaque(EncodingType::U32, BasicType::Integer, false, false, true, true)),
@@ -221,19 +284,18 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: BufferRef,
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
 pub fn prepare_aggregation<'a>(plan: QueryPlan,
                                mut plan_type: Type,
-                               grouping_key: BufferRef,
-                               grouping_type: EncodingType,
-                               max_index: BufferRef,
+                               (grouping_key, grouping_type): TypedBufferRef,
+                               max_index: BufferRef<Any>,
                                aggregator: Aggregator,
-                               result: &mut QueryExecutor<'a>) -> Result<(BufferRef, Type), QueryError> {
+                               result: &mut QueryExecutor<'a>)
+                               -> Result<(BufferRef<Any>, Type), QueryError> {
     let output_location;
     let (operation, t): (BoxedOperator<'a>, _) = match (aggregator, plan) {
         (Aggregator::Count, _) => {
             output_location = result.named_buffer("count");
-            (VecOperator::count(grouping_key,
-                                output_location,
-                                grouping_type,
-                                max_index),
+            (VecOperator::count((grouping_key, grouping_type),
+                                output_location.u32(),
+                                max_index.i64()),
              Type::encoded(Codec::integer_cast(EncodingType::U32)))
         }
         (Aggregator::Sum, mut plan) => {
@@ -242,12 +304,10 @@ pub fn prepare_aggregation<'a>(plan: QueryPlan,
                 plan = *plan_type.codec.clone().unwrap().decode(Box::new(plan));
                 plan_type = plan_type.decoded();
             }
-            (VecOperator::summation(prepare(plan, result),
-                                    grouping_key,
-                                    output_location,
-                                    plan_type.encoding_type(),
-                                    grouping_type,
-                                    max_index), // TODO(clemens): determine dense groupings
+            (VecOperator::summation((prepare(plan, result), plan_type.encoding_type()),
+                                    (grouping_key, grouping_type),
+                                    output_location.i64(),
+                                    max_index.i64()), // TODO(clemens): determine dense groupings
              Type::unencoded(BasicType::Integer))
         }
     };
@@ -287,12 +347,12 @@ impl QueryPlan {
                             QueryPlan::Filter(
                                 Box::new(plan),
                                 t.encoding_type(),
-                                Box::new(QueryPlan::ReadBuffer(filter)))
+                                Box::new(QueryPlan::ReadBuffer(filter.any())))
                         }
                         Filter::Indices(indices) => {
                             QueryPlan::Select(
                                 Box::new(plan),
-                                Box::new(QueryPlan::ReadBuffer(indices)),
+                                Box::new(QueryPlan::ReadBuffer(indices.any())),
                                 t.encoding_type())
                         }
                         Filter::None => plan,
@@ -478,7 +538,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 ReadColumnSection(name, index, range)
             }
             ReadBuffer(buffer) => {
-                hasher.input(&buffer.0.to_ne_bytes());
+                hasher.input(&buffer.i.to_ne_bytes());
                 ReadBuffer(buffer)
             }
             DictLookup(indices, t, offset_len, dict) => {

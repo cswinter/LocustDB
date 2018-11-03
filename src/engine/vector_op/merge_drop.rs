@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use engine::typed_vec::MergeOp;
 use engine::vector_op::*;
 use engine::*;
@@ -7,11 +5,10 @@ use engine::*;
 
 #[derive(Debug)]
 pub struct MergeDrop<T> {
-    pub merge_ops: BufferRef,
-    pub left: BufferRef,
-    pub right: BufferRef,
-    pub deduplicated: BufferRef,
-    pub t: PhantomData<T>,
+    pub merge_ops: BufferRef<MergeOp>,
+    pub left: BufferRef<T>,
+    pub right: BufferRef<T>,
+    pub deduplicated: BufferRef<T>,
 }
 
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDrop<T> {
@@ -25,10 +22,10 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDrop<T> {
         scratchpad.set(self.deduplicated, deduplicated);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.merge_ops, self.left, self.right] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.deduplicated] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.merge_ops.any(), self.left.any(), self.right.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.deduplicated.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -36,7 +33,7 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDrop<T> {
     }
 }
 
-fn merge_drop<'a, T: GenericVec<T> + 'a>(ops: &[MergeOp], left: &[T], right: &[T]) -> BoxedVec<'a> {
+fn merge_drop<'a, T: GenericVec<T> + 'a>(ops: &[MergeOp], left: &[T], right: &[T]) -> Vec<T> {
     // TODO(clemens): this is an overestimate
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
@@ -56,6 +53,6 @@ fn merge_drop<'a, T: GenericVec<T> + 'a>(ops: &[MergeOp], left: &[T], right: &[T
             }
         }
     }
-    AnyVec::owned(result)
+    result
 }
 

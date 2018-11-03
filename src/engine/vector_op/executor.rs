@@ -8,12 +8,12 @@ use engine::vector_op::*;
 
 pub struct QueryExecutor<'a> {
     ops: Vec<Box<VecOperator<'a> + 'a>>,
-    ops_cache: HashMap<[u8; 16], BufferRef>,
+    ops_cache: HashMap<[u8; 16], BufferRef<Any>>,
     stages: Vec<ExecutorStage>,
-    encoded_group_by: Option<BufferRef>,
+    encoded_group_by: Option<BufferRef<Any>>,
     count: usize,
-    last_buffer: BufferRef,
-    shared_buffers: HashMap<&'static str, BufferRef>,
+    last_buffer: BufferRef<Any>,
+    shared_buffers: HashMap<&'static str, BufferRef<Any>>,
 }
 
 #[derive(Default, Clone)]
@@ -24,16 +24,20 @@ struct ExecutorStage {
 }
 
 impl<'a> QueryExecutor<'a> {
-    pub fn named_buffer(&mut self, name: &'static str) -> BufferRef {
-        let buffer = BufferRef(self.count, name);
+    pub fn named_buffer(&mut self, name: &'static str) -> BufferRef<Any> {
+        let buffer = any_buffer_ref(self.count, name);
         self.count += 1;
         self.last_buffer = buffer;
         buffer
     }
 
-    pub fn shared_buffer(&mut self, name: &'static str) -> BufferRef {
+    pub fn tagged_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
+        (self.named_buffer(name), tag)
+    }
+
+    pub fn shared_buffer(&mut self, name: &'static str) -> BufferRef<Any> {
         if self.shared_buffers.get(name).is_none() {
-            let buffer = BufferRef(self.count, name);
+            let buffer = any_buffer_ref(self.count, name);
             self.count += 1;
             self.last_buffer = buffer;
             self.shared_buffers.insert(name, buffer);
@@ -41,17 +45,17 @@ impl<'a> QueryExecutor<'a> {
         self.shared_buffers[name]
     }
 
-    pub fn last_buffer(&self) -> BufferRef { self.last_buffer }
+    pub fn last_buffer(&self) -> BufferRef<Any> { self.last_buffer }
 
     pub fn push(&mut self, op: Box<VecOperator<'a> + 'a>) {
         self.ops.push(op);
     }
 
-    pub fn set_encoded_group_by(&mut self, gb: BufferRef) {
+    pub fn set_encoded_group_by(&mut self, gb: BufferRef<Any>) {
         self.encoded_group_by = Some(gb)
     }
 
-    pub fn encoded_group_by(&self) -> Option<BufferRef> { self.encoded_group_by }
+    pub fn encoded_group_by(&self) -> Option<BufferRef<Any>> { self.encoded_group_by }
 
     pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a AnyVec<'a>>>) -> Scratchpad<'a> {
         self.stages = self.partition();
@@ -85,10 +89,10 @@ impl<'a> QueryExecutor<'a> {
         let mut producers = vec![vec![]; self.count];
         for (i, op) in self.ops.iter().enumerate() {
             for input in op.inputs() {
-                consumers[input.0].push(i);
+                consumers[input.i].push(i);
             }
             for output in op.outputs() {
-                producers[output.0].push(i);
+                producers[output.i].push(i);
             }
         }
 
@@ -96,12 +100,12 @@ impl<'a> QueryExecutor<'a> {
         let mut streaming_disabled = vec![false; self.ops.len()];
         for (i, op) in self.ops.iter().enumerate() {
             for output in op.outputs() {
-                if op.can_stream_output(output) {
+                if op.can_stream_output(output.i) {
                     let mut streaming = false;
                     let mut block = false;
-                    for &p in &consumers[output.0] {
-                        streaming |= self.ops[p].can_stream_input(output);
-                        block |= !self.ops[p].can_stream_input(output);
+                    for &p in &consumers[output.i] {
+                        streaming |= self.ops[p].can_stream_input(output.i);
+                        block |= !self.ops[p].can_stream_input(output.i);
                     }
                     streaming_disabled[i] = streaming & block;
                 }
@@ -131,10 +135,10 @@ impl<'a> QueryExecutor<'a> {
 
                 // Find producers that can be streamed
                 for input in op.inputs() {
-                    if op.can_stream_input(input) {
-                        for &p in &producers[input.0] {
+                    if op.can_stream_input(input.i) {
+                        for &p in &producers[input.i] {
                             let can_stream =
-                                self.ops[p].can_stream_output(input) && !streaming_disabled[p];
+                                self.ops[p].can_stream_output(input.i) && !streaming_disabled[p];
                             if !visited[p] && can_stream {
                                 to_visit.push(p);
                                 visited[p] = true;
@@ -145,9 +149,9 @@ impl<'a> QueryExecutor<'a> {
                 }
                 // Find consumers that can be streamed to
                 for output in op.outputs() {
-                    if op.can_stream_output(output) && !streaming_disabled[current] {
-                        for &consumer in &consumers[output.0] {
-                            if !visited[consumer] && self.ops[consumer].can_stream_input(output) {
+                    if op.can_stream_output(output.i) && !streaming_disabled[current] {
+                        for &consumer in &consumers[output.i] {
+                            if !visited[consumer] && self.ops[consumer].can_stream_input(output.i) {
                                 to_visit.push(consumer);
                                 visited[consumer] = true;
                                 stream = stream || self.ops[consumer].allocates();
@@ -163,10 +167,10 @@ impl<'a> QueryExecutor<'a> {
                 let mut streaming_consumers = false;
                 let mut block_consumers = false;
                 for output in self.ops[op].outputs() {
-                    if self.ops[op].can_stream_output(output) {
-                        for &consumer in &consumers[output.0] {
-                            streaming_consumers |= self.ops[consumer].can_stream_input(output);
-                            block_consumers |= !self.ops[consumer].can_stream_input(output);
+                    if self.ops[op].can_stream_output(output.i) {
+                        for &consumer in &consumers[output.i] {
+                            streaming_consumers |= self.ops[consumer].can_stream_input(output.i);
+                            block_consumers |= !self.ops[consumer].can_stream_input(output.i);
                         }
                     }
                 }
@@ -192,7 +196,7 @@ impl<'a> QueryExecutor<'a> {
             let mut deps = HashSet::new();
             for &(op, _) in &stage.ops {
                 for input in self.ops[op].inputs() {
-                    for &producer in &producers[input.0] {
+                    for &producer in &producers[input.i] {
                         deps.insert(stage_for_op[producer]);
                     }
                 }
@@ -228,7 +232,7 @@ impl<'a> QueryExecutor<'a> {
             trace!("{:?}, streamable={}", &self.ops[op], s);
             for input in self.ops[op].inputs() {
                 max_input_length = cmp::max(max_input_length, scratchpad.get_any(input).len());
-                trace!("{}: {}", input.0, scratchpad.get_any(input).len());
+                trace!("{}: {}", input.i, scratchpad.get_any(input).len());
             }
         }
         // TODO(clemens): once we can stream from intermediary results this will be overestimate
@@ -292,7 +296,7 @@ impl<'a> Default for QueryExecutor<'a> {
             stages: vec![],
             encoded_group_by: None,
             count: 0,
-            last_buffer: BufferRef(0xdead_beef, "ERROR"),
+            last_buffer: error_buffer_ref("ERROR"),
             shared_buffers: HashMap::default(),
         }
     }

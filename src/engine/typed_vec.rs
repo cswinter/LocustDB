@@ -395,7 +395,7 @@ pub trait GenericIntVec<T>: GenericVec<T> + CastUsize + PrimInt + Hash + 'static
 
 impl<T> GenericIntVec<T> for T where T: GenericVec<T> + CastUsize + PrimInt + Copy + Hash + 'static {}
 
-pub trait ConstType<T> {
+pub trait ConstType<T>: Clone {
     fn unwrap(vec: &AnyVec) -> T;
 }
 

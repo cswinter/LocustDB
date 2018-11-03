@@ -1,20 +1,16 @@
-use std::marker::PhantomData;
-
 use engine::vector_op::*;
 use engine::*;
 
 
 #[derive(Debug)]
 pub struct Compact<T, U> {
-    data: BufferRef,
-    select: BufferRef,
-    t: PhantomData<T>,
-    u: PhantomData<U>,
+    data: BufferRef<T>,
+    select: BufferRef<U>,
 }
 
 impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> Compact<T, U> {
-    pub fn boxed(data: BufferRef, select: BufferRef) -> BoxedOperator<'a> {
-        Box::new(Compact::<T, U> { data, select, t: PhantomData, u: PhantomData })
+    pub fn boxed(data: BufferRef<T>, select: BufferRef<U>) -> BoxedOperator<'a> {
+        Box::new(Compact { data, select })
     }
 }
 
@@ -33,10 +29,10 @@ impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact
         data.truncate(j);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.data, self.select] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.data] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any(), self.select.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

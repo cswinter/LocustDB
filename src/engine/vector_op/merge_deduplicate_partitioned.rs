@@ -1,5 +1,4 @@
 use std::cmp::{max, min};
-use std::marker::PhantomData;
 
 use engine::typed_vec::{MergeOp, Premerge};
 use engine::vector_op::*;
@@ -8,12 +7,11 @@ use engine::*;
 
 #[derive(Debug)]
 pub struct MergeDeduplicatePartitioned<T> {
-    pub partitioning: BufferRef,
-    pub left: BufferRef,
-    pub right: BufferRef,
-    pub deduplicated: BufferRef,
-    pub merge_ops: BufferRef,
-    pub t: PhantomData<T>,
+    pub partitioning: BufferRef<Premerge>,
+    pub left: BufferRef<T>,
+    pub right: BufferRef<T>,
+    pub deduplicated: BufferRef<T>,
+    pub merge_ops: BufferRef<MergeOp>,
 }
 
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<T> {
@@ -25,13 +23,13 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<
             merge_deduplicate_partitioned(&partitioning, &left, &right)
         };
         scratchpad.set(self.deduplicated, deduplicated);
-        scratchpad.set(self.merge_ops, Box::new(merge_ops));
+        scratchpad.set(self.merge_ops, merge_ops);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.partitioning, self.left, self.right] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.deduplicated, self.merge_ops] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.partitioning.any(), self.left.any(), self.right.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.deduplicated.any(), self.merge_ops.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -39,9 +37,9 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<
     }
 }
 
-pub fn merge_deduplicate_partitioned<'a, T: GenericVec<T> + 'a>(partitioning: &[Premerge],
-                                                                left: &[T],
-                                                                right: &[T]) -> (BoxedVec<'a>, Vec<MergeOp>) {
+pub fn merge_deduplicate_partitioned<'a, T: PartialOrd + Copy + 'a>(partitioning: &[Premerge],
+                                                                    left: &[T],
+                                                                    right: &[T]) -> (Vec<T>, Vec<MergeOp>) {
     let output_len_estimate = max(left.len(), right.len()) + min(left.len(), right.len()) / 2;
     let mut result = Vec::with_capacity(output_len_estimate);
     let mut ops = Vec::<MergeOp>::with_capacity(output_len_estimate);
@@ -73,6 +71,6 @@ pub fn merge_deduplicate_partitioned<'a, T: GenericVec<T> + 'a>(partitioning: &[
             // println!("{:?}", ops.last().unwrap());
         }
     }
-    (AnyVec::owned(result), ops)
+    (result, ops)
 }
 

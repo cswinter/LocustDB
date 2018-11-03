@@ -1,27 +1,12 @@
-use std::marker::PhantomData;
-
-use engine::typed_vec::AnyVec;
 use engine::vector_op::*;
 use engine::*;
 
 
 #[derive(Debug)]
 pub struct VecCount<T> {
-    grouping: BufferRef,
-    output: BufferRef,
-    max_index: BufferRef,
-    t: PhantomData<T>,
-}
-
-impl<T> VecCount<T> {
-    pub fn new(grouping: BufferRef, output: BufferRef, max_index: BufferRef) -> VecCount<T> {
-        VecCount {
-            grouping,
-            output,
-            max_index,
-            t: PhantomData,
-        }
-    }
+    pub grouping: BufferRef<T>,
+    pub output: BufferRef<u32>,
+    pub max_index: BufferRef<i64>,
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
@@ -29,7 +14,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
         let mut result = scratchpad.get_mut::<u32>(self.output);
         let grouping = scratchpad.get::<T>(self.grouping);
 
-        let len = scratchpad.get_const::<i64>(self.max_index) as usize + 1;
+        let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
         if len > result.len() {
             result.resize(len, 0);
         }
@@ -40,13 +25,13 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, AnyVec::owned(Vec::<u32>::with_capacity(0)));
+        scratchpad.set(self.output, Vec::with_capacity(0));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.grouping, self.max_index] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.max_index.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

@@ -54,36 +54,48 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         // Aggregation query
         (Some(g1), Some(g2)) => {
             let mut executor = QueryExecutor::default();
-            let left_t = g1.iter().map(|vec| { vec.get_type() }).collect::<Vec<_>>();
-            let right_t = g2.iter().map(|vec| { vec.get_type() }).collect::<Vec<_>>();
-            let left = g1.into_iter().map(|vec| { set("left", vec, &mut executor) }).collect::<Vec<_>>();
-            let right = g2.into_iter().map(|vec| { set("right", vec, &mut executor) }).collect::<Vec<_>>();
+            let left = g1.into_iter().map(|vec| {
+                let t = vec.get_type();
+                let buffer = set("left", vec, &mut executor);
+                (buffer, t)
+            }).collect::<Vec<_>>();
+            let right = g2.into_iter().map(|vec| {
+                let t = vec.get_type();
+                let buffer = set("right", vec, &mut executor);
+                (buffer, t)
+            }).collect::<Vec<_>>();
             let (group_by_cols, ops) = if left.len() == 1 {
                 // TODO(clemens): other types, val coercion
-                let merged = executor.named_buffer("merged");
-                let ops = executor.named_buffer("merge_ops");
-                executor.push(VecOperator::merge_deduplicate(left[0], right[0], merged, ops, left_t[0], right_t[0]));
+                let merged = (executor.named_buffer("merged"), left[0].1);
+                let ops = executor.named_buffer("merge_ops").merge_op();
+                executor.push(VecOperator::merge_deduplicate(left[0], right[0], merged, ops));
                 (vec![merged], ops)
             } else {
-                let mut partitioning = executor.named_buffer("partitioning");
-                executor.push(VecOperator::partition(left[0], right[0], partitioning, left_t[0], right_t[0], limit));
+                let mut partitioning = executor.named_buffer("partitioning").premerge();
+                executor.push(VecOperator::partition(left[0], right[0], partitioning, limit));
 
                 for i in 1..(left.len() - 1) {
-                    let subpartitioning = executor.named_buffer("subpartitioning");
-                    executor.push(VecOperator::subpartition(partitioning, left[i], right[i], subpartitioning, left_t[i], right_t[i]));
+                    let subpartitioning = executor.named_buffer("subpartitioning").premerge();
+                    executor.push(VecOperator::subpartition(partitioning,
+                                                            left[i],
+                                                            right[i],
+                                                            subpartitioning));
                     partitioning = subpartitioning;
                 }
 
                 let last = left.len() - 1;
-                let merged = executor.named_buffer("merged");
-                let ops = executor.named_buffer("merge_ops");
-                executor.push(VecOperator::merge_deduplicate_partitioned(
-                    partitioning, left[last], right[last], merged, ops, left_t[last], right_t[last]));
+                let merged = (executor.named_buffer("merged"), left[last].1);
+                let ops = executor.named_buffer("merge_ops").merge_op();
+                executor.push(VecOperator::merge_deduplicate_partitioned(partitioning,
+                                                                         left[last],
+                                                                         right[last],
+                                                                         merged,
+                                                                         ops));
 
                 let mut group_by_cols = Vec::with_capacity(left.len());
                 for i in 0..last {
-                    let merged = executor.named_buffer("merged");
-                    executor.push(VecOperator::merge_drop(ops, left[i], right[i], merged, left_t[i], right_t[i]));
+                    let merged = (executor.named_buffer("merged"), left[i].1);
+                    executor.push(VecOperator::merge_drop(ops, left[i], right[i], merged));
                     group_by_cols.push(merged);
                 }
                 group_by_cols.push(merged);
@@ -93,16 +105,20 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
             let mut aggregates = Vec::with_capacity(batch1.aggregators.len());
             for ((aggregator, select1), select2) in batch1.aggregators.iter().zip(batch1.select).zip(batch2.select) {
-                let left = set("left", select1, &mut executor);
-                let right = set("right", select2, &mut executor);
+                let left = set("left", select1, &mut executor).i64();
+                let right = set("right", select2, &mut executor).i64();
                 let aggregated = executor.named_buffer("aggregated");
-                executor.push(VecOperator::merge_aggregate(ops, left, right, aggregated, *aggregator));
+                executor.push(VecOperator::merge_aggregate(ops,
+                                                           left,
+                                                           right,
+                                                           aggregated.i64(),
+                                                           *aggregator));
                 aggregates.push(aggregated);
             }
 
             let mut results = executor.prepare_no_columns();
             executor.run(1, &mut results, batch1.show || batch2.show);
-            let group_by_cols = group_by_cols.into_iter().map(|i| results.collect(i)).collect();
+            let group_by_cols = group_by_cols.into_iter().map(|i| results.collect(i.0)).collect();
             let select = aggregates.into_iter().map(|i| results.collect(i)).collect();
 
             Ok(BatchResult {
@@ -127,15 +143,21 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 // Sort query
                 Some(index) => {
                     let mut executor = QueryExecutor::default();
-                    let left_t = batch1.select.iter().map(|vec| { vec.get_type() }).collect::<Vec<_>>();
-                    let right_t = batch2.select.iter().map(|vec| { vec.get_type() }).collect::<Vec<_>>();
-                    let left = batch1.select.into_iter().map(|vec| { set("left", vec, &mut executor) }).collect::<Vec<_>>();
-                    let right = batch2.select.into_iter().map(|vec| { set("right", vec, &mut executor) }).collect::<Vec<_>>();
-                    let ops = executor.named_buffer("take_left");
-                    let merged_sort_cols = executor.named_buffer("merged_sort_cols");
+                    let left = batch1.select.into_iter().map(|vec| {
+                        let t = vec.get_type();
+                        let buffer = set("left", vec, &mut executor);
+                        (buffer, t)
+                    }).collect::<Vec<_>>();
+                    let right = batch2.select.into_iter().map(|vec| {
+                        let t = vec.get_type();
+                        let buffer = set("right", vec, &mut executor);
+                        (buffer, t)
+                    }).collect::<Vec<_>>();
+                    let ops = executor.named_buffer("take_left").u8();
+                    let merged_sort_cols = (executor.named_buffer("merged_sort_cols"), left[index].1);
                     executor.push(VecOperator::merge(
-                        (left[index], left_t[index]),
-                        (right[index], right_t[index]),
+                        left[index],
+                        right[index],
                         merged_sort_cols,
                         ops,
                         limit,
@@ -144,14 +166,14 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     let mut select = Vec::with_capacity(left.len());
                     for (i, (&left, right)) in left.iter().zip(right).enumerate() {
                         if i == index {
-                            select.push(BufferRef(0xdead_beef, "MERGE_ERROR"));
+                            select.push(error_buffer_ref("MERGE_ERROR"));
                         } else {
-                            let merged = executor.named_buffer("merged_sort_cols");
-                            executor.push(VecOperator::merge_keep(ops, left, right, merged, left_t[i], right_t[i]));
-                            select.push(merged);
+                            let merged = (executor.named_buffer("merged_sort_cols"), left.1);
+                            executor.push(VecOperator::merge_keep(ops, left, right, merged));
+                            select.push(merged.0);
                         }
                     }
-                    select[index] = merged_sort_cols;
+                    select[index] = merged_sort_cols.0;
 
                     let mut results = executor.prepare_no_columns();
                     executor.run(1, &mut results, batch1.show || batch2.show);
@@ -208,7 +230,9 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
     }
 }
 
-fn set<'a>(name: &'static str, vec: BoxedVec<'a>, executor: &mut QueryExecutor<'a>) -> BufferRef {
+fn set<'a>(name: &'static str,
+           vec: BoxedVec<'a>,
+           executor: &mut QueryExecutor<'a>) -> BufferRef<Any> {
     let buffer = executor.named_buffer(name);
     let op = VecOperator::constant_vec(vec, buffer);
     executor.push(op);

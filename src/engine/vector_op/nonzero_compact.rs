@@ -1,19 +1,10 @@
-use std::marker::PhantomData;
-
 use engine::vector_op::*;
 use engine::*;
 
 
 #[derive(Debug)]
 pub struct NonzeroCompact<T> {
-    data: BufferRef,
-    t: PhantomData<T>,
-}
-
-impl<'a, T: GenericIntVec<T>> NonzeroCompact<T> {
-    pub fn boxed(data: BufferRef) -> BoxedOperator<'a> {
-        Box::new(NonzeroCompact::<T> { data, t: PhantomData })
-    }
+    pub data: BufferRef<T>,
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
@@ -30,10 +21,10 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
         data.truncate(j);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.data] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

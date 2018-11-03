@@ -41,7 +41,7 @@ impl Query {
         let mut filter = match filter_type.encoding_type() {
             EncodingType::BitVec => {
                 let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor);
-                Filter::BitVec(compiled_filter)
+                Filter::BitVec(compiled_filter.u8())
             }
             _ => Filter::None,
         };
@@ -67,7 +67,7 @@ impl Query {
                         self.order_desc),
                     &mut executor)
             };
-            filter = Filter::Indices(sort_indices);
+            filter = Filter::Indices(sort_indices.usize());
         }
         for expr in &self.select {
             let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
@@ -116,7 +116,7 @@ impl Query {
         let filter = match filter_type.encoding_type() {
             EncodingType::BitVec => {
                 let compiled_filter = query_plan::prepare(filter_plan, &mut executor);
-                Filter::BitVec(compiled_filter)
+                Filter::BitVec(compiled_filter.u8())
             }
             _ => Filter::None,
         };
@@ -130,7 +130,10 @@ impl Query {
 
         // Reduce cardinality of grouping key if necessary and perform grouping
         // TODO(clemens): also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
-        let (encoded_group_by_column, grouping_key, grouping_key_type, aggregation_cardinality) =
+        let (encoded_group_by_column,
+            grouping_key,
+            grouping_key_type,
+            aggregation_cardinality) =
         // TODO(clemens): refine criterion
             if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
                 let max_grouping_key_buf = query_plan::prepare(
@@ -156,8 +159,7 @@ impl Query {
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
-                grouping_key,
-                grouping_key_type.encoding_type(),
+                (grouping_key, grouping_key_type.encoding_type()),
                 aggregation_cardinality,
                 aggregator,
                 &mut executor)?;
@@ -194,7 +196,10 @@ impl Query {
         // Compact and decode aggregation results
         let mut select = Vec::new();
         {
-            let mut decode_compact = |aggregator: Aggregator, aggregate: BufferRef, t: Type, select: &mut Vec<(BufferRef, Type)>| {
+            let mut decode_compact = |aggregator: Aggregator,
+                                      aggregate: BufferRef<Any>,
+                                      t: Type,
+                                      select: &mut Vec<(BufferRef<Any>, Type)>| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
                     Aggregator::Sum => query_plan::prepare(

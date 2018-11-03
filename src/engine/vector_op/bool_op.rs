@@ -6,13 +6,13 @@ use engine::vector_op::vector_operator::*;
 
 #[derive(Debug)]
 pub struct BooleanOperator<T> {
-    lhs: BufferRef,
-    rhs: BufferRef,
+    lhs: BufferRef<u8>,
+    rhs: BufferRef<u8>,
     op: PhantomData<T>,
 }
 
 impl<'a, T: BooleanOp + fmt::Debug + 'a> BooleanOperator<T> {
-    pub fn compare(lhs: BufferRef, rhs: BufferRef) -> BoxedOperator<'a> {
+    pub fn compare(lhs: BufferRef<u8>, rhs: BufferRef<u8>) -> BoxedOperator<'a> {
         Box::new(BooleanOperator::<T> {
             lhs,
             rhs,
@@ -28,10 +28,10 @@ impl<'a, T: BooleanOp + fmt::Debug> VecOperator<'a> for BooleanOperator<T> {
         T::evaluate(&mut result, &rhs);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.lhs] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.lhs.any(), self.rhs.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.lhs.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

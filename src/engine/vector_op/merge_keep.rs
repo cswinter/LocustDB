@@ -1,16 +1,13 @@
-use std::marker::PhantomData;
-
 use engine::vector_op::*;
 use engine::*;
 
 
 #[derive(Debug)]
 pub struct MergeKeep<T> {
-    pub merge_ops: BufferRef,
-    pub left: BufferRef,
-    pub right: BufferRef,
-    pub merged: BufferRef,
-    pub t: PhantomData<T>,
+    pub merge_ops: BufferRef<u8>,
+    pub left: BufferRef<T>,
+    pub right: BufferRef<T>,
+    pub merged: BufferRef<T>,
 }
 
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeKeep<T> {
@@ -24,10 +21,10 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeKeep<T> {
         scratchpad.set(self.merged, merged);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.merge_ops, self.left, self.right] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.merged] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.merge_ops.any(), self.left.any(), self.right.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.merged.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -35,8 +32,7 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeKeep<T> {
     }
 }
 
-fn merge_keep<'a, T: 'a>(ops: &[u8], left: &[T], right: &[T]) -> BoxedVec<'a>
-    where T: GenericVec<T> {
+fn merge_keep<'a, T: Copy + 'a>(ops: &[u8], left: &[T], right: &[T]) -> Vec<T> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;
@@ -49,6 +45,6 @@ fn merge_keep<'a, T: 'a>(ops: &[u8], left: &[T], right: &[T]) -> BoxedVec<'a>
             j += 1;
         }
     }
-    AnyVec::owned(result)
+    result
 }
 
