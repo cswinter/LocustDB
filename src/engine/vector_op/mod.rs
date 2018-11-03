@@ -17,6 +17,7 @@ mod encode_const;
 mod exists;
 mod filter;
 mod hashmap_grouping;
+mod hashmap_grouping_byte_slices;
 mod merge;
 mod merge_aggregate;
 mod merge_deduplicate;
@@ -39,6 +40,8 @@ mod lz4_decode;
 pub mod merge_deduplicate_partitioned;
 pub mod partition;
 pub mod subpartition;
+pub mod slice_pack;
+pub mod slice_unpack;
 
 pub use self::vector_operator::*;
 pub use self::executor::QueryExecutor;
