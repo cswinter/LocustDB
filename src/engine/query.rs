@@ -8,7 +8,6 @@ use engine::*;
 use engine::aggregator::*;
 use engine::batch_merging::*;
 use engine::query_plan::QueryPlan;
-use engine::query_plan;
 use engine::types::EncodingType;
 use engine::types::Type;
 use ingest::raw_val::RawVal;
@@ -125,7 +124,7 @@ impl Query {
         let ((grouping_key_plan, raw_grouping_key_type),
             max_grouping_key,
             decode_plans) =
-            query_plan::compile_grouping_key(&self.select, filter, columns)?;
+            QueryPlan::compile_grouping_key(&self.select, filter, columns)?;
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
 
         // Reduce cardinality of grouping key if necessary and perform grouping

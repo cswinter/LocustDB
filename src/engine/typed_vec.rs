@@ -13,7 +13,6 @@ use heapsize::HeapSizeOf;
 use ingest::raw_val::RawVal;
 use itertools::Itertools;
 use mem_store::value::Val;
-use engine::ByteSlices;
 
 
 pub type BoxedVec<'a> = Box<AnyVec<'a> + 'a>;
@@ -40,7 +39,6 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_premerge(&self) -> &[Premerge] { panic!(self.type_error("cast_ref_merge_op")) }
     fn cast_str_const(&self) -> string::String { panic!(self.type_error("cast_str_const")) }
     fn cast_i64_const(&self) -> i64 { panic!(self.type_error("cast_i64_const")) }
-    fn cast_ref_byte_slices(&self) -> &ByteSlices<'a> { panic!(self.type_error("cast_ref_byte_slices")) }
 
     fn cast_ref_mut_str(&mut self) -> &mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
     fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> { panic!(self.type_error("cast_ref_mut_usize")) }
@@ -50,9 +48,8 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
     fn cast_ref_mut_mixed(&mut self) -> &mut Vec<Val<'a>> { panic!(self.type_error("cast_ref_mut_mixed")) }
-    fn cast_ref_mut_merge_op(&mut self) -> &mut Vec<MergeOp> { panic!(self.type_error("cast_ref_mut_merge_op")) }
-    fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { panic!(self.type_error("cast_ref_mut_premerge_op")) }
-    fn cast_ref_mut_byte_slices(&mut self) -> &mut ByteSlices<'a> { panic!(self.type_error("cast_ref_mut_byte_slices")) }
+    fn cast_ref_mut_merge_op(&mut self) -> &mut Vec<MergeOp> { panic!(self.type_error("cast_ref_merge_op")) }
+    fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { panic!(self.type_error("cast_ref_merge_op")) }
 
     fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
 
@@ -371,25 +368,7 @@ impl<'c> GenericVec<Val<'c>> for Val<'c> {
 
     fn t() -> EncodingType { EncodingType::Val }
 }
-/*
-impl<'c> GenericVec<&'c str> for ByteSlices<'c> {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [ByteSlices<'c>] where ByteSlices<'c>: 'a {
-        unsafe {
-            mem::transmute::<_, &'b [ByteSlices<'c>]>(vec.cast_ref_str())
-        }
-    }
 
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<ByteSlices<'c>> where ByteSlices<'c>: 'a {
-        unsafe {
-            mem::transmute::<_, &'b mut Vec<ByteSlices<'c>>>(vec.cast_ref_mut_str())
-        }
-    }
-
-    fn wrap_one(value: &'c str) -> RawVal { RawVal::Str(value.to_string()) }
-
-    fn t() -> EncodingType { EncodingType::Str }
-}
-*/
 
 pub trait GenericIntVec<T>: GenericVec<T> + CastUsize + PrimInt + Hash + 'static {}
 
@@ -471,7 +450,7 @@ impl GenericVec<Premerge> for Premerge {
 }
 
 
-pub fn display_slice<T: Display>(slice: &[T], max_chars: usize) -> String {
+fn display_slice<T: Display>(slice: &[T], max_chars: usize) -> String {
     let mut length = slice.len();
     loop {
         let result = _display_slice(slice, length);

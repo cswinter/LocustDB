@@ -15,7 +15,7 @@ pub struct UnpackStrings<'a> {
 impl<'a> VecOperator<'a> for UnpackStrings<'a> {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut decoded = scratchpad.get_mut::<&'a str>(self.unpacked);
-        if streaming { panic!("Not supported") }
+        if streaming { decoded.clear() }
         for elem in self.iterator.as_mut().unwrap() {
             decoded.push(elem);
             if decoded.capacity() == decoded.len() { return; }
@@ -38,7 +38,7 @@ impl<'a> VecOperator<'a> for UnpackStrings<'a> {
     fn inputs(&self) -> Vec<BufferRef> { vec![self.packed] }
     fn outputs(&self) -> Vec<BufferRef> { vec![self.unpacked] }
     fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn can_stream_output(&self, _: BufferRef) -> bool { true }
     fn allocates(&self) -> bool { true }
     fn is_streaming_producer(&self) -> bool { true }
     fn has_more(&self) -> bool { self.has_more }
