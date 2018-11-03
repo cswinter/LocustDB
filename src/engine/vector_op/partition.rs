@@ -1,5 +1,4 @@
 use std::cmp;
-use std::marker::PhantomData;
 use std::u32;
 
 use engine::typed_vec::Premerge;
@@ -9,11 +8,10 @@ use engine::*;
 
 #[derive(Debug)]
 pub struct Partition<T> {
-    pub left: BufferRef,
-    pub right: BufferRef,
-    pub partitioning: BufferRef,
+    pub left: BufferRef<T>,
+    pub right: BufferRef<T>,
+    pub partitioning: BufferRef<Premerge>,
     pub limit: usize,
-    pub t: PhantomData<T>,
 }
 
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Partition<T> {
@@ -23,13 +21,13 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Partition<T> {
             let right = scratchpad.get::<T>(self.right);
             partition(&left, &right, self.limit)
         };
-        scratchpad.set(self.partitioning, Box::new(premerge));
+        scratchpad.set(self.partitioning, premerge);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.left, self.right] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.partitioning] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.left.any(), self.right.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.partitioning.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

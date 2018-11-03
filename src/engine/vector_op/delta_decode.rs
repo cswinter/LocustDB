@@ -1,14 +1,11 @@
-use std::marker::PhantomData;
-
 use engine::*;
 use engine::vector_op::vector_operator::*;
 
 #[derive(Debug)]
 pub struct DeltaDecode<T> {
-    pub encoded: BufferRef,
-    pub decoded: BufferRef,
+    pub encoded: BufferRef<T>,
+    pub decoded: BufferRef<i64>,
     pub previous: i64,
-    pub t: PhantomData<T>,
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DeltaDecode<T> {
@@ -26,13 +23,13 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DeltaDecode<T> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.decoded, Box::new(Vec::<i64>::with_capacity(batch_size)));
+        scratchpad.set(self.decoded, Vec::with_capacity(batch_size));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.encoded] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.decoded] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.encoded.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.decoded.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

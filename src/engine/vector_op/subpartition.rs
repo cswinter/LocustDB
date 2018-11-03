@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use engine::typed_vec::Premerge;
 use engine::vector_op::*;
 use engine::*;
@@ -7,11 +5,10 @@ use engine::*;
 
 #[derive(Debug)]
 pub struct SubPartition<T> {
-    pub partitioning: BufferRef,
-    pub left: BufferRef,
-    pub right: BufferRef,
-    pub sub_partitioning: BufferRef,
-    pub t: PhantomData<T>,
+    pub partitioning: BufferRef<Premerge>,
+    pub left: BufferRef<T>,
+    pub right: BufferRef<T>,
+    pub sub_partitioning: BufferRef<Premerge>,
 }
 
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SubPartition<T> {
@@ -22,13 +19,13 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SubPartition<T> {
             let right = scratchpad.get::<T>(self.right);
             subpartition(&partitioning, &left, &right)
         };
-        scratchpad.set(self.sub_partitioning, Box::new(sub_partitioning));
+        scratchpad.set(self.sub_partitioning, sub_partitioning);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.partitioning, self.left, self.right] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.sub_partitioning] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.partitioning.any(), self.left.any(), self.right.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.sub_partitioning.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -45,7 +42,7 @@ fn subpartition<'a, T: GenericVec<T> + 'a>(
     let mut i = 0;
     let mut j = 0;
     #[allow(clippy::explicit_counter_loop)] // false positive
-    for group in partitioning {
+        for group in partitioning {
         let i_max = i + group.left as usize;
         let j_max = j + group.right as usize;
         while i < i_max || j < j_max {
@@ -68,7 +65,6 @@ fn subpartition<'a, T: GenericVec<T> + 'a>(
 
 #[cfg(test)]
 mod tests {
-    use engine::*;
     use engine::typed_vec::Premerge;
     use engine::typed_vec::MergeOp::*;
     use engine::vector_op::partition::partition;
@@ -91,7 +87,7 @@ mod tests {
         let left2 = vec![1u32, 3, 7, 2, 1];
         let right2 = vec![3u32, 5, 0, 2, 1, 2, 1];
         let (merging, merge_ops) = merge_deduplicate_partitioned::<u32>(&result, &left2, &right2);
-        assert_eq!(u32::unwrap(merging.as_ref()), &[1, 3, 5, 7, 0, 2, 1, 1, 2]);
+        assert_eq!(&merging, &[1, 3, 5, 7, 0, 2, 1, 1, 2]);
         assert_eq!(&merge_ops, &[
             TakeLeft,
             TakeLeft,

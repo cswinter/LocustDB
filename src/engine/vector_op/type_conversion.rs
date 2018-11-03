@@ -1,26 +1,11 @@
-use std::marker::PhantomData;
-
 use engine::*;
 use engine::vector_op::vector_operator::*;
 
 
 #[derive(Debug)]
 pub struct TypeConversionOperator<T, U> {
-    input: BufferRef,
-    output: BufferRef,
-    t: PhantomData<T>,
-    s: PhantomData<U>,
-}
-
-impl<T, U> TypeConversionOperator<T, U> {
-    pub fn new(input: BufferRef, output: BufferRef) -> TypeConversionOperator<T, U> {
-        TypeConversionOperator {
-            input,
-            output,
-            t: PhantomData,
-            s: PhantomData,
-        }
-    }
+    pub input: BufferRef<T>,
+    pub output: BufferRef<U>,
 }
 
 impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
@@ -35,13 +20,13 @@ impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, Box::new(Vec::<U>::with_capacity(batch_size)));
+        scratchpad.set(self.output, Vec::with_capacity(batch_size));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

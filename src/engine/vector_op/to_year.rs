@@ -7,8 +7,8 @@ use engine::vector_op::vector_operator::*;
 
 #[derive(Debug)]
 pub struct ToYear {
-    pub input: BufferRef,
-    pub output: BufferRef,
+    pub input: BufferRef<i64>,
+    pub output: BufferRef<i64>,
 }
 
 impl<'a> VecOperator<'a> for ToYear {
@@ -22,13 +22,13 @@ impl<'a> VecOperator<'a> for ToYear {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, Box::new(Vec::<i64>::with_capacity(batch_size)));
+        scratchpad.set(self.output, Vec::with_capacity(batch_size));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

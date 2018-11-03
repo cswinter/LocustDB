@@ -1,5 +1,4 @@
 use std::cmp::{max, min};
-use std::marker::PhantomData;
 
 use engine::typed_vec::MergeOp;
 use engine::vector_op::*;
@@ -8,11 +7,10 @@ use engine::*;
 
 #[derive(Debug)]
 pub struct MergeDeduplicate<T> {
-    pub left: BufferRef,
-    pub right: BufferRef,
-    pub deduplicated: BufferRef,
-    pub merge_ops: BufferRef,
-    pub t: PhantomData<T>,
+    pub left: BufferRef<T>,
+    pub right: BufferRef<T>,
+    pub deduplicated: BufferRef<T>,
+    pub merge_ops: BufferRef<MergeOp>,
 }
 
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
@@ -23,13 +21,13 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
             merge_deduplicate(&left, &right)
         };
         scratchpad.set(self.deduplicated, deduplicated);
-        scratchpad.set(self.merge_ops, Box::new(merge_ops));
+        scratchpad.set(self.merge_ops, merge_ops);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.left, self.right] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.deduplicated, self.merge_ops] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.left.any(), self.right.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.deduplicated.any(), self.merge_ops.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -37,7 +35,7 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
     }
 }
 
-fn merge_deduplicate<'a, T: GenericVec<T> + 'a>(left: &[T], right: &[T]) -> (BoxedVec<'a>, Vec<MergeOp>) {
+fn merge_deduplicate<'a, T: GenericVec<T> + 'a>(left: &[T], right: &[T]) -> (Vec<T>, Vec<MergeOp>) {
     // TODO(clemens): figure out maths for precise estimate + variance derived from how much grouping reduced cardinality
     let output_len_estimate = max(left.len(), right.len()) + min(left.len(), right.len()) / 2;
     let mut result = Vec::with_capacity(output_len_estimate);
@@ -73,7 +71,7 @@ fn merge_deduplicate<'a, T: GenericVec<T> + 'a>(left: &[T], right: &[T]) -> (Box
         ops.push(MergeOp::TakeRight);
     }
 
-    (AnyVec::owned(result), ops)
+    (result, ops)
 }
 
 

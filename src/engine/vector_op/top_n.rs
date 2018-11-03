@@ -11,19 +11,18 @@ use engine::vector_op::comparator::*;
 
 #[derive(Debug)]
 pub struct TopN<T, C> {
-    pub input: BufferRef,
-    pub indices: BufferRef,
-    pub keys: BufferRef,
+    pub input: BufferRef<T>,
+    pub indices: BufferRef<usize>,
+    pub keys: BufferRef<T>,
     pub n: usize,
     pub last_index: usize,
-    pub t: PhantomData<T>,
     pub c: PhantomData<C>,
 }
 
 impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for TopN<T, C> {
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.indices, AnyVec::owned(Vec::<usize>::with_capacity(self.n)));
-        scratchpad.set(self.keys, AnyVec::owned(Vec::<T>::with_capacity(self.n)));
+        scratchpad.set(self.indices, Vec::with_capacity(self.n));
+        scratchpad.set(self.keys, Vec::with_capacity(self.n));
     }
 
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
@@ -77,13 +76,13 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> f
             }
             output
         };
-        scratchpad.set(self.indices, AnyVec::owned(output));
+        scratchpad.set(self.indices, output);
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.indices] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.indices.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

@@ -4,7 +4,7 @@ use engine::vector_op::vector_operator::*;
 pub struct ReadColumnData {
     pub colname: String,
     pub section_index: usize,
-    pub output: BufferRef,
+    pub output: BufferRef<Any>,
 
     pub current_index: usize,
     pub batch_size: usize,
@@ -17,7 +17,7 @@ impl<'a> VecOperator<'a> for ReadColumnData {
         let end = if streaming { self.current_index + self.batch_size } else { data_section.len() };
         let result = data_section.slice_box(self.current_index, end);
         self.current_index += self.batch_size;
-        scratchpad.set(self.output, result);
+        scratchpad.set_any(self.output, result);
         self.has_more = end < data_section.len();
     }
 
@@ -25,10 +25,10 @@ impl<'a> VecOperator<'a> for ReadColumnData {
         self.batch_size = batch_size;
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { false }
     fn is_streaming_producer(&self) -> bool { true }
     fn has_more(&self) -> bool { self.has_more }

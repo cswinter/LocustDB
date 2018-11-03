@@ -1,21 +1,12 @@
 use engine::*;
-use engine::typed_vec::AnyVec;
 use engine::vector_op::*;
-use std::marker::PhantomData;
 
 
 #[derive(Debug)]
 pub struct Exists<T> {
-    input: BufferRef,
-    output: BufferRef,
-    max_index: BufferRef,
-    t: PhantomData<T>,
-}
-
-impl<T: GenericIntVec<T> + CastUsize> Exists<T> {
-    pub fn boxed<'a>(input: BufferRef, output: BufferRef, max_index: BufferRef) -> BoxedOperator<'a> {
-        Box::new(Exists::<T> { input, output, max_index, t: PhantomData })
-    }
+    pub input: BufferRef<T>,
+    pub output: BufferRef<u8>,
+    pub max_index: BufferRef<i64>,
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
@@ -23,7 +14,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
         let data = scratchpad.get::<T>(self.input);
         let mut exists = scratchpad.get_mut::<u8>(self.output);
 
-        let len = scratchpad.get_const::<i64>(self.max_index) as usize + 1;
+        let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
         if len > exists.len() {
             exists.resize(len, 0);
         }
@@ -35,13 +26,13 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, AnyVec::owned(Vec::<u8>::with_capacity(0)));
+        scratchpad.set(self.output, Vec::with_capacity(0));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_output(&self) -> bool { false }

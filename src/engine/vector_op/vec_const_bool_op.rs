@@ -6,33 +6,17 @@ use std::marker::PhantomData;
 
 #[derive(Debug)]
 pub struct VecConstBoolOperator<T, U, Op> {
-    lhs: BufferRef,
-    rhs: BufferRef,
-    output: BufferRef,
-    t: PhantomData<T>,
-    u: PhantomData<U>,
-    op: PhantomData<Op>,
-}
-
-impl<'a, T: 'a, U, Op> VecConstBoolOperator<T, U, Op> where
-    T: GenericVec<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> {
-    pub fn new(lhs: BufferRef, rhs: BufferRef, output: BufferRef) -> VecConstBoolOperator<T, U, Op> {
-        VecConstBoolOperator {
-            lhs,
-            rhs,
-            output,
-            t: PhantomData,
-            u: PhantomData,
-            op: PhantomData,
-        }
-    }
+    pub lhs: BufferRef<T>,
+    pub rhs: BufferRef<U>,
+    pub output: BufferRef<u8>,
+    pub op: PhantomData<Op>,
 }
 
 impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     T: GenericVec<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> + fmt::Debug {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get::<T>(self.lhs);
-        let c = &scratchpad.get_const::<U>(self.rhs);
+        let c = &scratchpad.get_const::<U>(&self.rhs);
         let mut output = scratchpad.get_mut::<u8>(self.output);
         if stream { output.clear(); }
         for d in data.iter() {
@@ -41,13 +25,13 @@ impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, AnyVec::owned(Vec::<u8>::with_capacity(batch_size)));
+        scratchpad.set(self.output, Vec::with_capacity(batch_size));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.lhs, self.rhs] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.lhs.any(), self.rhs.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {

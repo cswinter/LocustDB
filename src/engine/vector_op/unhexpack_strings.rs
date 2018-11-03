@@ -9,9 +9,9 @@ use stringpack::PackedBytesIterator;
 
 
 pub struct UnhexpackStrings<'a> {
-    pub packed: BufferRef,
-    pub unpacked: BufferRef,
-    pub stringstore: BufferRef,
+    pub packed: BufferRef<u8>,
+    pub unpacked: BufferRef<&'a str>,
+    pub stringstore: BufferRef<u8>,
     pub iterator: Option<PackedBytesIterator<'a>>,
     pub total_bytes: usize,
     // TODO(clemens): initializing this properly is required for safety
@@ -47,10 +47,10 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         // TODO(clemens): escape analysis, only need to pin if it makes it into output column
-        scratchpad.pin(self.stringstore);
-        scratchpad.set(self.unpacked, Box::new(Vec::<&'a str>::with_capacity(batch_size)));
+        scratchpad.pin(self.stringstore.any());
+        scratchpad.set(self.unpacked, Vec::with_capacity(batch_size));
         // Initializing with sufficient capacity is required for safety - this vector must never get reallocated
-        scratchpad.set(self.stringstore, Box::new(Vec::<u8>::with_capacity(self.total_bytes)));
+        scratchpad.set(self.stringstore, Vec::with_capacity(self.total_bytes));
         let encoded = scratchpad.get::<u8>(self.packed);
         // TODO(clemens): eliminate mem::transmute by storing in scratchpad?
         self.iterator = Some(unsafe {
@@ -59,10 +59,10 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
         });
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.packed] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.unpacked] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.packed.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.unpacked.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { true }
     fn is_streaming_producer(&self) -> bool { true }
     fn has_more(&self) -> bool { self.has_more }

@@ -1,22 +1,11 @@
-use std::marker::PhantomData;
-
-use engine::typed_vec::AnyVec;
 use engine::vector_op::*;
 use engine::*;
 
 
 #[derive(Debug)]
 pub struct NonzeroIndices<T, U> {
-    input: BufferRef,
-    output: BufferRef,
-    t: PhantomData<T>,
-    u: PhantomData<U>,
-}
-
-impl<T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> NonzeroIndices<T, U> {
-    pub fn boxed<'a>(input: BufferRef, output: BufferRef) -> BoxedOperator<'a> {
-        Box::new(NonzeroIndices::<T, U> { input, output, t: PhantomData, u: PhantomData })
-    }
+    pub input: BufferRef<T>,
+    pub output: BufferRef<U>,
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> for NonzeroIndices<T, U> {
@@ -32,13 +21,13 @@ impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> f
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         // TODO(clemens): output size estimate?
-        scratchpad.set(self.output, AnyVec::owned(Vec::<U>::new()));
+        scratchpad.set(self.output, Vec::new());
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.input] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.output] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { true }
-    fn can_stream_output(&self, _: BufferRef) -> bool { false }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
