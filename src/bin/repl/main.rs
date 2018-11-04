@@ -86,10 +86,6 @@ fn main() {
             .conflicts_with("reduced-trips"))
         .get_matches();
 
-    if cfg!(feature = "nerf") {
-        println!("NERFED!");
-    }
-
     let files = matches.values_of("load").unwrap_or_default();
     let tablename = matches.value_of("table").unwrap();
     let partition_size = value_t!(matches, "partition-size", u32).unwrap() as usize;
