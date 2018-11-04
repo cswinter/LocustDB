@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures_channel::oneshot;
 use futures_core::*;
 use futures_util::FutureExt;
+use futures_util;
 use futures_executor::block_on;
 use num_cpus;
 
@@ -46,9 +47,9 @@ impl LocustDB {
             Ok(query) => query,
             Err(err) => {
                 return Box::new(future::ok(
-                    (Err(err), 
-                    TraceBuilder::new("empty".to_owned()).finalize())));
-            },
+                    (Err(err),
+                     TraceBuilder::new("empty".to_owned()).finalize())));
+            }
         };
 
         let mut data = match self.inner_locustdb.snapshot(&query.table) {
@@ -88,10 +89,16 @@ impl LocustDB {
     }
 
     pub fn gen_table(&self, opts: GenTable) -> impl Future<Item=(), Error=oneshot::Canceled> {
-        let inner = self.inner_locustdb.clone();
-        let (task, receiver) = Task::from_fn(move || inner.gen_table(&opts));
-        self.schedule(task);
-        receiver
+        let mut receivers = Vec::new();
+        let opts = Arc::new(opts);
+        for partition in 0..opts.partitions {
+            let opts = opts.clone();
+            let inner = self.inner_locustdb.clone();
+            let (task, receiver) = Task::from_fn(move || inner.gen_partition(&opts, partition as u64));
+            self.schedule(task);
+            receivers.push(receiver);
+        }
+        futures_util::future::join_all(receivers).map(|_| ())
     }
 
     pub fn ast(&self, query: &str) -> String {

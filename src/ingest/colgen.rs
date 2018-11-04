@@ -12,9 +12,7 @@ use rand;
 
 use mem_store::column::*;
 use mem_store::column_builder::{ColumnBuilder, IntColBuilder, StringColBuilder};
-use mem_store::lru::LRU;
-use mem_store::partition::Partition;
-use mem_store::table::Table;
+use scheduler::inner_locustdb::InnerLocustDB;
 
 pub trait ColumnGenerator: Sync + Send {
     fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column>;
@@ -34,12 +32,36 @@ pub fn int_uniform(low: i64, high: i64) -> Box<ColumnGenerator> {
     Box::new(UniformInteger { low, high })
 }
 
+pub fn splayed(offset: i64, coefficient: i64) -> Box<ColumnGenerator> {
+    Box::new(Splayed { offset, coefficient })
+}
+
+pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<ColumnGenerator> {
+    Box::new(Weighted {
+        elem: values,
+        weights,
+        s: PhantomData::<IntColBuilder>,
+    })
+}
+
+pub fn incrementing_int() -> Box<ColumnGenerator> {
+    Box::new(IncrementingInteger)
+}
+
 pub fn string_markov_chain(
     elements: Vec<String>,
     transition_probabilities: Vec<Vec<f64>>) -> Box<ColumnGenerator> {
     Box::new(MarkovChain {
         elem: elements,
         p_transition: transition_probabilities,
+        s: PhantomData::<StringColBuilder>,
+    })
+}
+
+pub fn string_weighted(values: Vec<String>, weights: Vec<f64>) -> Box<ColumnGenerator> {
+    Box::new(Weighted {
+        elem: values,
+        weights,
         s: PhantomData::<StringColBuilder>,
     })
 }
@@ -71,9 +93,9 @@ struct MarkovChain<T, S> {
     s: PhantomData<S>,
 }
 
-unsafe impl<T: Sync + Send, S: ColumnBuilder<T>> Send for MarkovChain<T, S> {}
+unsafe impl<T: Send, S: ColumnBuilder<T>> Send for MarkovChain<T, S> {}
 
-unsafe impl<T: Sync + Send, S: ColumnBuilder<T>> Sync for MarkovChain<T, S> {}
+unsafe impl<T: Sync, S: ColumnBuilder<T>> Sync for MarkovChain<T, S> {}
 
 impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> {
     fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
@@ -92,6 +114,33 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> 
     }
 }
 
+
+#[derive(Clone)]
+struct Weighted<T, S> {
+    elem: Vec<T>,
+    weights: Vec<f64>,
+    s: PhantomData<S>,
+}
+
+unsafe impl<T: Send, S: ColumnBuilder<T>> Send for Weighted<T, S> {}
+
+unsafe impl<T: Sync, S: ColumnBuilder<T>> Sync for Weighted<T, S> {}
+
+impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for Weighted<T, S> {
+    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+        let rng = seeded_rng(seed);
+        let mut builder = S::default();
+        let p = new_alias_table(&self.weights).unwrap();
+        let mut alias_method = AliasMethod::new(rng);
+        for _ in 0..length {
+            let i = alias_method.random(&p);
+            builder.push(&self.elem[i]);
+        }
+        builder.finalize(name)
+    }
+}
+
+
 struct UniformInteger {
     low: i64,
     high: i64,
@@ -103,6 +152,25 @@ impl ColumnGenerator for UniformInteger {
         let mut builder = IntColBuilder::default();
         for _ in 0..length {
             builder.push(&rng.gen_range::<i64>(self.low, self.high));
+        }
+        ColumnBuilder::<i64>::finalize(builder, name)
+    }
+}
+
+struct Splayed {
+    offset: i64,
+    coefficient: i64,
+}
+
+impl ColumnGenerator for Splayed {
+    fn generate(&self, length: usize, name: &str, partition: u64) -> Arc<Column> {
+        let mut rng = seeded_rng(partition);
+        let mut builder = IntColBuilder::default();
+        for _ in 0..length {
+            builder.push(&rng.gen_range::<i64>(
+                self.offset + self.coefficient * length as i64 * partition as i64,
+                self.offset + self.coefficient * length as i64 * (partition as i64 + 1),
+            ));
         }
         ColumnBuilder::<i64>::finalize(builder, name)
     }
@@ -158,6 +226,18 @@ impl ColumnGenerator for RandomString {
     }
 }
 
+struct IncrementingInteger;
+
+impl ColumnGenerator for IncrementingInteger {
+    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+        let mut builder = IntColBuilder::default();
+        for i in seed as i64 * length as i64..length as i64 * (seed as i64 + 1) {
+            builder.push(&i);
+        }
+        builder.finalize(name)
+    }
+}
+
 pub struct GenTable {
     pub name: String,
     pub partitions: usize,
@@ -166,21 +246,12 @@ pub struct GenTable {
 }
 
 impl GenTable {
-    pub fn gen(&self, lru: &LRU, seed: u64) -> Table {
-        let table = Table::new(self.partition_size, &self.name, lru.clone());
-        for p in 0..self.partitions {
-            let mut partition = self.columns
-                .iter()
-                .map(|(name, c)| c.generate(self.partition_size, &name, seed + p as u64))
-                .collect();
-            table.load_partition(
-                Partition::new(
-                    p as u64,
-                    partition,
-                    lru.clone(),
-                ).0);
-        }
-        table
+    pub fn gen(&self, db: &InnerLocustDB, partition_number: u64) {
+        let partition = self.columns
+            .iter()
+            .map(|(name, c)| c.generate(self.partition_size, &name, partition_number))
+            .collect();
+        db.store_partition(&self.name, partition);
     }
 }
 
