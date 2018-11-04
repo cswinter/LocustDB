@@ -780,13 +780,31 @@ pub fn compile_grouping_key(
     if exprs.len() == 1 {
         QueryPlan::create_query_plan(&exprs[0], filter, columns)
             .map(|(gk_plan, gk_type)| {
-                let max_cardinality = QueryPlan::encoding_range(&gk_plan).map_or(1 << 62, |i| i.1);
-                if QueryPlan::encoding_range(&gk_plan).is_none() {
-                    warn!("Unknown range for {:?}", &gk_plan);
-                }
+                let encoding_range = QueryPlan::encoding_range(&gk_plan);
+                debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
+                let (max_cardinality, offset) = match encoding_range {
+                    Some((min, max)) => if min < 0 { (max - min, -min) } else { (max, 0) }
+                    None => (1 << 62, 0),
+                };
+                let gk_plan = if offset != 0 {
+                    QueryPlan::AddVS(gk_type.encoding_type(),
+                                     Box::new(gk_plan),
+                                     Box::new(QueryPlan::Constant(RawVal::Int(offset), true)))
+                } else { gk_plan };
+
                 let decoded_group_by = gk_type.codec.clone().map_or(
                     QueryPlan::EncodedGroupByPlaceholder,
                     |codec| *codec.decode(Box::new(QueryPlan::EncodedGroupByPlaceholder)));
+                let decoded_group_by = if offset == 0 { decoded_group_by } else {
+                    syntax::cast(
+                        QueryPlan::AddVS(
+                            EncodingType::I64,
+                            Box::new(decoded_group_by),
+                            Box::new(QueryPlan::Constant(RawVal::Int(-offset), true))),
+                        EncodingType::I64,
+                        gk_type.encoding_type())
+                };
+
                 ((gk_plan.clone(), gk_type.clone()),
                  max_cardinality,
                  vec![(decoded_group_by, gk_type.decoded())])
@@ -845,7 +863,9 @@ fn try_bitpacking(
     let mut order_preserving = true;
     for expr in exprs.iter().rev() {
         let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
-        if let Some((min, max)) = QueryPlan::encoding_range(&query_plan) {
+        let encoding_range = QueryPlan::encoding_range(&query_plan);
+        debug!("Encoding range of {:?} for {:?}", &encoding_range, &query_plan);
+        if let Some((min, max)) = encoding_range {
             fn bits(max: i64) -> i64 {
                 ((max + 1) as f64).log2().ceil() as i64
             }
