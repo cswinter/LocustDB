@@ -6,6 +6,7 @@ extern crate tempdir;
 
 use futures_executor::block_on;
 use locustdb::*;
+use value_syntax::*;
 use locustdb::Value;
 use locustdb::nyc_taxi_data;
 use std::cmp::min;
@@ -301,6 +302,18 @@ fn z_test_group_by_trip_id() {
             vec![Int(2), Int(1758)],
             vec![Int(3), Int(2740)],
             vec![Int(4), Int(377955)]
+        ],
+    )
+}
+
+#[test]
+fn test_group_by_negative_expression() {
+    test_query_ec(
+        "SELECT negative/100, count(1) FROM default;",
+        &[
+            vec![Int(-1), Int(4)],
+            vec![Int(0), Int(4)],
+            vec![Int(40), Int(2)],
         ],
     )
 }
