@@ -13,8 +13,8 @@ pub struct ToYear {
 
 impl<'a> VecOperator<'a> for ToYear {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let timestamps = scratchpad.get::<i64>(self.input);
-        let mut years = scratchpad.get_mut::<i64>(self.output);
+        let timestamps = scratchpad.get(self.input);
+        let mut years = scratchpad.get_mut(self.output);
         if stream { years.clear() }
         for ts in timestamps.iter() {
             years.push(i64::from(NaiveDateTime::from_timestamp(*ts, 0).year()));

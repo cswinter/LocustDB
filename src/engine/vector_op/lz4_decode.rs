@@ -16,7 +16,7 @@ pub struct LZ4Decode<'a, T> {
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for LZ4Decode<'a, T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut decoded = scratchpad.get_mut::<T>(self.decoded);
+        let mut decoded = scratchpad.get_mut(self.decoded);
         let len = lz4::decode(&mut self.reader, &mut decoded);
         if len < decoded.len() {
             decoded.truncate(len);

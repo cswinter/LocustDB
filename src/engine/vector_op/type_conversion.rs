@@ -11,8 +11,8 @@ pub struct TypeConversionOperator<T, U> {
 impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
     T: GenericVec<T> + Copy, U: GenericVec<U>, T: Cast<U> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let data = scratchpad.get::<T>(self.input);
-        let mut output = scratchpad.get_mut::<U>(self.output);
+        let data = scratchpad.get(self.input);
+        let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear() }
         for d in data.iter() {
             output.push(d.cast());

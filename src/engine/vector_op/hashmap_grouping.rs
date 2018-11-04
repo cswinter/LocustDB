@@ -36,9 +36,9 @@ impl<'a, T: GenericVec<T> + Hash + 'a> HashMapGrouping<T> {
 impl<'a, T: GenericVec<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let count = {
-            let raw_grouping_key = scratchpad.get::<T>(self.input);
-            let mut grouping = scratchpad.get_mut::<u32>(self.grouping_key_out);
-            let mut unique = scratchpad.get_mut::<T>(self.unique_out);
+            let raw_grouping_key = scratchpad.get(self.input);
+            let mut grouping = scratchpad.get_mut(self.grouping_key_out);
+            let mut unique = scratchpad.get_mut(self.unique_out);
             if stream { grouping.clear() }
             for i in raw_grouping_key.iter() {
                 grouping.push(*self.map.entry(*i).or_insert_with(|| {

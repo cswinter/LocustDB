@@ -50,7 +50,7 @@ impl<'a> VecOperator<'a> for SliceUnpackString<'a> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let packed_any = scratchpad.get_any(self.input);
         let packed = packed_any.cast_ref_byte_slices();
-        let mut unpacked = scratchpad.get_mut::<&'a str>(self.output);
+        let mut unpacked = scratchpad.get_mut(self.output);
         for datum in packed.data.iter().skip(self.offset).step_by(self.stride) {
             unpacked.push(unsafe { str::from_utf8_unchecked(datum) });
         }

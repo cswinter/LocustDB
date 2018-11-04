@@ -26,9 +26,9 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> f
     }
 
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut input = scratchpad.get::<T>(self.input);
-        let mut indices = scratchpad.get_mut::<usize>(self.indices);
-        let mut keys = scratchpad.get_mut::<T>(self.keys);
+        let mut input = scratchpad.get(self.input);
+        let mut indices = scratchpad.get_mut(self.indices);
+        let mut keys = scratchpad.get_mut(self.keys);
 
         assert_eq!(indices.len(), keys.len());
         if indices.len() < indices.capacity() {
@@ -62,8 +62,8 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> f
 
     fn finalize(&mut self, scratchpad: &mut Scratchpad<'a>) {
         let output = {
-            let indices = scratchpad.get_mut::<usize>(self.indices);
-            let keys = scratchpad.get_mut::<T>(self.keys);
+            let indices = scratchpad.get_mut(self.indices);
+            let keys = scratchpad.get_mut(self.keys);
             let mut sort_indices = (0..keys.len()).collect();
             if C::is_less_than() {
                 keys.sort_indices_asc(&mut sort_indices);

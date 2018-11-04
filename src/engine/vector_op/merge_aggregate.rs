@@ -15,9 +15,9 @@ pub struct MergeAggregate {
 impl<'a> VecOperator<'a> for MergeAggregate {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let aggregated = {
-            let ops = scratchpad.get::<MergeOp>(self.merge_ops);
-            let left = scratchpad.get::<i64>(self.left);
-            let right = scratchpad.get::<i64>(self.right);
+            let ops = scratchpad.get(self.merge_ops);
+            let left = scratchpad.get(self.left);
+            let right = scratchpad.get(self.right);
             merge_aggregate(&ops, &left, &right, self.aggregator)
         };
         scratchpad.set(self.aggregated, aggregated);

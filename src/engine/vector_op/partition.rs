@@ -17,8 +17,8 @@ pub struct Partition<T> {
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Partition<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let premerge = {
-            let left = scratchpad.get::<T>(self.left);
-            let right = scratchpad.get::<T>(self.right);
+            let left = scratchpad.get(self.left);
+            let right = scratchpad.get(self.right);
             partition(&left, &right, self.limit)
         };
         scratchpad.set(self.partitioning, premerge);

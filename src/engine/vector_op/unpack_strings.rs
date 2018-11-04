@@ -13,7 +13,7 @@ pub struct UnpackStrings<'a> {
 
 impl<'a> VecOperator<'a> for UnpackStrings<'a> {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut decoded = scratchpad.get_mut::<&'a str>(self.unpacked);
+        let mut decoded = scratchpad.get_mut(self.unpacked);
         if streaming { panic!("Not supported") }
         for elem in self.iterator.as_mut().unwrap() {
             decoded.push(elem);

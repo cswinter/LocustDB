@@ -14,9 +14,9 @@ pub struct SubPartition<T> {
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SubPartition<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let sub_partitioning = {
-            let partitioning = scratchpad.get::<Premerge>(self.partitioning);
-            let left = scratchpad.get::<T>(self.left);
-            let right = scratchpad.get::<T>(self.right);
+            let partitioning = scratchpad.get(self.partitioning);
+            let left = scratchpad.get(self.left);
+            let right = scratchpad.get(self.right);
             subpartition(&partitioning, &left, &right)
         };
         scratchpad.set(self.sub_partitioning, sub_partitioning);

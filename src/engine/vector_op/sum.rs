@@ -13,9 +13,9 @@ pub struct VecSum<T, U> {
 impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
     T: GenericIntVec<T> + Into<i64>, U: GenericIntVec<U> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let nums = scratchpad.get::<T>(self.input);
-        let grouping = scratchpad.get::<U>(self.grouping);
-        let mut sums = scratchpad.get_mut::<i64>(self.output);
+        let nums = scratchpad.get(self.input);
+        let grouping = scratchpad.get(self.grouping);
+        let mut sums = scratchpad.get_mut(self.output);
 
         let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
         if len > sums.len() {

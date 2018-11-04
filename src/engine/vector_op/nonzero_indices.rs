@@ -10,8 +10,8 @@ pub struct NonzeroIndices<T, U> {
 
 impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> for NonzeroIndices<T, U> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let exists = scratchpad.get::<T>(self.input);
-        let mut unique = scratchpad.get_mut::<U>(self.output);
+        let exists = scratchpad.get(self.input);
+        let mut unique = scratchpad.get_mut(self.output);
         for (index, &n) in exists.iter().enumerate() {
             if n > T::zero() {
                 unique.push(U::from(index).unwrap());
