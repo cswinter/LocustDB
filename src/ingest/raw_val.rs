@@ -29,3 +29,9 @@ impl fmt::Display for RawVal {
     }
 }
 
+pub mod syntax {
+    pub use super::RawVal::{Int, Null};
+
+    #[allow(non_snake_case)]
+    pub fn Str(s: &str) -> super::RawVal { super::RawVal::Str(s.to_string()) }
+}

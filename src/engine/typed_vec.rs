@@ -5,8 +5,10 @@ use std::hash::Hash;
 use std::i64;
 use std::mem;
 use std::string;
+use std::io::Cursor;
 
 use num::PrimInt;
+use byteorder::{NativeEndian, ReadBytesExt};
 
 use engine::types::*;
 use heapsize::HeapSizeOf;
@@ -391,9 +393,9 @@ impl<'c> GenericVec<&'c str> for ByteSlices<'c> {
 }
 */
 
-pub trait GenericIntVec<T>: GenericVec<T> + CastUsize + PrimInt + Hash + 'static {}
+pub trait GenericIntVec<T>: GenericVec<T> + CastUsize + FromBytes<T> + PrimInt + Hash + 'static {}
 
-impl<T> GenericIntVec<T> for T where T: GenericVec<T> + CastUsize + PrimInt + Copy + Hash + 'static {}
+impl<T> GenericIntVec<T> for T where T: GenericVec<T> + CastUsize + FromBytes<T> + PrimInt + Copy + Hash + 'static {}
 
 pub trait ConstType<T>: Clone {
     fn unwrap(vec: &AnyVec) -> T;
@@ -407,6 +409,40 @@ impl ConstType<String> for String {
     fn unwrap(vec: &AnyVec) -> String { vec.cast_str_const() }
 }
 
+
+pub trait FromBytes<T> {
+    fn from_bytes(bytes: &[u8]) -> T;
+}
+
+impl FromBytes<u8> for u8 {
+    fn from_bytes(bytes: &[u8]) -> u8 {
+        Cursor::new(bytes).read_u8().unwrap()
+    }
+}
+
+impl FromBytes<u16> for u16 {
+    fn from_bytes(bytes: &[u8]) -> u16 {
+        Cursor::new(bytes).read_u16::<NativeEndian>().unwrap()
+    }
+}
+
+impl FromBytes<u32> for u32 {
+    fn from_bytes(bytes: &[u8]) -> u32 {
+        Cursor::new(bytes).read_u32::<NativeEndian>().unwrap()
+    }
+}
+
+impl FromBytes<u64> for u64 {
+    fn from_bytes(bytes: &[u8]) -> u64 {
+        Cursor::new(bytes).read_u64::<NativeEndian>().unwrap()
+    }
+}
+
+impl FromBytes<i64> for i64 {
+    fn from_bytes(bytes: &[u8]) -> i64 {
+        Cursor::new(bytes).read_i64::<NativeEndian>().unwrap()
+    }
+}
 
 pub trait CastUsize {
     fn cast_usize(&self) -> usize;
