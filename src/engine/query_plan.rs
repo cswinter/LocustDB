@@ -180,16 +180,16 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Buff
                 shift,
                 width),
 
-        QueryPlan::SlicePack(input, _type, stride, offset) =>
+        QueryPlan::SlicePack(input, t, stride, offset) =>
             VecOperator::slice_pack(
-                prepare(*input, result).str(),
+                (prepare(*input, result), t),
                 result.shared_buffer("slicepack"),
                 stride,
                 offset),
-        QueryPlan::SliceUnpack(input, _, stride, offset) =>
+        QueryPlan::SliceUnpack(input, t, stride, offset) =>
             VecOperator::slice_unpack(
                 prepare(*input, result),
-                result.named_buffer("unpacked").str(),
+                (result.named_buffer("unpacked"), t),
                 stride,
                 offset),
 
@@ -804,11 +804,18 @@ pub fn compile_grouping_key(
                                      plan_type.encoding_type(),
                                      exprs.len(),
                                      i)));
+
+            // TODO(clemens): negative integers can throw off sort oder - need to move into positive range
+            let mut decode_plan = QueryPlan::SliceUnpack(
+                Box::new(QueryPlan::EncodedGroupByPlaceholder),
+                plan_type.encoding_type(),
+                exprs.len(),
+                i);
+            if let Some(codec) = plan_type.codec.clone() {
+                decode_plan = *codec.decode(Box::new(decode_plan));
+            }
             decode_plans.push(
-                (QueryPlan::SliceUnpack(Box::new(QueryPlan::EncodedGroupByPlaceholder),
-                                        plan_type.encoding_type(),
-                                        exprs.len(),
-                                        i),
+                (decode_plan,
                  plan_type.decoded()));
         }
         let t = Type::encoded(Codec::opaque(

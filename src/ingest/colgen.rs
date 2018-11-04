@@ -30,6 +30,10 @@ pub fn int_markov_chain(
     })
 }
 
+pub fn int_uniform(low: i64, high: i64) -> Box<ColumnGenerator> {
+    Box::new(UniformInteger { low, high })
+}
+
 pub fn string_markov_chain(
     elements: Vec<String>,
     transition_probabilities: Vec<Vec<f64>>) -> Box<ColumnGenerator> {
@@ -85,6 +89,22 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> 
             builder.push(&self.elem[state]);
         }
         builder.finalize(name)
+    }
+}
+
+struct UniformInteger {
+    low: i64,
+    high: i64,
+}
+
+impl ColumnGenerator for UniformInteger {
+    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+        let mut rng = seeded_rng(seed);
+        let mut builder = IntColBuilder::default();
+        for _ in 0..length {
+            builder.push(&rng.gen_range::<i64>(self.low, self.high));
+        }
+        ColumnBuilder::<i64>::finalize(builder, name)
     }
 }
 

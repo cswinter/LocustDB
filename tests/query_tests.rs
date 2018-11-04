@@ -373,7 +373,7 @@ fn test_column_with_null_partitions() {
 
 #[test]
 fn test_group_by_string() {
-    use Value::*;
+    use value_syntax::*;
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.gen_table(
@@ -385,35 +385,54 @@ fn test_group_by_string() {
                 ("hex".to_string(),
                  locustdb::colgen::random_hex_string(8)),
                 ("scrambled".to_string(),
-                 locustdb::colgen::random_string(2, 4)),
+                 locustdb::colgen::random_string(1, 2)),
+                ("ints".to_string(),
+                 locustdb::colgen::int_uniform(-10, 256))
             ],
         }
     ));
 
-    let query = "SELECT scrambled, count(1) FROM test LIMIT 3;";
+    let query = "SELECT scrambled, count(1) FROM test LIMIT 5;";
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
     let expected_rows = vec![
-        [Str("00".to_string()), Int(2)],
-        [Str("008V".to_string()), Int(1)],
-        [Str("00dz".to_string()), Int(1)],
+        [Str("0"), Int(98)],
+        [Str("01"), Int(5)],
+        [Str("02"), Int(2)],
+        [Str("03"), Int(4)],
+        [Str("04"), Int(2)],
     ];
     assert_eq!(result.rows, expected_rows);
 
-    let query = "SELECT scrambled, scrambled, count(1) FROM test LIMIT 3;";
+    let query = "SELECT scrambled, scrambled, count(1) FROM test LIMIT 5;";
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
     let expected_rows = vec![
-        [Str("00".to_string()), Str("00".to_string()), Int(2)],
-        [Str("008V".to_string()), Str("008V".to_string()), Int(1)],
-        [Str("00dz".to_string()), Str("00dz".to_string()), Int(1)],
+        [Str("0"), Str("0"), Int(98)],
+        [Str("01"), Str("01"), Int(5)],
+        [Str("02"), Str("02"), Int(2)],
+        [Str("03"), Str("03"), Int(4)],
+        [Str("04"), Str("04"), Int(2)],
     ];
     assert_eq!(result.rows, expected_rows);
 
-    let query = "SELECT scrambled, hex, count(1) FROM test LIMIT 3;";
+    let query = "SELECT hex, scrambled, count(1) FROM test LIMIT 5;";
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
     let expected_rows = vec![
-        [Str("00".to_string()), Str("b0c836e5fbef7d51".to_string()), Int(1)],
-        [Str("00".to_string()), Str("ffcabba4d5975ef9".to_string()), Int(1)],
-        [Str("008V".to_string()), Str("36027c032adaf264".to_string()), Int(1)],
+        [Str("00075c14106c259a"), Str("gA"), Int(1)],
+        [Str("00096542e285cb32"), Str("g"), Int(1)],
+        [Str("001228dae6b3e755"), Str("m"), Int(1)],
+        [Str("0013492a884ee3ab"), Str("P"), Int(1)],
+        [Str("0016b50c9677802d"), Str("Y"), Int(1)]
+    ];
+    assert_eq!(result.rows, expected_rows);
+
+    let query = "SELECT ints, scrambled, count(1) FROM test LIMIT 5;";
+    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().0.unwrap();
+    let expected_rows = vec![
+        [Int(-10), Str("3I"), Int(1)],
+        [Int(-10), Str("8p"), Int(1)],
+        [Int(-10), Str("9D"), Int(1)],
+        [Int(-10), Str("9m"), Int(1)],
+        [Int(-10), Str("C"), Int(1)]
     ];
     assert_eq!(result.rows, expected_rows);
 }

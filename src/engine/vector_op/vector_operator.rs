@@ -166,6 +166,7 @@ impl<'a> Scratchpad<'a> {
     }
 
     pub fn get_any_mut(&self, index: BufferRef<Any>) -> RefMut<AnyVec<'a> + 'a> {
+        assert!(!self.pinned[index.i], "Trying to mutably borrow pinned buffer {}", index);
         RefMut::map(self.buffers[index.i].borrow_mut(), |x| x.borrow_mut())
     }
 
@@ -180,7 +181,16 @@ impl<'a> Scratchpad<'a> {
         Ref::map(self.buffers[index.i].borrow(), |x| T::unwrap(x.as_ref()))
     }
 
+    pub fn get_pinned<T: GenericVec<T> + 'a>(&mut self, index: BufferRef<T>) -> &'a [T] {
+        self.pinned[index.i] = true;
+        let buffer = self.get(index);
+        unsafe {
+            mem::transmute::<&[T], &'a [T]>(&*buffer)
+        }
+    }
+
     pub fn get_mut<T: GenericVec<T> + 'a>(&self, index: BufferRef<T>) -> RefMut<Vec<T>> {
+        assert!(!self.pinned[index.i], "Trying to mutably borrow pinned buffer {}", index);
         RefMut::map(self.buffers[index.i].borrow_mut(), |x| {
             let a: &mut AnyVec<'a> = x.borrow_mut();
             T::unwrap_mut(a)
@@ -197,10 +207,12 @@ impl<'a> Scratchpad<'a> {
     }
 
     pub fn set_any(&mut self, index: BufferRef<Any>, vec: BoxedVec<'a>) {
+        assert!(!self.pinned[index.i], "Trying to set pinned buffer {}", index);
         self.buffers[index.i] = RefCell::new(vec);
     }
 
     pub fn set<T: GenericVec<T> + 'a>(&mut self, index: BufferRef<T>, vec: Vec<T>) {
+        assert!(!self.pinned[index.i], "Trying to set pinned buffer {}", index);
         self.buffers[index.i] = RefCell::new(AnyVec::owned(vec));
     }
 
@@ -426,12 +438,28 @@ impl<'a> VecOperator<'a> {
         Box::new(BitUnpackOperator { input: inner, output, shift, width })
     }
 
-    pub fn slice_pack(input: BufferRef<&'a str>, output: BufferRef<Any>, stride: usize, offset: usize) -> BoxedOperator<'a> {
-        Box::new(SlicePackString { input, output, stride, offset })
+    pub fn slice_pack((input, t): TypedBufferRef, output: BufferRef<Any>, stride: usize, offset: usize) -> BoxedOperator<'a> {
+        match t {
+            Str => Box::new(SlicePackString { input: input.str(), output, stride, offset }),
+            U8 => Box::new(SlicePackInt { input: input.u8(), output, stride, offset }),
+            U16 => Box::new(SlicePackInt { input: input.u16(), output, stride, offset }),
+            U32 => Box::new(SlicePackInt { input: input.u32(), output, stride, offset }),
+            U64 => Box::new(SlicePackInt { input: input.u64(), output, stride, offset }),
+            I64 => Box::new(SlicePackInt { input: input.i64(), output, stride, offset }),
+            _ => panic!("slice_pack is not supported for type {:?}", t),
+        }
     }
 
-    pub fn slice_unpack(input: BufferRef<Any>, output: BufferRef<&'a str>, stride: usize, offset: usize) -> BoxedOperator<'a> {
-        Box::new(SliceUnpackString { input, output, stride, offset })
+    pub fn slice_unpack(input: BufferRef<Any>, (output, t): TypedBufferRef, stride: usize, offset: usize) -> BoxedOperator<'a> {
+        match t {
+            Str => Box::new(SliceUnpackString { input, output: output.str(), stride, offset }),
+            U8 => Box::new(SliceUnpackInt { input, output: output.u8(), stride, offset }),
+            U16 => Box::new(SliceUnpackInt { input, output: output.u16(), stride, offset }),
+            U32 => Box::new(SliceUnpackInt { input, output: output.u32(), stride, offset }),
+            U64 => Box::new(SliceUnpackInt { input, output: output.u64(), stride, offset }),
+            I64 => Box::new(SliceUnpackInt { input, output: output.i64(), stride, offset }),
+            _ => panic!("slice_unpack is not supported for type {:?}", t),
+        }
     }
 
     pub fn type_conversion((inner, initial_type): TypedBufferRef,
