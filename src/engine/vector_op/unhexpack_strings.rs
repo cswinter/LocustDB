@@ -21,42 +21,39 @@ pub struct UnhexpackStrings<'a> {
 
 impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut decoded = scratchpad.get_mut::<&'a str>(self.unpacked);
-        // TODO(clemens): method that checks whether buffer is pinned, and returns with lifetime 'a? allows getting rid of transmute below...
-        let mut stringstore = scratchpad.get_mut::<u8>(self.stringstore);
-        if streaming { decoded.clear() }
-        for elem in self.iterator.as_mut().unwrap() {
-            let string = if self.uppercase {
-                hex::encode_upper(elem)
-            } else {
-                hex::encode(elem)
-            };
-            let bytes = string.as_bytes();
-            // unsafe if this were false
-            assert!(stringstore.len() + bytes.len() <= stringstore.capacity());
-            stringstore.extend_from_slice(bytes);
-            decoded.push(unsafe {
-                mem::transmute::<_, &'a str>(
-                    str::from_utf8_unchecked(&stringstore[stringstore.len() - bytes.len()..])
-                )
-            });
-            if decoded.capacity() == decoded.len() { return; }
+        unsafe { scratchpad.unpin(self.stringstore.any()) };
+        {
+            let mut decoded = scratchpad.get_mut::<&'a str>(self.unpacked);
+            let mut stringstore = scratchpad.get_mut::<u8>(self.stringstore);
+            if streaming { decoded.clear() }
+            for elem in self.iterator.as_mut().unwrap() {
+                let string = if self.uppercase {
+                    hex::encode_upper(elem)
+                } else {
+                    hex::encode(elem)
+                };
+                let bytes = string.as_bytes();
+                // unsafe if this were false
+                assert!(stringstore.len() + bytes.len() <= stringstore.capacity());
+                stringstore.extend_from_slice(bytes);
+                decoded.push(unsafe {
+                    mem::transmute::<_, &'a str>(
+                        str::from_utf8_unchecked(&stringstore[stringstore.len() - bytes.len()..])
+                    )
+                });
+                if decoded.capacity() == decoded.len() { break; }
+            }
         }
-        self.has_more = false;
+        scratchpad.pin(self.stringstore.any());
+        self.has_more = self.iterator.as_ref().unwrap().has_more();
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        // TODO(clemens): escape analysis, only need to pin if it makes it into output column
-        scratchpad.pin(self.stringstore.any());
         scratchpad.set(self.unpacked, Vec::with_capacity(batch_size));
         // Initializing with sufficient capacity is required for safety - this vector must never get reallocated
         scratchpad.set(self.stringstore, Vec::with_capacity(self.total_bytes));
-        let encoded = scratchpad.get::<u8>(self.packed);
-        // TODO(clemens): eliminate mem::transmute by storing in scratchpad?
-        self.iterator = Some(unsafe {
-            let iterator: PackedBytesIterator = PackedBytesIterator::from_slice(encoded.as_ref());
-            mem::transmute::<_, PackedBytesIterator<'a>>(iterator)
-        });
+        let encoded = scratchpad.get_pinned(self.packed);
+        self.iterator = Some(PackedBytesIterator::from_slice(encoded.as_ref()));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.packed.any()] }
