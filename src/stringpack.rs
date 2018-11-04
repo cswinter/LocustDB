@@ -145,13 +145,17 @@ impl<'a> PackedBytesIterator<'a> {
     pub fn from_slice(data: &'a [u8]) -> PackedBytesIterator<'a> {
         PackedBytesIterator { data, curr_index: 0 }
     }
+
+    pub fn has_more(&self) -> bool {
+        self.curr_index < self.data.len()
+    }
 }
 
 impl<'a> Iterator for PackedBytesIterator<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<&'a [u8]> {
-        if self.curr_index >= self.data.len() {
+        if !self.has_more() {
             return None;
         }
 

@@ -1,4 +1,3 @@
-use std::mem;
 use std::fmt;
 
 use engine::vector_op::vector_operator::*;
@@ -24,15 +23,9 @@ impl<'a> VecOperator<'a> for UnpackStrings<'a> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        // TODO(clemens): escape analysis, only need to pin if it makes it into output column
-        scratchpad.pin(self.packed.any());
         scratchpad.set(self.unpacked, Vec::with_capacity(batch_size));
-        let encoded = scratchpad.get::<u8>(self.packed);
-        // TODO(clemens): eliminate mem::transmute by storing in scratchpad?
-        self.iterator = Some(unsafe {
-            let iterator: StringPackerIterator = StringPackerIterator::from_slice(encoded.as_ref());
-            mem::transmute::<_, StringPackerIterator<'a>>(iterator)
-        });
+        let encoded = scratchpad.get_pinned(self.packed);
+        self.iterator = Some(unsafe { StringPackerIterator::from_slice(encoded) });
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.packed.any()] }

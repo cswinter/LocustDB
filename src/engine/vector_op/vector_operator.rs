@@ -220,6 +220,10 @@ impl<'a> Scratchpad<'a> {
         self.pinned[index.i] = true;
     }
 
+    pub unsafe fn unpin(&mut self, index: BufferRef<Any>) {
+        self.pinned[index.i] = false;
+    }
+
     pub fn collect_pinned(self) -> Vec<BoxedVec<'a>> {
         self.buffers
             .into_iter()
@@ -272,11 +276,11 @@ impl<'a> VecOperator<'a> {
         use std::io::Read;
         let reader: Box<Read> = Box::new(&[] as &[u8]);
         match t {
-            EncodingType::U8 => Box::new(LZ4Decode::<'a, u8> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
-            EncodingType::U16 => Box::new(LZ4Decode::<'a, u16> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
-            EncodingType::U32 => Box::new(LZ4Decode::<'a, u32> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
-            EncodingType::U64 => Box::new(LZ4Decode::<'a, u64> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
-            EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded, decoded_len, reader, has_more: true, t: PhantomData }),
+            EncodingType::U8 => Box::new(LZ4Decode::<'a, u8> { encoded, decoded: decoded.u8(), decoded_len, reader, has_more: true }),
+            EncodingType::U16 => Box::new(LZ4Decode::<'a, u16> { encoded, decoded: decoded.u16(), decoded_len, reader, has_more: true }),
+            EncodingType::U32 => Box::new(LZ4Decode::<'a, u32> { encoded, decoded: decoded.u32(), decoded_len, reader, has_more: true }),
+            EncodingType::U64 => Box::new(LZ4Decode::<'a, u64> { encoded, decoded: decoded.u64(), decoded_len, reader, has_more: true }),
+            EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded: decoded.i64(), decoded_len, reader, has_more: true }),
             _ => panic!("lz4_decode not supported for type {:?}", t),
         }
     }
