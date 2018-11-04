@@ -211,10 +211,8 @@ impl InnerLocustDB {
         tables.values().map(|table| table.stats()).collect()
     }
 
-    pub fn gen_table(&self, opts: &GenTable) {
-        let table = opts.gen(&self.lru, 0);
-        let mut tables = self.tables.write().unwrap();
-        tables.insert(table.name().to_string(), table);
+    pub fn gen_partition(&self, opts: &GenTable, p: u64) {
+        opts.gen(&self, p);
     }
 
     fn create_if_empty(&self, table: &str) {
