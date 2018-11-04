@@ -6,7 +6,6 @@ version = "0.2.0-dev"
 [features]
 default=[]
 trace=[]
-nerf=[]
 enable_rocksdb=["rocksdb", "capnp", "capnpc"]
 enable_lz4=["lz4"]
 
