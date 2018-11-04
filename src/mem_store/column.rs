@@ -184,31 +184,31 @@ impl DataSection {
         let min_reduction = 90;
         match self {
             DataSection::U8(ref x) => {
-                let mut encoded = unsafe { lz4::encode(&x) };
+                let mut encoded = lz4::encode(&x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (DataSection::U8(encoded), len * 100 < x.len() * min_reduction)
             }
             DataSection::U16(ref x) => {
-                let mut encoded = unsafe { lz4::encode(&x) };
+                let mut encoded = lz4::encode(&x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (DataSection::U8(encoded), len * 100 < x.len() * 2 * min_reduction)
             }
             DataSection::U32(ref x) => {
-                let mut encoded = unsafe { lz4::encode(&x) };
+                let mut encoded = lz4::encode(&x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (DataSection::U8(encoded), len * 100 < x.len() * 4 * min_reduction)
             }
             DataSection::U64(ref x) => {
-                let mut encoded = unsafe { lz4::encode(&x) };
+                let mut encoded = lz4::encode(&x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (DataSection::U8(encoded), len * 100 < x.len() * 8 * min_reduction)
             }
             DataSection::I64(ref x) => {
-                let mut encoded = unsafe { lz4::encode(&x) };
+                let mut encoded = lz4::encode(&x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (DataSection::U8(encoded), len * 100 < x.len() * 8 * min_reduction)
@@ -223,27 +223,27 @@ impl DataSection {
             DataSection::U8(encoded) => match decoded_type {
                 EncodingType::U8 => {
                     let mut decoded = vec![0; len];
-                    unsafe { lz4::decode::<u8>(&mut lz4::decoder(encoded), &mut decoded); }
+                    lz4::decode::<u8>(&mut lz4::decoder(encoded), &mut decoded);
                     DataSection::U8(decoded)
                 }
                 EncodingType::U16 => {
                     let mut decoded = vec![0; len];
-                    unsafe { lz4::decode::<u16>(&mut lz4::decoder(encoded), &mut decoded); }
+                    lz4::decode::<u16>(&mut lz4::decoder(encoded), &mut decoded);
                     DataSection::U16(decoded)
                 }
                 EncodingType::U32 => {
                     let mut decoded = vec![0; len];
-                    unsafe { lz4::decode::<u32>(&mut lz4::decoder(encoded), &mut decoded); }
+                    lz4::decode::<u32>(&mut lz4::decoder(encoded), &mut decoded);
                     DataSection::U32(decoded)
                 }
                 EncodingType::U64 => {
                     let mut decoded = vec![0; len];
-                    unsafe { lz4::decode::<u64>(&mut lz4::decoder(encoded), &mut decoded); }
+                    lz4::decode::<u64>(&mut lz4::decoder(encoded), &mut decoded);
                     DataSection::U64(decoded)
                 }
                 EncodingType::I64 => {
                     let mut decoded = vec![0; len];
-                    unsafe { lz4::decode::<i64>(&mut lz4::decoder(encoded), &mut decoded); }
+                    lz4::decode::<i64>(&mut lz4::decoder(encoded), &mut decoded);
                     DataSection::I64(decoded)
                 }
                 t => panic!("Unexpected type {:?} for lz4 decode", t),
