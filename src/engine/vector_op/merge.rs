@@ -20,8 +20,8 @@ pub struct Merge<T, C: Debug> {
 impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge<T, C> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (merged, ops) = {
-            let left = scratchpad.get::<T>(self.left);
-            let right = scratchpad.get::<T>(self.right);
+            let left = scratchpad.get(self.left);
+            let right = scratchpad.get(self.right);
             merge::<_, C>(&left, &right, self.limit)
         };
         scratchpad.set(self.merged, merged);

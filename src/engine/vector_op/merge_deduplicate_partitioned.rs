@@ -17,9 +17,9 @@ pub struct MergeDeduplicatePartitioned<T> {
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (deduplicated, merge_ops) = {
-            let partitioning = scratchpad.get::<Premerge>(self.partitioning);
-            let left = scratchpad.get::<T>(self.left);
-            let right = scratchpad.get::<T>(self.right);
+            let partitioning = scratchpad.get(self.partitioning);
+            let left = scratchpad.get(self.left);
+            let right = scratchpad.get(self.right);
             merge_deduplicate_partitioned(&partitioning, &left, &right)
         };
         scratchpad.set(self.deduplicated, deduplicated);

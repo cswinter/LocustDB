@@ -53,7 +53,7 @@ pub struct SlicePackString<'a> {
 
 impl<'a> VecOperator<'a> for SlicePackString<'a> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let data = scratchpad.get::<&'a str>(self.input);
+        let data = scratchpad.get(self.input);
         let mut packed_any = scratchpad.get_any_mut(self.output);
         let packed = packed_any.cast_ref_mut_byte_slices();
         for (i, datum) in data.iter().enumerate() {

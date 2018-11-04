@@ -11,8 +11,8 @@ pub struct Exists<T> {
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let data = scratchpad.get::<T>(self.input);
-        let mut exists = scratchpad.get_mut::<u8>(self.output);
+        let data = scratchpad.get(self.input);
+        let mut exists = scratchpad.get_mut(self.output);
 
         let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
         if len > exists.len() {

@@ -11,8 +11,8 @@ pub struct BitUnpackOperator {
 
 impl<'a> VecOperator<'a> for BitUnpackOperator {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let data = scratchpad.get::<i64>(self.input);
-        let mut unpacked = scratchpad.get_mut::<i64>(self.output);
+        let data = scratchpad.get(self.input);
+        let mut unpacked = scratchpad.get_mut(self.output);
         if stream { unpacked.clear(); }
         let mask = (1 << self.width) - 1;
         for d in data.iter() {

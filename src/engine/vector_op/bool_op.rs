@@ -23,8 +23,8 @@ impl<'a, T: BooleanOp + fmt::Debug + 'a> BooleanOperator<T> {
 
 impl<'a, T: BooleanOp + fmt::Debug> VecOperator<'a> for BooleanOperator<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut result = scratchpad.get_mut::<u8>(self.lhs);
-        let rhs = scratchpad.get::<u8>(self.rhs);
+        let mut result = scratchpad.get_mut(self.lhs);
+        let rhs = scratchpad.get(self.rhs);
         T::evaluate(&mut result, &rhs);
     }
 

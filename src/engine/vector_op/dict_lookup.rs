@@ -17,9 +17,9 @@ pub struct DictLookup<'a, T> {
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DictLookup<'a, T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let dict_data = scratchpad.get_pinned(self.dict_data);
-        let indices = scratchpad.get::<T>(self.indices);
-        let dict_indices = scratchpad.get::<u64>(self.dict_indices);
-        let mut output = scratchpad.get_mut::<&str>(self.output);
+        let indices = scratchpad.get(self.indices);
+        let dict_indices = scratchpad.get(self.dict_indices);
+        let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear(); }
         for i in indices.iter() {
             let offset_len = dict_indices[i.cast_usize()];
@@ -62,8 +62,8 @@ impl<'a> VecOperator<'a> for InverseDictLookup {
             let mut result = -1;
             let constant = scratchpad.get_const::<String>(&self.constant);
             let constant = constant.as_bytes();
-            let dict_indices = scratchpad.get::<u64>(self.dict_indices);
-            let dict_data = scratchpad.get::<u8>(self.dict_data);
+            let dict_indices = scratchpad.get(self.dict_indices);
+            let dict_data = scratchpad.get(self.dict_data);
             for (i, offset_len) in dict_indices.iter().enumerate() {
                 let offset = (offset_len >> 24) as usize;
                 let len = (offset_len & 0x00ff_ffff) as usize;

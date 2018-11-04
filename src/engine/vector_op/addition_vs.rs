@@ -11,9 +11,9 @@ pub struct AdditionVS<T> {
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for AdditionVS<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut output = scratchpad.get_mut::<i64>(self.output);
+        let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear(); }
-        let data = scratchpad.get::<T>(self.lhs);
+        let data = scratchpad.get(self.lhs);
         let c = scratchpad.get_const::<i64>(&self.rhs);
         for d in data.iter() {
             output.push(d.to_i64().unwrap() + c);

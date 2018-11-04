@@ -9,7 +9,7 @@ pub struct NonzeroCompact<T> {
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut data = scratchpad.get_mut::<T>(self.data);
+        let mut data = scratchpad.get_mut(self.data);
         // Remove all unmodified entries
         let mut j = 0;
         for i in 0..data.len() {

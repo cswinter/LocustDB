@@ -11,9 +11,9 @@ pub struct Filter<T> {
 
 impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: GenericVec<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let data = scratchpad.get::<T>(self.input);
-        let filter = scratchpad.get::<u8>(self.filter);
-        let mut filtered = scratchpad.get_mut::<T>(self.output);
+        let data = scratchpad.get(self.input);
+        let filter = scratchpad.get(self.filter);
+        let mut filtered = scratchpad.get_mut(self.output);
         if stream { filtered.clear(); }
         for (d, &select) in data.iter().zip(filter.iter()) {
             if select > 0 {

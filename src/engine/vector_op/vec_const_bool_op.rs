@@ -15,9 +15,9 @@ pub struct VecConstBoolOperator<T, U, Op> {
 impl<'a, T: 'a, U, Op> VecOperator<'a> for VecConstBoolOperator<T, U, Op> where
     T: GenericVec<T>, U: ConstType<U> + fmt::Debug, Op: BoolOperation<T, U> + fmt::Debug {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let data = scratchpad.get::<T>(self.lhs);
+        let data = scratchpad.get(self.lhs);
         let c = &scratchpad.get_const::<U>(&self.rhs);
-        let mut output = scratchpad.get_mut::<u8>(self.output);
+        let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear(); }
         for d in data.iter() {
             output.push(Op::perform(d, &c));

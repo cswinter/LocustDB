@@ -16,8 +16,8 @@ pub struct MergeDeduplicate<T> {
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (deduplicated, merge_ops) = {
-            let left = scratchpad.get::<T>(self.left);
-            let right = scratchpad.get::<T>(self.right);
+            let left = scratchpad.get(self.left);
+            let right = scratchpad.get(self.right);
             merge_deduplicate(&left, &right)
         };
         scratchpad.set(self.deduplicated, deduplicated);

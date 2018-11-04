@@ -13,9 +13,9 @@ pub struct MergeKeep<T> {
 impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeKeep<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let merged = {
-            let ops = scratchpad.get::<u8>(self.merge_ops);
-            let left = scratchpad.get::<T>(self.left);
-            let right = scratchpad.get::<T>(self.right);
+            let ops = scratchpad.get(self.merge_ops);
+            let left = scratchpad.get(self.left);
+            let right = scratchpad.get(self.right);
             merge_keep(&ops, &left, &right)
         };
         scratchpad.set(self.merged, merged);

@@ -23,8 +23,8 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
         unsafe { scratchpad.unpin(self.stringstore.any()) };
         {
-            let mut decoded = scratchpad.get_mut::<&'a str>(self.unpacked);
-            let mut stringstore = scratchpad.get_mut::<u8>(self.stringstore);
+            let mut decoded = scratchpad.get_mut(self.unpacked);
+            let mut stringstore = scratchpad.get_mut(self.stringstore);
             if streaming { decoded.clear() }
             for elem in self.iterator.as_mut().unwrap() {
                 let string = if self.uppercase {

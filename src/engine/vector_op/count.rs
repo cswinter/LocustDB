@@ -11,8 +11,8 @@ pub struct VecCount<T> {
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
-        let mut result = scratchpad.get_mut::<u32>(self.output);
-        let grouping = scratchpad.get::<T>(self.grouping);
+        let mut result = scratchpad.get_mut(self.output);
+        let grouping = scratchpad.get(self.grouping);
 
         let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
         if len > result.len() {

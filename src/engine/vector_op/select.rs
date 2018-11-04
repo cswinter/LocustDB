@@ -11,9 +11,9 @@ pub struct Select<T> {
 
 impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: GenericVec<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let data = scratchpad.get::<T>(self.input);
-        let indices = scratchpad.get::<usize>(self.indices);
-        let mut output = scratchpad.get_mut::<T>(self.output);
+        let data = scratchpad.get(self.input);
+        let indices = scratchpad.get(self.indices);
+        let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear(); }
         for i in indices.iter() {
             output.push(data[*i]);
