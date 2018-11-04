@@ -10,11 +10,13 @@ pub fn decoder(data: &[u8]) -> lz4::Decoder<&[u8]> {
     lz4::Decoder::new(data).unwrap()
 }
 
-pub unsafe fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
+pub fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
     let ptr_t = data.as_ptr();
     // Endianness? Never heard of it...
-    let ptr_u8 = mem::transmute::<_, *const u8>(ptr_t);
-    let data_u8: &[u8] = from_raw_parts(ptr_u8, data.len() * mem::size_of::<T>());
+    let data_u8: &[u8] = unsafe {
+        let ptr_u8 = mem::transmute::<_, *const u8>(ptr_t);
+        from_raw_parts(ptr_u8, data.len() * mem::size_of::<T>())
+    };
 
     let mut result = Vec::new();
     {
@@ -25,10 +27,12 @@ pub unsafe fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
     result
 }
 
-pub unsafe fn decode<T>(src: &mut Read, dst: &mut [T]) -> usize {
+pub fn decode<T>(src: &mut Read, dst: &mut [T]) -> usize {
     let ptr_t = dst.as_ptr();
-    let ptr_u8 = mem::transmute::<_, *mut u8>(ptr_t);
-    let dst_u8: &mut [u8] = from_raw_parts_mut(ptr_u8, dst.len() * mem::size_of::<T>());
+    let dst_u8: &mut [u8] = unsafe {
+        let ptr_u8 = mem::transmute::<_, *mut u8>(ptr_t);
+        from_raw_parts_mut(ptr_u8, dst.len() * mem::size_of::<T>())
+    };
 
     let mut read = 0;
     // LZ4 decodes in blocks of at most 65536 elements, so might have to call multiple times to fill buffer
@@ -52,9 +56,9 @@ mod tests {
     #[test]
     fn test_encode_decode() {
         let data = vec![10i64, 12095, -51235, 3, 0, 0, 12353, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10];
-        let encoded = unsafe { encode(&data) };
+        let encoded = encode(&data);
         let mut decoded = vec![0i64; data.len()];
-        let count = unsafe { decode(&mut decoder(&encoded), &mut decoded) };
+        let count = decode(&mut decoder(&encoded), &mut decoded);
         assert_eq!(count, data.len());
         assert_eq!(decoded, data);
     }

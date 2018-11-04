@@ -114,7 +114,7 @@ impl DiskStore for RocksDB {
         }
     }
 
-    fn store_partition(&self, partition: PartitionID, tablename: &str, columns: &Vec<Arc<Column>>) {
+    fn store_partition(&self, partition: PartitionID, tablename: &str, columns: &[Arc<Column>]) {
         let mut tx = WriteBatch::default();
         let mut key = [0; 8];
         BigEndian::write_u64(&mut key, partition as u64);

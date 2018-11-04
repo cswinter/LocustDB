@@ -1,7 +1,5 @@
-use std::marker::PhantomData;
 use std::io::Read;
 use std::fmt;
-use std::mem;
 
 use engine::*;
 use engine::vector_op::vector_operator::*;
@@ -19,7 +17,7 @@ pub struct LZ4Decode<'a, T> {
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for LZ4Decode<'a, T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut decoded = scratchpad.get_mut::<T>(self.decoded);
-        let len = unsafe { lz4::decode(&mut self.reader, &mut decoded) };
+        let len = lz4::decode(&mut self.reader, &mut decoded);
         if len < decoded.len() {
             decoded.truncate(len);
             self.has_more = false;
@@ -27,19 +25,15 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for LZ4Decode<'a, T> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.decoded, Box::new(vec![T::zero(); batch_size]));
-        let encoded = scratchpad.get::<u8>(self.encoded);
-        // TODO(clemens): eliminate unsafe? could store in scratchpad...
-        self.reader = unsafe {
-            let decoder: Box<Read> = Box::new(lz4::decoder(encoded.as_ref()));
-            mem::transmute::<_, Box<Read + 'a>>(decoder)
-        };
+        scratchpad.set(self.decoded, vec![T::zero(); batch_size]);
+        let encoded = scratchpad.get_pinned(self.encoded);
+        self.reader = Box::new(lz4::decoder(encoded));
     }
 
-    fn inputs(&self) -> Vec<BufferRef> { vec![self.encoded] }
-    fn outputs(&self) -> Vec<BufferRef> { vec![self.decoded] }
-    fn can_stream_input(&self, _: BufferRef) -> bool { false }
-    fn can_stream_output(&self, _: BufferRef) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.encoded.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.decoded.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { true }
     fn is_streaming_producer(&self) -> bool { true }
     fn has_more(&self) -> bool { self.has_more }

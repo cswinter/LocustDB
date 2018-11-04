@@ -24,7 +24,7 @@ pub use self::lru::LRU;
 pub mod lz4 {
     use std::fmt::Debug;
 
-    pub unsafe fn encode<T: Debug>(_: &[T]) -> Vec<u8> {
+    pub fn encode<T: Debug>(_: &[T]) -> Vec<u8> {
         panic!("lz4 not supported in this build of LocustDB. Recompile with --features enable_lz4.")
     }
 }
