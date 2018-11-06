@@ -33,6 +33,12 @@ impl Comparator<i64> for CmpLessThan {
     fn is_less_than() -> bool { true }
 }
 
+impl Comparator<u64> for CmpLessThan {
+    fn cmp(left: u64, right: u64) -> bool { left < right }
+    fn cmp_eq(left: u64, right: u64) -> bool { left <= right }
+    fn is_less_than() -> bool { false }
+}
+
 impl<'a> Comparator<&'a str> for CmpLessThan {
     fn cmp(left: &str, right: &str) -> bool { left < right }
     fn cmp_eq(left: &str, right: &str) -> bool { left <= right }
@@ -58,6 +64,12 @@ impl Comparator<u16> for CmpGreaterThan {
 impl Comparator<u32> for CmpGreaterThan {
     fn cmp(left: u32, right: u32) -> bool { left > right }
     fn cmp_eq(left: u32, right: u32) -> bool { left >= right }
+    fn is_less_than() -> bool { false }
+}
+
+impl Comparator<u64> for CmpGreaterThan {
+    fn cmp(left: u64, right: u64) -> bool { left > right }
+    fn cmp_eq(left: u64, right: u64) -> bool { left >= right }
     fn is_less_than() -> bool { false }
 }
 
