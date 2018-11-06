@@ -54,15 +54,6 @@ impl<T: Into<i64> + Copy> BoolOperation<T, i64> for LessThanInt<T> {
 }
 
 #[derive(Debug)]
-pub struct Equals<T> { t: PhantomData<T> }
-
-impl<T: PartialEq> BoolOperation<T, T> for Equals<T> {
-    #[inline]
-    fn perform(l: &T, r: &T) -> u8 { (l == r) as u8 }
-    fn symbol() -> &'static str { "==" }
-}
-
-#[derive(Debug)]
 pub struct EqualsInt<T> { t: PhantomData<T> }
 
 impl<T: Into<i64> + Copy> BoolOperation<T, i64> for EqualsInt<T> {
@@ -80,15 +71,6 @@ impl<'a> BoolOperation<&'a str, String> for EqualsString {
     fn symbol() -> &'static str { "==" }
 }
 
-
-#[derive(Debug)]
-pub struct NotEquals<T> { t: PhantomData<T> }
-
-impl<T: PartialEq> BoolOperation<T, T> for NotEquals<T> {
-    #[inline]
-    fn perform(l: &T, r: &T) -> u8 { (l != r) as u8 }
-    fn symbol() -> &'static str { "<>" }
-}
 
 #[derive(Debug)]
 pub struct NotEqualsInt<T> { t: PhantomData<T> }

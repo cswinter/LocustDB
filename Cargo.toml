@@ -50,3 +50,4 @@ std-semaphore = "0.1.0"
 aliasmethod = "0.1.0"
 rand = "0.5.5"
 sqlparser = { git = "https://github.com/virattara/sqlparser-rs.git" }
+locustdb-derive = { path = "./locustdb-derive" }

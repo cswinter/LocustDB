@@ -17,6 +17,7 @@ use engine::types::EncodingType;
 use engine::vector_op::comparator::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
+use locustdb_derive::reify_types;
 
 use engine::vector_op::addition_vs::AdditionVS;
 use engine::vector_op::bit_unpack::BitUnpackOperator;
@@ -255,33 +256,28 @@ impl<'a> VecOperator<'a> {
         })
     }
 
-    pub fn dict_lookup((indices, t): TypedBufferRef,
+    pub fn dict_lookup(indices: TypedBufferRef,
                        dict_indices: BufferRef<u64>,
                        dict_data: BufferRef<u8>,
                        output: BufferRef<&'a str>) -> BoxedOperator<'a> {
-        match t {
-            EncodingType::U8 => Box::new(DictLookup::<u8> { indices: indices.u8(), output, dict_indices, dict_data }),
-            EncodingType::U16 => Box::new(DictLookup::<u16> { indices: indices.u16(), output, dict_indices, dict_data }),
-            EncodingType::U32 => Box::new(DictLookup::<u32> { indices: indices.u32(), output, dict_indices, dict_data }),
-            EncodingType::I64 => Box::new(DictLookup::<i64> { indices: indices.i64(), output, dict_indices, dict_data }),
-            _ => panic!("dict_lookup not supported for type {:?}", t),
-        }
+        reify_types![
+            "dict_lookup";
+            indices: Integer;
+            Box::new(DictLookup { indices, output, dict_indices, dict_data });
+        ]
     }
 
     #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(encoded: BufferRef<u8>,
-                      (decoded, t): TypedBufferRef,
+                      decoded: TypedBufferRef,
                       decoded_len: usize) -> BoxedOperator<'a> {
         use engine::vector_op::lz4_decode::LZ4Decode;
         use std::io::Read;
         let reader: Box<Read> = Box::new(&[] as &[u8]);
-        match t {
-            EncodingType::U8 => Box::new(LZ4Decode::<'a, u8> { encoded, decoded: decoded.u8(), decoded_len, reader, has_more: true }),
-            EncodingType::U16 => Box::new(LZ4Decode::<'a, u16> { encoded, decoded: decoded.u16(), decoded_len, reader, has_more: true }),
-            EncodingType::U32 => Box::new(LZ4Decode::<'a, u32> { encoded, decoded: decoded.u32(), decoded_len, reader, has_more: true }),
-            EncodingType::U64 => Box::new(LZ4Decode::<'a, u64> { encoded, decoded: decoded.u64(), decoded_len, reader, has_more: true }),
-            EncodingType::I64 => Box::new(LZ4Decode::<'a, i64> { encoded, decoded: decoded.i64(), decoded_len, reader, has_more: true }),
-            _ => panic!("lz4_decode not supported for type {:?}", t),
+        reify_types! {
+            "lz4_decode";
+            decoded: Integer;
+            Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true });
         }
     }
 
@@ -304,13 +300,11 @@ impl<'a> VecOperator<'a> {
         Box::new(UnhexpackStrings::<'a> { packed, unpacked, stringstore, uppercase, total_bytes, iterator: None, has_more: true })
     }
 
-    pub fn delta_decode((encoded, t): TypedBufferRef, decoded: BufferRef<i64>) -> BoxedOperator<'a> {
-        match t {
-            EncodingType::U8 => Box::new(DeltaDecode::<u8> { encoded: encoded.u8(), decoded, previous: 0 }),
-            EncodingType::U16 => Box::new(DeltaDecode::<u16> { encoded: encoded.u16(), decoded, previous: 0 }),
-            EncodingType::U32 => Box::new(DeltaDecode::<u32> { encoded: encoded.u32(), decoded, previous: 0 }),
-            EncodingType::I64 => Box::new(DeltaDecode::<i64> { encoded: encoded.i64(), decoded, previous: 0 }),
-            _ => panic!("delta_decode not supported for type {:?}", t),
+    pub fn delta_decode(encoded: TypedBufferRef, decoded: BufferRef<i64>) -> BoxedOperator<'a> {
+        reify_types! {
+            "delta_decode";
+            encoded: Integer;
+            Box::new(DeltaDecode { encoded, decoded, previous: 0 });
         }
     }
 
@@ -327,31 +321,23 @@ impl<'a> VecOperator<'a> {
         Box::new(EncodeIntConstant { constant, output, codec })
     }
 
-    pub fn filter((input, t1): TypedBufferRef,
+    pub fn filter(input: TypedBufferRef,
                   filter: BufferRef<u8>,
-                  (output, t2): TypedBufferRef) -> BoxedOperator<'a> {
-        assert!(t1 == t2);
-        match t1 {
-            EncodingType::I64 => Box::new(Filter::<i64> { input: input.i64(), filter, output: output.i64() }),
-            EncodingType::U32 => Box::new(Filter::<u32> { input: input.u32(), filter, output: output.u32() }),
-            EncodingType::U16 => Box::new(Filter::<u16> { input: input.u16(), filter, output: output.u16() }),
-            EncodingType::U8 => Box::new(Filter::<u8> { input: input.u8(), filter, output: output.u8() }),
-            EncodingType::Str => Box::new(Filter::<&str> { input: input.str(), filter, output: output.str() }),
-            _ => panic!("filter not supported for type {:?}", t1),
+                  output: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+            "filter";
+            input, output: Primitive;
+            Box::new(Filter { input, filter, output });
         }
     }
 
-    pub fn select((input, t1): TypedBufferRef,
+    pub fn select(input: TypedBufferRef,
                   indices: BufferRef<usize>,
-                  (output, t2): TypedBufferRef) -> BoxedOperator<'a> {
-        assert!(t1 == t2);
-        match t1 {
-            EncodingType::I64 => Box::new(Select::<i64> { input: input.i64(), indices, output: output.i64() }),
-            EncodingType::U32 => Box::new(Select::<u32> { input: input.u32(), indices, output: output.u32() }),
-            EncodingType::U16 => Box::new(Select::<u16> { input: input.u16(), indices, output: output.u16() }),
-            EncodingType::U8 => Box::new(Select::<u8> { input: input.u8(), indices, output: output.u8() }),
-            EncodingType::Str => Box::new(Select::<&str> { input: input.str(), indices, output: output.str() }),
-            _ => panic!("filter not supported for type {:?}", t1),
+                  output: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+            "select";
+            input, output: Primitive;
+            Box::new(Select { input, indices, output });
         }
     }
 
@@ -363,45 +349,38 @@ impl<'a> VecOperator<'a> {
         Box::new(ConstantVec { val, output })
     }
 
-    pub fn less_than_vs((lhs, t): TypedBufferRef, rhs: BufferRef<i64>, output: BufferRef<u8>) -> BoxedOperator<'a> {
-        match t {
-            EncodingType::U8 => Box::new(
-                VecConstBoolOperator::<u8, i64, LessThanInt<u8>> { lhs: lhs.u8(), rhs, output, op: PhantomData }),
-            EncodingType::U16 => Box::new(
-                VecConstBoolOperator::<u16, i64, LessThanInt<u16>> { lhs: lhs.u16(), rhs, output, op: PhantomData }),
-            EncodingType::U32 => Box::new(
-                VecConstBoolOperator::<u32, i64, LessThanInt<u32>> { lhs: lhs.u32(), rhs, output, op: PhantomData }),
-            EncodingType::I64 => Box::new(
-                VecConstBoolOperator::<i64, i64, LessThanInt<i64>> { lhs: lhs.i64(), rhs, output, op: PhantomData }),
-            _ => panic!("less_than_vs not supported for type {:?}", t),
+    pub fn less_than_vs(lhs: TypedBufferRef, rhs: BufferRef<i64>, output: BufferRef<u8>) -> BoxedOperator<'a> {
+        reify_types! {
+            "less_than_vs";
+            lhs: IntegerNoU64;
+            Box::new(VecConstBoolOperator::<_, i64, LessThanInt<_>> { lhs, rhs, output, op: PhantomData });
         }
     }
 
-    pub fn equals_vs((lhs, t1): TypedBufferRef,
-                     (rhs, t2): TypedBufferRef,
+    pub fn equals_vs(lhs: TypedBufferRef,
+                     rhs: TypedBufferRef,
                      output: BufferRef<u8>) -> BoxedOperator<'a> {
-        assert!(t1 == t2);
-        match t1 {
-            EncodingType::Str => Box::new(VecConstBoolOperator { lhs: lhs.str(), rhs: rhs.string(), output, op: PhantomData::<EqualsString> }),
-            EncodingType::U8 => Box::new(VecConstBoolOperator::<_, _, EqualsInt<u8>> { lhs: lhs.u8(), rhs: rhs.i64(), output, op: PhantomData }),
-            EncodingType::U16 => Box::new(VecConstBoolOperator::<_, _, EqualsInt<u16>> { lhs: lhs.u16(), rhs: rhs.i64(), output, op: PhantomData }),
-            EncodingType::U32 => Box::new(VecConstBoolOperator::<_, _, EqualsInt<u32>> { lhs: lhs.u32(), rhs: rhs.i64(), output, op: PhantomData }),
-            EncodingType::I64 => Box::new(VecConstBoolOperator::<_, _, Equals<i64>> { lhs: lhs.i64(), rhs: rhs.i64(), output, op: PhantomData }),
-            _ => panic!("equals_vs not supported for type {:?}", t1),
+        // TODO(clemens): use specialization to get general Equals<T, U> class and unify
+        if let Str = lhs.1 {
+            return Box::new(VecConstBoolOperator { lhs: lhs.0.str(), rhs: rhs.0.string(), output, op: PhantomData::<EqualsString> });
+        }
+        reify_types! {
+            "slice_pack";
+            lhs: IntegerNoU64;
+            Box::new(VecConstBoolOperator { lhs, rhs: rhs.0.i64(), output, op: PhantomData::<EqualsInt<_>> });
         }
     }
 
-    pub fn not_equals_vs((lhs, t1): TypedBufferRef,
-                         (rhs, t2): TypedBufferRef,
+    pub fn not_equals_vs(lhs: TypedBufferRef,
+                         rhs: TypedBufferRef,
                          output: BufferRef<u8>) -> BoxedOperator<'a> {
-        assert!(t1 == t2);
-        match t1 {
-            EncodingType::Str => Box::new(VecConstBoolOperator::<_, _, NotEqualsString> { lhs: lhs.str(), rhs: rhs.string(), output, op: PhantomData }),
-            EncodingType::U8 => Box::new(VecConstBoolOperator::<_, _, NotEqualsInt<u8>> { lhs: lhs.u8(), rhs: rhs.i64(), output, op: PhantomData }),
-            EncodingType::U16 => Box::new(VecConstBoolOperator::<_, _, NotEqualsInt<u16>> { lhs: lhs.u16(), rhs: rhs.i64(), output, op: PhantomData }),
-            EncodingType::U32 => Box::new(VecConstBoolOperator::<_, _, NotEqualsInt<u32>> { lhs: lhs.u32(), rhs: rhs.i64(), output, op: PhantomData }),
-            EncodingType::I64 => Box::new(VecConstBoolOperator::<_, _, NotEquals<i64>> { lhs: lhs.i64(), rhs: rhs.i64(), output, op: PhantomData }),
-            _ => panic!("not_equals_vs not supported for type {:?}", t1),
+        if let Str = lhs.1 {
+            return Box::new(VecConstBoolOperator { lhs: lhs.0.str(), rhs: rhs.0.string(), output, op: PhantomData::<NotEqualsString> });
+        }
+        reify_types! {
+            "slice_pack";
+            lhs: IntegerNoU64;
+            Box::new(VecConstBoolOperator { lhs, rhs: rhs.0.i64(), output, op: PhantomData::<NotEqualsInt<_>> });
         }
     }
 
@@ -411,15 +390,13 @@ impl<'a> VecOperator<'a> {
         Box::new(DivideVS { lhs, rhs, output })
     }
 
-    pub fn addition_vs((lhs, t1): TypedBufferRef,
+    pub fn addition_vs(lhs: TypedBufferRef,
                        rhs: BufferRef<i64>,
                        output: BufferRef<i64>) -> BoxedOperator<'a> {
-        match t1 {
-            EncodingType::U8 => Box::new(AdditionVS::<u8> { lhs: lhs.u8(), rhs, output }),
-            EncodingType::U16 => Box::new(AdditionVS::<u16> { lhs: lhs.u16(), rhs, output }),
-            EncodingType::U32 => Box::new(AdditionVS::<u32> { lhs: lhs.u32(), rhs, output }),
-            EncodingType::I64 => Box::new(AdditionVS::<i64> { lhs: lhs.i64(), rhs, output }),
-            _ => panic!("addition_vs not supported for type {:?}", t1),
+        reify_types! {
+            "addition_vs";
+            lhs: IntegerNoU64;
+            Box::new(AdditionVS { lhs, rhs, output });
         }
     }
 
@@ -442,52 +419,33 @@ impl<'a> VecOperator<'a> {
         Box::new(BitUnpackOperator { input: inner, output, shift, width })
     }
 
-    pub fn slice_pack((input, t): TypedBufferRef, output: BufferRef<Any>, stride: usize, offset: usize) -> BoxedOperator<'a> {
-        match t {
-            Str => Box::new(SlicePackString { input: input.str(), output, stride, offset }),
-            U8 => Box::new(SlicePackInt { input: input.u8(), output, stride, offset }),
-            U16 => Box::new(SlicePackInt { input: input.u16(), output, stride, offset }),
-            U32 => Box::new(SlicePackInt { input: input.u32(), output, stride, offset }),
-            U64 => Box::new(SlicePackInt { input: input.u64(), output, stride, offset }),
-            I64 => Box::new(SlicePackInt { input: input.i64(), output, stride, offset }),
-            _ => panic!("slice_pack is not supported for type {:?}", t),
+    pub fn slice_pack(input: TypedBufferRef, output: BufferRef<Any>, stride: usize, offset: usize) -> BoxedOperator<'a> {
+        if let Str = input.1 {
+            return Box::new(SlicePackString { input: input.0.str(), output, stride, offset });
+        }
+        reify_types! {
+            "slice_pack";
+            input: Integer;
+            Box::new(SlicePackInt { input, output, stride, offset });
         }
     }
 
-    pub fn slice_unpack(input: BufferRef<Any>, (output, t): TypedBufferRef, stride: usize, offset: usize) -> BoxedOperator<'a> {
-        match t {
-            Str => Box::new(SliceUnpackString { input, output: output.str(), stride, offset }),
-            U8 => Box::new(SliceUnpackInt { input, output: output.u8(), stride, offset }),
-            U16 => Box::new(SliceUnpackInt { input, output: output.u16(), stride, offset }),
-            U32 => Box::new(SliceUnpackInt { input, output: output.u32(), stride, offset }),
-            U64 => Box::new(SliceUnpackInt { input, output: output.u64(), stride, offset }),
-            I64 => Box::new(SliceUnpackInt { input, output: output.i64(), stride, offset }),
-            _ => panic!("slice_unpack is not supported for type {:?}", t),
+    pub fn slice_unpack(input: BufferRef<Any>, output: TypedBufferRef, stride: usize, offset: usize) -> BoxedOperator<'a> {
+        if let Str = output.1 {
+            return Box::new(SliceUnpackString { input, output: output.0.str(), stride, offset });
+        }
+        reify_types! {
+            "slice_unpack";
+            output: Integer;
+            Box::new(SliceUnpackInt { input, output, stride, offset });
         }
     }
 
-    pub fn type_conversion((inner, initial_type): TypedBufferRef,
-                           (output, target_type): TypedBufferRef) -> BoxedOperator<'a> {
-        use self::EncodingType::*;
-        match (initial_type, target_type) {
-            (U8, U16) => Box::new(TypeConversionOperator { input: inner.u8(), output: output.u16() }),
-            (U8, U32) => Box::new(TypeConversionOperator { input: inner.u8(), output: output.u32() }),
-            (U8, I64) => Box::new(TypeConversionOperator { input: inner.u8(), output: output.i64() }),
-
-            (U16, U8) => Box::new(TypeConversionOperator { input: inner.u16(), output: output.u8() }),
-            (U16, U32) => Box::new(TypeConversionOperator { input: inner.u16(), output: output.u32() }),
-            (U16, I64) => Box::new(TypeConversionOperator { input: inner.u16(), output: output.i64() }),
-
-            (U32, U8) => Box::new(TypeConversionOperator { input: inner.u32(), output: output.u8() }),
-            (U32, U16) => Box::new(TypeConversionOperator { input: inner.u32(), output: output.u16() }),
-            (U32, I64) => Box::new(TypeConversionOperator { input: inner.u32(), output: output.i64() }),
-
-            (I64, U8) => Box::new(TypeConversionOperator { input: inner.i64(), output: output.u8() }),
-            (I64, U16) => Box::new(TypeConversionOperator { input: inner.i64(), output: output.u16() }),
-            (I64, U32) => Box::new(TypeConversionOperator { input: inner.i64(), output: output.u32() }),
-
-            (U8, U8) | (U16, U16) | (U32, U32) | (I64, I64) => panic!("type_conversion from type {:?} to itself", initial_type),
-            _ => panic!("type_conversion not supported for types {:?} -> {:?}", initial_type, target_type)
+    pub fn type_conversion(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+            "type_conversion";
+            input: Integer, output: Integer;
+            Box::new(TypeConversionOperator { input, output });
         }
     }
 
@@ -496,129 +454,71 @@ impl<'a> VecOperator<'a> {
         Box::new(ToYear { input, output })
     }
 
-    pub fn summation((input, input_type): TypedBufferRef,
-                     (grouping, grouping_type): TypedBufferRef,
+    pub fn summation(input: TypedBufferRef,
+                     grouping: TypedBufferRef,
                      output: BufferRef<i64>,
                      max_index: BufferRef<i64>) -> BoxedOperator<'a> {
-        use self::EncodingType::*;
-        match (input_type, grouping_type) {
-            (U8, U8) => Box::new(VecSum::<u8, u8> { input: input.u8(), grouping: grouping.u8(), output, max_index }),
-            (U8, U16) => Box::new(VecSum::<u8, u16> { input: input.u8(), grouping: grouping.u16(), output, max_index }),
-            (U8, U32) => Box::new(VecSum::<u8, u32> { input: input.u8(), grouping: grouping.u32(), output, max_index }),
-            (U8, I64) => Box::new(VecSum::<u8, i64> { input: input.u8(), grouping: grouping.i64(), output, max_index }),
-            (U16, U8) => Box::new(VecSum::<u16, u8> { input: input.u16(), grouping: grouping.u8(), output, max_index }),
-            (U16, U16) => Box::new(VecSum::<u16, u16> { input: input.u16(), grouping: grouping.u16(), output, max_index }),
-            (U16, U32) => Box::new(VecSum::<u16, u32> { input: input.u16(), grouping: grouping.u32(), output, max_index }),
-            (U16, I64) => Box::new(VecSum::<u16, i64> { input: input.u16(), grouping: grouping.i64(), output, max_index }),
-            (U32, U8) => Box::new(VecSum::<u32, u8> { input: input.u32(), grouping: grouping.u8(), output, max_index }),
-            (U32, U16) => Box::new(VecSum::<u32, u16> { input: input.u32(), grouping: grouping.u16(), output, max_index }),
-            (U32, U32) => Box::new(VecSum::<u32, u32> { input: input.u32(), grouping: grouping.u32(), output, max_index }),
-            (U32, I64) => Box::new(VecSum::<u32, i64> { input: input.u32(), grouping: grouping.i64(), output, max_index }),
-            (I64, U8) => Box::new(VecSum::<i64, u8> { input: input.i64(), grouping: grouping.u8(), output, max_index }),
-            (I64, U16) => Box::new(VecSum::<i64, u16> { input: input.i64(), grouping: grouping.u16(), output, max_index }),
-            (I64, U32) => Box::new(VecSum::<i64, u32> { input: input.i64(), grouping: grouping.u32(), output, max_index }),
-            (I64, I64) => Box::new(VecSum::<i64, i64> { input: input.i64(), grouping: grouping.i64(), output, max_index }),
-            (pt, gt) => panic!("invalid aggregation types {:?}, {:?}", pt, gt),
+        reify_types! {
+            "summation";
+            input: IntegerNoU64, grouping: Integer;
+            Box::new(VecSum { input, grouping, output, max_index });
         }
     }
 
-    pub fn count((grouping, grouping_type): TypedBufferRef,
-                 output: BufferRef<u32>,
-                 max_index: BufferRef<i64>) -> BoxedOperator<'a> {
-        match grouping_type {
-            EncodingType::U8 => Box::new(VecCount::<u8> { grouping: grouping.u8(), output, max_index }),
-            EncodingType::U16 => Box::new(VecCount::<u16> { grouping: grouping.u16(), output, max_index }),
-            EncodingType::U32 => Box::new(VecCount::<u32> { grouping: grouping.u32(), output, max_index }),
-            EncodingType::I64 => Box::new(VecCount::<i64> { grouping: grouping.i64(), output, max_index }),
-            t => panic!("unsupported type {:?} for grouping key", t),
+    pub fn count(grouping: TypedBufferRef, output: BufferRef<u32>, max_index: BufferRef<i64>) -> BoxedOperator<'a> {
+        reify_types! {
+            "count";
+            grouping: Integer;
+            Box::new(VecCount { grouping, output, max_index });
         }
     }
 
-    pub fn exists((grouping, grouping_type): TypedBufferRef,
-                  output: BufferRef<u8>,
-                  max_index: BufferRef<i64>) -> BoxedOperator<'a> {
-        match grouping_type {
-            EncodingType::U8 => Box::new(Exists::<u8> { input: grouping.u8(), output, max_index }),
-            EncodingType::U16 => Box::new(Exists::<u16> { input: grouping.u16(), output, max_index }),
-            EncodingType::U32 => Box::new(Exists::<u32> { input: grouping.u32(), output, max_index }),
-            EncodingType::I64 => Box::new(Exists::<i64> { input: grouping.i64(), output, max_index }),
-            t => panic!("unsupported type {:?} for grouping key", t),
+    pub fn exists(input: TypedBufferRef, output: BufferRef<u8>, max_index: BufferRef<i64>) -> BoxedOperator<'a> {
+        reify_types! {
+            "exists";
+            input: Integer;
+            Box::new(Exists { input, output, max_index });
         }
     }
 
-    pub fn nonzero_compact((data, data_type): TypedBufferRef) -> BoxedOperator<'a> {
-        match data_type {
-            EncodingType::U8 => Box::new(NonzeroCompact::<u8> { data: data.u8() }),
-            EncodingType::U16 => Box::new(NonzeroCompact::<u16> { data: data.u16() }),
-            EncodingType::U32 => Box::new(NonzeroCompact::<u32> { data: data.u32() }),
-            EncodingType::I64 => Box::new(NonzeroCompact::<i64> { data: data.i64() }),
-            t => panic!("unsupported type {:?} for grouping key", t),
+    pub fn nonzero_compact(data: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+            "nonzero_compact";
+            data: Integer;
+            Box::new(NonzeroCompact { data });
         }
     }
 
-    pub fn nonzero_indices((input, input_type): TypedBufferRef,
-                           (output, output_type): TypedBufferRef) -> BoxedOperator<'a> {
-        use self::EncodingType::*;
-        match (input_type, output_type) {
-            (U8, U8) => Box::new(NonzeroIndices::<u8, u8> { input: input.u8(), output: output.u8() }),
-            (U8, U16) => Box::new(NonzeroIndices::<u8, u16> { input: input.u8(), output: output.u16() }),
-            (U8, U32) => Box::new(NonzeroIndices::<u8, u32> { input: input.u8(), output: output.u32() }),
-            (U8, I64) => Box::new(NonzeroIndices::<u8, i64> { input: input.u8(), output: output.i64() }),
-            (U16, U8) => Box::new(NonzeroIndices::<u16, u8> { input: input.u16(), output: output.u8() }),
-            (U16, U16) => Box::new(NonzeroIndices::<u16, u16> { input: input.u16(), output: output.u16() }),
-            (U16, U32) => Box::new(NonzeroIndices::<u16, u32> { input: input.u16(), output: output.u32() }),
-            (U16, I64) => Box::new(NonzeroIndices::<u16, i64> { input: input.u16(), output: output.i64() }),
-            (U32, U8) => Box::new(NonzeroIndices::<u32, u8> { input: input.u32(), output: output.u8() }),
-            (U32, U16) => Box::new(NonzeroIndices::<u32, u16> { input: input.u32(), output: output.u16() }),
-            (U32, U32) => Box::new(NonzeroIndices::<u32, u32> { input: input.u32(), output: output.u32() }),
-            (U32, I64) => Box::new(NonzeroIndices::<u32, i64> { input: input.u32(), output: output.i64() }),
-            (I64, U8) => Box::new(NonzeroIndices::<i64, u8> { input: input.i64(), output: output.u8() }),
-            (I64, U16) => Box::new(NonzeroIndices::<i64, u16> { input: input.i64(), output: output.u16() }),
-            (I64, U32) => Box::new(NonzeroIndices::<i64, u32> { input: input.i64(), output: output.u32() }),
-            (I64, I64) => Box::new(NonzeroIndices::<i64, i64> { input: input.i64(), output: output.i64() }),
-            t => panic!("unsupported type {:?} for grouping key", t),
+    pub fn nonzero_indices(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+            "nonzero_indices";
+            input: Integer, output: Integer;
+            Box::new(NonzeroIndices { input, output });
         }
     }
 
-    pub fn compact((data, input_type): TypedBufferRef,
-                   (select, output_type): TypedBufferRef) -> BoxedOperator<'a> {
-        match (input_type, output_type) {
-            (U8, U8) => Compact::<u8, u8>::boxed(data.u8(), select.u8()),
-            (U8, U16) => Compact::<u8, u16>::boxed(data.u8(), select.u16()),
-            (U8, U32) => Compact::<u8, u32>::boxed(data.u8(), select.u32()),
-            (U8, I64) => Compact::<u8, i64>::boxed(data.u8(), select.i64()),
-            (U16, U8) => Compact::<u16, u8>::boxed(data.u16(), select.u8()),
-            (U16, U16) => Compact::<u16, u16>::boxed(data.u16(), select.u16()),
-            (U16, U32) => Compact::<u16, u32>::boxed(data.u16(), select.u32()),
-            (U16, I64) => Compact::<u16, i64>::boxed(data.u16(), select.i64()),
-            (U32, U8) => Compact::<u32, u8>::boxed(data.u32(), select.u8()),
-            (U32, U16) => Compact::<u32, u16>::boxed(data.u32(), select.u16()),
-            (U32, U32) => Compact::<u32, u32>::boxed(data.u32(), select.u32()),
-            (U32, I64) => Compact::<u32, i64>::boxed(data.u32(), select.i64()),
-            (I64, U8) => Compact::<i64, u8>::boxed(data.i64(), select.u8()),
-            (I64, U16) => Compact::<i64, u16>::boxed(data.i64(), select.u16()),
-            (I64, U32) => Compact::<i64, u32>::boxed(data.i64(), select.u32()),
-            (I64, I64) => Compact::<i64, i64>::boxed(data.i64(), select.i64()),
-            t => panic!("unsupported type {:?} for grouping key", t),
+    pub fn compact(data: TypedBufferRef, select: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+            "compact";
+            data: Integer, select: Integer;
+            Compact::boxed(data, select);
         }
     }
-
 
     // TODO(clemens): allow different types on raw input grouping key and output grouping key
-    pub fn hash_map_grouping((raw_grouping_key, grouping_key_type): TypedBufferRef,
-                             (unique_out, t1): TypedBufferRef,
+    pub fn hash_map_grouping(raw_grouping_key: TypedBufferRef,
+                             unique_out: TypedBufferRef,
                              grouping_key_out: BufferRef<u32>,
                              cardinality_out: BufferRef<i64>,
                              max_cardinality: usize) -> BoxedOperator<'a> {
-        assert!(grouping_key_type == t1);
-        match grouping_key_type {
-            EncodingType::U8 => HashMapGrouping::<u8>::boxed(raw_grouping_key.u8(), unique_out.u8(), grouping_key_out, cardinality_out, max_cardinality),
-            EncodingType::U16 => HashMapGrouping::<u16>::boxed(raw_grouping_key.u16(), unique_out.u16(), grouping_key_out, cardinality_out, max_cardinality),
-            EncodingType::U32 => HashMapGrouping::<u32>::boxed(raw_grouping_key.u32(), unique_out.u32(), grouping_key_out, cardinality_out, max_cardinality),
-            EncodingType::I64 => HashMapGrouping::<i64>::boxed(raw_grouping_key.i64(), unique_out.i64(), grouping_key_out, cardinality_out, max_cardinality),
-            EncodingType::Str => HashMapGrouping::<&str>::boxed(raw_grouping_key.str(), unique_out.str(), grouping_key_out, cardinality_out, max_cardinality),
-            EncodingType::ByteSlices(columns) => HashMapGroupingByteSlices::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, columns),
-            t => panic!("unsupported type {:?} for grouping key", t),
+        if let EncodingType::ByteSlices(columns) = raw_grouping_key.1 {
+            return HashMapGroupingByteSlices::boxed(
+                raw_grouping_key.0, unique_out.0, grouping_key_out, cardinality_out, columns);
+        }
+        reify_types! {
+            "hash_map_grouping";
+            raw_grouping_key, unique_out: Primitive;
+            HashMapGrouping::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality);
         }
     }
 
@@ -626,101 +526,79 @@ impl<'a> VecOperator<'a> {
         Box::new(SortIndices { input, output, descending })
     }
 
-    pub fn top_n((input, t1): TypedBufferRef,
-                 (keys_out, t2): TypedBufferRef,
+    pub fn top_n(input: TypedBufferRef,
+                 keys: TypedBufferRef,
                  indices_out: BufferRef<usize>,
                  n: usize, desc: bool) -> BoxedOperator<'a> {
-        assert!(t1 == t2);
         if desc {
-            match t1 {
-                I64 => Box::new(TopN::<i64, CmpGreaterThan> { input: input.i64(), keys: keys_out.i64(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                U32 => Box::new(TopN::<u32, CmpGreaterThan> { input: input.u32(), keys: keys_out.u32(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                U16 => Box::new(TopN::<u16, CmpGreaterThan> { input: input.u16(), keys: keys_out.u16(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                U8 => Box::new(TopN::<u8, CmpGreaterThan> { input: input.u8(), keys: keys_out.u8(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                Str => Box::new(TopN::<&str, CmpGreaterThan> { input: input.str(), keys: keys_out.str(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                _ => panic!("top_n not supported for type {:?}", t1),
+            reify_types! {
+                "top_n_desc";
+                input, keys: Primitive;
+                Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpGreaterThan> });
             }
         } else {
-            match t1 {
-                I64 => Box::new(TopN::<i64, CmpLessThan> { input: input.i64(), keys: keys_out.i64(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                U32 => Box::new(TopN::<u32, CmpLessThan> { input: input.u32(), keys: keys_out.u32(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                U16 => Box::new(TopN::<u16, CmpLessThan> { input: input.u16(), keys: keys_out.u16(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                U8 => Box::new(TopN::<u8, CmpLessThan> { input: input.u8(), keys: keys_out.u8(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                Str => Box::new(TopN::<&str, CmpLessThan> { input: input.str(), keys: keys_out.str(), indices: indices_out, last_index: 0, n, c: PhantomData }),
-                _ => panic!("top_n not supported for type {:?}", t1),
+            reify_types! {
+                "top_n_asc";
+                input, keys: Primitive;
+                Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpLessThan> });
             }
         }
     }
 
-    pub fn merge_deduplicate((left, left_t): TypedBufferRef,
-                             (right, right_t): TypedBufferRef,
-                             (merged_out, t): TypedBufferRef,
+    pub fn merge_deduplicate(left: TypedBufferRef,
+                             right: TypedBufferRef,
+                             merged_out: TypedBufferRef,
                              ops_out: BufferRef<typed_vec::MergeOp>) -> BoxedOperator<'a> {
-        assert!(left_t == t);
-        match (left_t, right_t) {
-            (Str, Str) =>
-                Box::new(MergeDeduplicate::<&str> { left: left.str(), right: right.str(), deduplicated: merged_out.str(), merge_ops: ops_out }),
-            (U8, U8) =>
-                Box::new(MergeDeduplicate::<u8> { left: left.u8(), right: right.u8(), deduplicated: merged_out.u8(), merge_ops: ops_out }),
-            (I64, I64) =>
-                Box::new(MergeDeduplicate::<i64> { left: left.i64(), right: right.i64(), deduplicated: merged_out.i64(), merge_ops: ops_out }),
-            (t1, t2) => panic!("merge_deduplicate types {:?}, {:?}", t1, t2),
+        reify_types! {
+            "merge_deduplicate";
+            left, right, merged_out: Primitive;
+            Box::new(MergeDeduplicate { left, right, deduplicated: merged_out, merge_ops: ops_out });
         }
     }
 
-    pub fn partition((left, left_t): TypedBufferRef,
-                     (right, right_t): TypedBufferRef,
+    pub fn partition(left: TypedBufferRef,
+                     right: TypedBufferRef,
                      partition_out: BufferRef<typed_vec::Premerge>,
                      limit: usize) -> BoxedOperator<'a> {
-        match (left_t, right_t) {
-            (Str, Str) =>
-                Box::new(Partition::<&str> { left: left.str(), right: right.str(), partitioning: partition_out, limit }),
-            (I64, I64) =>
-                Box::new(Partition::<i64> { left: left.i64(), right: right.i64(), partitioning: partition_out, limit }),
-            (t1, t2) => panic!("partition types {:?}, {:?}", t1, t2),
+        reify_types! {
+            "partition";
+            left, right: Primitive;
+            Box::new(Partition { left, right, partitioning: partition_out, limit });
         }
     }
 
 
     pub fn subpartition(partitioning: BufferRef<typed_vec::Premerge>,
-                        (left, left_t): TypedBufferRef,
-                        (right, right_t): TypedBufferRef,
+                        left: TypedBufferRef,
+                        right: TypedBufferRef,
                         subpartition_out: BufferRef<typed_vec::Premerge>) -> BoxedOperator<'a> {
-        match (left_t, right_t) {
-            (EncodingType::Str, EncodingType::Str) =>
-                Box::new(SubPartition::<&str> { partitioning, left: left.str(), right: right.str(), sub_partitioning: subpartition_out }),
-            (EncodingType::I64, EncodingType::I64) =>
-                Box::new(SubPartition::<i64> { partitioning, left: left.i64(), right: right.i64(), sub_partitioning: subpartition_out }),
-            (t1, t2) => panic!("partition types {:?}, {:?}", t1, t2),
+        reify_types! {
+            "subpartition";
+            left, right: Primitive;
+            Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out });
         }
     }
 
     pub fn merge_deduplicate_partitioned(partitioning: BufferRef<typed_vec::Premerge>,
-                                         (left, left_t): TypedBufferRef,
-                                         (right, right_t): TypedBufferRef,
-                                         (merged_out, t): TypedBufferRef,
+                                         left: TypedBufferRef,
+                                         right: TypedBufferRef,
+                                         merged_out: TypedBufferRef,
                                          ops_out: BufferRef<typed_vec::MergeOp>) -> BoxedOperator<'a> {
-        assert!(left_t == t);
-        match (left_t, right_t) {
-            (EncodingType::Str, EncodingType::Str) =>
-                Box::new(MergeDeduplicatePartitioned::<&str> { partitioning, left: left.str(), right: right.str(), deduplicated: merged_out.str(), merge_ops: ops_out }),
-            (EncodingType::I64, EncodingType::I64) =>
-                Box::new(MergeDeduplicatePartitioned::<i64> { partitioning, left: left.i64(), right: right.i64(), deduplicated: merged_out.i64(), merge_ops: ops_out }),
-            (t1, t2) => panic!("merge_deduplicate_partitioned types {:?}, {:?}", t1, t2),
+        reify_types! {
+            "merge_deduplicate_partitioned";
+            left, right, merged_out: Primitive;
+            Box::new(MergeDeduplicatePartitioned { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out });
         }
     }
 
     pub fn merge_drop(merge_ops: BufferRef<typed_vec::MergeOp>,
-                      (left, left_t): TypedBufferRef,
-                      (right, right_t): TypedBufferRef,
-                      (merged_out, t): TypedBufferRef) -> BoxedOperator<'a> {
-        assert!(left_t == t);
-        match (left_t, right_t) {
-            (EncodingType::Str, EncodingType::Str) =>
-                Box::new(MergeDrop::<&str> { merge_ops, left: left.str(), right: right.str(), deduplicated: merged_out.str() }),
-            (EncodingType::I64, EncodingType::I64) =>
-                Box::new(MergeDrop::<i64> { merge_ops, left: left.i64(), right: right.i64(), deduplicated: merged_out.i64() }),
-            (t1, t2) => panic!("merge_drop types {:?}, {:?}", t1, t2),
+                      left: TypedBufferRef,
+                      right: TypedBufferRef,
+                      merged_out: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+            "merge_drop";
+            left, right, merged_out: Primitive;
+            Box::new(MergeDrop { merge_ops, left, right, deduplicated: merged_out });
         }
     }
 
@@ -732,43 +610,35 @@ impl<'a> VecOperator<'a> {
         Box::new(MergeAggregate { merge_ops, left, right, aggregated: aggregated_out, aggregator })
     }
 
-    pub fn merge((left, left_t): TypedBufferRef,
-                 (right, right_t): TypedBufferRef,
-                 (merged_out, t): TypedBufferRef,
+    pub fn merge(left: TypedBufferRef,
+                 right: TypedBufferRef,
+                 merged_out: TypedBufferRef,
                  ops_out: BufferRef<u8>,
                  limit: usize,
                  desc: bool) -> BoxedOperator<'a> {
-        assert!(left_t == t);
         if desc {
-            match (left_t, right_t) {
-                (EncodingType::Str, EncodingType::Str) =>
-                    Box::new(Merge::<&str, CmpGreaterThan> { left: left.str(), right: right.str(), merged: merged_out.str(), merge_ops: ops_out, limit, c: PhantomData }),
-                (EncodingType::I64, EncodingType::I64) =>
-                    Box::new(Merge::<i64, CmpGreaterThan> { left: left.i64(), right: right.i64(), merged: merged_out.i64(), merge_ops: ops_out, limit, c: PhantomData }),
-                (t1, t2) => panic!("merge types {:?}, {:?}", t1, t2),
+            reify_types! {
+                "merge_desc";
+                left, right, merged_out: Primitive;
+                Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpGreaterThan> });
             }
         } else {
-            match (left_t, right_t) {
-                (EncodingType::Str, EncodingType::Str) =>
-                    Box::new(Merge::<&str, CmpLessThan> { left: left.str(), right: right.str(), merged: merged_out.str(), merge_ops: ops_out, limit, c: PhantomData }),
-                (EncodingType::I64, EncodingType::I64) =>
-                    Box::new(Merge::<i64, CmpLessThan> { left: left.i64(), right: right.i64(), merged: merged_out.i64(), merge_ops: ops_out, limit, c: PhantomData }),
-                (t1, t2) => panic!("merge types {:?}, {:?}", t1, t2),
+            reify_types! {
+                "merge_desc";
+                left, right, merged_out: Primitive;
+                Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpLessThan> });
             }
         }
     }
 
     pub fn merge_keep(merge_ops: BufferRef<u8>,
-                      (left, left_t): TypedBufferRef,
-                      (right, right_t): TypedBufferRef,
-                      (merged_out, t): TypedBufferRef) -> BoxedOperator<'a> {
-        assert!(left_t == t);
-        match (left_t, right_t) {
-            (EncodingType::Str, EncodingType::Str) =>
-                Box::new(MergeKeep::<&str> { merge_ops, left: left.str(), right: right.str(), merged: merged_out.str() }),
-            (EncodingType::I64, EncodingType::I64) =>
-                Box::new(MergeKeep::<i64> { merge_ops, left: left.i64(), right: right.i64(), merged: merged_out.i64() }),
-            (t1, t2) => panic!("merge_keep types {:?}, {:?}", t1, t2),
+                      left: TypedBufferRef,
+                      right: TypedBufferRef,
+                      merged_out: TypedBufferRef) -> BoxedOperator<'a> {
+        reify_types! {
+                "merge_keep";
+                left, right, merged_out: Primitive;
+                Box::new(MergeKeep { merge_ops, left, right, merged: merged_out });
         }
     }
 }
