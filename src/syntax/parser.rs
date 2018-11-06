@@ -13,24 +13,20 @@ use QueryError;
 // Convert sqlparser-rs `ASTNode` to LocustDB's `Query`
 pub fn parse_query(query: &str) -> Result<Query, QueryError> {
     let dialect = GenericSqlDialect {};
-    let ast = Parser::parse_sql(&dialect, query.to_string()).map_err(
-        |e| if let ParserError::ParserError(e_str) = e {
-                QueryError::ParseError(e_str)
-            } else {
-                QueryError::FatalError(format!("{:?}", e))
-            }
-    )?;
+    let ast = Parser::parse_sql(&dialect, query.to_string())
+        .map_err(|e| match e {
+            ParserError::ParserError(e_str) => QueryError::ParseError(e_str),
+            _ => QueryError::FatalError(format!("{:?}", e)),
+        })?;
 
     let (projection, relation, selection, order_by, limit) = get_query_components(ast)?;
-
     let (select, aggregate) = get_select_aggregate(projection)?;
-
     let table = get_table_name(relation)?;
-
-    let filter = get_filter(selection)?;
-
+    let filter = match selection {
+        Some(ref s) => *expr(s)?,
+        None => Expr::Const(RawVal::Int(1)),
+    };
     let (order_by_str, order_desc) = get_order_by(order_by)?;
-
     let limit_clause = LimitClause { limit: get_limit(limit)?, offset: 0 };
 
     Ok(Query {
@@ -46,69 +42,55 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
 }
 
 fn get_query_components(ast: ASTNode)
-    -> Result<(
-        Vec<ASTNode>,
-        Option<Box<ASTNode>>,
-        Option<Box<ASTNode>>,
-        Option<Vec<SQLOrderByExpr>>,
-        Option<Box<ASTNode>>),
-        QueryError>
+                        -> Result<(
+                            Vec<ASTNode>,
+                            Option<Box<ASTNode>>,
+                            Option<Box<ASTNode>>,
+                            Option<Vec<SQLOrderByExpr>>,
+                            Option<Box<ASTNode>>),
+                            QueryError>
 {
-    if let ASTNode::SQLSelect
-        {projection, relation, selection, order_by, group_by, having, limit} = ast
-    {
-        if group_by.is_some() {
-            return Err(QueryError::NotImplemented(format!("Group By")))
-        } else if having.is_some() {
-            return Err(QueryError::NotImplemented(format!("Having")))
+    match ast {
+        ASTNode::SQLSelect { projection, relation, selection, order_by, group_by, having, limit } => {
+            if group_by.is_some() {
+                Err(QueryError::NotImplemented(format!("Group By")))
+            } else if having.is_some() {
+                Err(QueryError::NotImplemented(format!("Having")))
+            } else {
+                Ok((projection, relation, selection, order_by, limit))
+            }
         }
-
-        Ok((projection, relation, selection, order_by, limit))
-    } else {
-        Err(QueryError::NotImplemented(format!("{:?}", ast)))
+        _ => Err(QueryError::NotImplemented(format!("{:?}", ast))),
     }
 }
 
 fn get_select_aggregate(projection: Vec<ASTNode>) -> Result<(Vec<Expr>, Vec<(Aggregator, Expr)>), QueryError> {
     let mut select = Vec::<Expr>::new();
     let mut aggregate = Vec::<(Aggregator, Expr)>::new();
-    for elem in projection {
+    for elem in &projection {
         match elem {
-            ASTNode::SQLIdentifier(expr) =>
-                select.push(Expr::ColName(expr)),
-            ASTNode::SQLValue(ref constant) =>
-                select.push(Expr::Const(get_raw_val(constant)?)),
-            ASTNode::SQLWildcard =>
-                select.push(Expr::ColName('*'.to_string())),
-            ASTNode::SQLBinaryExpr{ref left, ref op, ref right} => {
-                select.push(generate_expression(left, op, right)?);
-            },
-            ASTNode::SQLFunction{id, args} => {
-                let expr = match args[0] {
-                    ASTNode::SQLValue(ref literal) =>
-                        Expr::Const(get_raw_val(literal)?),
-                    ASTNode::SQLIdentifier(ref identifier) =>
-                        Expr::ColName(identifier.to_string()),
-                    ASTNode::SQLBinaryExpr{ref left, ref op, ref right} =>
-                        generate_expression(left, op, right)?,
-                    _ => Expr::Const(RawVal::Int(1))
-                };
-
+            ASTNode::SQLFunction { id, args } => {
                 match id.to_uppercase().as_ref() {
                     "COUNT" => {
-                        aggregate.push((Aggregator::Count, expr));
-                    },
+                        if args.len() != 1 {
+                            return Err(QueryError::ParseError(
+                                "Expected one argument in COUNT function".to_string()));
+                        }
+                        aggregate.push((Aggregator::Count, *expr(&args[0])?));
+                        continue;
+                    }
                     "SUM" => {
-                        aggregate.push((Aggregator::Sum, expr));
-                    },
-                    "TO_YEAR" => {
-                        select.push(Expr::Func1(Func1Type::ToYear, Box::new(expr)));
-                    },
-                    _ => return Err(QueryError::NotImplemented(format!("{:?}", id))),
-                };
-            },
-
-            _ => return Err(QueryError::NotImplemented(format!("{:?}", elem))),
+                        if args.len() != 1 {
+                            return Err(QueryError::ParseError(
+                                "Expected one argument in SUM function".to_string()));
+                        }
+                        aggregate.push((Aggregator::Sum, *expr(&args[0])?));
+                    }
+                    _ => select.push(*expr(elem)?),
+                }
+            }
+            ASTNode::SQLWildcard => select.push(Expr::ColName('*'.to_string())),
+            _ => select.push(*expr(elem)?),
         }
     }
 
@@ -117,23 +99,9 @@ fn get_select_aggregate(projection: Vec<ASTNode>) -> Result<(Vec<Expr>, Vec<(Agg
 
 fn get_table_name(relation: Option<Box<ASTNode>>) -> Result<String, QueryError> {
     match relation {
-        Some(sql_identifier) => if let ASTNode::SQLIdentifier(table_name) = *sql_identifier {
-            Ok(table_name)
-        } else {
-            Err(QueryError::FatalError(format!("{:?}", *sql_identifier)))
-        },
-        None => Err(QueryError::ParseError(format!("Table name missing {:?}", relation)))
-    }
-}
-
-fn get_filter(selection: Option<Box<ASTNode>>) -> Result<Expr, QueryError> {
-    match selection {
-        Some(binary_expr) => if let ASTNode::SQLBinaryExpr{ref left, ref op, ref right} = *binary_expr {
-            generate_expression(left, op, right)
-        } else {
-            Err(QueryError::FatalError(format!("{:?}", *binary_expr)))
-        },
-        None => Ok(Expr::Const(RawVal::Int(1)))
+        Some(box ASTNode::SQLIdentifier(table_name)) => Ok(table_name),
+        Some(s) => Err(QueryError::ParseError(format!("Invalid expression for table name: {:?}", s))),
+        None => Err(QueryError::ParseError("Table name missing.".to_string())),
     }
 }
 
@@ -149,29 +117,41 @@ fn get_order_by(order_by: Option<Vec<SQLOrderByExpr>>) -> Result<(Option<String>
             } else {
                 Err(QueryError::NotImplemented(format!("{:?}", sql_order_by_exprs)))
             }
-        },
+        }
         None => Ok((None, false)),
     }
 }
 
 fn get_limit(limit: Option<Box<ASTNode>>) -> Result<u64, QueryError> {
     match limit {
-        Some(sql_limit) => if let ASTNode::SQLValue(literal) = *sql_limit {
-            if let Value::Long(int) = literal {
-                Ok(int as u64)
-            } else {
-                Err(QueryError::NotImplemented(format!("{:?}", literal)))
-            }
-        } else {
-            Err(QueryError::NotImplemented(format!("{:?}", sql_limit)))
-        },
+        Some(box ASTNode::SQLValue(Value::Long(int))) => Ok(int as u64),
         None => Ok(100),
+        _ => Err(QueryError::NotImplemented(format!("Invalid expression in limit clause: {:?}", limit))),
     }
 }
 
-/// Fn to convert `SQLBinaryExpr` to LocustDB's `Expr`.
-fn generate_expression(l: &ASTNode, o: &SQLOperator, r: &ASTNode) -> Result<Expr, QueryError> {
-    let operator = match o {
+fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
+    Ok(Box::new(match node {
+        ASTNode::SQLBinaryExpr { ref left, ref op, ref right } =>
+            Expr::Func2(map_operator(op)?, expr(left)?, expr(right)?),
+        ASTNode::SQLValue(ref literal) => Expr::Const(get_raw_val(literal)?),
+        ASTNode::SQLIdentifier(ref identifier) => Expr::ColName(identifier.to_string()),
+        ASTNode::SQLFunction { id, args } => match id.to_uppercase().as_ref() {
+            "TO_YEAR" => {
+                if args.len() != 1 {
+                    return Err(QueryError::ParseError(
+                        "Expected one argument in COUNT function".to_string()));
+                }
+                Expr::Func1(Func1Type::ToYear, expr(&args[0])?)
+            }
+            _ => return Err(QueryError::NotImplemented(format!("{:?}", id))),
+        }
+        _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
+    }))
+}
+
+fn map_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
+    Ok(match o {
         SQLOperator::And => Func2Type::And,
         SQLOperator::Plus => Func2Type::Add,
         SQLOperator::Minus => Func2Type::Subtract,
@@ -182,25 +162,10 @@ fn generate_expression(l: &ASTNode, o: &SQLOperator, r: &ASTNode) -> Result<Expr
         SQLOperator::Eq => Func2Type::Equals,
         SQLOperator::NotEq => Func2Type::NotEquals,
         SQLOperator::Or => Func2Type::Or,
-        _ => return Err(QueryError::NotImplemented(format!("Operator {:?}", o))),
-    };
-
-    let lhs = match l {
-        ASTNode::SQLValue(ref literal) => Box::new(Expr::Const(get_raw_val(literal)?)),
-        ASTNode::SQLIdentifier(ref identifier) => Box::new(Expr::ColName(identifier.to_string())),
-        ASTNode::SQLBinaryExpr{ref left, ref op, ref right} => Box::new(generate_expression(left, op, right)?),
-        _ => return Err(QueryError::NotImplemented(format!("{:?}", *l)))
-    };
-
-    let rhs = match r {
-        ASTNode::SQLValue(ref literal) => Box::new(Expr::Const(get_raw_val(literal)?)),
-        ASTNode::SQLIdentifier(ref identifier) => Box::new(Expr::ColName(identifier.to_string())),   
-        ASTNode::SQLBinaryExpr{ref left, ref op, ref right} => Box::new(generate_expression(left, op, right)?),
-        _ => return Err(QueryError::NotImplemented(format!("{:?}", *r)))
-    };
-
-    Ok(Expr::Func2(operator, lhs, rhs))
+        _ => return Err(QueryError::NotImplemented(format!("Unsupported operator {:?}", o))),
+    })
 }
+
 
 // Fn to map sqlparser-rs `Value` to LocustDB's `RawVal`.
 fn get_raw_val(constant: &Value) -> Result<RawVal, QueryError> {
