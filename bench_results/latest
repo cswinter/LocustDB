@@ -1,17 +1,14 @@
 
-running 5 tests
+running 7 tests
 test engine::vector_op::subpartition::tests::test_multipass_grouping ... ignored
 test engine::vector_op::top_n::tests::test_heap_replace ... ignored
-test syntax::parser::tests::test_last_hour ... ignored
+test ingest::alias_method_fork::test_new_alias_table ... ignored
+test mem_store::codec::tests::test_ensure_property ... ignored
 test syntax::parser::tests::test_select_star ... ignored
 test syntax::parser::tests::test_to_year ... ignored
+test unit_fmt::tests::test_format ... ignored
 
-test result: ok. 0 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out
-
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 0 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out
 
 
 running 0 tests
@@ -24,20 +21,22 @@ running 0 tests
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 
-running 13 tests
-test count_by_passenger_count                              ... bench:  16,129,780 ns/iter (+/- 739,944)
-test count_by_vendor_id_and_passenger_count                ... bench:  71,512,490 ns/iter (+/- 1,099,241)
-test q1_count_cab_type                                     ... bench:  18,421,078 ns/iter (+/- 609,591)
-test q2_avg_total_amount_by_passenger_count                ... bench:  45,844,627 ns/iter (+/- 792,661)
-test q3_count_by_passenger_count_pickup_year               ... bench:  60,440,313 ns/iter (+/- 1,171,763)
-test q4_count_by_passenger_count_pickup_year_trip_distance ... bench: 199,199,110 ns/iter (+/- 2,615,830)
-test q5_sparse_filter                                      ... bench:  81,682,932 ns/iter (+/- 1,575,449)
-test q6_top_n                                              ... bench:  22,215,360 ns/iter (+/- 984,098)
-test q7_hashmap_grouping                                   ... bench: 299,474,974 ns/iter (+/- 9,163,364)
-test q8_group_by_trip_id                                   ... ignored
-test select_passenger_count_sparse_filter                  ... bench: 229,560,195 ns/iter (+/- 7,530,226)
-test select_star_limit_10000                               ... ignored
-test sum_total_amt_by_passenger_count                      ... bench:  41,712,664 ns/iter (+/- 765,522)
+running 0 tests
 
-test result: ok. 0 passed; 0 failed; 2 ignored; 11 measured; 0 filtered out
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 10 tests
+test avg_total_amount_by_passenger_count                ... bench:  53,240,800 ns/iter (+/- 1,049,080)
+test count_by_passenger_count                           ... bench:  16,645,900 ns/iter (+/- 768,500)
+test count_by_passenger_count_pickup_year_trip_distance ... bench:  22,535,800 ns/iter (+/- 626,580)
+test count_by_vendor_id_and_passenger_count             ... bench:  77,903,100 ns/iter (+/- 1,577,070)
+test count_cab_type                                     ... bench:  19,905,100 ns/iter (+/- 476,580)
+test group_by_trip_id                                   ... bench:  11,085,700 ns/iter (+/- 1,029,360)
+test hashmap_grouping                                   ... bench:  38,412,200 ns/iter (+/- 1,348,840)
+test sparse_filter                                      ... bench:  86,380,900 ns/iter (+/- 1,570,090)
+test sum_total_amt_by_passenger_count                   ... bench:  50,006,600 ns/iter (+/- 1,502,090)
+test top_n                                              ... bench:  17,454,800 ns/iter (+/- 622,920)
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 10 measured; 0 filtered out
 
