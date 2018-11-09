@@ -1,5 +1,5 @@
 use std::fmt;
-use engine::types::BasicType;
+use engine::data_types::BasicType;
 
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, HeapSizeOf)]

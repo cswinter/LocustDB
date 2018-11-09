@@ -11,7 +11,7 @@ use seahash::SeaHasher;
 use hex;
 
 use stringpack::*;
-use engine::types::*;
+use engine::data_types::*;
 use mem_store::*;
 use mem_store::column_builder::UniqueValues;
 

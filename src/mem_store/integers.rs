@@ -2,8 +2,7 @@ use std::{u16, u32, u8};
 use std::convert::From;
 use std::sync::Arc;
 
-use engine::*;
-use engine::types::*;
+use engine::data_types::*;
 use mem_store::*;
 
 pub struct IntegerColumn;
