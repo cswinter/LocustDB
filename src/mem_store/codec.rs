@@ -1,5 +1,5 @@
-use engine::query_plan::QueryPlan;
-use engine::types::*;
+use engine::planning::QueryPlan;
+use engine::data_types::*;
 use ingest::raw_val::RawVal;
 
 

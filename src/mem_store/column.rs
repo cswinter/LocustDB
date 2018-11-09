@@ -1,8 +1,7 @@
 use std::fmt;
 
 use mem_store::*;
-use engine::typed_vec::AnyVec;
-use engine::types::*;
+use engine::data_types::*;
 use mem_store::lz4;
 
 use heapsize::HeapSizeOf;

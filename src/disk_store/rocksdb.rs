@@ -14,7 +14,7 @@ use disk_store::interface::*;
 use mem_store::column::{Column, DataSection};
 use scheduler::inner_locustdb::InnerLocustDB;
 use mem_store::codec::CodecOp;
-use engine::types::EncodingType as Type;
+use engine::data_types::EncodingType as Type;
 
 use time;
 use unit_fmt::*;
