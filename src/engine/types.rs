@@ -1,6 +1,6 @@
 use mem_store::*;
 
-#[derive(Debug, Copy, Clone, PartialEq, HeapSizeOf)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, HeapSizeOf)]
 pub enum EncodingType {
     Str,
     I64,
@@ -43,7 +43,7 @@ pub enum BasicType {
 }
 
 impl BasicType {
-    pub fn to_encoded(self) -> EncodingType {
+    pub fn to_encoded(&self) -> EncodingType {
         match self {
             BasicType::String => EncodingType::Str,
             BasicType::Integer => EncodingType::I64,

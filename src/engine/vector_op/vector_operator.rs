@@ -12,7 +12,7 @@ use regex::Regex;
 
 use engine::*;
 use engine::aggregator::Aggregator;
-use engine::typed_vec::AnyVec;
+use engine::typed_vec::*;
 use engine::types::EncodingType;
 use engine::vector_op::comparator::*;
 use ingest::raw_val::RawVal;
@@ -61,21 +61,86 @@ use engine::vector_op::vec_const_bool_op::*;
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
-pub type TypedBufferRef = (BufferRef<Any>, EncodingType);
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct TypedBufferRef {
+    pub buffer: BufferRef<Any>,
+    pub tag: EncodingType,
+}
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+impl TypedBufferRef {
+    pub fn new(buffer: BufferRef<Any>, tag: EncodingType) -> TypedBufferRef {
+        TypedBufferRef { buffer, tag }
+    }
+
+    pub fn any(&self) -> BufferRef<Any> { self.buffer.any() }
+
+    pub fn str<'a>(&self) -> BufferRef<&'a str> {
+        assert_eq!(self.tag, EncodingType::Str);
+        self.buffer.str()
+    }
+
+    pub fn i64(&self) -> BufferRef<i64> {
+        assert_eq!(self.tag, EncodingType::I64);
+        self.buffer.i64()
+    }
+
+    pub fn u64(&self) -> BufferRef<u64> {
+        assert_eq!(self.tag, EncodingType::U64);
+        self.buffer.u64()
+    }
+
+    pub fn u32(&self) -> BufferRef<u32> {
+        assert_eq!(self.tag, EncodingType::U32);
+        self.buffer.u32()
+    }
+
+    pub fn u8(&self) -> BufferRef<u8> {
+        assert_eq!(self.tag, EncodingType::U8);
+        self.buffer.u8()
+    }
+
+    pub fn usize(&self) -> BufferRef<usize> {
+        assert_eq!(self.tag, EncodingType::USize);
+        self.buffer.usize()
+    }
+
+    pub fn merge_op(&self) -> BufferRef<MergeOp> {
+        assert_eq!(self.tag, EncodingType::MergeOp);
+        self.buffer.merge_op()
+    }
+
+    pub fn premerge(&self) -> BufferRef<Premerge> {
+        assert_eq!(self.tag, EncodingType::Premerge);
+        self.buffer.premerge()
+    }
+
+
+    // TODO(clemens): better typing for Constants
+    pub fn raw_val(&self) -> BufferRef<RawVal> {
+        assert_eq!(self.tag, EncodingType::Val);
+        self.buffer.raw_val()
+    }
+
+    pub fn string(&self) -> BufferRef<String> {
+        assert_eq!(self.tag, EncodingType::Val);
+        self.buffer.string()
+    }
+
+    pub fn const_i64(&self) -> BufferRef<i64> {
+        // assert_eq!(self.tag, EncodingType::I64);
+        self.buffer.i64()
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct BufferRef<T> {
     pub i: usize,
     pub name: &'static str,
-    t: PhantomData<T>,
+    pub t: PhantomData<T>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Any {}
-
-pub fn any_buffer_ref(i: usize, name: &'static str) -> BufferRef<Any> {
-    BufferRef { i, name, t: PhantomData }
-}
 
 pub fn error_buffer_ref(name: &'static str) -> BufferRef<Any> {
     BufferRef {
@@ -98,6 +163,30 @@ impl BufferRef<Any> {
     pub fn str<'a>(self) -> BufferRef<&'a str> { self.transmute() }
     pub fn usize(self) -> BufferRef<usize> { self.transmute() }
     fn transmute<T>(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
+}
+
+impl BufferRef<u32> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::U32)
+    }
+}
+
+impl BufferRef<u8> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::U8)
+    }
+}
+
+impl BufferRef<i64> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::I64)
+    }
+}
+
+impl BufferRef<usize> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::USize)
+    }
 }
 
 impl<T: Clone> BufferRef<T> {
@@ -240,8 +329,6 @@ impl<'a> Scratchpad<'a> {
 }
 
 
-use self::EncodingType::*;
-
 impl<'a> VecOperator<'a> {
     pub fn read_column_data(colname: String,
                             section_index: usize,
@@ -361,26 +448,26 @@ impl<'a> VecOperator<'a> {
                      rhs: TypedBufferRef,
                      output: BufferRef<u8>) -> BoxedOperator<'a> {
         // TODO(clemens): use specialization to get general Equals<T, U> class and unify
-        if let Str = lhs.1 {
-            return Box::new(VecConstBoolOperator { lhs: lhs.0.str(), rhs: rhs.0.string(), output, op: PhantomData::<EqualsString> });
+        if let EncodingType::Str = lhs.tag {
+            return Box::new(VecConstBoolOperator { lhs: lhs.str(), rhs: rhs.string(), output, op: PhantomData::<EqualsString> });
         }
         reify_types! {
             "slice_pack";
             lhs: IntegerNoU64;
-            Box::new(VecConstBoolOperator { lhs, rhs: rhs.0.i64(), output, op: PhantomData::<EqualsInt<_>> });
+            Box::new(VecConstBoolOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<EqualsInt<_>> });
         }
     }
 
     pub fn not_equals_vs(lhs: TypedBufferRef,
                          rhs: TypedBufferRef,
                          output: BufferRef<u8>) -> BoxedOperator<'a> {
-        if let Str = lhs.1 {
-            return Box::new(VecConstBoolOperator { lhs: lhs.0.str(), rhs: rhs.0.string(), output, op: PhantomData::<NotEqualsString> });
+        if let EncodingType::Str = lhs.tag {
+            return Box::new(VecConstBoolOperator { lhs: lhs.str(), rhs: rhs.string(), output, op: PhantomData::<NotEqualsString> });
         }
         reify_types! {
             "slice_pack";
             lhs: IntegerNoU64;
-            Box::new(VecConstBoolOperator { lhs, rhs: rhs.0.i64(), output, op: PhantomData::<NotEqualsInt<_>> });
+            Box::new(VecConstBoolOperator { lhs, rhs: rhs.i64(), output, op: PhantomData::<NotEqualsInt<_>> });
         }
     }
 
@@ -420,8 +507,8 @@ impl<'a> VecOperator<'a> {
     }
 
     pub fn slice_pack(input: TypedBufferRef, output: BufferRef<Any>, stride: usize, offset: usize) -> BoxedOperator<'a> {
-        if let Str = input.1 {
-            return Box::new(SlicePackString { input: input.0.str(), output, stride, offset });
+        if let EncodingType::Str = input.tag {
+            return Box::new(SlicePackString { input: input.str(), output, stride, offset });
         }
         reify_types! {
             "slice_pack";
@@ -431,8 +518,8 @@ impl<'a> VecOperator<'a> {
     }
 
     pub fn slice_unpack(input: BufferRef<Any>, output: TypedBufferRef, stride: usize, offset: usize) -> BoxedOperator<'a> {
-        if let Str = output.1 {
-            return Box::new(SliceUnpackString { input, output: output.0.str(), stride, offset });
+        if let EncodingType::Str = output.tag {
+            return Box::new(SliceUnpackString { input, output: output.str(), stride, offset });
         }
         reify_types! {
             "slice_unpack";
@@ -511,9 +598,9 @@ impl<'a> VecOperator<'a> {
                              grouping_key_out: BufferRef<u32>,
                              cardinality_out: BufferRef<i64>,
                              max_cardinality: usize) -> BoxedOperator<'a> {
-        if let EncodingType::ByteSlices(columns) = raw_grouping_key.1 {
+        if let EncodingType::ByteSlices(columns) = raw_grouping_key.tag {
             return HashMapGroupingByteSlices::boxed(
-                raw_grouping_key.0, unique_out.0, grouping_key_out, cardinality_out, columns);
+                raw_grouping_key.buffer, unique_out.buffer, grouping_key_out, cardinality_out, columns);
         }
         reify_types! {
             "hash_map_grouping";

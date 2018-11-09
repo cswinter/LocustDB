@@ -26,7 +26,7 @@ impl Column {
         let mut codec = if codec.is_empty() {
             Codec::identity(data[0].encoding_type().cast_to_basic())
         } else {
-            Codec::new(codec)
+            Codec::new(codec, data.iter().map(DataSection::encoding_type).collect())
         };
         codec.set_column_name(name);
         Column {
@@ -72,6 +72,7 @@ impl Column {
     pub fn codec(&self) -> Codec { self.codec.clone() }
     pub fn basic_type(&self) -> BasicType { self.codec.decoded_type() }
     pub fn encoding_type(&self) -> EncodingType { self.codec.encoding_type() }
+    pub fn section_encoding_type(&self, section: usize) -> EncodingType { self.data[section].encoding_type() }
     pub fn range(&self) -> Option<(i64, i64)> { self.range }
     pub fn full_type(&self) -> Type {
         Type::new(self.basic_type(), Some(self.codec()))
