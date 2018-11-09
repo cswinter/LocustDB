@@ -83,7 +83,7 @@ impl Query {
         let mut results = executor.prepare(Query::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
-        let select = select.into_iter().map(|i| results.collect(i)).collect();
+        let select = select.into_iter().map(|i| results.collect(i.any())).collect();
 
         Ok(
             (BatchResult {
@@ -141,11 +141,10 @@ impl Query {
                 (None,
                  raw_grouping_key,
                  raw_grouping_key_type.clone(),
-                 max_grouping_key_buf)
+                 max_grouping_key_buf.const_i64())
             } else {
                 query_plan::prepare_hashmap_grouping(
                     raw_grouping_key,
-                    raw_grouping_key_type.encoding_type(),
                     max_grouping_key as usize,
                     &mut executor)
             };
@@ -159,7 +158,7 @@ impl Query {
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
-                (grouping_key, grouping_key_type.encoding_type()),
+                grouping_key,
                 aggregation_cardinality,
                 aggregator,
                 &mut executor)?;
@@ -177,7 +176,7 @@ impl Query {
                 QueryPlan::Exists(
                     Box::new(QueryPlan::ReadBuffer(grouping_key)),
                     grouping_key_type.encoding_type(),
-                    Box::new(QueryPlan::ReadBuffer(aggregation_cardinality))),
+                    Box::new(QueryPlan::ReadBuffer(aggregation_cardinality.tagged()))),
                 &mut executor);
             (s, EncodingType::U8)
         });
@@ -197,9 +196,9 @@ impl Query {
         let mut select = Vec::new();
         {
             let mut decode_compact = |aggregator: Aggregator,
-                                      aggregate: BufferRef<Any>,
+                                      aggregate: TypedBufferRef,
                                       t: Type,
-                                      select: &mut Vec<(BufferRef<Any>, Type)>| {
+                                      select: &mut Vec<TypedBufferRef>| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
                     Aggregator::Sum => query_plan::prepare(
@@ -215,9 +214,9 @@ impl Query {
                     let decoded = query_plan::prepare(
                         *t.codec.clone().unwrap().decode(Box::new(QueryPlan::ReadBuffer(compacted))),
                         &mut executor);
-                    select.push((decoded, t.decoded()));
+                    select.push(decoded);
                 } else {
-                    select.push((compacted, t));
+                    select.push(compacted);
                 }
             };
 
@@ -238,9 +237,9 @@ impl Query {
 
         //  Reconstruct all group by columns from grouping
         let mut grouping_columns = Vec::with_capacity(decode_plans.len());
-        for (decode_plan, t) in decode_plans {
+        for (decode_plan, _t) in decode_plans {
             let decoded = query_plan::prepare_no_alias(decode_plan.clone(), &mut executor);
-            grouping_columns.push((decoded, t));
+            grouping_columns.push(decoded);
         }
 
         // If the grouping is not order preserving, we need to sort all output columns by using the ordering constructed from the decoded group by columns
@@ -255,34 +254,32 @@ impl Query {
             } else {
                 if grouping_columns.len() != 1 {
                     bail!(QueryError::NotImplemented,
-                "Grouping key is not order preserving and more than 1 grouping column\nGrouping key type: {:?}\n{}",
-                &grouping_key_type,
-                &executor)
+                        "Grouping key is not order preserving and more than 1 grouping column\nGrouping key type: {:?}\n{}",
+                        &grouping_key_type,
+                        &executor)
                 }
                 query_plan::prepare(
                     QueryPlan::SortIndices(
-                        Box::new(QueryPlan::ReadBuffer(grouping_columns[0].0)),
+                        Box::new(QueryPlan::ReadBuffer(grouping_columns[0])),
                         false),
                     &mut executor)
             };
 
-            select = select.iter().map(|(s, t)| {
-                (query_plan::prepare_no_alias(
+            select = select.iter().map(|s| {
+                query_plan::prepare_no_alias(
                     QueryPlan::Select(
                         Box::new(QueryPlan::ReadBuffer(*s)),
                         Box::new(QueryPlan::ReadBuffer(sort_indices)),
-                        t.encoding_type(),
                     ),
-                    &mut executor), t.clone())
+                    &mut executor)
             }).collect();
-            grouping_columns = grouping_columns.iter().map(|(s, t)| {
-                (query_plan::prepare_no_alias(
+            grouping_columns = grouping_columns.iter().map(|s| {
+                query_plan::prepare_no_alias(
                     QueryPlan::Select(
                         Box::new(QueryPlan::ReadBuffer(*s)),
                         Box::new(QueryPlan::ReadBuffer(sort_indices)),
-                        t.encoding_type(),
                     ),
-                    &mut executor), t.clone())
+                    &mut executor)
             }).collect();
         }
 
@@ -292,8 +289,8 @@ impl Query {
         let mut results = executor.prepare(Query::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
-        let select_cols = select.iter().map(|&(i, _)| results.collect(i)).collect();
-        let group_by_cols = grouping_columns.iter().map(|&(i, _)| results.collect(i)).collect();
+        let select_cols = select.iter().map(|i| results.collect(i.any())).collect();
+        let group_by_cols = grouping_columns.iter().map(|i| results.collect(i.any())).collect();
 
         let batch = BatchResult {
             group_by: Some(group_by_cols),

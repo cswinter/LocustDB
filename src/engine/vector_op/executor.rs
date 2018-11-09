@@ -1,19 +1,23 @@
 use std::cmp;
-use std::fmt;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::marker::PhantomData;
 
 use engine::*;
+use engine::typed_vec::*;
 use engine::query_plan::QueryPlan;
 use engine::vector_op::*;
+use ingest::raw_val::RawVal;
+
 
 pub struct QueryExecutor<'a> {
     ops: Vec<Box<VecOperator<'a> + 'a>>,
-    ops_cache: HashMap<[u8; 16], BufferRef<Any>>,
+    ops_cache: HashMap<[u8; 16], TypedBufferRef>,
     stages: Vec<ExecutorStage>,
-    encoded_group_by: Option<BufferRef<Any>>,
+    encoded_group_by: Option<TypedBufferRef>,
     count: usize,
-    last_buffer: BufferRef<Any>,
-    shared_buffers: HashMap<&'static str, BufferRef<Any>>,
+    last_buffer: TypedBufferRef,
+    shared_buffers: HashMap<&'static str, TypedBufferRef>,
 }
 
 #[derive(Default, Clone)]
@@ -24,38 +28,66 @@ struct ExecutorStage {
 }
 
 impl<'a> QueryExecutor<'a> {
-    pub fn named_buffer(&mut self, name: &'static str) -> BufferRef<Any> {
-        let buffer = any_buffer_ref(self.count, name);
+    pub fn named_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
+        let buffer = TypedBufferRef::new(BufferRef { i: self.count, name, t: PhantomData }, tag);
         self.count += 1;
         self.last_buffer = buffer;
         buffer
     }
 
-    pub fn tagged_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
-        (self.named_buffer(name), tag)
+    pub fn buffer_merge_op(&mut self, name: &'static str) -> BufferRef<MergeOp> {
+        self.named_buffer(name, EncodingType::MergeOp).merge_op()
     }
 
-    pub fn shared_buffer(&mut self, name: &'static str) -> BufferRef<Any> {
+    pub fn buffer_premerge(&mut self, name: &'static str) -> BufferRef<Premerge> {
+        self.named_buffer(name, EncodingType::Premerge).premerge()
+    }
+
+    pub fn buffer_str(&mut self, name: &'static str) -> BufferRef<&'a str> {
+        self.named_buffer(name, EncodingType::Str).str()
+    }
+
+    pub fn buffer_usize(&mut self, name: &'static str) -> BufferRef<usize> {
+        self.named_buffer(name, EncodingType::USize).usize()
+    }
+
+    pub fn buffer_i64(&mut self, name: &'static str) -> BufferRef<i64> {
+        self.named_buffer(name, EncodingType::I64).i64()
+    }
+
+    pub fn buffer_u32(&mut self, name: &'static str) -> BufferRef<u32> {
+        self.named_buffer(name, EncodingType::U32).u32()
+    }
+
+    pub fn buffer_u8(&mut self, name: &'static str) -> BufferRef<u8> {
+        let buffer = self.named_buffer(name, EncodingType::U8);
+        buffer.u8()
+    }
+
+    pub fn buffer_raw_val(&mut self, name: &'static str) -> BufferRef<RawVal> {
+        let buffer = self.named_buffer(name, EncodingType::Val);
+        buffer.raw_val()
+    }
+
+    pub fn shared_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
         if self.shared_buffers.get(name).is_none() {
-            let buffer = any_buffer_ref(self.count, name);
-            self.count += 1;
-            self.last_buffer = buffer;
+            let buffer = self.named_buffer(name, tag);
             self.shared_buffers.insert(name, buffer);
         }
         self.shared_buffers[name]
     }
 
-    pub fn last_buffer(&self) -> BufferRef<Any> { self.last_buffer }
+    pub fn last_buffer(&self) -> TypedBufferRef { self.last_buffer }
 
     pub fn push(&mut self, op: Box<VecOperator<'a> + 'a>) {
         self.ops.push(op);
     }
 
-    pub fn set_encoded_group_by(&mut self, gb: BufferRef<Any>) {
+    pub fn set_encoded_group_by(&mut self, gb: TypedBufferRef) {
         self.encoded_group_by = Some(gb)
     }
 
-    pub fn encoded_group_by(&self) -> Option<BufferRef<Any>> { self.encoded_group_by }
+    pub fn encoded_group_by(&self) -> Option<TypedBufferRef> { self.encoded_group_by }
 
     pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a AnyVec<'a>>>) -> Scratchpad<'a> {
         self.stages = self.partition();
@@ -296,7 +328,7 @@ impl<'a> Default for QueryExecutor<'a> {
             stages: vec![],
             encoded_group_by: None,
             count: 0,
-            last_buffer: error_buffer_ref("ERROR"),
+            last_buffer: TypedBufferRef::new(error_buffer_ref("ERROR"), EncodingType::Null),
             shared_buffers: HashMap::default(),
         }
     }

@@ -120,10 +120,10 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
     }).collect::<Vec<Arm>>();
 
     let variable = variable_groups[0][0].clone();
-    let mut match_expr: Expr = parse_quote!(#variable.1);
+    let mut match_expr: Expr = parse_quote!(#variable.tag);
     for vg in &variable_groups[1..] {
         let variable = vg[0].clone();
-        match_expr = parse_quote!((#match_expr, #variable.1))
+        match_expr = parse_quote!((#match_expr, #variable.tag))
     }
 
     match_arms.push(parse_quote! {
@@ -174,12 +174,12 @@ impl Type {
 
     fn reify(&self, variable: Ident) -> Stmt {
         match self {
-            Type::U8 => parse_quote!( let #variable = #variable.0.u8(); ),
-            Type::U16 => parse_quote!( let #variable = #variable.0.u16(); ),
-            Type::U32 => parse_quote!( let #variable = #variable.0.u32(); ),
-            Type::U64 => parse_quote!( let #variable = #variable.0.u64(); ),
-            Type::I64 => parse_quote!( let #variable = #variable.0.i64(); ),
-            Type::Str => parse_quote!( let #variable = #variable.0.str(); ),
+            Type::U8 => parse_quote!( let #variable = #variable.buffer.u8(); ),
+            Type::U16 => parse_quote!( let #variable = #variable.buffer.u16(); ),
+            Type::U32 => parse_quote!( let #variable = #variable.buffer.u32(); ),
+            Type::U64 => parse_quote!( let #variable = #variable.buffer.u64(); ),
+            Type::I64 => parse_quote!( let #variable = #variable.buffer.i64(); ),
+            Type::Str => parse_quote!( let #variable = #variable.buffer.str(); ),
         }
     }
 }
