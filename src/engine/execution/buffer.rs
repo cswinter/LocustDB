@@ -1,7 +1,9 @@
+use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
-use std::fmt;
+use std::result::Result;
 
+use QueryError;
 use engine::data_types::*;
 use ingest::raw_val::RawVal;
 
@@ -85,56 +87,56 @@ impl TypedBufferRef {
 
     pub fn any(&self) -> BufferRef<Any> { self.buffer.any() }
 
-    pub fn str<'a>(&self) -> BufferRef<&'a str> {
-        assert_eq!(self.tag, EncodingType::Str);
-        self.buffer.str()
+    pub fn str<'a>(&self) -> Result<BufferRef<&'a str>, QueryError> {
+        ensure!(self.tag == EncodingType::Str, "{:?} != Str", self.tag);
+        Ok(self.buffer.str())
     }
 
-    pub fn i64(&self) -> BufferRef<i64> {
-        assert_eq!(self.tag, EncodingType::I64);
-        self.buffer.i64()
+    pub fn i64(&self) -> Result<BufferRef<i64>, QueryError> {
+        ensure!(self.tag == EncodingType::I64, "{:?} != I64", self.tag);
+        Ok(self.buffer.i64())
     }
 
-    pub fn u64(&self) -> BufferRef<u64> {
-        assert_eq!(self.tag, EncodingType::U64);
-        self.buffer.u64()
+    pub fn u64(&self) -> Result<BufferRef<u64>, QueryError> {
+        ensure!(self.tag == EncodingType::U64, "{:?} != U64", self.tag);
+        Ok(self.buffer.u64())
     }
 
-    pub fn u32(&self) -> BufferRef<u32> {
-        assert_eq!(self.tag, EncodingType::U32);
-        self.buffer.u32()
+    pub fn u32(&self) -> Result<BufferRef<u32>, QueryError> {
+        ensure!(self.tag == EncodingType::U32, "{:?} != U32", self.tag);
+        Ok(self.buffer.u32())
     }
 
-    pub fn u8(&self) -> BufferRef<u8> {
-        assert_eq!(self.tag, EncodingType::U8);
-        self.buffer.u8()
+    pub fn u8(&self) -> Result<BufferRef<u8>, QueryError> {
+        ensure!(self.tag == EncodingType::U8, "{:?} != U8", self.tag);
+        Ok(self.buffer.u8())
     }
 
-    pub fn usize(&self) -> BufferRef<usize> {
-        assert_eq!(self.tag, EncodingType::USize);
-        self.buffer.usize()
+    pub fn usize(&self) -> Result<BufferRef<usize>, QueryError> {
+        ensure!(self.tag == EncodingType::USize, "{:?} != USize", self.tag);
+        Ok(self.buffer.usize())
     }
 
-    pub fn merge_op(&self) -> BufferRef<MergeOp> {
-        assert_eq!(self.tag, EncodingType::MergeOp);
-        self.buffer.merge_op()
+    pub fn merge_op(&self) -> Result<BufferRef<MergeOp>, QueryError> {
+        ensure!(self.tag == EncodingType::MergeOp, "{:?} != MergeOp", self.tag);
+        Ok(self.buffer.merge_op())
     }
 
-    pub fn premerge(&self) -> BufferRef<Premerge> {
-        assert_eq!(self.tag, EncodingType::Premerge);
-        self.buffer.premerge()
+    pub fn premerge(&self) -> Result<BufferRef<Premerge>, QueryError> {
+        ensure!(self.tag == EncodingType::Premerge, "{:?} != Premerge", self.tag);
+        Ok(self.buffer.premerge())
     }
 
 
     // TODO(clemens): better typing for Constants
-    pub fn raw_val(&self) -> BufferRef<RawVal> {
-        assert_eq!(self.tag, EncodingType::Val);
-        self.buffer.raw_val()
+    pub fn raw_val(&self) -> Result<BufferRef<RawVal>, QueryError> {
+        // ensure!(self.tag == EncodingType::Str, "{:?} != Str", self.tag);
+        Ok(self.buffer.raw_val())
     }
 
-    pub fn string(&self) -> BufferRef<String> {
-        assert_eq!(self.tag, EncodingType::Val);
-        self.buffer.string()
+    pub fn string(&self) -> Result<BufferRef<String>, QueryError> {
+        ensure!(self.tag == EncodingType::Val, "{:?} != Val", self.tag);
+        Ok(self.buffer.string())
     }
 
     pub fn const_i64(&self) -> BufferRef<i64> {

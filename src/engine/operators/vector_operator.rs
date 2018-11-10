@@ -2,6 +2,7 @@ use std::fmt::Write;
 use std::fmt;
 use std::intrinsics::type_name;
 use std::marker::PhantomData;
+use std::result::Result;
 
 use itertools::Itertools;
 use regex::Regex;
@@ -10,6 +11,7 @@ use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
 use locustdb_derive::reify_types;
+use QueryError;
 
 use super::addition_vs::AdditionVS;
 use super::bit_unpack::BitUnpackOperator;
@@ -105,32 +107,32 @@ impl<'a> VecOperator<'a> {
     pub fn dict_lookup(indices: TypedBufferRef,
                        dict_indices: BufferRef<u64>,
                        dict_data: BufferRef<u8>,
-                       output: BufferRef<&'a str>) -> BoxedOperator<'a> {
+                       output: BufferRef<&'a str>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types![
             "dict_lookup";
             indices: Integer;
-            Box::new(DictLookup { indices, output, dict_indices, dict_data });
+            Ok(Box::new(DictLookup { indices, output, dict_indices, dict_data }));
         ]
     }
 
     #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(encoded: BufferRef<u8>,
                       decoded: TypedBufferRef,
-                      decoded_len: usize) -> BoxedOperator<'a> {
+                      decoded_len: usize) -> Result<BoxedOperator<'a>, QueryError> {
         use super::lz4_decode::LZ4Decode;
         use std::io::Read;
         let reader: Box<Read> = Box::new(&[] as &[u8]);
         reify_types! {
             "lz4_decode";
             decoded: Integer;
-            Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true });
+            Ok(Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true }));
         }
     }
 
     #[cfg(not(feature = "enable_lz4"))]
     pub fn lz4_decode(_: BufferRef<u8>,
                       _: TypedBufferRef,
-                      _: usize) -> BoxedOperator<'a> {
+                      _: usize) -> Result<BoxedOperator<'a>, QueryError> {
         panic!("LZ4 is not enabled in this build of LocustDB. Recompile with `features enable_lz4`")
     }
 
@@ -146,11 +148,11 @@ impl<'a> VecOperator<'a> {
         Box::new(UnhexpackStrings::<'a> { packed, unpacked, stringstore, uppercase, total_bytes, iterator: None, has_more: true })
     }
 
-    pub fn delta_decode(encoded: TypedBufferRef, decoded: BufferRef<i64>) -> BoxedOperator<'a> {
+    pub fn delta_decode(encoded: TypedBufferRef, decoded: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "delta_decode";
             encoded: Integer;
-            Box::new(DeltaDecode { encoded, decoded, previous: 0 });
+            Ok(Box::new(DeltaDecode { encoded, decoded, previous: 0 }));
         }
     }
 
@@ -169,21 +171,21 @@ impl<'a> VecOperator<'a> {
 
     pub fn filter(input: TypedBufferRef,
                   filter: BufferRef<u8>,
-                  output: TypedBufferRef) -> BoxedOperator<'a> {
+                  output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "filter";
             input, output: Primitive;
-            Box::new(Filter { input, filter, output });
+            Ok(Box::new(Filter { input, filter, output }));
         }
     }
 
     pub fn select(input: TypedBufferRef,
                   indices: BufferRef<usize>,
-                  output: TypedBufferRef) -> BoxedOperator<'a> {
+                  output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "select";
             input, output: Primitive;
-            Box::new(Select { input, indices, output });
+            Ok(Box::new(Select { input, indices, output }));
         }
     }
 
@@ -195,38 +197,38 @@ impl<'a> VecOperator<'a> {
         Box::new(ConstantVec { val, output })
     }
 
-    pub fn less_than_vs(lhs: TypedBufferRef, rhs: BufferRef<i64>, output: BufferRef<u8>) -> BoxedOperator<'a> {
+    pub fn less_than_vs(lhs: TypedBufferRef, rhs: BufferRef<i64>, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "less_than_vs";
             lhs: IntegerNoU64;
-            Box::new(VecConstBoolOperator::<_, i64, LessThanInt<_>> { lhs, rhs, output, op: PhantomData });
+            Ok(Box::new(VecConstBoolOperator::<_, i64, LessThanInt<_>> { lhs, rhs, output, op: PhantomData }));
         }
     }
 
     pub fn equals_vs(lhs: TypedBufferRef,
                      rhs: TypedBufferRef,
-                     output: BufferRef<u8>) -> BoxedOperator<'a> {
+                     output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         // TODO(clemens): use specialization to get general Equals<T, U> class and unify
         if let EncodingType::Str = lhs.tag {
-            return Box::new(VecConstBoolOperator { lhs: lhs.str(), rhs: rhs.string(), output, op: PhantomData::<EqualsString> });
+            return Ok(Box::new(VecConstBoolOperator { lhs: lhs.str()?, rhs: rhs.string()?, output, op: PhantomData::<EqualsString> }));
         }
         reify_types! {
             "slice_pack";
             lhs: IntegerNoU64;
-            Box::new(VecConstBoolOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<EqualsInt<_>> });
+            Ok(Box::new(VecConstBoolOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<EqualsInt<_>> }));
         }
     }
 
     pub fn not_equals_vs(lhs: TypedBufferRef,
                          rhs: TypedBufferRef,
-                         output: BufferRef<u8>) -> BoxedOperator<'a> {
+                         output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::Str = lhs.tag {
-            return Box::new(VecConstBoolOperator { lhs: lhs.str(), rhs: rhs.string(), output, op: PhantomData::<NotEqualsString> });
+            return Ok(Box::new(VecConstBoolOperator { lhs: lhs.str()?, rhs: rhs.string()?, output, op: PhantomData::<NotEqualsString> }));
         }
         reify_types! {
             "slice_pack";
             lhs: IntegerNoU64;
-            Box::new(VecConstBoolOperator { lhs, rhs: rhs.i64(), output, op: PhantomData::<NotEqualsInt<_>> });
+            Ok(Box::new(VecConstBoolOperator { lhs, rhs: rhs.i64()?, output, op: PhantomData::<NotEqualsInt<_>> }));
         }
     }
 
@@ -238,11 +240,11 @@ impl<'a> VecOperator<'a> {
 
     pub fn addition_vs(lhs: TypedBufferRef,
                        rhs: BufferRef<i64>,
-                       output: BufferRef<i64>) -> BoxedOperator<'a> {
+                       output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "addition_vs";
             lhs: IntegerNoU64;
-            Box::new(AdditionVS { lhs, rhs, output });
+            Ok(Box::new(AdditionVS { lhs, rhs, output }));
         }
     }
 
@@ -265,33 +267,33 @@ impl<'a> VecOperator<'a> {
         Box::new(BitUnpackOperator { input: inner, output, shift, width })
     }
 
-    pub fn slice_pack(input: TypedBufferRef, output: BufferRef<Any>, stride: usize, offset: usize) -> BoxedOperator<'a> {
+    pub fn slice_pack(input: TypedBufferRef, output: BufferRef<Any>, stride: usize, offset: usize) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::Str = input.tag {
-            return Box::new(SlicePackString { input: input.str(), output, stride, offset });
+            return Ok(Box::new(SlicePackString { input: input.str()?, output, stride, offset }));
         }
         reify_types! {
             "slice_pack";
             input: Integer;
-            Box::new(SlicePackInt { input, output, stride, offset });
+            Ok(Box::new(SlicePackInt { input, output, stride, offset }));
         }
     }
 
-    pub fn slice_unpack(input: BufferRef<Any>, output: TypedBufferRef, stride: usize, offset: usize) -> BoxedOperator<'a> {
+    pub fn slice_unpack(input: BufferRef<Any>, output: TypedBufferRef, stride: usize, offset: usize) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::Str = output.tag {
-            return Box::new(SliceUnpackString { input, output: output.str(), stride, offset });
+            return Ok(Box::new(SliceUnpackString { input, output: output.str()?, stride, offset }));
         }
         reify_types! {
             "slice_unpack";
             output: Integer;
-            Box::new(SliceUnpackInt { input, output, stride, offset });
+            Ok(Box::new(SliceUnpackInt { input, output, stride, offset }));
         }
     }
 
-    pub fn type_conversion(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {
+    pub fn type_conversion(input: TypedBufferRef, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "type_conversion";
             input: Integer, output: Integer;
-            Box::new(TypeConversionOperator { input, output });
+            Ok(Box::new(TypeConversionOperator { input, output }));
         }
     }
 
@@ -303,51 +305,51 @@ impl<'a> VecOperator<'a> {
     pub fn summation(input: TypedBufferRef,
                      grouping: TypedBufferRef,
                      output: BufferRef<i64>,
-                     max_index: BufferRef<i64>) -> BoxedOperator<'a> {
+                     max_index: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "summation";
             input: IntegerNoU64, grouping: Integer;
-            Box::new(VecSum { input, grouping, output, max_index });
+            Ok(Box::new(VecSum { input, grouping, output, max_index }));
         }
     }
 
-    pub fn count(grouping: TypedBufferRef, output: BufferRef<u32>, max_index: BufferRef<i64>) -> BoxedOperator<'a> {
+    pub fn count(grouping: TypedBufferRef, output: BufferRef<u32>, max_index: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "count";
             grouping: Integer;
-            Box::new(VecCount { grouping, output, max_index });
+            Ok(Box::new(VecCount { grouping, output, max_index }));
         }
     }
 
-    pub fn exists(input: TypedBufferRef, output: BufferRef<u8>, max_index: BufferRef<i64>) -> BoxedOperator<'a> {
+    pub fn exists(input: TypedBufferRef, output: BufferRef<u8>, max_index: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "exists";
             input: Integer;
-            Box::new(Exists { input, output, max_index });
+            Ok(Box::new(Exists { input, output, max_index }));
         }
     }
 
-    pub fn nonzero_compact(data: TypedBufferRef) -> BoxedOperator<'a> {
+    pub fn nonzero_compact(data: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "nonzero_compact";
             data: Integer;
-            Box::new(NonzeroCompact { data });
+            Ok(Box::new(NonzeroCompact { data }));
         }
     }
 
-    pub fn nonzero_indices(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {
+    pub fn nonzero_indices(input: TypedBufferRef, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "nonzero_indices";
             input: Integer, output: Integer;
-            Box::new(NonzeroIndices { input, output });
+            Ok(Box::new(NonzeroIndices { input, output }));
         }
     }
 
-    pub fn compact(data: TypedBufferRef, select: TypedBufferRef) -> BoxedOperator<'a> {
+    pub fn compact(data: TypedBufferRef, select: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "compact";
             data: Integer, select: Integer;
-            Compact::boxed(data, select);
+            Ok(Compact::boxed(data, select));
         }
     }
 
@@ -356,15 +358,15 @@ impl<'a> VecOperator<'a> {
                              unique_out: TypedBufferRef,
                              grouping_key_out: BufferRef<u32>,
                              cardinality_out: BufferRef<i64>,
-                             max_cardinality: usize) -> BoxedOperator<'a> {
+                             max_cardinality: usize) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::ByteSlices(columns) = raw_grouping_key.tag {
-            return HashMapGroupingByteSlices::boxed(
-                raw_grouping_key.buffer, unique_out.buffer, grouping_key_out, cardinality_out, columns);
+            return Ok(HashMapGroupingByteSlices::boxed(
+                raw_grouping_key.buffer, unique_out.buffer, grouping_key_out, cardinality_out, columns));
         }
         reify_types! {
             "hash_map_grouping";
             raw_grouping_key, unique_out: Primitive;
-            HashMapGrouping::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality);
+            Ok(HashMapGrouping::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality));
         }
     }
 
@@ -375,18 +377,18 @@ impl<'a> VecOperator<'a> {
     pub fn top_n(input: TypedBufferRef,
                  keys: TypedBufferRef,
                  indices_out: BufferRef<usize>,
-                 n: usize, desc: bool) -> BoxedOperator<'a> {
+                 n: usize, desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
         if desc {
             reify_types! {
                 "top_n_desc";
                 input, keys: Primitive;
-                Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpGreaterThan> });
+                Ok(Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpGreaterThan> }));
             }
         } else {
             reify_types! {
                 "top_n_asc";
                 input, keys: Primitive;
-                Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpLessThan> });
+                Ok(Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpLessThan> }));
             }
         }
     }
@@ -394,22 +396,22 @@ impl<'a> VecOperator<'a> {
     pub fn merge_deduplicate(left: TypedBufferRef,
                              right: TypedBufferRef,
                              merged_out: TypedBufferRef,
-                             ops_out: BufferRef<MergeOp>) -> BoxedOperator<'a> {
+                             ops_out: BufferRef<MergeOp>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_deduplicate";
             left, right, merged_out: Primitive;
-            Box::new(MergeDeduplicate { left, right, deduplicated: merged_out, merge_ops: ops_out });
+            Ok(Box::new(MergeDeduplicate { left, right, deduplicated: merged_out, merge_ops: ops_out }));
         }
     }
 
     pub fn partition(left: TypedBufferRef,
                      right: TypedBufferRef,
                      partition_out: BufferRef<Premerge>,
-                     limit: usize) -> BoxedOperator<'a> {
+                     limit: usize) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "partition";
             left, right: Primitive;
-            Box::new(Partition { left, right, partitioning: partition_out, limit });
+            Ok(Box::new(Partition { left, right, partitioning: partition_out, limit }));
         }
     }
 
@@ -417,11 +419,11 @@ impl<'a> VecOperator<'a> {
     pub fn subpartition(partitioning: BufferRef<Premerge>,
                         left: TypedBufferRef,
                         right: TypedBufferRef,
-                        subpartition_out: BufferRef<Premerge>) -> BoxedOperator<'a> {
+                        subpartition_out: BufferRef<Premerge>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "subpartition";
             left, right: Primitive;
-            Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out });
+            Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out }));
         }
     }
 
@@ -429,22 +431,22 @@ impl<'a> VecOperator<'a> {
                                          left: TypedBufferRef,
                                          right: TypedBufferRef,
                                          merged_out: TypedBufferRef,
-                                         ops_out: BufferRef<MergeOp>) -> BoxedOperator<'a> {
+                                         ops_out: BufferRef<MergeOp>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_deduplicate_partitioned";
             left, right, merged_out: Primitive;
-            Box::new(MergeDeduplicatePartitioned { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out });
+            Ok(Box::new(MergeDeduplicatePartitioned { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out }));
         }
     }
 
     pub fn merge_drop(merge_ops: BufferRef<MergeOp>,
                       left: TypedBufferRef,
                       right: TypedBufferRef,
-                      merged_out: TypedBufferRef) -> BoxedOperator<'a> {
+                      merged_out: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_drop";
             left, right, merged_out: Primitive;
-            Box::new(MergeDrop { merge_ops, left, right, deduplicated: merged_out });
+            Ok(Box::new(MergeDrop { merge_ops, left, right, deduplicated: merged_out }));
         }
     }
 
@@ -461,18 +463,18 @@ impl<'a> VecOperator<'a> {
                  merged_out: TypedBufferRef,
                  ops_out: BufferRef<u8>,
                  limit: usize,
-                 desc: bool) -> BoxedOperator<'a> {
+                 desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
         if desc {
             reify_types! {
                 "merge_desc";
                 left, right, merged_out: Primitive;
-                Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpGreaterThan> });
+                Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpGreaterThan> }));
             }
         } else {
             reify_types! {
                 "merge_desc";
                 left, right, merged_out: Primitive;
-                Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpLessThan> });
+                Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpLessThan> }));
             }
         }
     }
@@ -480,11 +482,11 @@ impl<'a> VecOperator<'a> {
     pub fn merge_keep(merge_ops: BufferRef<u8>,
                       left: TypedBufferRef,
                       right: TypedBufferRef,
-                      merged_out: TypedBufferRef) -> BoxedOperator<'a> {
+                      merged_out: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
                 "merge_keep";
                 left, right, merged_out: Primitive;
-                Box::new(MergeKeep { merge_ops, left, right, merged: merged_out });
+                Ok(Box::new(MergeKeep { merge_ops, left, right, merged: merged_out }));
         }
     }
 }

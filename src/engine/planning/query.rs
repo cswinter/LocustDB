@@ -34,41 +34,41 @@ impl Query {
         let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, Filter::None, columns)?;
         let mut filter = match filter_type.encoding_type() {
             EncodingType::BitVec => {
-                let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor);
-                Filter::BitVec(compiled_filter.u8())
+                let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor)?;
+                Filter::BitVec(compiled_filter.u8()?)
             }
             _ => Filter::None,
         };
 
         let mut select = Vec::new();
         if let Some(index) = self.order_by_index {
-            let (plan, plan_t) = query_plan::order_preserving(
+            let (plan, _t) = query_plan::order_preserving(
                 QueryPlan::create_query_plan(&self.select[index], filter, columns)?);
             // TODO(clemens): Reuse sort_column for result
-            let sort_column = query_plan::prepare(plan.clone(), &mut executor);
+            let sort_column = query_plan::prepare(plan.clone(), &mut executor)?;
             // TODO(clemens): better criterion
             let sort_indices = if limit < len / 2 {
                 query_plan::prepare(
                     QueryPlan::TopN(
                         Box::new(QueryPlan::ReadBuffer(sort_column)),
-                        plan_t.encoding_type(), limit, self.order_desc),
-                    &mut executor)
+                        limit, self.order_desc),
+                    &mut executor)?
             } else {
                 // TODO(clemens): Optimization: sort directly if only single column selected
                 query_plan::prepare(
                     QueryPlan::SortIndices(
                         Box::new(QueryPlan::ReadBuffer(sort_column)),
                         self.order_desc),
-                    &mut executor)
+                    &mut executor)?
             };
-            filter = Filter::Indices(sort_indices.usize());
+            filter = Filter::Indices(sort_indices.usize()?);
         }
         for expr in &self.select {
             let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
             if let Some(codec) = plan_type.codec {
                 plan = *codec.decode(Box::new(plan));
             }
-            select.push(query_plan::prepare_no_alias(plan, &mut executor));
+            select.push(query_plan::prepare_no_alias(plan, &mut executor)?);
         }
 
         for c in columns {
@@ -109,8 +109,8 @@ impl Query {
         let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, Filter::None, columns)?;
         let filter = match filter_type.encoding_type() {
             EncodingType::BitVec => {
-                let compiled_filter = query_plan::prepare(filter_plan, &mut executor);
-                Filter::BitVec(compiled_filter.u8())
+                let compiled_filter = query_plan::prepare(filter_plan, &mut executor)?;
+                Filter::BitVec(compiled_filter.u8()?)
             }
             _ => Filter::None,
         };
@@ -120,7 +120,7 @@ impl Query {
             max_grouping_key,
             decode_plans) =
             query_plan::compile_grouping_key(&self.select, filter, columns)?;
-        let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor);
+        let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor)?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
         // TODO(clemens): also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
@@ -131,7 +131,7 @@ impl Query {
         // TODO(clemens): refine criterion
             if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
                 let max_grouping_key_buf = query_plan::prepare(
-                    QueryPlan::Constant(RawVal::Int(max_grouping_key), true), &mut executor);
+                    QueryPlan::Constant(RawVal::Int(max_grouping_key), true), &mut executor)?;
                 (None,
                  raw_grouping_key,
                  raw_grouping_key_type.clone(),
@@ -140,7 +140,7 @@ impl Query {
                 query_plan::prepare_hashmap_grouping(
                     raw_grouping_key,
                     max_grouping_key as usize,
-                    &mut executor)
+                    &mut executor)?
             };
 
         // Aggregators
@@ -165,25 +165,29 @@ impl Query {
         }
 
         // Determine selector
-        let (selector, selector_type) = selector.unwrap_or_else(|| {
-            let s = query_plan::prepare(
-                QueryPlan::Exists(
-                    Box::new(QueryPlan::ReadBuffer(grouping_key)),
-                    grouping_key_type.encoding_type(),
-                    Box::new(QueryPlan::ReadBuffer(aggregation_cardinality.tagged()))),
-                &mut executor);
-            (s, EncodingType::U8)
-        });
+        let (selector, selector_type) = match selector {
+            None => {
+                let s = query_plan::prepare(
+                    QueryPlan::Exists(
+                        Box::new(QueryPlan::ReadBuffer(grouping_key)),
+                        grouping_key_type.encoding_type(),
+                        Box::new(QueryPlan::ReadBuffer(aggregation_cardinality.tagged()))),
+                    &mut executor)?;
+                (s, EncodingType::U8)
+            }
+            Some(x) => x,
+        };
 
         // Construct (encoded) group by column
-        let encoded_group_by_column = encoded_group_by_column.unwrap_or_else(|| {
-            query_plan::prepare(
+        let encoded_group_by_column = match encoded_group_by_column {
+            None => query_plan::prepare(
                 QueryPlan::NonzeroIndices(
                     Box::new(QueryPlan::ReadBuffer(selector)),
                     selector_type,
                     grouping_key_type.encoding_type()),
-                &mut executor)
-        });
+                &mut executor)?,
+            Some(x) => x,
+        };
         executor.set_encoded_group_by(encoded_group_by_column);
 
         // Compact and decode aggregation results
@@ -191,48 +195,46 @@ impl Query {
         {
             let mut decode_compact = |aggregator: Aggregator,
                                       aggregate: TypedBufferRef,
-                                      t: Type,
-                                      select: &mut Vec<TypedBufferRef>| {
+                                      t: Type| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
                     Aggregator::Sum => query_plan::prepare(
                         QueryPlan::Compact(
                             Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type(),
                             Box::new(QueryPlan::ReadBuffer(selector)), selector_type),
-                        &mut executor),
+                        &mut executor)?,
                     Aggregator::Count => query_plan::prepare(
                         QueryPlan::NonzeroCompact(Box::new(QueryPlan::ReadBuffer(aggregate)), t.encoding_type()),
-                        &mut executor),
+                        &mut executor)?,
                 };
                 if t.is_encoded() {
-                    let decoded = query_plan::prepare(
+                    query_plan::prepare(
                         *t.codec.clone().unwrap().decode(Box::new(QueryPlan::ReadBuffer(compacted))),
-                        &mut executor);
-                    select.push(decoded);
+                        &mut executor)
                 } else {
-                    select.push(compacted);
+                    Ok(compacted)
                 }
             };
 
             for (i, &(aggregator, aggregate, ref t)) in aggregation_results.iter().enumerate() {
                 if selector_index != Some(i) {
-                    decode_compact(aggregator, aggregate, t.clone(), &mut select);
+                    let decode_compacted = decode_compact(aggregator, aggregate, t.clone())?;
+                    select.push(decode_compacted)
                 }
             }
 
             // TODO(clemens): is there a simpler way to do this?
             if let Some(i) = selector_index {
                 let (aggregator, aggregate, ref t) = aggregation_results[i];
-                decode_compact(aggregator, aggregate, t.clone(), &mut select);
-                let last = select.pop().unwrap();
-                select.insert(i, last);
+                let selector = decode_compact(aggregator, aggregate, t.clone())?;
+                select.insert(i, selector);
             }
         }
 
         //  Reconstruct all group by columns from grouping
         let mut grouping_columns = Vec::with_capacity(decode_plans.len());
         for (decode_plan, _t) in decode_plans {
-            let decoded = query_plan::prepare_no_alias(decode_plan.clone(), &mut executor);
+            let decoded = query_plan::prepare_no_alias(decode_plan.clone(), &mut executor)?;
             grouping_columns.push(decoded);
         }
 
@@ -244,7 +246,7 @@ impl Query {
                     QueryPlan::SortIndices(
                         Box::new(QueryPlan::ReadBuffer(encoded_group_by_column)),
                         false),
-                    &mut executor)
+                    &mut executor)?
             } else {
                 if grouping_columns.len() != 1 {
                     bail!(QueryError::NotImplemented,
@@ -256,25 +258,30 @@ impl Query {
                     QueryPlan::SortIndices(
                         Box::new(QueryPlan::ReadBuffer(grouping_columns[0])),
                         false),
-                    &mut executor)
+                    &mut executor)?
             };
 
-            select = select.iter().map(|s| {
-                query_plan::prepare_no_alias(
+            let mut select2 = Vec::new();
+            for s in &select {
+                select2.push(query_plan::prepare_no_alias(
                     QueryPlan::Select(
                         Box::new(QueryPlan::ReadBuffer(*s)),
                         Box::new(QueryPlan::ReadBuffer(sort_indices)),
                     ),
-                    &mut executor)
-            }).collect();
-            grouping_columns = grouping_columns.iter().map(|s| {
-                query_plan::prepare_no_alias(
+                    &mut executor)?);
+            }
+            select = select2;
+
+            let mut grouping_columns2 = Vec::new();
+            for s in &grouping_columns {
+                grouping_columns2.push(query_plan::prepare_no_alias(
                     QueryPlan::Select(
                         Box::new(QueryPlan::ReadBuffer(*s)),
                         Box::new(QueryPlan::ReadBuffer(sort_indices)),
                     ),
-                    &mut executor)
-            }).collect();
+                    &mut executor)?);
+            }
+            grouping_columns = grouping_columns2;
         }
 
         for c in columns {

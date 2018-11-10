@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::usize;
+use std::result::Result;
 
 use engine::*;
 use errors::QueryError;
@@ -43,7 +44,7 @@ impl<'a> BatchResult<'a> {
         if all_lengths_same {
             Ok(())
         } else {
-            Err(QueryError::FatalError(info_str))
+            Err(fatal!(info_str))
         }
     }
 }
@@ -63,18 +64,18 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 // TODO(clemens): other types, val coercion
                 let merged = executor.named_buffer("merged", left[0].tag);
                 let ops = executor.buffer_merge_op("merge_ops");
-                executor.push(VecOperator::merge_deduplicate(left[0], right[0], merged, ops));
+                executor.push(VecOperator::merge_deduplicate(left[0], right[0], merged, ops)?);
                 (vec![merged], ops)
             } else {
                 let mut partitioning = executor.buffer_premerge("partitioning");
-                executor.push(VecOperator::partition(left[0], right[0], partitioning, limit));
+                executor.push(VecOperator::partition(left[0], right[0], partitioning, limit)?);
 
                 for i in 1..(left.len() - 1) {
                     let subpartitioning = executor.buffer_premerge("subpartitioning");
                     executor.push(VecOperator::subpartition(partitioning,
                                                             left[i],
                                                             right[i],
-                                                            subpartitioning));
+                                                            subpartitioning)?);
                     partitioning = subpartitioning;
                 }
 
@@ -85,12 +86,12 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                                                                          left[last],
                                                                          right[last],
                                                                          merged,
-                                                                         ops));
+                                                                         ops)?);
 
                 let mut group_by_cols = Vec::with_capacity(left.len());
                 for i in 0..last {
                     let merged = executor.named_buffer("merged", left[i].tag);
-                    executor.push(VecOperator::merge_drop(ops, left[i], right[i], merged));
+                    executor.push(VecOperator::merge_drop(ops, left[i], right[i], merged)?);
                     group_by_cols.push(merged);
                 }
                 group_by_cols.push(merged);
@@ -100,8 +101,8 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
             let mut aggregates = Vec::with_capacity(batch1.aggregators.len());
             for ((aggregator, select1), select2) in batch1.aggregators.iter().zip(batch1.select).zip(batch2.select) {
-                let left = set(&mut executor, "left", select1).i64();
-                let right = set(&mut executor, "right", select2).i64();
+                let left = set(&mut executor, "left", select1).i64()?;
+                let right = set(&mut executor, "right", select2).i64()?;
                 let aggregated = executor.buffer_i64("aggregated");
                 executor.push(VecOperator::merge_aggregate(ops,
                                                            left,
@@ -152,7 +153,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         merged_sort_cols,
                         ops,
                         limit,
-                        batch1.desc));
+                        batch1.desc)?);
 
                     let mut select = Vec::with_capacity(left.len());
                     for (i, (&left, right)) in left.iter().zip(right).enumerate() {
@@ -160,7 +161,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                             select.push(error_buffer_ref("MERGE_ERROR"));
                         } else {
                             let merged = executor.named_buffer("merged_sort_cols", left.tag);
-                            executor.push(VecOperator::merge_keep(ops, left, right, merged));
+                            executor.push(VecOperator::merge_keep(ops, left, right, merged)?);
                             select.push(merged.any());
                         }
                     }
@@ -217,7 +218,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 }
             }
         }
-        _ => bail!(QueryError::FatalError,  "Trying to merge incompatible batch results")
+        _ => return Err(fatal!("Trying to merge incompatible batch results"))
     }
 }
 

@@ -62,11 +62,27 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
         specs,
         expr,
     } = parse_macro_input!(input as TypeExpand);
-    // TODO(clemens): add assertion that types within each spec are equal
 
+    let mut type_equalities = Vec::<Stmt>::new();
     let mut type_domains = Vec::with_capacity(specs.len());
     let mut variable_groups = Vec::with_capacity(specs.len());
     for Declaration { variables, t } in specs {
+        if variables.len() > 1 {
+            let v0 = variables[0].clone();
+            for v in &variables[1..] {
+                let name0 = LitStr::new(&format!("{}", &v0), v0.span());
+                let name1 = LitStr::new(&format!("{}", &v), v.span());
+                type_equalities.push(parse_quote! {
+                    if #v0.tag != #v.tag {
+                        return Err(
+                            fatal!("Expected identical types for `{}` ({:?}) and `{}` ({:?}).",
+                                   #name0, #v0.tag,
+                                   #name1, #v.tag),
+                        )
+                    }
+                });
+            }
+        }
         type_domains.push(match types(&t) {
             Some(ts) => ts,
             None => {
@@ -138,7 +154,10 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
         arms: match_arms,
     };
 
-    TokenStream::from(quote!(#expanded))
+    TokenStream::from(quote! {
+        #(#type_equalities)*
+        #expanded
+    })
 }
 
 fn types(t: &Ident) -> Option<Vec<Type>> {

@@ -15,7 +15,7 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
     let ast = Parser::parse_sql(&dialect, query.to_string())
         .map_err(|e| match e {
             ParserError::ParserError(e_str) => QueryError::ParseError(e_str),
-            _ => QueryError::FatalError(format!("{:?}", e)),
+            _ => fatal!("{:?}", e),
         })?;
 
     let (projection, relation, selection, order_by, limit) = get_query_components(ast)?;
