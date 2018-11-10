@@ -1,3 +1,6 @@
+use failure::Backtrace;
+
+
 #[derive(Fail, Debug)]
 pub enum QueryError {
     #[fail(display = "Failed to parser query. Chars remaining: {}", _0)]
@@ -7,11 +10,21 @@ pub enum QueryError {
     #[fail(display = "Failed to parser query: {}", _0)]
     ParseError(String),
     #[fail(display = "Some assumption was violated. This is a bug: {}", _0)]
-    FatalError(String),
+    FatalError(String, Backtrace),
     #[fail(display = "Not implemented: {}", _0)]
     NotImplemented(String),
     #[fail(display = "Type error: {}", _0)]
     TypeError(String),
+}
+
+#[macro_export]
+macro_rules! fatal {
+    ($e:expr) => {
+        QueryError::FatalError($e.to_owned(), failure::Backtrace::new())
+    };
+    ($fmt:expr, $($arg:tt)+) => {
+        QueryError::FatalError(format!($fmt, $($arg)+).to_string(), failure::Backtrace::new())
+    };
 }
 
 #[macro_export]
@@ -28,12 +41,12 @@ macro_rules! bail {
 macro_rules! ensure {
     ($cond:expr, $e:expr) => {
         if !($cond) {
-            bail!(QueryError::FatalError, $e);
+            return Err(QueryError::FatalError($e.to_string(), failure::Backtrace::new()));
         }
     };
     ($cond:expr, $fmt:expr, $($arg:tt)+) => {
         if !($cond) {
-            bail!(QueryError::FatalError, $fmt, $($arg)+);
+            return Err(QueryError::FatalError(format!($fmt, $($arg)+).to_string(), failure::Backtrace::new()));
         }
     };
 }

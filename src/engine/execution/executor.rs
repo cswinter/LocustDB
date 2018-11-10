@@ -34,37 +34,35 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub fn buffer_merge_op(&mut self, name: &'static str) -> BufferRef<MergeOp> {
-        self.named_buffer(name, EncodingType::MergeOp).merge_op()
+        self.named_buffer(name, EncodingType::MergeOp).merge_op().unwrap()
     }
 
     pub fn buffer_premerge(&mut self, name: &'static str) -> BufferRef<Premerge> {
-        self.named_buffer(name, EncodingType::Premerge).premerge()
+        self.named_buffer(name, EncodingType::Premerge).premerge().unwrap()
     }
 
     pub fn buffer_str(&mut self, name: &'static str) -> BufferRef<&'a str> {
-        self.named_buffer(name, EncodingType::Str).str()
+        self.named_buffer(name, EncodingType::Str).str().unwrap()
     }
 
     pub fn buffer_usize(&mut self, name: &'static str) -> BufferRef<usize> {
-        self.named_buffer(name, EncodingType::USize).usize()
+        self.named_buffer(name, EncodingType::USize).usize().unwrap()
     }
 
     pub fn buffer_i64(&mut self, name: &'static str) -> BufferRef<i64> {
-        self.named_buffer(name, EncodingType::I64).i64()
+        self.named_buffer(name, EncodingType::I64).i64().unwrap()
     }
 
     pub fn buffer_u32(&mut self, name: &'static str) -> BufferRef<u32> {
-        self.named_buffer(name, EncodingType::U32).u32()
+        self.named_buffer(name, EncodingType::U32).u32().unwrap()
     }
 
     pub fn buffer_u8(&mut self, name: &'static str) -> BufferRef<u8> {
-        let buffer = self.named_buffer(name, EncodingType::U8);
-        buffer.u8()
+        self.named_buffer(name, EncodingType::U8).u8().unwrap()
     }
 
     pub fn buffer_raw_val(&mut self, name: &'static str) -> BufferRef<RawVal> {
-        let buffer = self.named_buffer(name, EncodingType::Val);
-        buffer.raw_val()
+        self.named_buffer(name, EncodingType::Val).raw_val().unwrap()
     }
 
     pub fn shared_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
