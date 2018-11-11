@@ -328,9 +328,9 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         QueryPlan::EncodedGroupByPlaceholder => return Ok(result.encoded_group_by().unwrap()),
         QueryPlan::SortIndices { ranking, desc } =>
             VecOperator::sort_indices(
-                prepare(*ranking, result)?.any(),
+                prepare(*ranking, result)?,
                 result.buffer_usize("permutation"),
-                desc),
+                desc)?,
         QueryPlan::TopN { ranking, n, desc } => {
             let plan = prepare(*ranking, result)?;
             VecOperator::top_n(

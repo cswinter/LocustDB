@@ -42,7 +42,8 @@ use super::partition::Partition;
 use super::select::Select;
 use super::slice_pack::*;
 use super::slice_unpack::*;
-use super::sort_indices::SortIndices;
+use super::sort_unstable_by::SortUnstableBy;
+use super::sort_unstable_by_slices::SortUnstableBySlices;
 use super::subpartition::SubPartition;
 use super::sum::VecSum;
 use super::to_year::ToYear;
@@ -370,8 +371,15 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn sort_indices(input: BufferRef<Any>, output: BufferRef<usize>, descending: bool) -> BoxedOperator<'a> {
-        Box::new(SortIndices { input, output, descending })
+    pub fn sort_indices(ranking: TypedBufferRef, output: BufferRef<usize>, descending: bool) -> Result<BoxedOperator<'a>, QueryError> {
+        if let EncodingType::ByteSlices(_) = ranking.tag {
+            return Ok(Box::new(SortUnstableBySlices { ranking: ranking.any(), output, descending }));
+        }
+        reify_types! {
+            "sort_indices";
+            ranking: Primitive;
+            Ok(Box::new(SortUnstableBy { ranking, output, descending }));
+        }
     }
 
     pub fn top_n(input: TypedBufferRef,

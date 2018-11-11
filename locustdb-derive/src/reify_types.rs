@@ -136,7 +136,7 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
     }
 
     match_arms.push(parse_quote! {
-        t => panic!("{} not supported for type {:?}", #name, t),
+        t => Err(fatal!("{} not supported for type {:?}", #name, t)),
     });
 
     let expanded = ExprMatch {

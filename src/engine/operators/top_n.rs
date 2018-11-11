@@ -61,11 +61,11 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> f
         let output = {
             let indices = scratchpad.get_mut(self.indices);
             let keys = scratchpad.get_mut(self.keys);
-            let mut sort_indices = (0..keys.len()).collect();
+            let mut sort_indices = (0..keys.len()).collect::<Vec<usize>>();
             if C::is_less_than() {
-                keys.sort_indices_asc(&mut sort_indices);
+                sort_indices.sort_unstable_by_key(|i| keys[*i]);
             } else {
-                keys.sort_indices_desc(&mut sort_indices);
+                sort_indices.sort_unstable_by(|i, j| keys[*i].cmp(&keys[*j]).reverse());
             }
             let mut output = Vec::with_capacity(indices.len());
             for i in sort_indices {

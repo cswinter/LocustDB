@@ -2,34 +2,34 @@ use engine::*;
 
 
 #[derive(Debug)]
-pub struct SortIndices {
-    pub input: BufferRef<Any>,
+pub struct SortUnstableBy<T> {
+    pub ranking: BufferRef<T>,
     pub output: BufferRef<usize>,
     pub descending: bool,
 }
 
-impl<'a> VecOperator<'a> for SortIndices {
+impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SortUnstableBy<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let result = {
-            let input = scratchpad.get_any(self.input);
-            let mut result = (0..input.len()).collect();
+            let ranking = scratchpad.get(self.ranking);
+            let mut result = (0..ranking.len()).collect::<Vec<usize>>();
             if self.descending {
-                input.sort_indices_desc(&mut result);
+                result.sort_unstable_by(|i, j| ranking[*i].cmp(&ranking[*j]).reverse());
             } else {
-                input.sort_indices_asc(&mut result);
+                result.sort_unstable_by_key(|i| ranking[*i]);
             }
             result
         };
         scratchpad.set(self.output, result);
     }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input] }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any()] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
-        format!("sort_indices({}; desc={})", self.input, self.descending)
+        format!("sort_indices({}; desc={})", self.ranking, self.descending)
     }
 }
