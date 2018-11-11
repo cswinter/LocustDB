@@ -95,8 +95,8 @@ impl<'a> QueryExecutor<'a> {
         Scratchpad::new(self.count, HashMap::default())
     }
 
-    pub fn get(&self, signature: &[u8; 16]) -> Option<Box<QueryPlan>> {
-        self.ops_cache.get(signature).map(|x| Box::new(QueryPlan::ReadBuffer(*x)))
+    pub fn get(&self, signature: &[u8; 16]) -> Option<QueryPlan> {
+        self.ops_cache.get(signature).map(|x| query_syntax::read_buffer(*x))
     }
 
     pub fn cache_last(&mut self, signature: [u8; 16]) {

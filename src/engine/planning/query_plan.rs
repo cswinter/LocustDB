@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::i64;
 use std::result::Result;
 use std::sync::Arc;
+use std::ops::{Add, BitAnd, BitOr, Div};
 
 use chrono::{Datelike, NaiveDateTime};
 use crypto::digest::Digest;
@@ -14,61 +15,141 @@ use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column::Column;
 use syntax::expression::*;
+use self::syntax::*;
+use locustdb_derive::EnumSyntax;
 
 
 type TypedPlan = (QueryPlan, Type);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, EnumSyntax)]
 pub enum QueryPlan {
-    ReadColumnSection(String, usize, Option<(i64, i64)>, EncodingType),
-    ReadBuffer(TypedBufferRef),
+    /// Retrieves the buffer for the specified section of the column with name `name`.
+    ColumnSection {
+        name: String,
+        section: usize,
+        range: Option<(i64, i64)>,
+        t: EncodingType,
+    },
 
-    DictLookup(Box<QueryPlan>, EncodingType, Box<QueryPlan>, Box<QueryPlan>),
-    InverseDictLookup(Box<QueryPlan>, Box<QueryPlan>, Box<QueryPlan>),
-    Cast(Box<QueryPlan>, EncodingType, EncodingType),
-    LZ4Decode(Box<QueryPlan>, usize, EncodingType),
-    UnpackStrings(Box<QueryPlan>),
-    UnhexpackStrings(Box<QueryPlan>, bool, usize),
-    DeltaDecode(Box<QueryPlan>, EncodingType),
+    /// Retrieves a specific buffer.
+    ReadBuffer { buffer: TypedBufferRef },
 
-    Exists(Box<QueryPlan>, EncodingType, Box<QueryPlan>),
-    NonzeroCompact(Box<QueryPlan>, EncodingType),
-    NonzeroIndices(Box<QueryPlan>, EncodingType, EncodingType),
-    Compact(Box<QueryPlan>, EncodingType, Box<QueryPlan>, EncodingType),
+    /// Resolves dictionary indices to their original string value.
+    DictLookup {
+        indices: Box<QueryPlan>,
+        offset_len: Box<QueryPlan>,
+        backing_store: Box<QueryPlan>,
+    },
 
-    EncodeIntConstant(Box<QueryPlan>, Codec),
+    /// Determines what dictionary index a string constant corresponds to.
+    InverseDictLookup {
+        offset_len: Box<QueryPlan>,
+        backing_store: Box<QueryPlan>,
+        constant: Box<QueryPlan>,
+    },
 
-    BitPack(Box<QueryPlan>, Box<QueryPlan>, i64),
-    BitUnpack(Box<QueryPlan>, u8, u8),
+    /// Casts `input` to the specified type.
+    Cast {
+        input: Box<QueryPlan>,
+        input_type: EncodingType,
+        target_type: EncodingType,
+    },
 
-    SlicePack(Box<QueryPlan>, EncodingType, usize, usize),
-    SliceUnpack(Box<QueryPlan>, EncodingType, usize, usize),
+    /// LZ4 decodes `bytes` into `decoded_len` elements of type `t`.
+    LZ4Decode {
+        bytes: Box<QueryPlan>,
+        decoded_len: usize,
+        t: EncodingType,
+    },
 
-    LessThanVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
-    EqualsVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
-    NotEqualsVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
-    DivideVS(Box<QueryPlan>, Box<QueryPlan>),
-    AddVS(EncodingType, Box<QueryPlan>, Box<QueryPlan>),
-    And(Box<QueryPlan>, Box<QueryPlan>),
-    Or(Box<QueryPlan>, Box<QueryPlan>),
-    ToYear(Box<QueryPlan>),
+    /// Decodes a byte array of tightly packed strings.
+    UnpackStrings { bytes: Box<QueryPlan> },
 
-    SortIndices(Box<QueryPlan>, bool),
-    TopN(Box<QueryPlan>, usize, bool),
+    /// Decodes a byte array of tightly packed, hex encoded string.
+    UnhexpackStrings {
+        bytes: Box<QueryPlan>,
+        uppercase: bool,
+        total_bytes: usize,
+    },
 
-    Select(Box<QueryPlan>, Box<QueryPlan>),
-    Filter(Box<QueryPlan>, Box<QueryPlan>),
+    /// Decodes delta encoded integers.
+    DeltaDecode { plan: Box<QueryPlan> },
+
+    /// Creates a byte vector of size `max_index` and sets all entries
+    /// corresponding to `indices` to 1.
+    Exists { indices: Box<QueryPlan>, max_index: Box<QueryPlan> },
+
+    /// Deletes all zero entries from `plan`.
+    NonzeroCompact { plan: Box<QueryPlan> },
+
+    /// Determines the indices of all entries in `plan` that are non-zero.
+    NonzeroIndices {
+        plan: Box<QueryPlan>,
+        indices_type: EncodingType,
+    },
+
+    /// Deletes all entries in `plan` for which the corresponding entry in `select` is 0.
+    Compact {
+        plan: Box<QueryPlan>,
+        select: Box<QueryPlan>,
+    },
+
+    /// Encodes `constant` according to `codec`.
+    EncodeIntConstant {
+        constant: Box<QueryPlan>,
+        codec: Codec,
+    },
+
+    /// Sums `lhs` and `rhs << shift`.
+    BitPack {
+        lhs: Box<QueryPlan>,
+        rhs: Box<QueryPlan>,
+        shift: i64,
+    },
+
+    /// Retrieves the integer bit packed into `plan` at `shift..shift+width`.
+    BitUnpack { plan: Box<QueryPlan>, shift: u8, width: u8 },
+
+    SlicePack { plan: Box<QueryPlan>, stride: usize, offset: usize },
+
+    SliceUnpack {
+        plan: Box<QueryPlan>,
+        t: EncodingType,
+        stride: usize,
+        offset: usize,
+    },
+
+    LessThanVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    EqualsVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    NotEqualsVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    DivideVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    AddVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    And { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    Or { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    ToYear { timestamp: Box<QueryPlan> },
+
+    /// Outputs a list of indices under which `ranking` is sorted.
+    SortIndices { ranking: Box<QueryPlan>, desc: bool },
+
+    /// Outputs the `n` largest/smallest elements of `ranking` and their corresponding indices.
+    TopN { ranking: Box<QueryPlan>, n: usize, desc: bool },
+
+    /// Outputs all elements in `plan` where the index corresponds to an entry in `indices`.
+    Select { plan: Box<QueryPlan>, indices: Box<QueryPlan> },
+
+    /// Outputs all elements in `plan` for which the corresponding entry in `select` is nonzero.
+    Filter { plan: Box<QueryPlan>, select: Box<QueryPlan> },
 
     EncodedGroupByPlaceholder,
 
     Convergence(Vec<Box<QueryPlan>>),
 
-    Constant(RawVal, bool),
+    Constant { value: RawVal, hide_value: bool },
 }
 
 impl QueryPlan {
     fn is_constant(&self) -> bool {
-        if let QueryPlan::Constant(_, _) = self { true } else { false }
+        if let QueryPlan::Constant { .. } = self { true } else { false }
     }
 }
 
@@ -91,111 +172,109 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
     };
     trace!("{:?} {}", &plan, to_hex_string(&signature));
     let operation: Box<VecOperator> = match plan {
-        QueryPlan::Select(plan, indices) => {
+        QueryPlan::Select { plan, indices } => {
             let input = prepare(*plan, result)?;
             let t = input.tag.clone();
             VecOperator::select(input,
                                 prepare(*indices, result)?.usize()?,
                                 result.named_buffer("selection", t))?
         }
-        QueryPlan::ReadColumnSection(colname, section, _, t) =>
-            VecOperator::read_column_data(colname, section, result.named_buffer("column", t).any()),
-        QueryPlan::Filter(plan, filter) => {
+        QueryPlan::ColumnSection { name, section, t, .. } =>
+            VecOperator::read_column_data(name, section, result.named_buffer("column", t).any()),
+        QueryPlan::Filter { plan, select } => {
             let input = prepare(*plan, result)?;
             let t = input.tag.clone();
             VecOperator::filter(input,
-                                prepare(*filter, result)?.u8()?,
+                                prepare(*select, result)?.u8()?,
                                 result.named_buffer("filtered", t))?
         }
-        QueryPlan::Constant(ref c, hide_value) =>
-            VecOperator::constant(c.clone(), hide_value, result.buffer_raw_val("constant")),
-        QueryPlan::DictLookup(plan, _t, dict_indices, dict_data) =>
+        QueryPlan::Constant { ref value, hide_value } =>
+            VecOperator::constant(value.clone(), hide_value, result.buffer_raw_val("constant")),
+        QueryPlan::DictLookup { indices, offset_len, backing_store } =>
             VecOperator::dict_lookup(
-                prepare(*plan, result)?,
-                prepare(*dict_indices, result)?.u64()?,
-                prepare(*dict_data, result)?.u8()?,
+                prepare(*indices, result)?,
+                prepare(*offset_len, result)?.u64()?,
+                prepare(*backing_store, result)?.u8()?,
                 result.buffer_str("decoded"))?,
-        QueryPlan::InverseDictLookup(dict_indices, dict_data, constant) =>
+        QueryPlan::InverseDictLookup { offset_len, backing_store, constant } =>
             VecOperator::inverse_dict_lookup(
-                prepare(*dict_indices, result)?.u64()?,
-                prepare(*dict_data, result)?.u8()?,
+                prepare(*offset_len, result)?.u64()?,
+                prepare(*backing_store, result)?.u8()?,
                 prepare(*constant, result)?.string()?,
                 result.buffer_raw_val("encoded")),
-        QueryPlan::Cast(plan, _initial_type, target_type) =>
+        QueryPlan::Cast { input, input_type: _, target_type } =>
             VecOperator::type_conversion(
-                prepare(*plan, result)?,
+                prepare(*input, result)?,
                 result.named_buffer("casted", target_type))?,
-        QueryPlan::DeltaDecode(plan, _t) =>
+        QueryPlan::DeltaDecode { plan } =>
             VecOperator::delta_decode(
                 prepare(*plan, result)?,
                 result.buffer_i64("decoded"))?,
-        QueryPlan::LZ4Decode(plan, decoded_len, t) =>
+        QueryPlan::LZ4Decode { bytes, decoded_len, t } =>
             VecOperator::lz4_decode(
-                prepare(*plan, result)?.u8()?,
+                prepare(*bytes, result)?.u8()?,
                 result.named_buffer("decoded", t),
                 decoded_len)?,
-        QueryPlan::UnpackStrings(plan) =>
+        QueryPlan::UnpackStrings { bytes } =>
             VecOperator::unpack_strings(
-                prepare(*plan, result)?.u8()?,
+                prepare(*bytes, result)?.u8()?,
                 result.buffer_str("unpacked")),
-        QueryPlan::UnhexpackStrings(plan, uppercase, total_bytes) => {
+        QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes } => {
             let stringstore = result.buffer_u8("stringstore");
             VecOperator::unhexpack_strings(
-                prepare(*plan, result)?.u8()?,
+                prepare(*bytes, result)?.u8()?,
                 result.buffer_str("unpacked"),
                 stringstore, uppercase, total_bytes)
         }
-        QueryPlan::Exists(indices, _t, max_index) =>
+        QueryPlan::Exists { indices, max_index } =>
             VecOperator::exists(
                 prepare(*indices, result)?,
                 result.buffer_u8("exists"),
                 prepare(*max_index, result)?.i64()?)?,
-        QueryPlan::Compact(data, _data_t, select, _select_t) => {
-            let inplace = prepare(*data, result)?;
+        QueryPlan::Compact { plan, select } => {
+            let inplace = prepare(*plan, result)?;
             let op = VecOperator::compact(inplace, prepare(*select, result)?)?;
             result.push(op);
             return Ok(inplace);
         }
-        QueryPlan::NonzeroIndices(indices, _indices_t, output_t) =>
+        QueryPlan::NonzeroIndices { plan, indices_type } =>
             VecOperator::nonzero_indices(
-                prepare(*indices, result)?,
-                result.named_buffer("nonzero_indices", output_t))?,
-        QueryPlan::NonzeroCompact(data, _data_t) => {
-            let inplace = prepare(*data, result)?;
+                prepare(*plan, result)?,
+                result.named_buffer("nonzero_indices", indices_type))?,
+        QueryPlan::NonzeroCompact { plan } => {
+            let inplace = prepare(*plan, result)?;
             result.push(VecOperator::nonzero_compact(inplace)?);
             return Ok(inplace);
         }
-        QueryPlan::EncodeIntConstant(plan, codec) =>
+        QueryPlan::EncodeIntConstant { constant, codec } =>
             VecOperator::encode_int_const(
-                prepare(*plan, result)?.const_i64(),
+                prepare(*constant, result)?.const_i64(),
                 result.buffer_i64("encoded"),
                 codec),
-        QueryPlan::BitPack(lhs, rhs, shift_amount) =>
+        QueryPlan::BitPack { lhs, rhs, shift } =>
             VecOperator::bit_shift_left_add(
                 prepare(*lhs, result)?.i64()?,
                 prepare(*rhs, result)?.i64()?,
                 result.buffer_i64("bitpacked"),
-                shift_amount),
-        QueryPlan::BitUnpack(inner, shift, width) =>
+                shift),
+        QueryPlan::BitUnpack { plan, shift, width } =>
             VecOperator::bit_unpack(
-                prepare(*inner, result)?.i64()?,
+                prepare(*plan, result)?.i64()?,
                 result.buffer_i64("unpacked"),
                 shift,
                 width),
-
-        QueryPlan::SlicePack(input, _t, stride, offset) =>
+        QueryPlan::SlicePack { plan, stride, offset } =>
             VecOperator::slice_pack(
-                prepare(*input, result)?,
+                prepare(*plan, result)?,
                 result.shared_buffer("slicepack", EncodingType::ByteSlices(stride)).any(),
                 stride,
                 offset)?,
-        QueryPlan::SliceUnpack(input, t, stride, offset) =>
+        QueryPlan::SliceUnpack { plan, t, stride, offset } =>
             VecOperator::slice_unpack(
-                prepare(*input, result)?.any(),
+                prepare(*plan, result)?.any(),
                 result.named_buffer("unpacked", t),
                 stride,
                 offset)?,
-
         QueryPlan::Convergence(plans) => {
             let mut first = None;
             for p in plans {
@@ -207,60 +286,60 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
             return Ok(first.unwrap());
         }
 
-        QueryPlan::LessThanVS(_left_type, lhs, rhs) =>
+        QueryPlan::LessThanVS { lhs, rhs } =>
             VecOperator::less_than_vs(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?.const_i64(),
                 result.buffer_u8("less_than"))?,
-        QueryPlan::EqualsVS(_left_type, lhs, rhs) =>
+        QueryPlan::EqualsVS { lhs, rhs } =>
             VecOperator::equals_vs(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?,
                 result.buffer_u8("equals"))?,
-        QueryPlan::NotEqualsVS(_left_type, lhs, rhs) =>
+        QueryPlan::NotEqualsVS { lhs, rhs } =>
             VecOperator::not_equals_vs(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?,
                 result.buffer_u8("equals"))?,
-        QueryPlan::DivideVS(lhs, rhs) =>
+        QueryPlan::DivideVS { lhs, rhs } =>
             VecOperator::divide_vs(
                 prepare(*lhs, result)?.i64()?,
                 prepare(*rhs, result)?.const_i64(),
                 result.buffer_i64("division")),
-        QueryPlan::AddVS(_left_type, lhs, rhs) =>
+        QueryPlan::AddVS { lhs, rhs } =>
             VecOperator::addition_vs(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?.const_i64(),
                 result.buffer_i64("addition"))?,
-        QueryPlan::Or(lhs, rhs) => {
+        QueryPlan::Or { lhs, rhs } => {
             let inplace = prepare(*lhs, result)?;
             let op = VecOperator::or(inplace.u8()?, prepare(*rhs, result)?.u8()?);
             result.push(op);
             return Ok(inplace);
         }
-        QueryPlan::And(lhs, rhs) => {
+        QueryPlan::And { lhs, rhs } => {
             let inplace = prepare(*lhs, result)?;
             let op = VecOperator::and(inplace.u8()?, prepare(*rhs, result)?.u8()?);
             result.push(op);
             return Ok(inplace);
         }
-        QueryPlan::ToYear(plan) =>
-            VecOperator::to_year(prepare(*plan, result)?.i64()?, result.buffer_i64("year")),
+        QueryPlan::ToYear { timestamp } =>
+            VecOperator::to_year(prepare(*timestamp, result)?.i64()?, result.buffer_i64("year")),
         QueryPlan::EncodedGroupByPlaceholder => return Ok(result.encoded_group_by().unwrap()),
-        QueryPlan::SortIndices(plan, descending) =>
+        QueryPlan::SortIndices { ranking, desc } =>
             VecOperator::sort_indices(
-                prepare(*plan, result)?.any(),
+                prepare(*ranking, result)?.any(),
                 result.buffer_usize("permutation"),
-                descending),
-        QueryPlan::TopN(plan, n, desc) => {
-            let plan = prepare(*plan, result)?;
+                desc),
+        QueryPlan::TopN { ranking, n, desc } => {
+            let plan = prepare(*ranking, result)?;
             VecOperator::top_n(
                 plan,
                 result.named_buffer("tmp_keys", plan.tag),
                 result.buffer_usize("top_n"),
                 n, desc)?
         }
-        QueryPlan::ReadBuffer(buffer) => return Ok(buffer),
+        QueryPlan::ReadBuffer { buffer } => return Ok(buffer),
     };
     result.push(operation);
     if signature != [0; 16] {
@@ -308,7 +387,7 @@ pub fn prepare_aggregation<'a>(plan: QueryPlan,
         (Aggregator::Sum, mut plan) => {
             output_location = result.named_buffer("sum", EncodingType::I64);
             if !plan_type.is_summation_preserving() {
-                plan = *plan_type.codec.clone().unwrap().decode(Box::new(plan));
+                plan = plan_type.codec.clone().unwrap().decode(plan);
             }
             (VecOperator::summation(prepare(plan, result)?,
                                     grouping_key,
@@ -326,7 +405,7 @@ pub fn order_preserving((plan, t): (QueryPlan, Type)) -> (QueryPlan, Type) {
         (plan, t)
     } else {
         let new_type = t.decoded();
-        (*t.codec.unwrap().decode(Box::new(plan)), new_type)
+        (t.codec.unwrap().decode(plan), new_type)
     }
 }
 
@@ -341,25 +420,16 @@ impl QueryPlan {
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    let mut plan = QueryPlan::ReadColumnSection(
-                        name.to_string(), 0, c.range(), c.encoding_type());
+                    let mut plan = column_section(name, 0, c.range(), c.encoding_type());
                     let mut t = c.full_type();
                     if !c.codec().is_elementwise_decodable() {
-                        let (codec, fixed_width) = c.codec().ensure_fixed_width(Box::new(plan));
+                        let (codec, fixed_width) = c.codec().ensure_fixed_width(plan);
                         t = Type::encoded(codec);
-                        plan = *fixed_width;
+                        plan = fixed_width;
                     }
                     plan = match filter {
-                        Filter::BitVec(filter) => {
-                            QueryPlan::Filter(
-                                Box::new(plan),
-                                Box::new(QueryPlan::ReadBuffer(filter.tagged())))
-                        }
-                        Filter::Indices(indices) => {
-                            QueryPlan::Select(
-                                Box::new(plan),
-                                Box::new(QueryPlan::ReadBuffer(indices.tagged())))
-                        }
+                        Filter::BitVec(filter) => query_syntax::filter(plan, filter.tagged()),
+                        Filter::Indices(indices) => select(plan, indices.tagged()),
                         Filter::None => plan,
                     };
                     (plan, t)
@@ -373,10 +443,10 @@ impl QueryPlan {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
-                                QueryPlan::LessThanVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                                let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
+                                less_than_vs(plan_lhs, encoded)
                             } else {
-                                QueryPlan::LessThanVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                                less_than_vs(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "< operator only implemented for column < constant")
@@ -393,10 +463,10 @@ impl QueryPlan {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = type_lhs.codec.clone().unwrap().encode_str(Box::new(plan_rhs));
-                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), encoded)
+                                let encoded = type_lhs.codec.clone().unwrap().encode_str(plan_rhs);
+                                equals_vs(plan_lhs, encoded)
                             } else {
-                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                                equals_vs(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
@@ -406,10 +476,10 @@ impl QueryPlan {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
-                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                                let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
+                                equals_vs(plan_lhs, encoded)
                             } else {
-                                QueryPlan::EqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                                equals_vs(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
@@ -426,10 +496,10 @@ impl QueryPlan {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = type_lhs.codec.clone().unwrap().encode_str(Box::new(plan_rhs));
-                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), encoded)
+                                let encoded = type_lhs.codec.clone().unwrap().encode_str(plan_rhs);
+                                not_equals_vs(plan_lhs, encoded)
                             } else {
-                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                                not_equals_vs(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
@@ -439,10 +509,10 @@ impl QueryPlan {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
-                                let encoded = QueryPlan::EncodeIntConstant(Box::new(plan_rhs), type_lhs.codec.clone().unwrap());
-                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(encoded))
+                                let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
+                                not_equals_vs(plan_lhs, encoded)
                             } else {
-                                QueryPlan::NotEqualsVS(type_lhs.encoding_type(), Box::new(plan_lhs), Box::new(plan_rhs))
+                                not_equals_vs(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
@@ -458,7 +528,7 @@ impl QueryPlan {
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
-                (QueryPlan::Or(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
+                (plan_lhs | plan_rhs, Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
@@ -466,7 +536,7 @@ impl QueryPlan {
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
-                (QueryPlan::And(Box::new(plan_lhs), Box::new(plan_rhs)), Type::bit_vec())
+                (plan_lhs & plan_rhs, Type::bit_vec())
             }
             Func2(Divide, ref lhs, ref rhs) => {
                 let (mut plan_lhs, mut type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
@@ -475,9 +545,9 @@ impl QueryPlan {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if let Some(codec) = type_lhs.codec {
-                                plan_lhs = *codec.decode(Box::new(plan_lhs));
+                                plan_lhs = codec.decode(plan_lhs);
                             }
-                            QueryPlan::DivideVS(Box::new(plan_lhs), Box::new(plan_rhs))
+                            plan_lhs / plan_rhs
                         } else {
                             bail!(QueryError::NotImplemented, "/ operator only implemented for column / constant")
                         };
@@ -492,12 +562,12 @@ impl QueryPlan {
                     bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                 }
                 let decoded = match t.codec.clone() {
-                    Some(codec) => *codec.decode(Box::new(plan)),
+                    Some(codec) => codec.decode(plan),
                     None => plan,
                 };
-                (QueryPlan::ToYear(Box::new(decoded)), t.decoded())
+                (to_year(decoded), t.decoded())
             }
-            Const(ref v) => (QueryPlan::Constant(v.clone(), false), Type::scalar(v.get_type())),
+            Const(ref v) => (constant(v.clone(), false), Type::scalar(v.get_type())),
             ref x => bail!(QueryError::NotImplemented, "{:?}.compile_vec()", x),
         })
     }
@@ -508,21 +578,21 @@ impl QueryPlan {
         // This works in this case because we always have to decode the Delta, but is hard to reason about and has caused bugs
         use self::QueryPlan::*;
         match *self {
-            ReadColumnSection(_, _, range, _) => range,
-            ToYear(ref timestamps) => timestamps.encoding_range().map(|(min, max)|
+            ColumnSection { range, .. } => range,
+            ToYear { ref timestamp } => timestamp.encoding_range().map(|(min, max)|
                 (i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
                  i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
             ),
-            Filter(ref plan, _) => plan.encoding_range(),
+            Filter { ref plan, .. } => plan.encoding_range(),
             // TODO(clemens): this is just wrong
-            DivideVS(ref left, box Constant(RawVal::Int(c), _)) =>
-                left.encoding_range().map(|(min, max)|
+            DivideVS { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. } } =>
+                lhs.encoding_range().map(|(min, max)|
                     if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
-            AddVS(_, ref left, box Constant(RawVal::Int(c), _)) =>
-                left.encoding_range().map(|(min, max)| (min + c, max + c)),
-            Cast(ref left, _, _) => left.encoding_range(),
-            LZ4Decode(ref plan, _, _) => plan.encoding_range(),
-            DeltaDecode(ref plan, _) => plan.encoding_range(),
+            AddVS { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. }, .. } =>
+                lhs.encoding_range().map(|(min, max)| (min + c, max + c)),
+            Cast { ref input, .. } => input.encoding_range(),
+            LZ4Decode { ref bytes, .. } => bytes.encoding_range(),
+            DeltaDecode { ref plan, .. } => plan.encoding_range(),
             _ => None, // TODO(clemens): many more cases where we can determine range
         }
     }
@@ -537,129 +607,123 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
         let mut hasher = Md5::new();
         hasher.input(&discriminant_value(&plan).to_ne_bytes());
         let plan = match plan {
-            ReadColumnSection(name, index, range, t) => {
+            ColumnSection { name, section, range, t } => {
                 hasher.input_str(&name);
-                hasher.input(&index.to_ne_bytes());
-                ReadColumnSection(name, index, range, t)
+                hasher.input(&section.to_ne_bytes());
+                ColumnSection { name, section, range, t }
             }
-            ReadBuffer(buffer) => {
+            ReadBuffer { buffer } => {
                 hasher.input(&buffer.buffer.i.to_ne_bytes());
-                ReadBuffer(buffer)
+                ReadBuffer { buffer }
             }
-            DictLookup(indices, t, offset_len, dict) => {
+            DictLookup { indices, offset_len, backing_store } => {
                 let (indices, s1) = replace_common_subexpression(*indices, executor);
                 let (offset_len, s2) = replace_common_subexpression(*offset_len, executor);
-                let (dict, s3) = replace_common_subexpression(*dict, executor);
+                let (backing_store, s3) = replace_common_subexpression(*backing_store, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
                 hasher.input(&s3);
-                hasher.input(&discriminant_value(&t).to_ne_bytes());
-                DictLookup(indices, t, offset_len, dict)
+                DictLookup { indices, offset_len, backing_store }
             }
-            InverseDictLookup(dict_indices, dict_data, constant) => {
-                let (dict_indices, s1) = replace_common_subexpression(*dict_indices, executor);
-                let (dict_data, s2) = replace_common_subexpression(*dict_data, executor);
+            InverseDictLookup { offset_len, backing_store, constant } => {
+                let (offset_len, s1) = replace_common_subexpression(*offset_len, executor);
+                let (backing_store, s2) = replace_common_subexpression(*backing_store, executor);
                 let (constant, s3) = replace_common_subexpression(*constant, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
                 hasher.input(&s3);
-                InverseDictLookup(dict_indices, dict_data, constant)
+                InverseDictLookup { offset_len, backing_store, constant }
             }
-            Cast(plan, initial_type, target_type) => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+            Cast { input, input_type, target_type } => {
+                let (input, s1) = replace_common_subexpression(*input, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&initial_type).to_ne_bytes());
+                hasher.input(&discriminant_value(&input_type).to_ne_bytes());
                 hasher.input(&discriminant_value(&target_type).to_ne_bytes());
-                Cast(plan, initial_type, target_type)
+                Cast { input, input_type, target_type }
             }
-            LZ4Decode(plan, decoded_len, t) => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+            LZ4Decode { bytes, decoded_len, t } => {
+                let (bytes, s1) = replace_common_subexpression(*bytes, executor);
                 hasher.input(&s1);
                 hasher.input(&discriminant_value(&t).to_ne_bytes());
-                LZ4Decode(plan, decoded_len, t)
+                LZ4Decode { bytes, decoded_len, t }
             }
-            UnpackStrings(plan) => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+            UnpackStrings { bytes } => {
+                let (bytes, s1) = replace_common_subexpression(*bytes, executor);
                 hasher.input(&s1);
-                UnpackStrings(plan)
+                UnpackStrings { bytes }
             }
-            UnhexpackStrings(plan, uppercase, total_bytes) => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+            UnhexpackStrings { bytes, uppercase, total_bytes } => {
+                let (bytes, s1) = replace_common_subexpression(*bytes, executor);
                 hasher.input(&s1);
                 hasher.input(&total_bytes.to_ne_bytes());
                 hasher.input(&[uppercase as u8]);
-                UnhexpackStrings(plan, uppercase, total_bytes)
+                UnhexpackStrings { bytes, uppercase, total_bytes }
             }
-            DeltaDecode(plan, t) => {
+            DeltaDecode { plan } => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t).to_ne_bytes());
-                DeltaDecode(plan, t)
+                DeltaDecode { plan }
             }
-            Exists(indices, t, max_index) => {
+            Exists { indices, max_index } => {
                 let (indices, s1) = replace_common_subexpression(*indices, executor);
                 let (max_index, s2) = replace_common_subexpression(*max_index, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&t).to_ne_bytes());
-                Exists(indices, t, max_index)
+                Exists { indices, max_index }
             }
-            NonzeroCompact(plan, t) => {
+            NonzeroCompact { plan } => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t).to_ne_bytes());
-                NonzeroCompact(plan, t)
+                NonzeroCompact { plan }
             }
-            NonzeroIndices(plan, t1, t2) => {
+            NonzeroIndices { plan, indices_type } => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&t1).to_ne_bytes());
-                hasher.input(&discriminant_value(&t2).to_ne_bytes());
-                NonzeroIndices(plan, t1, t2)
+                hasher.input(&discriminant_value(&indices_type).to_ne_bytes());
+                NonzeroIndices { plan, indices_type }
             }
-            Compact(data, data_t, select, select_t) => {
-                let (data, s1) = replace_common_subexpression(*data, executor);
+            Compact { plan, select } => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
                 let (select, s2) = replace_common_subexpression(*select, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&data_t).to_ne_bytes());
-                hasher.input(&discriminant_value(&select_t).to_ne_bytes());
-                Compact(data, data_t, select, select_t)
+                Compact { plan, select }
             }
-            EncodeIntConstant(plan, codec) => {
+            EncodeIntConstant { constant, codec } => {
                 // TODO(clemens): codec needs to be part of signature (easy once we encode using actual query plan rather than codec)
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                let (constant, s1) = replace_common_subexpression(*constant, executor);
                 hasher.input(&s1);
-                EncodeIntConstant(plan, codec)
+                EncodeIntConstant { constant, codec }
             }
-            BitPack(lhs, rhs, shift_amount) => {
+            BitPack { lhs, rhs, shift } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&(shift_amount as u64).to_ne_bytes());
-                BitPack(lhs, rhs, shift_amount)
+                hasher.input(&(shift as u64).to_ne_bytes());
+                BitPack { lhs, rhs, shift }
             }
-            BitUnpack(inner, shift, width) => {
-                let (inner, s1) = replace_common_subexpression(*inner, executor);
+            BitUnpack { plan, shift, width } => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
                 hasher.input(&shift.to_ne_bytes());
                 hasher.input(&width.to_ne_bytes());
-                BitUnpack(inner, shift, width)
+                BitUnpack { plan, shift, width }
             }
-            SlicePack(inner, t, stride, offset) => {
-                let (inner, s1) = replace_common_subexpression(*inner, executor);
+            SlicePack { plan, stride, offset } => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
                 hasher.input(&stride.to_ne_bytes());
                 hasher.input(&offset.to_ne_bytes());
-                SlicePack(inner, t, stride, offset)
+                SlicePack { plan, stride, offset }
             }
-            SliceUnpack(inner, t, stride, offset) => {
-                let (inner, s1) = replace_common_subexpression(*inner, executor);
+            SliceUnpack { plan, t, stride, offset } => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
                 hasher.input(&stride.to_ne_bytes());
                 hasher.input(&offset.to_ne_bytes());
-                SliceUnpack(inner, t, stride, offset)
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
+                SliceUnpack { plan, t, stride, offset }
             }
             Convergence(plans) => {
                 let mut new_plans = Vec::new();
@@ -670,105 +734,101 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 }
                 Convergence(new_plans)
             }
-            LessThanVS(left_type, lhs, rhs) => {
+            LessThanVS { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
-                LessThanVS(left_type, lhs, rhs)
+                LessThanVS { lhs, rhs }
             }
-            EqualsVS(left_type, lhs, rhs) => {
+            EqualsVS { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
-                EqualsVS(left_type, lhs, rhs)
+                EqualsVS { lhs, rhs }
             }
-            NotEqualsVS(left_type, lhs, rhs) => {
+            NotEqualsVS { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
-                NotEqualsVS(left_type, lhs, rhs)
+                NotEqualsVS { lhs, rhs }
             }
-            DivideVS(lhs, rhs) => {
+            DivideVS { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                DivideVS(lhs, rhs)
+                DivideVS { lhs, rhs }
             }
-            AddVS(left_type, lhs, rhs) => {
+            AddVS { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                hasher.input(&discriminant_value(&left_type).to_ne_bytes());
-                AddVS(left_type, lhs, rhs)
+                AddVS { lhs, rhs }
             }
-            And(lhs, rhs) => {
+            And { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                And(lhs, rhs)
+                And { lhs, rhs }
             }
-            Or(lhs, rhs) => {
+            Or { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                Or(lhs, rhs)
+                Or { lhs, rhs }
             }
-            ToYear(plan) => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+            ToYear { timestamp } => {
+                let (timestamp, s1) = replace_common_subexpression(*timestamp, executor);
                 hasher.input(&s1);
-                ToYear(plan)
+                ToYear { timestamp }
             }
-            SortIndices(plan, descending) => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+            SortIndices { ranking, desc } => {
+                let (ranking, s1) = replace_common_subexpression(*ranking, executor);
                 hasher.input(&s1);
-                hasher.input(&[descending as u8]);
-                SortIndices(plan, descending)
+                hasher.input(&[desc as u8]);
+                SortIndices { ranking, desc }
             }
-            TopN(plan, n, desc) => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
+            TopN { ranking, n, desc } => {
+                let (ranking, s1) = replace_common_subexpression(*ranking, executor);
                 hasher.input(&s1);
                 hasher.input(&n.to_ne_bytes());
                 hasher.input(&[desc as u8]);
-                TopN(plan, n, desc)
+                TopN { ranking, n, desc }
             }
-            Select(lhs, rhs) => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Select(lhs, rhs)
-            }
-            Filter(plan, filter) => {
+            Select { plan, indices } => {
                 let (plan, s1) = replace_common_subexpression(*plan, executor);
-                let (filter, s2) = replace_common_subexpression(*filter, executor);
+                let (indices, s2) = replace_common_subexpression(*indices, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                Filter(plan, filter)
+                Select { plan, indices }
+            }
+            Filter { plan, select } => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                let (select, s2) = replace_common_subexpression(*select, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                Filter { plan, select }
             }
             EncodedGroupByPlaceholder => EncodedGroupByPlaceholder,
-            Constant(val, show) => {
-                match val {
+            Constant { value, hide_value } => {
+                match value {
                     RawVal::Int(i) => hasher.input(&(i as u64).to_ne_bytes()),
                     RawVal::Str(ref s) => hasher.input_str(s),
                     RawVal::Null => {}
                 }
-                Constant(val, show)
+                Constant { value, hide_value }
             }
         };
 
         hasher.result(&mut signature);
         match executor.get(&signature) {
-            Some(plan) => (plan, signature),
+            Some(plan) => (Box::new(plan), signature),
             None => (Box::new(plan), signature),
         }
     }
@@ -789,20 +849,15 @@ pub fn compile_grouping_key(
                     None => (1 << 62, 0),
                 };
                 let gk_plan = if offset != 0 {
-                    QueryPlan::AddVS(gk_type.encoding_type(),
-                                     Box::new(gk_plan),
-                                     Box::new(QueryPlan::Constant(RawVal::Int(offset), true)))
+                    gk_plan + constant(RawVal::Int(offset), true)
                 } else { gk_plan };
 
                 let decoded_group_by = gk_type.codec.clone().map_or(
                     QueryPlan::EncodedGroupByPlaceholder,
-                    |codec| *codec.decode(Box::new(QueryPlan::EncodedGroupByPlaceholder)));
+                    |codec| codec.decode(QueryPlan::EncodedGroupByPlaceholder));
                 let decoded_group_by = if offset == 0 { decoded_group_by } else {
                     syntax::cast(
-                        QueryPlan::AddVS(
-                            EncodingType::I64,
-                            Box::new(decoded_group_by),
-                            Box::new(QueryPlan::Constant(RawVal::Int(-offset), true))),
+                        decoded_group_by + constant(RawVal::Int(-offset), true),
                         EncodingType::I64,
                         gk_type.encoding_type())
                 };
@@ -819,20 +874,16 @@ pub fn compile_grouping_key(
         let mut decode_plans = Vec::new();
         for (i, expr) in exprs.iter().enumerate() {
             let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
-            pack.push(Box::new(
-                QueryPlan::SlicePack(Box::new(query_plan),
-                                     plan_type.encoding_type(),
-                                     exprs.len(),
-                                     i)));
+            pack.push(Box::new(slice_pack(query_plan, exprs.len(), i)));
 
             // TODO(clemens): negative integers can throw off sort oder - need to move into positive range
-            let mut decode_plan = QueryPlan::SliceUnpack(
-                Box::new(QueryPlan::EncodedGroupByPlaceholder),
+            let mut decode_plan = slice_unpack(
+                QueryPlan::EncodedGroupByPlaceholder,
                 plan_type.encoding_type(),
                 exprs.len(),
                 i);
             if let Some(codec) = plan_type.codec.clone() {
-                decode_plan = *codec.decode(Box::new(decode_plan));
+                decode_plan = codec.decode(decode_plan);
             }
             decode_plans.push(
                 (decode_plan,
@@ -877,9 +928,7 @@ fn try_bitpacking(
             let adjusted_max = if subtract_offset { max - min } else { max };
             order_preserving = order_preserving && plan_type.is_order_preserving();
             let query_plan = if subtract_offset {
-                QueryPlan::AddVS(plan_type.encoding_type(),
-                                 Box::new(query_plan),
-                                 Box::new(QueryPlan::Constant(RawVal::Int(-min), true)))
+                query_plan + constant(RawVal::Int(-min), true)
             } else {
                 syntax::cast(query_plan, plan_type.encoding_type(), EncodingType::I64)
             };
@@ -887,23 +936,19 @@ fn try_bitpacking(
             if total_width == 0 {
                 plan = Some(query_plan);
             } else if adjusted_max > 0 {
-                plan = plan.map(|plan|
-                    QueryPlan::BitPack(Box::new(plan), Box::new(query_plan), total_width));
+                plan = plan.map(|plan| bit_pack(plan, query_plan, total_width));
             }
 
-            let mut decode_plan = QueryPlan::BitUnpack(
-                Box::new(QueryPlan::EncodedGroupByPlaceholder),
+            let mut decode_plan = bit_unpack(
+                QueryPlan::EncodedGroupByPlaceholder,
                 total_width as u8,
                 bits(adjusted_max) as u8);
             if subtract_offset {
-                decode_plan = QueryPlan::AddVS(
-                    EncodingType::I64,
-                    Box::new(decode_plan),
-                    Box::new(QueryPlan::Constant(RawVal::Int(min), true)));
+                decode_plan = decode_plan + constant(RawVal::Int(min), true);
             }
             decode_plan = syntax::cast(decode_plan, EncodingType::I64, plan_type.encoding_type());
             if let Some(codec) = plan_type.codec.clone() {
-                decode_plan = *codec.decode(Box::new(decode_plan));
+                decode_plan = codec.decode(decode_plan);
             }
             decode_plans.push((decode_plan, plan_type.decoded()));
 
@@ -934,15 +979,38 @@ fn to_hex_string(bytes: &[u8]) -> String {
         .join("")
 }
 
-mod syntax {
-    use super::*;
-    use super::QueryPlan::*;
+impl From<TypedBufferRef> for QueryPlan {
+    fn from(buffer: TypedBufferRef) -> QueryPlan { read_buffer(buffer) }
+}
 
-    pub fn cast(plan: QueryPlan, input_type: EncodingType, output_type: EncodingType) -> QueryPlan {
-        if input_type == output_type {
-            plan
-        } else {
-            Cast(Box::new(plan), input_type, output_type)
-        }
+impl Add for QueryPlan {
+    type Output = QueryPlan;
+
+    fn add(self, other: QueryPlan) -> QueryPlan {
+        add_vs(self, other)
+    }
+}
+
+impl BitOr for QueryPlan {
+    type Output = QueryPlan;
+
+    fn bitor(self, other: QueryPlan) -> QueryPlan {
+        or(self, other)
+    }
+}
+
+impl BitAnd for QueryPlan {
+    type Output = QueryPlan;
+
+    fn bitand(self, other: QueryPlan) -> QueryPlan {
+        and(self, other)
+    }
+}
+
+impl Div for QueryPlan {
+    type Output = QueryPlan;
+
+    fn div(self, other: QueryPlan) -> QueryPlan {
+        divide_vs(self, other)
     }
 }
