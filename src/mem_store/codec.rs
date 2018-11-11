@@ -1,5 +1,6 @@
 use engine::planning::QueryPlan;
 use engine::data_types::*;
+use engine::query_syntax::*;
 use ingest::raw_val::RawVal;
 
 
@@ -112,52 +113,34 @@ impl Codec {
         codec
     }
 
-    pub fn decode(&self, plan: Box<QueryPlan>) -> Box<QueryPlan> {
+    pub fn decode(&self, plan: QueryPlan) -> QueryPlan {
         self.decode_ops(&self.ops, plan)
     }
 
-    fn decode_ops(&self, ops: &[CodecOp], plan: Box<QueryPlan>) -> Box<QueryPlan> {
+    fn decode_ops(&self, ops: &[CodecOp], plan: QueryPlan) -> QueryPlan {
         let mut stack = vec![plan];
         for op in ops {
             let plan = match *op {
-                CodecOp::Add(t, x) => {
-                    Box::new(QueryPlan::AddVS(
-                        t,
-                        stack.pop().unwrap(),
-                        Box::new(QueryPlan::Constant(RawVal::Int(x), true))))
-                }
-                CodecOp::Delta(t) => {
-                    Box::new(QueryPlan::DeltaDecode(stack.pop().unwrap(), t))
-                }
-                CodecOp::ToI64(t) => {
-                    Box::new(QueryPlan::Cast(
-                        stack.pop().unwrap(),
-                        t,
-                        EncodingType::I64))
-                }
-                CodecOp::PushDataSection(section_index) => {
-                    Box::new(QueryPlan::ReadColumnSection(
-                        self.column_name.to_string(),
+                CodecOp::Add(_, x) => stack.pop().unwrap() + constant(RawVal::Int(x), true),
+                CodecOp::Delta(_) => delta_decode(stack.pop().unwrap()),
+                CodecOp::ToI64(t) => cast(stack.pop().unwrap(), t, EncodingType::I64),
+                CodecOp::PushDataSection(section_index) =>
+                    column_section(
+                        &self.column_name,
                         section_index,
                         None,
-                        self.section_types[section_index]))
-                }
-                CodecOp::DictLookup(t) => {
+                        self.section_types[section_index]),
+                CodecOp::DictLookup(_t) => {
                     let dict_data = stack.pop().unwrap();
                     let dict_indices = stack.pop().unwrap();
                     let indices = stack.pop().unwrap();
-                    Box::new(QueryPlan::DictLookup(
-                        indices,
-                        t,
-                        dict_indices,
-                        dict_data))
+                    dict_lookup(indices, dict_indices, dict_data)
                 }
                 CodecOp::LZ4(t, decoded_length) =>
-                    Box::new(QueryPlan::LZ4Decode(stack.pop().unwrap(), decoded_length, t)),
-                CodecOp::UnpackStrings =>
-                    Box::new(QueryPlan::UnpackStrings(stack.pop().unwrap())),
+                    lz4_decode(stack.pop().unwrap(), decoded_length, t),
+                CodecOp::UnpackStrings => unpack_strings(stack.pop().unwrap()),
                 CodecOp::UnhexpackStrings(upper, total_bytes) =>
-                    Box::new(QueryPlan::UnhexpackStrings(stack.pop().unwrap(), upper, total_bytes)),
+                    unhexpack_strings(stack.pop().unwrap(), upper, total_bytes),
                 CodecOp::Unknown => panic!("unkown decode plan!"),
             };
             stack.push(plan);
@@ -166,7 +149,7 @@ impl Codec {
         stack.pop().unwrap()
     }
 
-    pub fn ensure_fixed_width(&self, plan: Box<QueryPlan>) -> (Codec, Box<QueryPlan>) {
+    pub fn ensure_fixed_width(&self, plan: QueryPlan) -> (Codec, QueryPlan) {
         let (fixed_width, rest) = self.ensure_property(CodecOp::is_elementwise_decodable);
         let mut new_codec = if rest.is_empty() {
             Codec::identity(self.decoded_type())
@@ -186,15 +169,14 @@ impl Codec {
     pub fn is_elementwise_decodable(&self) -> bool { self.is_fixed_width }
     pub fn is_identity(&self) -> bool { self.ops.is_empty() }
 
-    pub fn encode_str(&self, string_const: Box<QueryPlan>) -> Box<QueryPlan> {
+    pub fn encode_str(&self, string_const: QueryPlan) -> QueryPlan {
         match self.ops[..] {
             [CodecOp::PushDataSection(1), CodecOp::PushDataSection(2), CodecOp::DictLookup(_)] =>
-                Box::new(QueryPlan::InverseDictLookup(
-                    Box::new(QueryPlan::ReadColumnSection(
-                        self.column_name.to_string(), 1, None, EncodingType::U64)),
-                    Box::new(QueryPlan::ReadColumnSection(
-                        self.column_name.to_string(), 2, None, EncodingType::U8)),
-                    string_const)),
+                inverse_dict_lookup(
+                    column_section(&self.column_name, 1, None, EncodingType::U64),
+                    column_section(&self.column_name, 2, None, EncodingType::U8),
+                    string_const,
+                ),
             _ => panic!("encode_str not supported for {:?}", &self.ops),
         }
     }

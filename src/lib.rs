@@ -32,6 +32,7 @@ extern crate aliasmethod;
 extern crate rand;
 extern crate locustdb_derive;
 
+
 #[macro_use]
 mod trace;
 #[macro_use]
