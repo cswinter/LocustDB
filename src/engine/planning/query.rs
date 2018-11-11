@@ -55,7 +55,7 @@ impl Query {
             } else {
                 // TODO(clemens): Optimization: sort directly if only single column selected
                 query_plan::prepare(
-                    sort_indices(sort_column, self.order_desc),
+                    sort_by(sort_column, indices(sort_column), self.order_desc),
                     &mut executor)?
             };
             filter = Filter::Indices(sort_indices.usize()?);
@@ -229,7 +229,7 @@ impl Query {
         if !grouping_key_type.is_order_preserving() {
             let sort_indices = if raw_grouping_key_type.is_order_preserving() {
                 query_plan::prepare(
-                    sort_indices(encoded_group_by_column, false),
+                    sort_by(encoded_group_by_column, indices(encoded_group_by_column), false),
                     &mut executor)?
             } else {
                 if grouping_columns.len() != 1 {
@@ -239,7 +239,7 @@ impl Query {
                         &executor)
                 }
                 query_plan::prepare(
-                    sort_indices(grouping_columns[0], false),
+                    sort_by(grouping_columns[0], indices(grouping_columns[0]), false),
                     &mut executor)?
             };
 

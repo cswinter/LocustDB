@@ -17,6 +17,7 @@ mod exists;
 mod filter;
 mod hashmap_grouping;
 mod hashmap_grouping_byte_slices;
+mod indices;
 mod merge;
 mod merge_aggregate;
 mod merge_deduplicate;
@@ -31,9 +32,9 @@ mod sort_unstable_by_slices;
 mod sum;
 mod to_year;
 mod top_n;
+mod type_conversion;
 mod unhexpack_strings;
 mod unpack_strings;
-mod type_conversion;
 mod vec_const_bool_op;
 #[cfg(feature = "enable_lz4")]
 mod lz4_decode;

@@ -29,6 +29,7 @@ use super::exists::Exists;
 use super::filter::Filter;
 use super::hashmap_grouping::HashMapGrouping;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
+use super::indices::Indices;
 use super::merge::Merge;
 use super::merge_aggregate::MergeAggregate;
 use super::merge_deduplicate::MergeDeduplicate;
@@ -371,9 +372,17 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn sort_indices(ranking: TypedBufferRef, output: BufferRef<usize>, descending: bool) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn indices(input: TypedBufferRef, indices_out: BufferRef<usize>) -> BoxedOperator<'a> {
+        Box::new(Indices { input: input.buffer, indices_out })
+    }
+
+    pub fn sort_indices(ranking: TypedBufferRef,
+                        indices: BufferRef<usize>,
+                        output: BufferRef<usize>,
+                        descending: bool) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::ByteSlices(_) = ranking.tag {
-            return Ok(Box::new(SortUnstableBySlices { ranking: ranking.any(), output, descending }));
+            return Ok(Box::new(
+                SortUnstableBySlices { ranking: ranking.any(), output, indices, descending }));
         }
         reify_types! {
             "sort_indices";

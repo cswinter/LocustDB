@@ -128,8 +128,11 @@ pub enum QueryPlan {
     Or { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     ToYear { timestamp: Box<QueryPlan> },
 
-    /// Outputs a list of indices under which `ranking` is sorted.
-    SortIndices { ranking: Box<QueryPlan>, desc: bool },
+    /// Outputs a vector of indices from `0..plan.len()`
+    Indices { plan: Box<QueryPlan> },
+
+    /// Outputs a permutation of `indices` under which `ranking` is sorted.
+    SortBy { ranking: Box<QueryPlan>, indices: Box<QueryPlan>, desc: bool },
 
     /// Outputs the `n` largest/smallest elements of `ranking` and their corresponding indices.
     TopN { ranking: Box<QueryPlan>, n: usize, desc: bool },
@@ -326,11 +329,14 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         QueryPlan::ToYear { timestamp } =>
             VecOperator::to_year(prepare(*timestamp, result)?.i64()?, result.buffer_i64("year")),
         QueryPlan::EncodedGroupByPlaceholder => return Ok(result.encoded_group_by().unwrap()),
-        QueryPlan::SortIndices { ranking, desc } =>
-            VecOperator::sort_indices(
-                prepare(*ranking, result)?,
-                result.buffer_usize("permutation"),
-                desc)?,
+        QueryPlan::Indices { plan } => VecOperator::indices(
+            prepare(*plan, result)?,
+            result.buffer_usize("indices")),
+        QueryPlan::SortBy { ranking, indices, desc } => VecOperator::sort_indices(
+            prepare(*ranking, result)?,
+            prepare(*indices, result)?.usize()?,
+            result.buffer_usize("permutation"),
+            desc)?,
         QueryPlan::TopN { ranking, n, desc } => {
             let plan = prepare(*ranking, result)?;
             VecOperator::top_n(
@@ -788,11 +794,18 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s1);
                 ToYear { timestamp }
             }
-            SortIndices { ranking, desc } => {
-                let (ranking, s1) = replace_common_subexpression(*ranking, executor);
+            Indices { plan } => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
                 hasher.input(&s1);
+                Indices { plan }
+            }
+            SortBy { ranking, indices, desc } => {
+                let (ranking, s1) = replace_common_subexpression(*ranking, executor);
+                let (indices, s2) = replace_common_subexpression(*indices, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
                 hasher.input(&[desc as u8]);
-                SortIndices { ranking, desc }
+                SortBy { ranking, indices, desc }
             }
             TopN { ranking, n, desc } => {
                 let (ranking, s1) = replace_common_subexpression(*ranking, executor);
