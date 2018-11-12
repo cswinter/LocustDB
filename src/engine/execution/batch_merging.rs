@@ -7,10 +7,10 @@ use errors::QueryError;
 
 
 pub struct BatchResult<'a> {
-    pub group_by: Option<Vec<BoxedVec<'a>>>,
-    pub sort_by: Option<usize>,
-    pub desc: bool,
-    pub select: Vec<BoxedVec<'a>>,
+    pub columns: Vec<BoxedVec<'a>>,
+    pub group_by_columns: Option<Vec<BoxedVec<'a>>>,
+    pub projection: Vec<usize>,
+    pub order_by: Vec<(usize, bool)>,
     pub aggregators: Vec<Aggregator>,
     pub level: u32,
     pub batch_count: usize,
@@ -21,22 +21,22 @@ pub struct BatchResult<'a> {
 
 impl<'a> BatchResult<'a> {
     pub fn len(&self) -> usize {
-        match self.group_by {
+        match self.group_by_columns {
             Some(ref g) => g[0].len(),
-            None => self.select.get(0).map_or(0, |s| s.len()),
+            None => self.columns.get(0).map_or(0, |s| s.len()),
         }
     }
 
     pub fn validate(&self) -> Result<(), QueryError> {
         let mut lengths = Vec::new();
         let mut info_str = "".to_owned();
-        if let Some(ref group_bys) = self.group_by {
+        if let Some(ref group_bys) = self.group_by_columns {
             for (i, group_by) in group_bys.iter().enumerate() {
                 lengths.push(group_by.len());
                 info_str = format!("{}:group_by[{}].len = {}", info_str, i, group_by.len());
             }
         }
-        for (i, select) in self.select.iter().enumerate() {
+        for (i, select) in self.columns.iter().enumerate() {
             lengths.push(select.len());
             info_str = format!("{}:select[{}].len = {}", info_str, i, select.len()).to_owned();
         }
@@ -50,7 +50,18 @@ impl<'a> BatchResult<'a> {
 }
 
 pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usize) -> Result<BatchResult<'a>, QueryError> {
-    match (batch1.group_by, batch2.group_by) {
+    ensure!(
+        batch1.projection.len()  == batch2.projection.len(),
+        "Unequal number of projections in left ({}) and right ({}) batch result.",
+        batch1.projection.len(), batch2.projection.len(),
+    );
+    ensure!(
+        batch1.order_by.len()  == batch2.order_by.len(),
+        "Unequal number of order by in left ({}) and right ({}) batch result.",
+        batch1.order_by.len(), batch2.order_by.len(),
+    );
+
+    match (batch1.group_by_columns, batch2.group_by_columns) {
         // Aggregation query
         (Some(g1), Some(g2)) => {
             let mut executor = QueryExecutor::default();
@@ -100,7 +111,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             };
 
             let mut aggregates = Vec::with_capacity(batch1.aggregators.len());
-            for ((aggregator, select1), select2) in batch1.aggregators.iter().zip(batch1.select).zip(batch2.select) {
+            for ((aggregator, select1), select2) in batch1.aggregators.iter().zip(batch1.columns).zip(batch2.columns) {
                 let left = set(&mut executor, "left", select1).i64()?;
                 let right = set(&mut executor, "right", select2).i64()?;
                 let aggregated = executor.buffer_i64("aggregated");
@@ -109,19 +120,19 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                                                            right,
                                                            aggregated,
                                                            *aggregator));
-                aggregates.push(aggregated);
+                aggregates.push(aggregated.any());
             }
 
             let mut results = executor.prepare_no_columns();
             executor.run(1, &mut results, batch1.show || batch2.show);
-            let group_by_cols = group_by_cols.into_iter().map(|i| results.collect(i.any())).collect();
-            let select = aggregates.into_iter().map(|i| results.collect(i.any())).collect();
 
+            let group_by_cols = group_by_cols.into_iter().map(|i| results.collect(i.any())).collect();
+            let (columns, projection, _) = results.collect_aliased(&aggregates, &[]);
             Ok(BatchResult {
-                group_by: Some(group_by_cols),
-                sort_by: None,
-                desc: batch1.desc,
-                select,
+                group_by_columns: Some(group_by_cols),
+                columns,
+                projection,
+                order_by: vec![],
                 aggregators: batch1.aggregators,
                 level: batch1.level + 1,
                 batch_count: batch1.batch_count + batch2.batch_count,
@@ -135,14 +146,14 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         }
         // No aggregation
         (None, None) => {
-            match batch1.sort_by {
+            match batch1.order_by.get(0) {
                 // Sort query
-                Some(index) => {
+                Some(&(index, desc)) => {
                     let mut executor = QueryExecutor::default();
-                    let left = batch1.select.into_iter()
+                    let left = batch1.columns.into_iter()
                         .map(|vec| set(&mut executor, "left", vec))
                         .collect::<Vec<_>>();
-                    let right = batch2.select.into_iter()
+                    let right = batch2.columns.into_iter()
                         .map(|vec| set(&mut executor, "right", vec))
                         .collect::<Vec<_>>();
                     let ops = executor.buffer_u8("take_left");
@@ -153,29 +164,31 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         merged_sort_cols,
                         ops,
                         limit,
-                        batch1.desc)?);
+                        desc)?);
 
-                    let mut select = Vec::with_capacity(left.len());
-                    for (i, (&left, right)) in left.iter().zip(right).enumerate() {
-                        if i == index {
-                            select.push(error_buffer_ref("MERGE_ERROR"));
+                    // TODO(clemens): leverage common subexpression elimination pass to preserve aliased selection columns
+                    let mut projection = Vec::new();
+                    let mut order_by = vec![(merged_sort_cols.any(), desc)];
+                    for (&ileft, &iright) in batch1.projection.iter().zip(batch2.projection.iter()) {
+                        if ileft == index && iright == index {
+                            projection.push(merged_sort_cols.any());
                         } else {
-                            let merged = executor.named_buffer("merged_sort_cols", left.tag);
-                            executor.push(VecOperator::merge_keep(ops, left, right, merged)?);
-                            select.push(merged.any());
+                            let merged = executor.named_buffer("merged_sort_cols", left[ileft].tag);
+                            executor.push(VecOperator::merge_keep(ops, left[ileft], right[iright], merged)?);
+                            projection.push(merged.any());
                         }
                     }
-                    select[index] = merged_sort_cols.any();
 
                     let mut results = executor.prepare_no_columns();
                     executor.run(1, &mut results, batch1.show || batch2.show);
-                    let select = select.into_iter().map(|i| results.collect(i)).collect();
+
+                    let (columns, projection, order_by) = results.collect_aliased(&projection, &order_by);
 
                     Ok(BatchResult {
-                        group_by: None,
-                        sort_by: Some(index),
-                        select,
-                        desc: batch1.desc,
+                        columns,
+                        projection,
+                        order_by,
+                        group_by_columns: None,
                         aggregators: Vec::new(),
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,
@@ -189,8 +202,14 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 }
                 // Select query
                 None => {
-                    let mut result = Vec::with_capacity(batch1.select.len());
-                    for (mut col1, col2) in batch1.select.into_iter().zip(batch2.select) {
+                    // TODO(clemens): make this work for differently aliased columns (need to send through query planner)
+                    ensure!(
+                        batch1.projection  == batch2.projection,
+                        "Different projections in select batches ({:?}, {:?})",
+                        &batch1.projection, &batch2.projection
+                    );
+                    let mut result = Vec::with_capacity(batch1.columns.len());
+                    for (mut col1, col2) in batch1.columns.into_iter().zip(batch2.columns) {
                         let count = if col1.len() >= limit { 0 } else {
                             min(col2.len(), limit - col1.len())
                         };
@@ -201,10 +220,10 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                         }
                     }
                     Ok(BatchResult {
-                        group_by: None,
-                        sort_by: None,
-                        select: result,
-                        desc: batch1.desc,
+                        columns: result,
+                        projection: batch1.projection,
+                        group_by_columns: None,
+                        order_by: vec![],
                         aggregators: Vec::new(),
                         level: batch1.level + 1,
                         batch_count: batch1.batch_count + batch2.batch_count,

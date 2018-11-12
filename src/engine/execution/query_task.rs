@@ -84,15 +84,6 @@ impl QueryTask {
         }
 
         let output_colnames = query.result_column_names();
-        let mut order_by_index = None;
-        if let Some(ref col) = query.order_by {
-            for (i, name) in output_colnames.iter().enumerate() {
-                if name == col {
-                    order_by_index = Some(i);
-                }
-            }
-        }
-        query.order_by_index = order_by_index;
         let referenced_cols = query.find_referenced_cols();
         let aggregate = query.aggregate.iter().map(|&(aggregate, _)| aggregate).collect();
 
@@ -241,7 +232,7 @@ impl QueryTask {
     }
 
     fn sufficient_rows(&self, rows_collected: usize) -> bool {
-        let unordered_select = self.query.aggregate.is_empty() && self.query.order_by.is_none();
+        let unordered_select = self.query.aggregate.is_empty() && self.query.order_by.is_empty();
         unordered_select && self.combined_limit() < rows_collected
     }
 
@@ -260,13 +251,13 @@ impl QueryTask {
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
             let mut record = Vec::with_capacity(self.output_colnames.len());
-            if let Some(ref gs) = full_result.group_by {
+            if let Some(ref gs) = full_result.group_by_columns {
                 for g in gs {
                     record.push(g.get_raw(i));
                 }
             }
-            for col in &full_result.select {
-                record.push(col.get_raw(i));
+            for &j in &full_result.projection {
+                record.push(full_result.columns[j].get_raw(i));
             }
             result_rows.push(record);
         }

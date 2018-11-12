@@ -25,7 +25,7 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
         Some(ref s) => *expr(s)?,
         None => Expr::Const(RawVal::Int(1)),
     };
-    let (order_by_str, order_desc) = get_order_by(order_by)?;
+    let order_by = get_order_by(order_by)?;
     let limit_clause = LimitClause { limit: get_limit(limit)?, offset: 0 };
 
     Ok(Query {
@@ -33,10 +33,8 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
         table,
         filter,
         aggregate,
-        order_by: order_by_str,
-        order_desc,
+        order_by,
         limit: limit_clause,
-        order_by_index: None,
     })
 }
 
@@ -104,21 +102,14 @@ fn get_table_name(relation: Option<Box<ASTNode>>) -> Result<String, QueryError> 
     }
 }
 
-fn get_order_by(order_by: Option<Vec<SQLOrderByExpr>>) -> Result<(Option<String>, bool), QueryError> {
-    match order_by {
-        Some(sql_order_by_exprs) => {
-            // Remove when `QueryTask` supports multiple columns in `order_by`
-            if sql_order_by_exprs.len() > 1 {
-                return Err(QueryError::NotImplemented(format!("Mutliple columns in order by")));
-            }
-            if let ASTNode::SQLIdentifier(ref identifier) = *sql_order_by_exprs[0].expr {
-                Ok((Some(identifier.to_string()), !sql_order_by_exprs[0].asc))
-            } else {
-                Err(QueryError::NotImplemented(format!("{:?}", sql_order_by_exprs)))
-            }
+fn get_order_by(order_by: Option<Vec<SQLOrderByExpr>>) -> Result<Vec<(Expr, bool)>, QueryError> {
+    let mut order = Vec::new();
+    if let Some(sql_order_by_exprs) = order_by {
+        for e in sql_order_by_exprs {
+            order.push((*(expr(&e.expr))?, !e.asc));
         }
-        None => Ok((None, false)),
     }
+    Ok(order)
 }
 
 fn get_limit(limit: Option<Box<ASTNode>>) -> Result<u64, QueryError> {
@@ -188,13 +179,13 @@ mod tests {
     fn test_select_star() {
         assert_eq!(
             format!("{:?}", parse_query("select * from default")),
-            "Ok(Query { select: [ColName(\"*\")], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: None, order_desc: false, limit: LimitClause { limit: 100, offset: 0 }, order_by_index: None })");
+            "Ok(Query { select: [ColName(\"*\")], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_to_year() {
         assert_eq!(
             format!("{:?}", parse_query("select to_year(ts) from default")),
-            "Ok(Query { select: [Func1(ToYear, ColName(\"ts\"))], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: None, order_desc: false, limit: LimitClause { limit: 100, offset: 0 }, order_by_index: None })");
+            "Ok(Query { select: [Func1(ToYear, ColName(\"ts\"))], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }

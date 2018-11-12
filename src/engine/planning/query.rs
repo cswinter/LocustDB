@@ -18,10 +18,8 @@ pub struct Query {
     pub table: String,
     pub filter: Expr,
     pub aggregate: Vec<(Aggregator, Expr)>,
-    pub order_by: Option<String>,
-    pub order_desc: bool,
+    pub order_by: Vec<(Expr, bool)>,
     pub limit: LimitClause,
-    pub order_by_index: Option<usize>,
 }
 
 impl Query {
@@ -41,32 +39,42 @@ impl Query {
             _ => Filter::None,
         };
 
-        let mut select = Vec::new();
-        if let Some(index) = self.order_by_index {
-            let (plan, _t) = query_plan::order_preserving(
-                QueryPlan::create_query_plan(&self.select[index], filter, columns)?);
-            // TODO(clemens): Reuse sort_column for result
-            let sort_column = query_plan::prepare(plan.clone(), &mut executor)?;
+        if let Some((plan, desc)) = self.order_by.get(0) {
+            let (plan, _) = query_plan::order_preserving(
+                QueryPlan::create_query_plan(&plan, filter, columns)?);
+            let ranking = query_plan::prepare(plan.clone(), &mut executor)?;
             // TODO(clemens): better criterion
             let sort_indices = if limit < len / 2 {
                 query_plan::prepare(
-                    top_n(sort_column, limit, self.order_desc),
+                    top_n(ranking, limit, *desc),
                     &mut executor)?
             } else {
                 // TODO(clemens): Optimization: sort directly if only single column selected
                 query_plan::prepare(
-                    sort_by(sort_column, indices(sort_column), self.order_desc),
+                    sort_by(ranking, indices(ranking), *desc),
                     &mut executor)?
             };
             filter = Filter::Indices(sort_indices.usize()?);
         }
+
+        let mut select = Vec::new();
         for expr in &self.select {
             let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan);
             }
-            select.push(query_plan::prepare_no_alias(plan, &mut executor)?);
+            select.push(query_plan::prepare(plan, &mut executor)?.any());
         }
+        let order_by = match self.order_by.get(0) {
+            Some((expr, desc)) => {
+                let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
+                if let Some(codec) = plan_type.codec {
+                    plan = codec.decode(plan);
+                }
+                vec![(query_plan::prepare(plan, &mut executor)?.any(), *desc)]
+            }
+            None => vec![],
+        };
 
         for c in columns {
             debug!("{}: {:?}", partition, c);
@@ -74,14 +82,14 @@ impl Query {
         let mut results = executor.prepare(Query::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
-        let select = select.into_iter().map(|i| results.collect(i.any())).collect();
+        let (columns, projection, order_by) = results.collect_aliased(&select, &order_by);
 
         Ok(
             (BatchResult {
-                group_by: None,
-                sort_by: self.order_by_index,
-                select,
-                desc: self.order_desc,
+                columns,
+                projection,
+                group_by_columns: None,
+                order_by,
                 aggregators: Vec::with_capacity(0),
                 level: 0,
                 batch_count: 1,
@@ -266,14 +274,16 @@ impl Query {
         let mut results = executor.prepare(Query::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
-        let select_cols = select.iter().map(|i| results.collect(i.any())).collect();
         let group_by_cols = grouping_columns.iter().map(|i| results.collect(i.any())).collect();
+        let (columns, projection, _) = results.collect_aliased(
+            &select.iter().map(|s| s.any()).collect::<Vec<_>>(),
+            &[]);
 
         let batch = BatchResult {
-            group_by: Some(group_by_cols),
-            sort_by: None,
-            select: select_cols,
-            desc: self.order_desc,
+            columns,
+            projection,
+            group_by_columns: Some(group_by_cols),
+            order_by: vec![],// TODO(clemens): fix
             aggregators: self.aggregate.iter().map(|x| x.0).collect(),
             level: 0,
             batch_count: 1,

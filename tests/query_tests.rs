@@ -45,7 +45,7 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     load.unwrap().ok();
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     let actual_rows = result.0.unwrap().rows;
-    assert_eq!(&actual_rows[..min(5, actual_rows.len())], expected_rows);
+    assert_eq!(&actual_rows[..min(expected_rows.len(), actual_rows.len())], expected_rows);
 }
 
 #[test]
@@ -252,10 +252,8 @@ fn test_not_equals() {
 }
 
 
-// Tests are run in alphabetical order (why ;_;) and these take a few seconds to run, so prepend z to run last
 #[test]
-fn z_test_count_by_passenger_count_pickup_year_trip_distance() {
-    use Value::*;
+fn test_count_by_passenger_count_pickup_year_trip_distance() {
     test_query_nyc(
         "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default limit 10000;",
         &[
@@ -269,8 +267,7 @@ fn z_test_count_by_passenger_count_pickup_year_trip_distance() {
 }
 
 #[test]
-fn z_test_top_n() {
-    use Value::*;
+fn test_top_n() {
     test_query_nyc(
         "SELECT passenger_count, trip_distance, total_amount FROM default ORDER BY total_amount DESC LIMIT 100;",
         &[
@@ -284,7 +281,7 @@ fn z_test_top_n() {
 }
 
 #[test]
-fn z_test_sparse_filter() {
+fn test_sparse_filter() {
     test_query_nyc(
         "select trip_id from default where (passenger_count = 5) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (store_and_fwd_flag = \"1\") limit 100;",
         &[],
@@ -292,8 +289,7 @@ fn z_test_sparse_filter() {
 }
 
 #[test]
-fn z_test_group_by_trip_id() {
-    use Value::*;
+fn test_group_by_trip_id() {
     test_query_nyc(
         "SELECT trip_id / 5, sum(total_amount) FROM default;",
         &[
@@ -317,6 +313,52 @@ fn test_group_by_negative_expression() {
         ],
     )
 }
+
+// TODO(clemens): need second sort column to make this deterministic
+/*
+#[test]
+fn test_order_by_expression() {
+    test_query_ec(
+        "SELECT negative FROM default ORDER BY negative/100;",
+        &[
+            vec![Int(-199)],
+            vec![Int(-100)],
+            vec![Int(-130)],
+            vec![Int(-120)],
+            vec![Int(39)],
+            vec![Int(-40)],
+            vec![Int(34)],
+            vec![Int(32)],
+            vec![Int(4010)],
+            vec![Int(4031)],
+        ],
+    )
+}
+*/
+
+// TODO(clemens): enable when implemented
+/*
+#[test]
+fn test_order_by_multiple() {
+    test_query_ec(
+        "SELECT enum, string_packed
+         FROM default
+         ORDER BY enum DESC, string_packed;",
+        &[
+            vec![Str("cc"), Str("asd")],
+            vec![Str("cc"), Str("t")],
+            vec![Str("bb"), Str("😈")],
+            vec![Str("bb"), Str("AXY")],
+            vec![Str("bb"), Str("azy")],
+            vec![Str("aa"), Str("_f")],
+            vec![Str("aa"), Str("$sss")],
+            vec![Str("aa"), Str("abc")],
+            vec![Str("aa"), Str("axz")],
+            vec![Str("aa"), Str("xyz")],
+        ],
+    )
+}
+*/
 
 #[test]
 fn test_gen_table() {
