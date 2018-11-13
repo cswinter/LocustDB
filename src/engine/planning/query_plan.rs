@@ -132,7 +132,12 @@ pub enum QueryPlan {
     Indices { plan: Box<QueryPlan> },
 
     /// Outputs a permutation of `indices` under which `ranking` is sorted.
-    SortBy { ranking: Box<QueryPlan>, indices: Box<QueryPlan>, desc: bool },
+    SortBy {
+        ranking: Box<QueryPlan>,
+        indices: Box<QueryPlan>,
+        desc: bool,
+        stable: bool,
+    },
 
     /// Outputs the `n` largest/smallest elements of `ranking` and their corresponding indices.
     TopN { ranking: Box<QueryPlan>, n: usize, desc: bool },
@@ -332,11 +337,12 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         QueryPlan::Indices { plan } => VecOperator::indices(
             prepare(*plan, result)?,
             result.buffer_usize("indices")),
-        QueryPlan::SortBy { ranking, indices, desc } => VecOperator::sort_indices(
+        QueryPlan::SortBy { ranking, indices, desc, stable } => VecOperator::sort_by(
             prepare(*ranking, result)?,
             prepare(*indices, result)?.usize()?,
             result.buffer_usize("permutation"),
-            desc)?,
+            desc,
+            stable)?,
         QueryPlan::TopN { ranking, n, desc } => {
             let plan = prepare(*ranking, result)?;
             VecOperator::top_n(
@@ -799,13 +805,13 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s1);
                 Indices { plan }
             }
-            SortBy { ranking, indices, desc } => {
+            SortBy { ranking, indices, desc, stable } => {
                 let (ranking, s1) = replace_common_subexpression(*ranking, executor);
                 let (indices, s2) = replace_common_subexpression(*indices, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
                 hasher.input(&[desc as u8]);
-                SortBy { ranking, indices, desc }
+                SortBy { ranking, indices, desc, stable }
             }
             TopN { ranking, n, desc } => {
                 let (ranking, s1) = replace_common_subexpression(*ranking, executor);

@@ -25,6 +25,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
     let mut opts = Options::default();
+    opts.threads = 1;
     let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/edge_cases.csv", "default")
@@ -314,30 +315,25 @@ fn test_group_by_negative_expression() {
     )
 }
 
-// TODO(clemens): need second sort column to make this deterministic
-/*
 #[test]
 fn test_order_by_expression() {
     test_query_ec(
-        "SELECT negative FROM default ORDER BY negative/100;",
+        "SELECT negative FROM default ORDER BY negative/100, string_packed;",
         &[
-            vec![Int(-199)],
-            vec![Int(-100)],
-            vec![Int(-130)],
             vec![Int(-120)],
+            vec![Int(-130)],
+            vec![Int(-100)],
+            vec![Int(-199)],
+            vec![Int(32)],
+            vec![Int(34)],
             vec![Int(39)],
             vec![Int(-40)],
-            vec![Int(34)],
-            vec![Int(32)],
-            vec![Int(4010)],
             vec![Int(4031)],
+            vec![Int(4010)],
         ],
     )
 }
-*/
 
-// TODO(clemens): enable when implemented
-/*
 #[test]
 fn test_order_by_multiple() {
     test_query_ec(
@@ -347,18 +343,17 @@ fn test_order_by_multiple() {
         &[
             vec![Str("cc"), Str("asd")],
             vec![Str("cc"), Str("t")],
-            vec![Str("bb"), Str("😈")],
             vec![Str("bb"), Str("AXY")],
             vec![Str("bb"), Str("azy")],
-            vec![Str("aa"), Str("_f")],
+            vec![Str("bb"), Str("😈")],
             vec![Str("aa"), Str("$sss")],
+            vec![Str("aa"), Str("_f")],
             vec![Str("aa"), Str("abc")],
             vec![Str("aa"), Str("axz")],
             vec![Str("aa"), Str("xyz")],
         ],
     )
 }
-*/
 
 #[test]
 fn test_gen_table() {

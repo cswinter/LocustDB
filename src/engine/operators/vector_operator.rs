@@ -35,6 +35,7 @@ use super::merge_aggregate::MergeAggregate;
 use super::merge_deduplicate::MergeDeduplicate;
 use super::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
 use super::merge_drop::MergeDrop;
+use super::merge_partitioned::MergePartitioned;
 use super::merge_keep::MergeKeep;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
@@ -43,8 +44,8 @@ use super::partition::Partition;
 use super::select::Select;
 use super::slice_pack::*;
 use super::slice_unpack::*;
-use super::sort_unstable_by::SortUnstableBy;
-use super::sort_unstable_by_slices::SortUnstableBySlices;
+use super::sort_by::SortBy;
+use super::sort_by_slices::SortBySlices;
 use super::subpartition::SubPartition;
 use super::sum::VecSum;
 use super::to_year::ToYear;
@@ -376,18 +377,19 @@ impl<'a> VecOperator<'a> {
         Box::new(Indices { input: input.buffer, indices_out })
     }
 
-    pub fn sort_indices(ranking: TypedBufferRef,
-                        indices: BufferRef<usize>,
-                        output: BufferRef<usize>,
-                        descending: bool) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn sort_by(ranking: TypedBufferRef,
+                   indices: BufferRef<usize>,
+                   output: BufferRef<usize>,
+                   descending: bool,
+                   stable: bool) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::ByteSlices(_) = ranking.tag {
             return Ok(Box::new(
-                SortUnstableBySlices { ranking: ranking.any(), output, indices, descending }));
+                SortBySlices { ranking: ranking.any(), output, indices, descending, stable }));
         }
         reify_types! {
             "sort_indices";
             ranking: Primitive;
-            Ok(Box::new(SortUnstableBy { ranking, output, descending }));
+            Ok(Box::new(SortBy { ranking, output, indices, descending, stable }));
         }
     }
 
@@ -424,11 +426,19 @@ impl<'a> VecOperator<'a> {
     pub fn partition(left: TypedBufferRef,
                      right: TypedBufferRef,
                      partition_out: BufferRef<Premerge>,
-                     limit: usize) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "partition";
-            left, right: Primitive;
-            Ok(Box::new(Partition { left, right, partitioning: partition_out, limit }));
+                     limit: usize, desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+        if desc {
+            reify_types! {
+                "partition";
+                left, right: Primitive;
+                Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpGreaterThan> }));
+            }
+        } else {
+            reify_types! {
+                "partition";
+                left, right: Primitive;
+                Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpLessThan> }));
+            }
         }
     }
 
@@ -436,11 +446,20 @@ impl<'a> VecOperator<'a> {
     pub fn subpartition(partitioning: BufferRef<Premerge>,
                         left: TypedBufferRef,
                         right: TypedBufferRef,
-                        subpartition_out: BufferRef<Premerge>) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "subpartition";
-            left, right: Primitive;
-            Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out }));
+                        subpartition_out: BufferRef<Premerge>,
+                        desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+        if desc {
+            reify_types! {
+                "subpartition";
+                left, right: Primitive;
+                Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpGreaterThan> }));
+            }
+        } else {
+            reify_types! {
+                "subpartition";
+                left, right: Primitive;
+                Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpLessThan> }));
+            }
         }
     }
 
@@ -473,6 +492,27 @@ impl<'a> VecOperator<'a> {
                            aggregated_out: BufferRef<i64>,
                            aggregator: Aggregator) -> BoxedOperator<'a> {
         Box::new(MergeAggregate { merge_ops, left, right, aggregated: aggregated_out, aggregator })
+    }
+
+    pub fn merge_partitioned(partitioning: BufferRef<Premerge>,
+                             left: TypedBufferRef,
+                             right: TypedBufferRef,
+                             merged_out: TypedBufferRef,
+                             ops_out: BufferRef<u8>,
+                             limit: usize, desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+        if desc {
+            reify_types! {
+                "merge_partitioned_desc";
+                left, right, merged_out: Primitive;
+                Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpGreaterThan> }));
+            }
+        } else {
+            reify_types! {
+                "merge_partitioned_asc";
+                left, right, merged_out: Primitive;
+                Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpLessThan> }));
+            }
+        }
     }
 
     pub fn merge(left: TypedBufferRef,

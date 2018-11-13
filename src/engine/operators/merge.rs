@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -38,8 +38,9 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Me
 }
 
 fn merge<'a, T: GenericVec<T> + 'a, C: Comparator<T>>(left: &[T], right: &[T], limit: usize) -> (Vec<T>, Vec<u8>) {
-    let mut result = Vec::with_capacity(left.len() + right.len());
-    let mut ops = Vec::<u8>::with_capacity(left.len() + right.len());
+    let len = cmp::min(left.len() + right.len(), limit);
+    let mut result = Vec::with_capacity(len);
+    let mut ops = Vec::<u8>::with_capacity(len);
 
     let mut i = 0;
     let mut j = 0;
@@ -55,11 +56,11 @@ fn merge<'a, T: GenericVec<T> + 'a, C: Comparator<T>>(left: &[T], right: &[T], l
         }
     }
 
-    for x in left[i..min(left.len(), limit - j)].iter() {
+    for x in left[i..cmp::min(left.len(), limit - j)].iter() {
         result.push(*x);
         ops.push(1);
     }
-    for x in right[j..min(right.len(), limit - i)].iter() {
+    for x in right[j..cmp::min(right.len(), limit - i)].iter() {
         result.push(*x);
         ops.push(0);
     }

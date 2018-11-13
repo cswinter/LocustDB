@@ -1,23 +1,27 @@
 use std::cmp;
+use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::u32;
 
 use engine::*;
 
 
 #[derive(Debug)]
-pub struct Partition<T> {
+pub struct Partition<T, C> {
     pub left: BufferRef<T>,
     pub right: BufferRef<T>,
     pub partitioning: BufferRef<Premerge>,
     pub limit: usize,
+    pub c: PhantomData<C>,
 }
 
-impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Partition<T> {
+impl<'a, T, C> VecOperator<'a> for Partition<T, C>
+    where T: GenericVec<T> + 'a, C: Comparator<T> + Debug {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let premerge = {
             let left = scratchpad.get(self.left);
             let right = scratchpad.get(self.right);
-            partition(&left, &right, self.limit)
+            partition::<_, C>(&left, &right, self.limit)
         };
         scratchpad.set(self.partitioning, premerge);
     }
@@ -33,7 +37,8 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for Partition<T> {
     }
 }
 
-pub fn partition<'a, T: GenericVec<T> + 'a>(left: &[T], right: &[T], limit: usize) -> Vec<Premerge> {
+pub fn partition<'a, T, C>(left: &[T], right: &[T], limit: usize) -> Vec<Premerge>
+    where T: GenericVec<T> + 'a, C: Comparator<T> {
     let mut result = Vec::new();
     let mut i = 0;
     let mut j = 0;
@@ -41,7 +46,7 @@ pub fn partition<'a, T: GenericVec<T> + 'a>(left: &[T], right: &[T], limit: usiz
     let mut min_elems = 0u32;
     while i < left.len() && j < right.len() && min_elems < limit {
         let mut partition = Premerge { left: 0, right: 0 };
-        let elem = if left[i] <= right[j] { left[i] } else { right[j] };
+        let elem = if C::cmp_eq(left[i], right[j]) { left[i] } else { right[j] };
         while i < left.len() && elem == left[i] {
             partition.left += 1;
             i += 1;

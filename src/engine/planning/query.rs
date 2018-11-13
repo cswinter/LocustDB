@@ -39,23 +39,35 @@ impl Query {
             _ => Filter::None,
         };
 
-        if let Some((plan, desc)) = self.order_by.get(0) {
+        // Sorting
+        let mut sort_indices = None;
+        for (plan, desc) in self.order_by.iter().rev() {
             let (plan, _) = query_plan::order_preserving(
                 QueryPlan::create_query_plan(&plan, filter, columns)?);
-            let ranking = query_plan::prepare(plan.clone(), &mut executor)?;
-            // TODO(clemens): better criterion
-            let sort_indices = if limit < len / 2 {
+            let ranking = query_plan::prepare(plan, &mut executor)?;
+
+            // TODO(clemens): better criterion for using top_n
+            // TODO(clemens): top_n for multiple columns?
+            sort_indices = Some(if limit < len / 2 && self.order_by.len() == 1 {
                 query_plan::prepare(
                     top_n(ranking, limit, *desc),
                     &mut executor)?
             } else {
                 // TODO(clemens): Optimization: sort directly if only single column selected
-                query_plan::prepare(
-                    sort_by(ranking, indices(ranking), *desc),
-                    &mut executor)?
-            };
+                match sort_indices {
+                    None => query_plan::prepare(
+                        sort_by(ranking, indices(ranking), *desc, false /* unstable sort */),
+                        &mut executor)?,
+                    Some(indices) => query_plan::prepare(
+                        sort_by(ranking, indices, *desc, true /* stable sort */),
+                        &mut executor)?,
+                }
+            });
+        }
+        if let Some(sort_indices) = sort_indices {
             filter = Filter::Indices(sort_indices.usize()?);
         }
+
 
         let mut select = Vec::new();
         for expr in &self.select {
@@ -65,15 +77,13 @@ impl Query {
             }
             select.push(query_plan::prepare(plan, &mut executor)?.any());
         }
-        let order_by = match self.order_by.get(0) {
-            Some((expr, desc)) => {
-                let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
-                if let Some(codec) = plan_type.codec {
-                    plan = codec.decode(plan);
-                }
-                vec![(query_plan::prepare(plan, &mut executor)?.any(), *desc)]
+        let mut order_by = Vec::new();
+        for (expr, desc) in &self.order_by {
+            let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
+            if let Some(codec) = plan_type.codec {
+                plan = codec.decode(plan);
             }
-            None => vec![],
+            order_by.push((query_plan::prepare(plan, &mut executor)?.any(), *desc));
         };
 
         for c in columns {
@@ -237,7 +247,10 @@ impl Query {
         if !grouping_key_type.is_order_preserving() {
             let sort_indices = if raw_grouping_key_type.is_order_preserving() {
                 query_plan::prepare(
-                    sort_by(encoded_group_by_column, indices(encoded_group_by_column), false),
+                    sort_by(encoded_group_by_column,
+                            indices(encoded_group_by_column),
+                            false /* desc */,
+                            false /* stable */),
                     &mut executor)?
             } else {
                 if grouping_columns.len() != 1 {
@@ -247,7 +260,10 @@ impl Query {
                         &executor)
                 }
                 query_plan::prepare(
-                    sort_by(grouping_columns[0], indices(grouping_columns[0]), false),
+                    sort_by(grouping_columns[0],
+                            indices(grouping_columns[0]),
+                            false /* desc */,
+                            false /* stable */),
                     &mut executor)?
             };
 
@@ -343,6 +359,9 @@ impl Query {
         for expr in &self.select {
             expr.add_colnames(&mut colnames);
         }
+        for expr in &self.order_by {
+            expr.0.add_colnames(&mut colnames);
+        }
         self.filter.add_colnames(&mut colnames);
         for &(_, ref expr) in &self.aggregate {
             expr.add_colnames(&mut colnames);
@@ -350,8 +369,7 @@ impl Query {
         colnames
     }
 
-    fn column_data<'a>(columns: &'a HashMap<String, Arc<Column>>)
-                       -> HashMap<String, Vec<&'a AnyVec<'a>>> {
+    fn column_data(columns: &HashMap<String, Arc<Column>>) -> HashMap<String, Vec<&AnyVec>> {
         columns.iter()
             .map(|(name, column)| (name.to_string(), column.data_sections()))
             .collect()

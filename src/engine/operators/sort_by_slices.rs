@@ -2,23 +2,32 @@ use engine::*;
 
 
 #[derive(Debug)]
-pub struct SortUnstableBySlices {
+pub struct SortBySlices {
     pub ranking: BufferRef<Any>,
     pub indices: BufferRef<usize>,
     pub output: BufferRef<usize>,
     pub descending: bool,
+    pub stable: bool,
 }
 
-impl<'a> VecOperator<'a> for SortUnstableBySlices {
+impl<'a> VecOperator<'a> for SortBySlices {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.alias(self.indices, self.output);
         let ranking_any = scratchpad.get_any(self.ranking);
         let ranking = ranking_any.cast_ref_byte_slices();
         let mut result = scratchpad.get_mut(self.indices);
         if self.descending {
-            result.sort_unstable_by(|i, j| ranking.row(*i).cmp(&ranking.row(*j)).reverse());
+            if self.stable {
+                result.sort_by(|i, j| ranking.row(*i).cmp(&ranking.row(*j)).reverse());
+            } else {
+                result.sort_unstable_by(|i, j| ranking.row(*i).cmp(&ranking.row(*j)).reverse());
+            }
         } else {
-            result.sort_unstable_by_key(|i| ranking.row(*i));
+            if self.stable {
+                result.sort_by_key(|i| ranking.row(*i));
+            } else {
+                result.sort_unstable_by_key(|i| ranking.row(*i));
+            }
         }
     }
 
@@ -29,6 +38,6 @@ impl<'a> VecOperator<'a> for SortUnstableBySlices {
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
-        format!("sort_by({}, {}, desc={})", self.ranking, self.indices, self.descending)
+        format!("sort_by({}, {}, desc={}, stable={})", self.ranking, self.indices, self.descending, self.stable)
     }
 }
