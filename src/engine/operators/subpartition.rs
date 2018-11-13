@@ -1,21 +1,25 @@
+use std::fmt::Debug;
+use std::marker::PhantomData;
+
 use engine::*;
 
 
 #[derive(Debug)]
-pub struct SubPartition<T> {
+pub struct SubPartition<T, C> {
     pub partitioning: BufferRef<Premerge>,
     pub left: BufferRef<T>,
     pub right: BufferRef<T>,
     pub sub_partitioning: BufferRef<Premerge>,
+    pub c: PhantomData<C>,
 }
 
-impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SubPartition<T> {
+impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for SubPartition<T, C> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let sub_partitioning = {
             let partitioning = scratchpad.get(self.partitioning);
             let left = scratchpad.get(self.left);
             let right = scratchpad.get(self.right);
-            subpartition(&partitioning, &left, &right)
+            subpartition::<_, C>(&partitioning, &left, &right)
         };
         scratchpad.set(self.sub_partitioning, sub_partitioning);
     }
@@ -31,7 +35,7 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SubPartition<T> {
     }
 }
 
-fn subpartition<'a, T: GenericVec<T> + 'a>(
+fn subpartition<'a, T: GenericVec<T> + 'a, C: Comparator<T>>(
     partitioning: &[Premerge],
     left: &[T],
     right: &[T]) -> Vec<Premerge> {
@@ -45,7 +49,11 @@ fn subpartition<'a, T: GenericVec<T> + 'a>(
         let j_max = j + group.right as usize;
         while i < i_max || j < j_max {
             let mut subpartition = Premerge { left: 0, right: 0 };
-            let elem = if i < i_max && (j == j_max || left[i] <= right[j]) { left[i] } else { right[j] };
+            let elem = if i < i_max && (j == j_max || C::cmp_eq(left[i], right[j])) {
+                left[i]
+            } else {
+                right[j]
+            };
             while i < i_max && elem == left[i] {
                 subpartition.left += 1;
                 i += 1;
@@ -73,7 +81,7 @@ mod tests {
     fn test_multipass_grouping() {
         let left1 = vec!["A", "A", "A", "C", "P"];
         let right1 = vec!["A", "A", "B", "C", "X", "X", "Z"];
-        let result = partition::<&str>(&left1, &right1, 7);
+        let result = partition::<&str, CmpLessThan>(&left1, &right1, 7);
         assert_eq!(result, vec![
             Premerge { left: 3, right: 2 },
             Premerge { left: 0, right: 1 },
@@ -100,7 +108,7 @@ mod tests {
             TakeRight,
         ]);
 
-        let subpartition = subpartition::<u32>(&result, &left2, &right2);
+        let subpartition = subpartition::<u32, CmpLessThan>(&result, &left2, &right2);
         assert_eq!(subpartition, vec![
             Premerge { left: 1, right: 0 },
             Premerge { left: 1, right: 1 },

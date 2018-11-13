@@ -13,8 +13,6 @@ pub trait AnyVec<'a>: Send + Sync {
     fn len(&self) -> usize;
     fn get_raw(&self, i: usize) -> RawVal;
     fn get_type(&self) -> EncodingType;
-    fn sort_indices_desc(&self, indices: &mut Vec<usize>);
-    fn sort_indices_asc(&self, indices: &mut Vec<usize>);
     fn type_error(&self, func_name: &str) -> String;
     fn append_all(&mut self, other: &AnyVec<'a>, count: usize) -> Option<BoxedVec<'a>>;
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b;
@@ -61,12 +59,6 @@ impl<'a, T: GenericVec<T> + 'a> AnyVec<'a> for Vec<T> {
     fn len(&self) -> usize { Vec::len(self) }
     fn get_raw(&self, i: usize) -> RawVal { T::wrap_one(self[i]) }
     fn get_type(&self) -> EncodingType { T::t() }
-    fn sort_indices_desc(&self, indices: &mut Vec<usize>) {
-        indices.sort_unstable_by(|i, j| self[*i].cmp(&self[*j]).reverse());
-    }
-    fn sort_indices_asc(&self, indices: &mut Vec<usize>) {
-        indices.sort_unstable_by_key(|i| self[*i]);
-    }
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b {
         let to = min(to, self.len());
         Box::new(&self[from..to])
@@ -163,12 +155,6 @@ impl<'a, T: GenericVec<T> + 'a> AnyVec<'a> for &'a [T] {
     fn len(&self) -> usize { <[T]>::len(self) }
     fn get_raw(&self, i: usize) -> RawVal { T::wrap_one(self[i]) }
     fn get_type(&self) -> EncodingType { T::t() }
-    fn sort_indices_desc(&self, indices: &mut Vec<usize>) {
-        indices.sort_unstable_by(|i, j| self[*i].cmp(&self[*j]).reverse());
-    }
-    fn sort_indices_asc(&self, indices: &mut Vec<usize>) {
-        indices.sort_unstable_by_key(|i| self[*i]);
-    }
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedVec<'b> where 'a: 'b {
         let to = min(to, self.len());
         Box::new(&self[from..to])
@@ -231,8 +217,6 @@ impl<'a> AnyVec<'a> for usize {
         RawVal::Null
     }
     fn get_type(&self) -> EncodingType { EncodingType::Null }
-    fn sort_indices_desc(&self, _indices: &mut Vec<usize>) { panic!("EmptyVector.sort_indices_desc") }
-    fn sort_indices_asc(&self, _indices: &mut Vec<usize>) { panic!("EmptyVector.sort_indices_asc") }
     fn type_error(&self, func_name: &str) -> String { format!("EmptyVector.{}", func_name) }
 
     fn append_all(&mut self, other: &AnyVec<'a>, count: usize) -> Option<BoxedVec<'a>> {
@@ -258,8 +242,6 @@ impl<'a> AnyVec<'a> for RawVal {
     fn len(&self) -> usize { 0 }
     fn get_raw(&self, _i: usize) -> RawVal { self.clone() }
     fn get_type(&self) -> EncodingType { EncodingType::Constant }
-    fn sort_indices_desc(&self, _indices: &mut Vec<usize>) {}
-    fn sort_indices_asc(&self, _indices: &mut Vec<usize>) {}
     fn type_error(&self, func_name: &str) -> String { format!("Constant.{}", func_name) }
     fn append_all(&mut self, _other: &AnyVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("Constant.extend") }
     fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(self.clone()) }

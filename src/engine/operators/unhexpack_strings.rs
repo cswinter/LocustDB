@@ -44,7 +44,7 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
                 if decoded.capacity() == decoded.len() { break; }
             }
         }
-        scratchpad.pin(self.stringstore.any());
+        scratchpad.pin(&self.stringstore.any());
         self.has_more = self.iterator.as_ref().unwrap().has_more();
     }
 

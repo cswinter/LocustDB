@@ -2,10 +2,10 @@ u8_offset_encoded,non_dense_ints,enum,string_packed,constant0,constant0_2,negati
 256,0,aa,xyz,0,0,-199
 258,2,aa,abc,0,0,39
 259,3,aa,axz,0,0,-100
-257,1,bb,axy,0,0,34
+257,1,bb,AXY,0,0,34
 275,4,bb,azy,0,0,4031
-500,0,aa,sss,0,0,32
+500,0,aa,$sss,0,0,32
 343,2,cc,asd,0,0,-130
-432,1,aa,f,0,0,-120
+432,1,aa,_f,0,0,-120
 511,2,cc,t,0,0,4010
-500,3,bb,g,0,0,-40
+500,3,bb,😈,0,0,-40

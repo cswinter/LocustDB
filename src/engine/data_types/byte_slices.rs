@@ -34,14 +34,6 @@ impl<'a> AnyVec<'a> for ByteSlices<'a> {
     fn get_raw(&self, _i: usize) -> RawVal { panic!(self.type_error("get_raw")) }
     fn get_type(&self) -> EncodingType { EncodingType::ByteSlices(self.row_len) }
 
-    fn sort_indices_desc(&self, indices: &mut Vec<usize>) {
-        indices.sort_unstable_by(|i, j| self.row(*i).cmp(&self.row(*j)).reverse());
-    }
-
-    fn sort_indices_asc(&self, indices: &mut Vec<usize>) {
-        indices.sort_unstable_by_key(|i| self.row(*i));
-    }
-
     fn append_all(&mut self, _other: &AnyVec<'a>, _count: usize) -> Option<BoxedVec<'a>> {
         panic!(self.type_error("append_all"))
     }
