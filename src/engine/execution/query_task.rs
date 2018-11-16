@@ -269,13 +269,12 @@ impl QueryTask {
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
             let mut record = Vec::with_capacity(self.output_colnames.len());
-            if let Some(ref gs) = full_result.group_by_columns {
-                for g in gs {
-                    record.push(g.get_raw(i));
-                }
-            }
+            // TODO(clemens): use column order of original query
             for &j in &full_result.projection {
                 record.push(full_result.columns[j].get_raw(i));
+            }
+            for &(aggregation, _) in &full_result.aggregations {
+                record.push(full_result.columns[aggregation].get_raw(i));
             }
             result_rows.push(record);
         }

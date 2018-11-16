@@ -102,15 +102,14 @@ impl NormalFormQuery {
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
-        let (columns, projection, order_by) = results.collect_aliased(&select, &order_by);
+        let (columns, projection, _, order_by) = results.collect_aliased(&select, &[], &order_by);
 
         Ok(
             (BatchResult {
                 columns,
                 projection,
-                group_by_columns: None,
+                aggregations: vec![],
                 order_by,
-                aggregators: Vec::with_capacity(0),
                 level: 0,
                 batch_count: 1,
                 show,
@@ -207,7 +206,7 @@ impl NormalFormQuery {
         executor.set_encoded_group_by(encoded_group_by_column);
 
         // Compact and decode aggregation results
-        let mut select = Vec::new();
+        let mut aggregation_cols = Vec::new();
         {
             let mut decode_compact = |aggregator: Aggregator,
                                       aggregate: TypedBufferRef,
@@ -233,7 +232,7 @@ impl NormalFormQuery {
             for (i, &(aggregator, aggregate, ref t)) in aggregation_results.iter().enumerate() {
                 if selector_index != Some(i) {
                     let decode_compacted = decode_compact(aggregator, aggregate, t.clone())?;
-                    select.push(decode_compacted)
+                    aggregation_cols.push((decode_compacted, aggregator))
                 }
             }
 
@@ -241,7 +240,7 @@ impl NormalFormQuery {
             if let Some(i) = selector_index {
                 let (aggregator, aggregate, ref t) = aggregation_results[i];
                 let selector = decode_compact(aggregator, aggregate, t.clone())?;
-                select.insert(i, selector);
+                aggregation_cols.insert(i, (selector, aggregator));
             }
         }
 
@@ -277,17 +276,17 @@ impl NormalFormQuery {
                     &mut executor)?
             };
 
-            let mut select2 = Vec::new();
-            for s in &select {
-                select2.push(query_plan::prepare_no_alias(
-                    query_syntax::select(*s, sort_indices),
-                    &mut executor)?);
+            let mut aggregations2 = Vec::new();
+            for &(a, aggregator) in &aggregation_cols {
+                aggregations2.push((query_plan::prepare(
+                    query_syntax::select(a, sort_indices),
+                    &mut executor)?, aggregator));
             }
-            select = select2;
+            aggregation_cols = aggregations2;
 
             let mut grouping_columns2 = Vec::new();
             for s in &grouping_columns {
-                grouping_columns2.push(query_plan::prepare_no_alias(
+                grouping_columns2.push(query_plan::prepare(
                     query_syntax::select(*s, sort_indices),
                     &mut executor)?);
             }
@@ -300,17 +299,16 @@ impl NormalFormQuery {
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
-        let group_by_cols = grouping_columns.iter().map(|i| results.collect(i.any())).collect();
-        let (columns, projection, _) = results.collect_aliased(
-            &select.iter().map(|s| s.any()).collect::<Vec<_>>(),
+        let (columns, projection, aggregations, _) = results.collect_aliased(
+            &grouping_columns.iter().map(|s| s.any()).collect::<Vec<_>>(),
+            &aggregation_cols.iter().map(|&(s, aggregator)| (s.any(), aggregator)).collect::<Vec<_>>(),
             &[]);
 
         let batch = BatchResult {
             columns,
             projection,
-            group_by_columns: Some(group_by_cols),
-            order_by: vec![],// TODO(clemens): fix
-            aggregators: self.aggregate.iter().map(|x| x.0).collect(),
+            aggregations,
+            order_by: vec![],
             level: 0,
             batch_count: 1,
             show,
@@ -318,7 +316,7 @@ impl NormalFormQuery {
         };
         if let Err(err) = batch.validate() {
             warn!("Query result failed validation (partition {}): {}\n{:#}\nGroup By: {:?}\nSelect: {:?}",
-                  partition, err, &executor, grouping_columns, select);
+                  partition, err, &executor, grouping_columns, aggregation_cols);
             Err(err)
         } else {
             Ok((
@@ -364,7 +362,6 @@ impl NormalFormQuery {
 impl Query {
     pub fn normalize(&self) -> (NormalFormQuery, Option<NormalFormQuery>) {
         let mut final_projection = Vec::new();
-        // TODO(clemens): non-root aggregation expressions
         let mut select = Vec::new();
         let mut aggregate = Vec::new();
         let mut aggregate_colnames = Vec::new();
@@ -382,32 +379,55 @@ impl Query {
             }
         }
 
-        let require_final_pass = final_projection.iter()
+        let require_final_pass = (!aggregate.is_empty() && !self.order_by.is_empty())
+            || final_projection.iter()
             .any(|expr| match expr {
                 Expr::ColName(_) => false,
                 _ => true,
             });
 
-        let final_pass = if require_final_pass {
-            Some(NormalFormQuery {
-                projection: final_projection,
-                filter: Expr::Const(RawVal::Int(1)),
-                aggregate: vec![],
-                order_by: vec![],
-                limit: self.limit.clone(),
-            })
-        } else { None };
-
-        (
-            NormalFormQuery {
-                projection: select,
-                filter: self.filter.clone(),
-                aggregate,
-                order_by: self.order_by.clone(),
-                limit: self.limit.clone(),
-            },
-            final_pass,
-        )
+        if require_final_pass {
+            let mut final_order_by = Vec::new();
+            for (expr, desc) in &self.order_by {
+                let (full_expr, aggregates) = Query::extract_aggregators(expr, &mut aggregate_colnames);
+                if aggregates.is_empty() {
+                    let column_name = format!("_cs{}", select_colnames.len());
+                    select_colnames.push(column_name.clone());
+                    select.push(full_expr);
+                    final_order_by.push((Expr::ColName(column_name), *desc));
+                } else {
+                    aggregate.extend(aggregates);
+                    final_order_by.push((full_expr, *desc));
+                }
+            }
+            (
+                NormalFormQuery {
+                    projection: select,
+                    filter: self.filter.clone(),
+                    aggregate,
+                    order_by: vec![],
+                    limit: self.limit.clone(),
+                },
+                Some(NormalFormQuery {
+                    projection: final_projection,
+                    filter: Expr::Const(RawVal::Int(1)),
+                    aggregate: vec![],
+                    order_by: final_order_by,
+                    limit: self.limit.clone(),
+                }),
+            )
+        } else {
+            (
+                NormalFormQuery {
+                    projection: select,
+                    filter: self.filter.clone(),
+                    aggregate,
+                    order_by: self.order_by.clone(),
+                    limit: self.limit.clone(),
+                },
+                None,
+            )
+        }
     }
 
     pub fn extract_aggregators(expr: &Expr, column_names: &mut Vec<String>) -> (Expr, Vec<(Aggregator, Expr)>) {

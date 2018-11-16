@@ -252,6 +252,37 @@ fn test_not_equals() {
     )
 }
 
+#[test]
+fn test_order_by_aggregate() {
+    test_query_nyc(
+        "SELECT passenger_count, count(0) FROM default ORDER BY count(0) DESC LIMIT 10;",
+        &[
+            vec![Int(1), Int(6016)],
+            vec![Int(5), Int(2197)],
+            vec![Int(2), Int(1103)],
+            vec![Int(3), Int(383)],
+            vec![Int(6), Int(222)],
+            vec![Int(4), Int(76)],
+            vec![Int(0), Int(3)],
+        ],
+    )
+}
+
+#[test]
+fn test_order_by_grouping() {
+    test_query_nyc(
+        "SELECT passenger_count, count(0) FROM default ORDER BY passenger_count DESC LIMIT 10;",
+        &[
+            vec![Int(6), Int(222)],
+            vec![Int(5), Int(2197)],
+            vec![Int(4), Int(76)],
+            vec![Int(3), Int(383)],
+            vec![Int(2), Int(1103)],
+            vec![Int(1), Int(6016)],
+            vec![Int(0), Int(3)],
+        ],
+    )
+}
 
 #[test]
 fn test_composite_aggregate() {
