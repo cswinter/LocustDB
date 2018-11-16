@@ -86,7 +86,10 @@ impl QueryTask {
         let referenced_cols = query.find_referenced_cols();
 
         let (main_phase, final_pass) = query.normalize();
-        let output_colnames = main_phase.result_column_names();
+        let output_colnames = match &final_pass {
+            Some(final_pass) => final_pass.result_column_names(),
+            None => main_phase.result_column_names(),
+        };
 
         QueryTask {
             main_phase,
