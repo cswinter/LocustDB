@@ -67,8 +67,11 @@ impl<'a> Scratchpad<'a> {
         T::unwrap(&*self.get_any(index.any()))
     }
 
-    pub fn collect_aliased(&mut self, projections: &[BufferRef<Any>], rankings: &[(BufferRef<Any>, bool)])
-                           -> (Vec<BoxedVec<'a>>, Vec<usize>, Vec<(usize, bool)>) {
+    pub fn collect_aliased(&mut self,
+                           projections: &[BufferRef<Any>],
+                           aggregations: &[(BufferRef<Any>, Aggregator)],
+                           rankings: &[(BufferRef<Any>, bool)])
+                           -> (Vec<BoxedVec<'a>>, Vec<usize>, Vec<(usize, Aggregator)>, Vec<(usize, bool)>) {
         let mut collected_buffers = HashMap::<usize, usize>::default();
         let mut columns = Vec::new();
         let mut projection_indices = Vec::new();
@@ -80,6 +83,18 @@ impl<'a> Scratchpad<'a> {
                 collected_buffers.insert(i, columns.len());
                 projection_indices.push(columns.len());
                 let data = mem::replace(self.buffer_mut(projection), RefCell::new(AnyVec::empty(0)));
+                columns.push(data.into_inner());
+            }
+        }
+        let mut aggregation_indices = Vec::new();
+        for &(aggregation, aggregator) in aggregations {
+            let i = self.resolve(&aggregation);
+            if collected_buffers.contains_key(&i) {
+                aggregation_indices.push((collected_buffers[&i], aggregator));
+            } else {
+                collected_buffers.insert(i, columns.len());
+                aggregation_indices.push((columns.len(), aggregator));
+                let data = mem::replace(self.buffer_mut(aggregation), RefCell::new(AnyVec::empty(0)));
                 columns.push(data.into_inner());
             }
         }
@@ -95,12 +110,7 @@ impl<'a> Scratchpad<'a> {
                 columns.push(data.into_inner());
             }
         }
-        (columns, projection_indices, ranking_indices)
-    }
-
-    pub fn collect(&mut self, index: BufferRef<Any>) -> BoxedVec<'a> {
-        let owned = mem::replace(self.buffer_mut(index), RefCell::new(AnyVec::empty(0)));
-        owned.into_inner()
+        (columns, projection_indices, aggregation_indices, ranking_indices)
     }
 
     pub fn set_any(&mut self, index: BufferRef<Any>, vec: BoxedVec<'a>) {
