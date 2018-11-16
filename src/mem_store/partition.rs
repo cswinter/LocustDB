@@ -57,12 +57,12 @@ impl Partition {
             lru)
     }
 
-    pub fn get_cols(&self, referenced_cols: &HashSet<String>, drs: &DiskReadScheduler) -> HashMap<String, Arc<Column>> {
-        let mut columns = HashMap::new();
+    pub fn get_cols(&self, referenced_cols: &HashSet<String>, drs: &DiskReadScheduler) -> HashMap<String, Arc<DataSource>> {
+        let mut columns = HashMap::<String, Arc<DataSource>>::new();
         for handle in &self.cols {
             if referenced_cols.contains(handle.name()) {
                 let column = drs.get_or_load(&handle);
-                columns.insert(handle.name().to_string(), column);
+                columns.insert(handle.name().to_string(), Arc::new(column));
             }
         }
         columns

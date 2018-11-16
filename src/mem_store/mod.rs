@@ -13,7 +13,7 @@ pub mod lz4;
 mod mixed_column;
 pub(crate) mod lru;
 
-pub use self::column::{Column, DataSection};
+pub use self::column::{Column, DataSection, DataSource};
 pub use self::codec::{Codec, CodecOp};
 pub use self::tree::*;
 pub use self::table::TableStats;

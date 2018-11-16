@@ -19,7 +19,7 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
         })?;
 
     let (projection, relation, selection, order_by, limit) = get_query_components(ast)?;
-    let (select, aggregate) = get_select_aggregate(projection)?;
+    let projection = get_projection(projection)?;
     let table = get_table_name(relation)?;
     let filter = match selection {
         Some(ref s) => *expr(s)?,
@@ -29,10 +29,9 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
     let limit_clause = LimitClause { limit: get_limit(limit)?, offset: 0 };
 
     Ok(Query {
-        select,
+        select: projection,
         table,
         filter,
-        aggregate,
         order_by,
         limit: limit_clause,
     })
@@ -61,37 +60,16 @@ fn get_query_components(ast: ASTNode)
     }
 }
 
-fn get_select_aggregate(projection: Vec<ASTNode>) -> Result<(Vec<Expr>, Vec<(Aggregator, Expr)>), QueryError> {
-    let mut select = Vec::<Expr>::new();
-    let mut aggregate = Vec::<(Aggregator, Expr)>::new();
+fn get_projection(projection: Vec<ASTNode>) -> Result<Vec<Expr>, QueryError> {
+    let mut result = Vec::<Expr>::new();
     for elem in &projection {
         match elem {
-            ASTNode::SQLFunction { id, args } => {
-                match id.to_uppercase().as_ref() {
-                    "COUNT" => {
-                        if args.len() != 1 {
-                            return Err(QueryError::ParseError(
-                                "Expected one argument in COUNT function".to_string()));
-                        }
-                        aggregate.push((Aggregator::Count, *expr(&args[0])?));
-                        continue;
-                    }
-                    "SUM" => {
-                        if args.len() != 1 {
-                            return Err(QueryError::ParseError(
-                                "Expected one argument in SUM function".to_string()));
-                        }
-                        aggregate.push((Aggregator::Sum, *expr(&args[0])?));
-                    }
-                    _ => select.push(*expr(elem)?),
-                }
-            }
-            ASTNode::SQLWildcard => select.push(Expr::ColName('*'.to_string())),
-            _ => select.push(*expr(elem)?),
+            ASTNode::SQLWildcard => result.push(Expr::ColName('*'.to_string())),
+            _ => result.push(*expr(elem)?),
         }
     }
 
-    Ok((select, aggregate))
+    Ok(result)
 }
 
 fn get_table_name(relation: Option<Box<ASTNode>>) -> Result<String, QueryError> {
@@ -130,11 +108,25 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
             "TO_YEAR" => {
                 if args.len() != 1 {
                     return Err(QueryError::ParseError(
-                        "Expected one argument in COUNT function".to_string()));
+                        "Expected one argument in TO_YEAR function".to_string()));
                 }
                 Expr::Func1(Func1Type::ToYear, expr(&args[0])?)
             }
-            _ => return Err(QueryError::NotImplemented(format!("{:?}", id))),
+            "COUNT" => {
+                if args.len() != 1 {
+                    return Err(QueryError::ParseError(
+                        "Expected one argument in COUNT function".to_string()));
+                }
+                Expr::Aggregate(Aggregator::Count, expr(&args[0])?)
+            }
+            "SUM" => {
+                if args.len() != 1 {
+                    return Err(QueryError::ParseError(
+                        "Expected one argument in SUM function".to_string()));
+                }
+                Expr::Aggregate(Aggregator::Sum, expr(&args[0])?)
+            }
+            _ => return Err(QueryError::NotImplemented(format!("Function {:?}", id))),
         }
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
     }))
@@ -179,13 +171,13 @@ mod tests {
     fn test_select_star() {
         assert_eq!(
             format!("{:?}", parse_query("select * from default")),
-            "Ok(Query { select: [ColName(\"*\")], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [ColName(\"*\")], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_to_year() {
         assert_eq!(
             format!("{:?}", parse_query("select to_year(ts) from default")),
-            "Ok(Query { select: [Func1(ToYear, ColName(\"ts\"))], table: \"default\", filter: Const(Int(1)), aggregate: [], order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [Func1(ToYear, ColName(\"ts\"))], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }

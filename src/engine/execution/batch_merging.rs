@@ -1,14 +1,17 @@
 use std::cmp::min;
+use std::sync::Arc;
 use std::collections::HashMap;
 use std::usize;
 use std::result::Result;
 
+use mem_store::column::DataSource;
 use engine::*;
 use errors::QueryError;
 
 
 pub struct BatchResult<'a> {
     pub columns: Vec<BoxedVec<'a>>,
+    // TODO(clemens): group_by_columns -> aggregations + switch with projection
     pub group_by_columns: Option<Vec<BoxedVec<'a>>>,
     pub projection: Vec<usize>,
     pub order_by: Vec<(usize, bool)>,
@@ -47,6 +50,27 @@ impl<'a> BatchResult<'a> {
         } else {
             Err(fatal!(info_str))
         }
+    }
+
+    pub fn into_columns(self) -> HashMap<String, Arc<DataSource + 'a>> {
+        let mut cols = HashMap::<String, Arc<DataSource>>::default();
+        let columns = self.columns.into_iter().map(|c| Arc::new(c)).collect::<Vec<_>>();
+        match self.group_by_columns {
+            None => {
+                for projection in self.projection {
+                    cols.insert(format!("_cs{}", projection), columns[projection].clone());
+                }
+            }
+            Some(group_by) => {
+                for aggregation in self.projection {
+                    cols.insert(format!("_ca{}", aggregation), columns[aggregation].clone());
+                }
+                for (i, projection) in group_by.into_iter().enumerate() {
+                    cols.insert(format!("_cs{}", i), Arc::new(projection));
+                }
+            }
+        }
+        cols
     }
 }
 
