@@ -13,7 +13,7 @@ use ::QueryError;
 use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
-use mem_store::column::Column;
+use mem_store::column::DataSource;
 use syntax::expression::*;
 use self::syntax::*;
 use locustdb_derive::EnumSyntax;
@@ -425,7 +425,7 @@ impl QueryPlan {
     pub fn create_query_plan(
         expr: &Expr,
         filter: Filter,
-        columns: &HashMap<String, Arc<Column>>) -> Result<(QueryPlan, Type), QueryError> {
+        columns: &HashMap<String, Arc<DataSource>>) -> Result<(QueryPlan, Type), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
         use self::Func1Type::*;
@@ -856,7 +856,7 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
 pub fn compile_grouping_key(
     exprs: &[Expr],
     filter: Filter,
-    columns: &HashMap<String, Arc<Column>>)
+    columns: &HashMap<String, Arc<DataSource>>)
     -> Result<(TypedPlan, i64, Vec<TypedPlan>), QueryError> {
     if exprs.len() == 1 {
         QueryPlan::create_query_plan(&exprs[0], filter, columns)
@@ -925,7 +925,7 @@ pub fn compile_grouping_key(
 fn try_bitpacking(
     exprs: &[Expr],
     filter: Filter,
-    columns: &HashMap<String, Arc<Column>>)
+    columns: &HashMap<String, Arc<DataSource>>)
     -> Result<Option<(TypedPlan, i64, Vec<TypedPlan>)>, QueryError> {
     // TODO(clemens): use u64 as grouping key type
     let mut total_width = 0;

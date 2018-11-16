@@ -12,7 +12,7 @@ use QueryResult;
 use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::partition::Partition;
-use mem_store::column::Column;
+use mem_store::column::DataSource;
 use scheduler::*;
 use scheduler::disk_read_scheduler::DiskReadScheduler;
 use syntax::expression::*;
@@ -20,13 +20,13 @@ use time::precise_time_ns;
 
 
 pub struct QueryTask {
-    query: Query,
+    main_phase: NormalFormQuery,
+    final_pass: Option<NormalFormQuery>,
     explain: bool,
     show: Vec<usize>,
     partitions: Vec<Arc<Partition>>,
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
-    aggregate: Vec<Aggregator>,
     start_time_ns: u64,
     db: Arc<DiskReadScheduler>,
 
@@ -46,7 +46,7 @@ pub struct QueryState<'a> {
     explains: Vec<String>,
     rows_scanned: usize,
     rows_collected: usize,
-    colstacks: Vec<Vec<HashMap<String, Arc<Column>>>>,
+    colstacks: Vec<Vec<HashMap<String, Arc<DataSource>>>>,
 }
 
 pub struct QueryOutput {
@@ -83,18 +83,19 @@ impl QueryTask {
             query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
         }
 
-        let output_colnames = query.result_column_names();
         let referenced_cols = query.find_referenced_cols();
-        let aggregate = query.aggregate.iter().map(|&(aggregate, _)| aggregate).collect();
+
+        let (main_phase, final_pass) = query.normalize();
+        let output_colnames = main_phase.result_column_names();
 
         QueryTask {
-            query,
+            main_phase,
+            final_pass,
             explain,
             show,
             partitions: source,
             referenced_cols,
             output_colnames,
-            aggregate,
             start_time_ns,
             db,
 
@@ -123,10 +124,14 @@ impl QueryTask {
             let show = self.show.iter().any(|&x| x == id);
             let cols = partition.get_cols(&self.referenced_cols, &self.db);
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
-            let (mut batch_result, explain) = match if self.aggregate.is_empty() {
-                self.query.run(unsafe { mem::transmute(&cols) }, self.explain, show, id)
+            let unsafe_cols = unsafe {
+                mem::transmute::<&HashMap<String, Arc<DataSource>>,
+                    &'static HashMap<String, Arc<DataSource>>>(&cols)
+            };
+            let (mut batch_result, explain) = match if self.main_phase.aggregate.is_empty() {
+                self.main_phase.run(unsafe_cols, self.explain, show, id)
             } else {
-                self.query.run_aggregate(unsafe { mem::transmute(&cols) }, self.explain, show, id)
+                self.main_phase.run_aggregate(unsafe_cols, self.explain, show, id)
             } {
                 Ok(result) => result,
                 Err(error) => {
@@ -208,15 +213,28 @@ impl QueryTask {
                     return;
                 }
             };
-            let final_result = self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains);
+            let final_result = if let Some(final_pass) = &self.final_pass {
+                let data_sources = full_result.into_columns();
+                let cols = unsafe {
+                    mem::transmute::<&HashMap<String, Arc<DataSource>>,
+                        &'static HashMap<String, Arc<DataSource>>>(&data_sources)
+                };
+                let full_result = final_pass.run(cols,
+                                                 self.explain,
+                                                 !self.show.is_empty(),
+                                                 0xdeadbeef).unwrap().0;
+                self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains)
+            } else {
+                self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains)
+            };
             self.sender.send(Ok(final_result));
             self.completed.store(true, Ordering::SeqCst);
         }
     }
 
-    fn push_colstack(&self, colstack: Vec<HashMap<String, Arc<Column>>>) {
+    fn push_colstack(&self, colstack: Vec<HashMap<String, Arc<DataSource>>>) {
         let mut state = self.unsafe_state.lock().unwrap();
-        state.colstacks.push(colstack);
+        state.colstacks.push(unsafe { mem::transmute(colstack) });
     }
 
     fn fail_with(&self, error: QueryError) {
@@ -232,7 +250,7 @@ impl QueryTask {
     }
 
     fn sufficient_rows(&self, rows_collected: usize) -> bool {
-        let unordered_select = self.query.aggregate.is_empty() && self.query.order_by.is_empty();
+        let unordered_select = self.main_phase.aggregate.is_empty() && self.main_phase.order_by.is_empty();
         unordered_select && self.combined_limit() < rows_collected
     }
 
@@ -245,8 +263,8 @@ impl QueryTask {
                                 full_result: &BatchResult,
                                 rows_scanned: usize,
                                 explains: &[String]) -> QueryOutput {
-        let limit = self.query.limit.limit as usize;
-        let offset = self.query.limit.offset as usize;
+        let limit = self.main_phase.limit.limit as usize;
+        let offset = self.main_phase.limit.offset as usize;
         let mut result_rows = Vec::new();
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
@@ -279,7 +297,7 @@ impl QueryTask {
     }
 
     fn combined_limit(&self) -> usize {
-        (self.query.limit.limit + self.query.limit.offset) as usize
+        (self.main_phase.limit.limit + self.main_phase.limit.offset) as usize
     }
 }
 

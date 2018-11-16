@@ -1,10 +1,14 @@
 use std::cmp::min;
+use std::fmt;
 use std::i64;
+use std::mem;
 use std::string;
 
 use engine::data_types::*;
 use ingest::raw_val::RawVal;
 use mem_store::value::Val;
+use mem_store::column::DataSource;
+use mem_store::codec::Codec;
 
 
 pub type BoxedVec<'a> = Box<AnyVec<'a> + 'a>;
@@ -46,6 +50,23 @@ pub trait AnyVec<'a>: Send + Sync {
     fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
 
     fn display(&self) -> String;
+}
+
+impl<'a> DataSource for BoxedVec<'a> {
+    fn encoding_type(&self) -> EncodingType { self.get_type() }
+    fn range(&self) -> Option<(i64, i64)> { None }
+    fn codec(&self) -> Codec { Codec::identity(self.get_type().cast_to_basic()) }
+    fn len(&self) -> usize { (**self).len() }
+    fn data_sections(&self) -> Vec<&AnyVec> {
+        vec![unsafe { mem::transmute::<&AnyVec, &AnyVec>(&**self) }]
+    }
+    fn full_type(&self) -> Type { Type::new(self.encoding_type().cast_to_basic(), Some(self.codec())) }
+}
+
+impl<'a> fmt::Debug for BoxedVec<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.display())
+    }
 }
 
 impl<'a> AnyVec<'a> {

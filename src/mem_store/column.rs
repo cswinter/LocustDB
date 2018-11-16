@@ -1,4 +1,6 @@
 use std::fmt;
+use std::mem;
+use std::sync::Arc;
 
 use mem_store::*;
 use engine::data_types::*;
@@ -14,6 +16,39 @@ pub struct Column {
     range: Option<(i64, i64)>,
     codec: Codec,
     data: Vec<DataSection>,
+}
+
+pub trait DataSource: fmt::Debug + Sync + Send {
+    fn encoding_type(&self) -> EncodingType;
+    fn range(&self) -> Option<(i64, i64)>;
+    fn codec(&self) -> Codec;
+    fn len(&self) -> usize;
+    fn data_sections(&self) -> Vec<&AnyVec>;
+    fn full_type(&self) -> Type;
+}
+
+impl<T: DataSource> DataSource for Arc<T> {
+    fn encoding_type(&self) -> EncodingType { (**self).encoding_type() }
+    fn range(&self) -> Option<(i64, i64)> { (**self).range() }
+    fn codec(&self) -> Codec { (**self).codec() }
+    fn len(&self) -> usize { (**self).len() }
+    fn data_sections(&self) -> Vec<&AnyVec> { (**self).data_sections() }
+    fn full_type(&self) -> Type { (**self).full_type() }
+}
+
+impl DataSource for Column {
+    fn encoding_type(&self) -> EncodingType { self.codec.encoding_type() }
+    fn range(&self) -> Option<(i64, i64)> { self.range }
+    fn codec(&self) -> Codec { self.codec.clone() }
+    fn len(&self) -> usize { self.len }
+    fn data_sections(&self) -> Vec<&AnyVec> {
+        // TODO(clemens): fix unsafety
+        unsafe {
+            mem::transmute::<Vec<&AnyVec>, Vec<&AnyVec>>(
+                self.data.iter().map(|d| d.to_any_vec()).collect())
+        }
+    }
+    fn full_type(&self) -> Type { Type::new(self.basic_type(), Some(self.codec())) }
 }
 
 impl Column {
@@ -66,19 +101,9 @@ impl Column {
     }
 
     pub fn name(&self) -> &str { &self.name }
-    pub fn len(&self) -> usize { self.len }
     pub fn data(&self) -> &[DataSection] { &self.data }
-    pub fn codec(&self) -> Codec { self.codec.clone() }
     pub fn basic_type(&self) -> BasicType { self.codec.decoded_type() }
-    pub fn encoding_type(&self) -> EncodingType { self.codec.encoding_type() }
     pub fn section_encoding_type(&self, section: usize) -> EncodingType { self.data[section].encoding_type() }
-    pub fn range(&self) -> Option<(i64, i64)> { self.range }
-    pub fn full_type(&self) -> Type {
-        Type::new(self.basic_type(), Some(self.codec()))
-    }
-    pub fn data_sections(&self) -> Vec<&AnyVec> {
-        self.data.iter().map(|d| d.to_any_vec()).collect()
-    }
 
     pub fn mem_tree(&self, tree: &mut MemTreeColumn, depth: usize) {
         if depth == 0 { return; }

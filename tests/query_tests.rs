@@ -254,6 +254,21 @@ fn test_not_equals() {
 
 
 #[test]
+fn test_composite_aggregate() {
+    // TODO(clemens): sum(total_amount)/count(0) once vector-vector division is implemented
+    test_query_nyc(
+        "select passenger_count, count(0)/10, sum(total_amount), count(0) from default limit 10;",
+        &[
+            vec![Int(0), Int(0), Int(5500), Int(3)],
+            vec![Int(1), Int(601), Int(9508433), Int(6016)],
+            vec![Int(2), Int(110), Int(2287532), Int(1103)],
+            vec![Int(3), Int(38), Int(642378), Int(383)],
+            vec![Int(4), Int(7), Int(166812), Int(76)],
+        ],
+    )
+}
+
+#[test]
 fn test_count_by_passenger_count_pickup_year_trip_distance() {
     test_query_nyc(
         "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default limit 10000;",

@@ -11,7 +11,7 @@ use self::rocksdb::*;
 use storage_format_capnp::*;
 
 use disk_store::interface::*;
-use mem_store::column::{Column, DataSection};
+use mem_store::column::{Column, DataSection, DataSource};
 use scheduler::inner_locustdb::InnerLocustDB;
 use mem_store::codec::CodecOp;
 use engine::data_types::EncodingType as Type;

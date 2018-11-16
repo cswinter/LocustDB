@@ -1,7 +1,7 @@
 use ingest::raw_val::RawVal;
 use self::Expr::*;
 use std::collections::HashSet;
-
+use engine::*;
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -9,6 +9,7 @@ pub enum Expr {
     Const(RawVal),
     Func1(Func1Type, Box<Expr>),
     Func2(Func2Type, Box<Expr>, Box<Expr>),
+    Aggregate(Aggregator, Box<Expr>),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -43,6 +44,7 @@ impl Expr {
                 expr2.add_colnames(result);
             }
             Func1(_, ref expr) => expr.add_colnames(result),
+            Aggregate(_, ref expr) => expr.add_colnames(result),
             Const(_) => {}
         }
     }
