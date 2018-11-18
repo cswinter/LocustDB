@@ -153,6 +153,13 @@ pub enum QueryPlan {
     Convergence(Vec<Box<QueryPlan>>),
 
     Constant { value: RawVal, hide_value: bool },
+
+    /// Outputs a vector with all values equal to `value`.
+    ConstantExpand {
+        value: i64,
+        t: EncodingType,
+        len: usize,
+    },
 }
 
 impl QueryPlan {
@@ -198,6 +205,8 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         }
         QueryPlan::Constant { ref value, hide_value } =>
             VecOperator::constant(value.clone(), hide_value, result.buffer_raw_val("constant")),
+        QueryPlan::ConstantExpand { value, t, len } =>
+            VecOperator::constant_expand(value, len, result.named_buffer("constant", t))?,
         QueryPlan::DictLookup { indices, offset_len, backing_store } =>
             VecOperator::dict_lookup(
                 prepare(*indices, result)?,
@@ -843,6 +852,11 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 }
                 Constant { value, hide_value }
             }
+            ConstantExpand { value, t, len } => {
+                hasher.input(&value.to_ne_bytes());
+                hasher.input(&discriminant_value(&t).to_ne_bytes());
+                ConstantExpand { value, t, len }
+            }
         };
 
         hasher.result(&mut signature);
@@ -856,9 +870,23 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
 pub fn compile_grouping_key(
     exprs: &[Expr],
     filter: Filter,
-    columns: &HashMap<String, Arc<DataSource>>)
+    columns: &HashMap<String, Arc<DataSource>>,
+    partition_length: usize)
     -> Result<(TypedPlan, i64, Vec<TypedPlan>), QueryError> {
-    if exprs.len() == 1 {
+    if exprs.is_empty() {
+        let t = Type::new(BasicType::Integer, Some(Codec::opaque(EncodingType::U8, BasicType::Integer, true, true, true, true)));
+        let mut plan = syntax::constant_expand(0, EncodingType::U8, partition_length);
+        plan = match filter {
+            Filter::BitVec(filter) => query_syntax::filter(plan, filter.tagged()),
+            Filter::Indices(indices) => select(plan, indices.tagged()),
+            Filter::None => plan,
+        };
+        Ok((
+            (plan, t),
+            1,
+            vec![],
+        ))
+    } else if exprs.len() == 1 {
         QueryPlan::create_query_plan(&exprs[0], filter, columns)
             .map(|(gk_plan, gk_type)| {
                 let encoding_range = QueryPlan::encoding_range(&gk_plan);

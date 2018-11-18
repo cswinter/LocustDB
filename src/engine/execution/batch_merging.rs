@@ -78,7 +78,11 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
         let lprojection = batch1.projection;
         let rprojection = batch2.projection;
-        let (group_by_cols, ops) = if lprojection.len() == 1 {
+        let (group_by_cols, ops) = if lprojection.len() == 0 {
+            let ops = executor.buffer_merge_op("merge_ops");
+            executor.push(VecOperator::constant_vec(Box::new(vec![MergeOp::TakeLeft, MergeOp::MergeRight]), ops.any()));
+            (vec![], ops)
+        } else if lprojection.len() == 1 {
             // TODO(clemens): other types, val coercion
             let merged = executor.named_buffer("merged", left[lprojection[0]].tag);
             let ops = executor.buffer_merge_op("merge_ops");

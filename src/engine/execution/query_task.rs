@@ -134,7 +134,7 @@ impl QueryTask {
             let (mut batch_result, explain) = match if self.main_phase.aggregate.is_empty() {
                 self.main_phase.run(unsafe_cols, self.explain, show, id)
             } else {
-                self.main_phase.run_aggregate(unsafe_cols, self.explain, show, id)
+                self.main_phase.run_aggregate(unsafe_cols, self.explain, show, id, partition.len())
             } {
                 Ok(result) => result,
                 Err(error) => {

@@ -123,7 +123,8 @@ impl NormalFormQuery {
                              columns: &'a HashMap<String, Arc<DataSource>>,
                              explain: bool,
                              show: bool,
-                             partition: usize)
+                             partition: usize,
+                             partition_length: usize)
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 
@@ -143,7 +144,7 @@ impl NormalFormQuery {
         let ((grouping_key_plan, raw_grouping_key_type),
             max_grouping_key,
             decode_plans) =
-            query_plan::compile_grouping_key(&self.projection, filter, columns)?;
+            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_length)?;
         let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor)?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
@@ -298,7 +299,7 @@ impl NormalFormQuery {
         }
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
-        executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
+        executor.run(columns.iter().next().map(|c| c.1.len()).unwrap_or(1), &mut results, show);
         let (columns, projection, aggregations, _) = results.collect_aliased(
             &grouping_columns.iter().map(|s| s.any()).collect::<Vec<_>>(),
             &aggregation_cols.iter().map(|&(s, aggregator)| (s.any(), aggregator)).collect::<Vec<_>>(),

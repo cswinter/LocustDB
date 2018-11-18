@@ -19,6 +19,7 @@ use super::bool_op::*;
 use super::column_ops::*;
 use super::compact::Compact;
 use super::constant::Constant;
+use super::constant_expand::ConstantExpand;
 use super::constant_vec::ConstantVec;
 use super::count::VecCount;
 use super::delta_decode::*;
@@ -194,6 +195,19 @@ impl<'a> VecOperator<'a> {
 
     pub fn constant(val: RawVal, hide_value: bool, output: BufferRef<RawVal>) -> BoxedOperator<'a> {
         Box::new(Constant { val, hide_value, output })
+    }
+
+    pub fn constant_expand(val: i64, len: usize, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        match output.tag {
+            EncodingType::U8 => Ok(Box::new(ConstantExpand {
+                val: val as u8,
+                output: output.u8()?,
+                current_index: 0,
+                len,
+                batch_size: 0, // initialized later
+            })),
+            _ => Err(fatal!("constant_expand not implemented for type {:?}", output.tag)),
+        }
     }
 
     pub fn constant_vec(val: BoxedVec<'a>, output: BufferRef<Any>) -> BoxedOperator<'a> {
