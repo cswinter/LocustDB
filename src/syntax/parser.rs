@@ -139,6 +139,7 @@ fn map_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
         SQLOperator::Minus => Func2Type::Subtract,
         SQLOperator::Multiply => Func2Type::Multiply,
         SQLOperator::Divide => Func2Type::Divide,
+        SQLOperator::Modulus=>Func2Type::Modulo,
         SQLOperator::Gt => Func2Type::GT,
         SQLOperator::Lt => Func2Type::LT,
         SQLOperator::Eq => Func2Type::Equals,

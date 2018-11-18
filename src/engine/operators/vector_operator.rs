@@ -1,7 +1,7 @@
 use std::fmt::Write;
-use std::fmt;
 use std::intrinsics::type_name;
 use std::marker::PhantomData;
+use std::mem;
 use std::result::Result;
 
 use itertools::Itertools;
@@ -13,7 +13,7 @@ use mem_store::*;
 use locustdb_derive::reify_types;
 use QueryError;
 
-use super::addition_vs::AdditionVS;
+use super::binary_operator::*;
 use super::bit_unpack::BitUnpackOperator;
 use super::bool_op::*;
 use super::column_ops::*;
@@ -24,7 +24,6 @@ use super::constant_vec::ConstantVec;
 use super::count::VecCount;
 use super::delta_decode::*;
 use super::dict_lookup::*;
-use super::division_vs::DivideVS;
 use super::encode_const::*;
 use super::exists::Exists;
 use super::filter::Filter;
@@ -36,10 +35,11 @@ use super::merge_aggregate::MergeAggregate;
 use super::merge_deduplicate::MergeDeduplicate;
 use super::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
 use super::merge_drop::MergeDrop;
-use super::merge_partitioned::MergePartitioned;
 use super::merge_keep::MergeKeep;
+use super::merge_partitioned::MergePartitioned;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
+use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
 use super::select::Select;
@@ -59,7 +59,7 @@ use super::vec_const_bool_op::*;
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
-pub trait VecOperator<'a>: fmt::Debug {
+pub trait VecOperator<'a> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>);
     fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
     fn init(&mut self, _total_count: usize, _batch_size: usize, _scratchpad: &mut Scratchpad<'a>) {}
@@ -249,19 +249,122 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn divide_vs(lhs: BufferRef<i64>,
-                     rhs: BufferRef<i64>,
-                     output: BufferRef<i64>) -> BoxedOperator<'a> {
-        Box::new(DivideVS { lhs, rhs, output })
+    pub fn addition(mut lhs: TypedBufferRef,
+                    mut rhs: TypedBufferRef,
+                    output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        let output = output.i64()?;
+        if lhs.tag == EncodingType::Val {
+            mem::swap(&mut lhs, &mut rhs);
+        }
+        if rhs.tag == EncodingType::Val {
+            reify_types! {
+                "addition_vs";
+                lhs: IntegerNoU64;
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Addition<_, _>> }));
+            }
+        } else {
+            reify_types! {
+                "addition";
+                lhs: IntegerNoU64, rhs: IntegerNoU64;
+                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
+            }
+        }
     }
 
-    pub fn addition_vs(lhs: TypedBufferRef,
-                       rhs: BufferRef<i64>,
-                       output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "addition_vs";
-            lhs: IntegerNoU64;
-            Ok(Box::new(AdditionVS { lhs, rhs, output }));
+    pub fn subtraction(lhs: TypedBufferRef,
+                       rhs: TypedBufferRef,
+                       output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        let output = output.i64()?;
+        if lhs.tag == EncodingType::Val {
+            reify_types! {
+                "subtraction_sv";
+                rhs: IntegerNoU64;
+                Ok(Box::new(BinarySVOperator { lhs: lhs.const_i64(), rhs, output, op: PhantomData::<Subtraction<_, _>> }));
+            }
+        } else if rhs.tag == EncodingType::Val {
+            reify_types! {
+                "subtraction_vs";
+                lhs: IntegerNoU64;
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Subtraction<_, _>> }));
+            }
+        } else {
+            reify_types! {
+                "subtraction";
+                lhs: IntegerNoU64, rhs: IntegerNoU64;
+                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
+            }
+        }
+    }
+
+    pub fn multiplication(mut lhs: TypedBufferRef,
+                          mut rhs: TypedBufferRef,
+                          output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        let output = output.i64()?;
+        if lhs.tag == EncodingType::Val {
+            mem::swap(&mut lhs, &mut rhs);
+        }
+        if rhs.tag == EncodingType::Val {
+            reify_types! {
+                "multiplication_vs";
+                lhs: IntegerNoU64;
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Multiplication<_, _>> }));
+            }
+        } else {
+            reify_types! {
+                "multiplication";
+                lhs: IntegerNoU64, rhs: IntegerNoU64;
+                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            }
+        }
+    }
+
+    pub fn division(lhs: TypedBufferRef,
+                    rhs: TypedBufferRef,
+                    output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        let output = output.i64()?;
+        if lhs.tag == EncodingType::Val {
+            reify_types! {
+                "division_sv";
+                rhs: IntegerNoU64;
+                Ok(Box::new(BinarySVOperator { lhs: lhs.const_i64(), rhs, output, op: PhantomData::<Division<_, _>> }));
+            }
+        } else if rhs.tag == EncodingType::Val {
+            reify_types! {
+                "division_vs";
+                lhs: IntegerNoU64;
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Division<_, _>> }));
+            }
+        } else {
+            reify_types! {
+                "division";
+                lhs: IntegerNoU64, rhs: IntegerNoU64;
+                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
+            }
+        }
+    }
+
+    pub fn modulo(lhs: TypedBufferRef,
+                  rhs: TypedBufferRef,
+                  output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        let output = output.i64()?;
+        if lhs.tag == EncodingType::Val {
+            reify_types! {
+                "modulo_sv";
+                rhs: IntegerNoU64;
+                Ok(Box::new(BinarySVOperator { lhs: lhs.const_i64(), rhs, output, op: PhantomData::<Modulo<_, _>> }));
+            }
+        } else if rhs.tag == EncodingType::Val {
+            reify_types! {
+                "modulo_vs";
+                lhs: IntegerNoU64;
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Modulo<_, _>> }));
+            }
+        } else {
+            reify_types! {
+                "modulo";
+                lhs: IntegerNoU64, rhs: IntegerNoU64;
+                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
+            }
         }
     }
 

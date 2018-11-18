@@ -122,8 +122,13 @@ pub enum QueryPlan {
     LessThanVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     EqualsVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     NotEqualsVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    DivideVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    AddVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+
+    Add { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    Subtract { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    Multiply { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    Divide { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    Modulo { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+
     And { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     Or { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     ToYear { timestamp: Box<QueryPlan> },
@@ -318,16 +323,33 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?,
                 result.buffer_u8("equals"))?,
-        QueryPlan::DivideVS { lhs, rhs } =>
-            VecOperator::divide_vs(
-                prepare(*lhs, result)?.i64()?,
-                prepare(*rhs, result)?.const_i64(),
-                result.buffer_i64("division")),
-        QueryPlan::AddVS { lhs, rhs } =>
-            VecOperator::addition_vs(
+
+        QueryPlan::Add { lhs, rhs } =>
+            VecOperator::addition(
                 prepare(*lhs, result)?,
-                prepare(*rhs, result)?.const_i64(),
-                result.buffer_i64("addition"))?,
+                prepare(*rhs, result)?,
+                result.buffer_i64("addition").tagged())?,
+        QueryPlan::Subtract { lhs, rhs } =>
+            VecOperator::subtraction(
+                prepare(*lhs, result)?,
+                prepare(*rhs, result)?,
+                result.buffer_i64("subtraction").tagged())?,
+        QueryPlan::Multiply { lhs, rhs } =>
+            VecOperator::multiplication(
+                prepare(*lhs, result)?,
+                prepare(*rhs, result)?,
+                result.buffer_i64("multiplication").tagged())?,
+        QueryPlan::Divide { lhs, rhs } =>
+            VecOperator::division(
+                prepare(*lhs, result)?,
+                prepare(*rhs, result)?,
+                result.buffer_i64("division").tagged())?,
+        QueryPlan::Modulo { lhs, rhs } =>
+            VecOperator::modulo(
+                prepare(*lhs, result)?,
+                prepare(*rhs, result)?,
+                result.buffer_i64("modulo").tagged())?,
+
         QueryPlan::Or { lhs, rhs } => {
             let inplace = prepare(*lhs, result)?;
             let op = VecOperator::or(inplace.u8()?, prepare(*rhs, result)?.u8()?);
@@ -428,6 +450,39 @@ pub fn order_preserving((plan, t): (QueryPlan, Type)) -> (QueryPlan, Type) {
         let new_type = t.decoded();
         (t.codec.unwrap().decode(plan), new_type)
     }
+}
+
+struct Function2 {
+    pub factory: Box<Fn(Box<QueryPlan>, Box<QueryPlan>) -> QueryPlan + Sync>,
+    pub type_rhs: BasicType,
+    pub type_lhs: BasicType,
+    pub type_out: Type,
+}
+
+impl Function2 {
+    pub fn integer_op(factory: Box<Fn(Box<QueryPlan>, Box<QueryPlan>) -> QueryPlan + Sync>) -> Function2 {
+        Function2 {
+            factory,
+            type_lhs: BasicType::Integer,
+            type_rhs: BasicType::Integer,
+            type_out: Type::unencoded(BasicType::Integer).mutable(),
+        }
+    }
+}
+
+lazy_static! {
+    static ref FUNCTION_REGISTRY: HashMap<Func2Type, Vec<Function2>> = vec![
+        (Func2Type::Add,
+         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Add { lhs, rhs }))]),
+        (Func2Type::Subtract,
+         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Subtract { lhs, rhs }))]),
+        (Func2Type::Multiply,
+         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Multiply { lhs, rhs }))]),
+        (Func2Type::Divide,
+         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Divide { lhs, rhs }))]),
+        (Func2Type::Modulo,
+         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Modulo { lhs, rhs }))]),
+    ].into_iter().collect();
 }
 
 impl QueryPlan {
@@ -559,23 +614,32 @@ impl QueryPlan {
                 }
                 (plan_lhs & plan_rhs, Type::bit_vec())
             }
-            Func2(Divide, ref lhs, ref rhs) => {
+            Func2(function, ref lhs, ref rhs) => {
                 let (mut plan_lhs, mut type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
-                match (type_lhs.decoded, type_rhs.decoded) {
-                    (BasicType::Integer, BasicType::Integer) => {
-                        let plan = if type_rhs.is_scalar {
-                            if let Some(codec) = type_lhs.codec {
-                                plan_lhs = codec.decode(plan_lhs);
-                            }
-                            plan_lhs / plan_rhs
-                        } else {
-                            bail!(QueryError::NotImplemented, "/ operator only implemented for column / constant")
-                        };
-                        (plan, Type::unencoded(BasicType::Integer).mutable())
-                    }
-                    _ => bail!(QueryError::TypeError, "{:?} / {:?}", type_lhs, type_rhs)
+                let (mut plan_rhs, mut type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
+
+                let declarations = match FUNCTION_REGISTRY.get(&function) {
+                    Some(patterns) => patterns,
+                    None => bail!(QueryError::NotImplemented, "function {:?}", function),
+                };
+                let declaration = match declarations.iter().find(
+                    |p| p.type_lhs == type_lhs.decoded && p.type_rhs == type_rhs.decoded) {
+                    Some(declaration) => declaration,
+                    None => bail!(
+                        QueryError::TypeError,
+                        "Function {:?} is not implemented for types {:?}, {:?}",
+                        function, type_lhs, type_rhs),
+                };
+
+                if let Some(codec) = type_lhs.codec {
+                    plan_lhs = codec.decode(plan_lhs);
                 }
+                if let Some(codec) = type_rhs.codec {
+                    plan_rhs = codec.decode(plan_rhs);
+                }
+
+                let plan = (declaration.factory)(Box::new(plan_lhs), Box::new(plan_rhs));
+                (plan, declaration.type_out.clone())
             }
             Func1(ToYear, ref inner) => {
                 let (plan, t) = QueryPlan::create_query_plan(inner, filter, columns)?;
@@ -606,10 +670,10 @@ impl QueryPlan {
             ),
             Filter { ref plan, .. } => plan.encoding_range(),
             // TODO(clemens): this is just wrong
-            DivideVS { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. } } =>
+            Divide { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. } } =>
                 lhs.encoding_range().map(|(min, max)|
                     if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
-            AddVS { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. }, .. } =>
+            Add { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. }, .. } =>
                 lhs.encoding_range().map(|(min, max)| (min + c, max + c)),
             Cast { ref input, .. } => input.encoding_range(),
             LZ4Decode { ref bytes, .. } => bytes.encoding_range(),
@@ -776,19 +840,40 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s2);
                 NotEqualsVS { lhs, rhs }
             }
-            DivideVS { lhs, rhs } => {
+            Add { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                DivideVS { lhs, rhs }
+                Add { lhs, rhs }
             }
-            AddVS { lhs, rhs } => {
+            Subtract { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                AddVS { lhs, rhs }
+                Subtract { lhs, rhs }
+            }
+            Multiply { lhs, rhs } => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                Multiply { lhs, rhs }
+            }
+            Divide { lhs, rhs } => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                Divide { lhs, rhs }
+            }
+            Modulo { lhs, rhs } => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                Modulo { lhs, rhs }
             }
             And { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
@@ -1034,7 +1119,7 @@ impl Add for QueryPlan {
     type Output = QueryPlan;
 
     fn add(self, other: QueryPlan) -> QueryPlan {
-        add_vs(self, other)
+        add(self, other)
     }
 }
 
@@ -1058,6 +1143,6 @@ impl Div for QueryPlan {
     type Output = QueryPlan;
 
     fn div(self, other: QueryPlan) -> QueryPlan {
-        divide_vs(self, other)
+        divide(self, other)
     }
 }
