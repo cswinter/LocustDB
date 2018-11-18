@@ -12,7 +12,7 @@ pub enum Expr {
     Aggregate(Aggregator, Box<Expr>),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Func2Type {
     Equals,
     NotEquals,
@@ -24,6 +24,7 @@ pub enum Func2Type {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
     RegexMatch,
 }
 

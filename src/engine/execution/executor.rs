@@ -257,7 +257,7 @@ impl<'a> QueryExecutor<'a> {
         let mut has_streaming_producer = false;
         for &(op, s) in &self.stages[stage].ops {
             has_streaming_producer |= self.ops[op].is_streaming_producer();
-            trace!("{:?}, streamable={}", &self.ops[op], s);
+            trace!("{}, streamable={}", &self.ops[op].display(true), s);
             for input in self.ops[op].inputs() {
                 max_input_length = cmp::max(max_input_length, scratchpad.get_any(input).len());
                 trace!("{}: {}", input.i, scratchpad.get_any(input).len());

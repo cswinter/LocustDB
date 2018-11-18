@@ -31,6 +31,8 @@ extern crate std_semaphore;
 extern crate aliasmethod;
 extern crate rand;
 extern crate locustdb_derive;
+#[macro_use]
+extern crate lazy_static;
 
 
 #[macro_use]

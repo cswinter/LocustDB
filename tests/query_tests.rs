@@ -302,15 +302,14 @@ fn test_order_by_grouping() {
 
 #[test]
 fn test_composite_aggregate() {
-    // TODO(clemens): sum(total_amount)/count(0) once vector-vector division is implemented
     test_query_nyc(
-        "select passenger_count, count(0)/10, sum(total_amount), count(0) from default limit 10;",
+        "select passenger_count, count(0)/10, sum(total_amount)/count(0) from default limit 10;",
         &[
-            vec![Int(0), Int(0), Int(5500), Int(3)],
-            vec![Int(1), Int(601), Int(9508433), Int(6016)],
-            vec![Int(2), Int(110), Int(2287532), Int(1103)],
-            vec![Int(3), Int(38), Int(642378), Int(383)],
-            vec![Int(4), Int(7), Int(166812), Int(76)],
+            vec![Int(0), Int(0), Int(1833)],
+            vec![Int(1), Int(601), Int(1580)],
+            vec![Int(2), Int(110), Int(2073)],
+            vec![Int(3), Int(38), Int(1677)],
+            vec![Int(4), Int(7), Int(2194)],
         ],
     )
 }
@@ -349,6 +348,39 @@ fn test_sparse_filter() {
         "select trip_id from default where (passenger_count = 5) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (store_and_fwd_flag = \"1\") limit 100;",
         &[],
     )
+}
+
+#[test]
+fn test_addition() {
+    test_query_ec(
+        "SELECT u8_offset_encoded + negative FROM default ORDER BY id LIMIT 5;",
+        &[vec![Int(57)], vec![Int(297)], vec![Int(159)], vec![Int(291)], vec![Int(4306)]],
+    );
+    // TODO(clemens): s/2/-2/ once supported parser
+    test_query_ec(
+        "SELECT 2 + non_dense_ints FROM default ORDER BY id LIMIT 5;",
+        &[vec![Int(2)], vec![Int(4)], vec![Int(5)], vec![Int(3)], vec![Int(6)]],
+        // &[vec![Int(-2)], vec![Int(0)], vec![Int(1)], vec![Int(-1)], vec![Int(2)]],
+    );
+}
+
+#[test]
+fn test_numeric_operators() {
+    test_query_ec(
+        "SELECT (non_dense_ints * negative / (id + 1) - u8_offset_encoded) % (id + 1) FROM default ORDER BY id;",
+        &[
+            vec![Int(0)],
+            vec![Int(-1)],
+            vec![Int(-2)],
+            vec![Int(-1)],
+            vec![Int(4)],
+            vec![Int(-2)],
+            vec![Int(-2)],
+            vec![Int(-7)],
+            vec![Int(2)],
+            vec![Int(-2)]
+        ],
+    );
 }
 
 #[test]

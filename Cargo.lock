@@ -487,6 +487,7 @@ dependencies = [
  "heapsize_derive 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.5.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "locustdb-derive 0.1.0",
  "log 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "lru 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",

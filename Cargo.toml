@@ -2,52 +2,70 @@
 authors = ["Clemens Winter <clemenswinter1@gmail.com>", "David Fisher"]
 name = "locustdb"
 version = "0.2.0-dev"
-
-[features]
-default=[]
-trace=[]
-enable_rocksdb=["rocksdb", "capnp", "capnpc"]
-enable_lz4=["lz4"]
-
 [build-dependencies]
-capnpc = { version = "0.8.9", optional = true }
+[build-dependencies.capnpc]
+optional = true
+version = "0.8.9"
 
 [dependencies]
-rocksdb = { version = "0.10.1", optional = true }
-capnp = { version = "0.8.17", optional = true }
-lz4 = { version = "1.22.0", optional = true }
-futures-core = "0.2.1"
-futures-util = "0.2.1"
-futures-executor = "0.2.1"
-futures-channel = "0.2.1"
-csv = "1"
-heapsize = "0.4.2"
-itertools = "0.5.9"
-nom = "^3.2.1"
-num = "0.1.36"
-regex = "0.2"
-rustyline = "1.0.0"
-time = "0.1.36"
-seahash = "3.0.5"
+aliasmethod = "0.1.0"
 bit-vec = "0.4.4"
-num_cpus = "1.0"
+byteorder = "1.2.3"
 chrono = "0.4.6"
+clap = "2.32.0"
+csv = "1"
+env_logger = "0.5.6"
 failure = "0.1.1"
 failure_derive = "0.1.1"
-log = { version = "0.4", features = ["max_level_trace", "release_max_level_debug"] }
 flate2 = "1.0"
 fnv = "1.0.3"
-byteorder = "1.2.3"
-tempdir = "0.3.7"
+futures-channel = "0.2.1"
+futures-core = "0.2.1"
+futures-executor = "0.2.1"
+futures-util = "0.2.1"
+heapsize = "0.4.2"
 heapsize_derive = "0.1.4"
-clap = "2.32.0"
-lru = "0.1.8"
-scoped_threadpool = "0.1.9"
-env_logger = "0.5.6"
-rust-crypto = "0.2.36"
 hex = "0.3.2"
-std-semaphore = "0.1.0"
-aliasmethod = "0.1.0"
+itertools = "0.5.9"
+lazy_static = "*"
+lru = "0.1.8"
+nom = "^3.2.1"
+num = "0.1.36"
+num_cpus = "1.0"
 rand = "0.5.5"
-sqlparser = { git = "https://github.com/virattara/sqlparser-rs.git" }
-locustdb-derive = { path = "./locustdb-derive" }
+regex = "0.2"
+rust-crypto = "0.2.36"
+rustyline = "1.0.0"
+scoped_threadpool = "0.1.9"
+seahash = "3.0.5"
+std-semaphore = "0.1.0"
+tempdir = "0.3.7"
+time = "0.1.36"
+
+[dependencies.capnp]
+optional = true
+version = "0.8.17"
+
+[dependencies.locustdb-derive]
+path = "./locustdb-derive"
+
+[dependencies.log]
+features = ["max_level_trace", "release_max_level_debug"]
+version = "0.4"
+
+[dependencies.lz4]
+optional = true
+version = "1.22.0"
+
+[dependencies.rocksdb]
+optional = true
+version = "0.10.1"
+
+[dependencies.sqlparser]
+git = "https://github.com/virattara/sqlparser-rs.git"
+
+[features]
+default = []
+enable_lz4 = ["lz4"]
+enable_rocksdb = ["rocksdb", "capnp", "capnpc"]
+trace = []
