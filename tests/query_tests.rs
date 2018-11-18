@@ -269,6 +269,22 @@ fn test_order_by_aggregate() {
 }
 
 #[test]
+fn test_groupless_aggregate() {
+    test_query_nyc(
+        "SELECT count(0) FROM default",
+        &[vec![Int(10000)]],
+    );
+    test_query_nyc(
+        "SELECT sum(total_amount), count(0) FROM default",
+        &[vec![Int(16197630), Int(10000)]],
+    );
+    test_query_nyc(
+        "SELECT count(0) FROM default WHERE passenger_count = 1;",
+        &[vec![Int(6016)]],
+    );
+}
+
+#[test]
 fn test_order_by_grouping() {
     test_query_nyc(
         "SELECT passenger_count, count(0) FROM default ORDER BY passenger_count DESC LIMIT 10;",

@@ -7,6 +7,7 @@ mod bool_op;
 mod column_ops;
 mod compact;
 mod constant;
+mod constant_expand;
 mod constant_vec;
 mod count;
 mod delta_decode;
