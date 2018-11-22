@@ -1,7 +1,6 @@
 use engine::planning::QueryPlan;
 use engine::data_types::*;
 use engine::query_syntax::*;
-use ingest::raw_val::RawVal;
 
 
 #[derive(Debug, Clone, HeapSizeOf)]
@@ -121,7 +120,7 @@ impl Codec {
         let mut stack = vec![plan];
         for op in ops {
             let plan = match *op {
-                CodecOp::Add(_, x) => stack.pop().unwrap() + constant(RawVal::Int(x), true),
+                CodecOp::Add(_, x) => stack.pop().unwrap() + scalar_i64(x, true),
                 CodecOp::Delta(_) => delta_decode(stack.pop().unwrap()),
                 CodecOp::ToI64(t) => cast(stack.pop().unwrap(), t, EncodingType::I64),
                 CodecOp::PushDataSection(section_index) =>
@@ -181,13 +180,13 @@ impl Codec {
         }
     }
 
-    pub fn encode_int(&self, x: i64) -> RawVal {
+    pub fn encode_int(&self, x: i64) -> i64 {
         if let CodecOp::Add(_, y) = self.ops[0] {
             assert_eq!(self.ops.len(), 1);
-            RawVal::Int(x - y)
+            x - y
         } else if let CodecOp::ToI64(_) = self.ops[0] {
             assert_eq!(self.ops.len(), 1);
-            RawVal::Int(x)
+            x
         } else {
             panic!("encode_int not supported for {:?}", &self.ops)
         }

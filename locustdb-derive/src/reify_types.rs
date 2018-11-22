@@ -158,6 +158,8 @@ fn types(t: &Ident) -> Option<Vec<Type>> {
         "IntegerNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64]),
         "Integer" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64]),
         "Primitive" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::Str]),
+        "PrimitiveNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64, Type::Str]),
+        "Const" => Some(vec![Type::ConstI64, Type::ConstStr]),
         _ => None,
     }
 }
@@ -170,6 +172,8 @@ enum Type {
     U64,
     I64,
     Str,
+    ConstI64,
+    ConstStr,
 }
 
 impl Type {
@@ -181,6 +185,8 @@ impl Type {
             Type::U64 => parse_quote!(EncodingType::U64),
             Type::I64 => parse_quote!(EncodingType::I64),
             Type::Str => parse_quote!(EncodingType::Str),
+            Type::ConstI64 => parse_quote!(EncodingType::ConstStr),
+            Type::ConstStr => parse_quote!(EncodingType::ConstI64),
         }
     }
 
@@ -192,6 +198,8 @@ impl Type {
             Type::U64 => parse_quote!( let #variable = #variable.buffer.u64(); ),
             Type::I64 => parse_quote!( let #variable = #variable.buffer.i64(); ),
             Type::Str => parse_quote!( let #variable = #variable.buffer.str(); ),
+            Type::ConstI64 => parse_quote!( let #variable = #variable.buffer.scalar_i64(); ),
+            Type::ConstStr => parse_quote!( let #variable = #variable.buffer.scalar_str(); ),
         }
     }
 }

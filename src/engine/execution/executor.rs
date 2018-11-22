@@ -61,6 +61,18 @@ impl<'a> QueryExecutor<'a> {
         self.named_buffer(name, EncodingType::U8).u8().unwrap()
     }
 
+    pub fn buffer_scalar_i64(&mut self, name: &'static str) -> BufferRef<Scalar<i64>> {
+        self.named_buffer(name, EncodingType::ScalarI64).scalar_i64().unwrap()
+    }
+
+    pub fn buffer_scalar_str(&mut self, name: &'static str) -> BufferRef<Scalar<&'a str>> {
+        self.named_buffer(name, EncodingType::ScalarStr).scalar_str().unwrap()
+    }
+
+    pub fn buffer_scalar_string(&mut self, name: &'static str) -> BufferRef<Scalar<String>> {
+        self.named_buffer(name, EncodingType::ScalarString).scalar_string().unwrap()
+    }
+
     pub fn buffer_raw_val(&mut self, name: &'static str) -> BufferRef<RawVal> {
         self.named_buffer(name, EncodingType::Val).raw_val().unwrap()
     }

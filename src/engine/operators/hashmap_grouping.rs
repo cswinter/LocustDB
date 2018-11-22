@@ -11,7 +11,7 @@ pub struct HashMapGrouping<T: GenericVec<T> + Hash> {
     input: BufferRef<T>,
     unique_out: BufferRef<T>,
     grouping_key_out: BufferRef<u32>,
-    cardinality_out: BufferRef<i64>,
+    cardinality_out: BufferRef<Scalar<i64>>,
     map: FnvHashMap<T, u32>,
 }
 
@@ -19,7 +19,7 @@ impl<'a, T: GenericVec<T> + Hash + 'a> HashMapGrouping<T> {
     pub fn boxed(input: BufferRef<T>,
                  unique_out: BufferRef<T>,
                  grouping_key_out: BufferRef<u32>,
-                 cardinality_out: BufferRef<i64>,
+                 cardinality_out: BufferRef<Scalar<i64>>,
                  _max_index: usize) -> BoxedOperator<'a> {
         Box::new(HashMapGrouping::<T> {
             input,

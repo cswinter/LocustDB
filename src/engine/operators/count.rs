@@ -5,7 +5,7 @@ use engine::*;
 pub struct VecCount<T> {
     pub grouping: BufferRef<T>,
     pub output: BufferRef<u32>,
-    pub max_index: BufferRef<i64>,
+    pub max_index: BufferRef<Scalar<i64>>,
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
@@ -13,7 +13,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
         let mut result = scratchpad.get_mut(self.output);
         let grouping = scratchpad.get(self.grouping);
 
-        let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
+        let len = scratchpad.get_scalar(&self.max_index) as usize + 1;
         if len > result.len() {
             result.resize(len, 0);
         }

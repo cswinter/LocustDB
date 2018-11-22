@@ -23,6 +23,9 @@ pub struct TypedBufferRef {
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Any {}
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct Scalar<T> { t: PhantomData<T> }
+
 pub fn error_buffer_ref(name: &'static str) -> BufferRef<Any> {
     BufferRef {
         i: 0xdead_beef,
@@ -40,6 +43,11 @@ impl BufferRef<Any> {
     pub fn u32(self) -> BufferRef<u32> { self.transmute() }
     pub fn u16(self) -> BufferRef<u16> { self.transmute() }
     pub fn u8(self) -> BufferRef<u8> { self.transmute() }
+
+    pub fn scalar_i64(self) -> BufferRef<Scalar<i64>> { self.transmute() }
+    pub fn scalar_str<'a>(self) -> BufferRef<Scalar<&'a str>> { self.transmute() }
+    pub fn scalar_string<'a>(self) -> BufferRef<Scalar<String>> { self.transmute() }
+
     pub fn string(self) -> BufferRef<String> { self.transmute() }
     pub fn str<'a>(self) -> BufferRef<&'a str> { self.transmute() }
     pub fn usize(self) -> BufferRef<usize> { self.transmute() }
@@ -61,6 +69,12 @@ impl BufferRef<u8> {
 impl BufferRef<i64> {
     pub fn tagged(&self) -> TypedBufferRef {
         TypedBufferRef::new(self.any(), EncodingType::I64)
+    }
+}
+
+impl BufferRef<Scalar<i64>> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::ScalarI64)
     }
 }
 
@@ -139,8 +153,18 @@ impl TypedBufferRef {
         Ok(self.buffer.string())
     }
 
-    pub fn const_i64(&self) -> BufferRef<i64> {
-        // assert_eq!(self.tag, EncodingType::I64);
-        self.buffer.i64()
+    pub fn scalar_i64(&self) -> Result<BufferRef<Scalar<i64>>, QueryError> {
+        ensure!(self.tag == EncodingType::ScalarI64, "{:?} != ScalarI64", self.tag);
+        Ok(self.buffer.scalar_i64())
+    }
+
+    pub fn scalar_str<'a, 'b>(&'b self) -> Result<BufferRef<Scalar<&'a str>>, QueryError> {
+        ensure!(self.tag == EncodingType::ScalarStr, "{:?} != ScalarStr", self.tag);
+        Ok(self.buffer.scalar_str())
+    }
+
+    pub fn scalar_string(&self) -> Result<BufferRef<Scalar<String>>, QueryError> {
+        ensure!(self.tag == EncodingType::ScalarString, "{:?} != ScalaString", self.tag);
+        Ok(self.buffer.scalar_string())
     }
 }

@@ -9,7 +9,7 @@ pub struct HashMapGroupingByteSlices {
     input: BufferRef<Any>,
     unique_out: BufferRef<Any>,
     grouping_key_out: BufferRef<u32>,
-    cardinality_out: BufferRef<i64>,
+    cardinality_out: BufferRef<Scalar<i64>>,
     columns: usize,
 }
 
@@ -17,7 +17,7 @@ impl<'a> HashMapGroupingByteSlices {
     pub fn boxed(input: BufferRef<Any>,
                  unique_out: BufferRef<Any>,
                  grouping_key_out: BufferRef<u32>,
-                 cardinality_out: BufferRef<i64>,
+                 cardinality_out: BufferRef<Scalar<i64>>,
                  columns: usize) -> BoxedOperator<'a> {
         Box::new(HashMapGroupingByteSlices {
             input,

@@ -55,6 +55,15 @@ impl<'a> Scratchpad<'a> {
         }
     }
 
+    pub fn get_scalar_string_pinned(&mut self, index: &BufferRef<Scalar<String>>) -> &'a str {
+        let i = self.resolve(index);
+        self.pinned[i] = true;
+        let any = self.get_any(index.any());
+        unsafe {
+            mem::transmute::<&str, &'a str>(any.cast_ref_scalar_string())
+        }
+    }
+
     pub fn get_mut<T: GenericVec<T> + 'a>(&self, index: BufferRef<T>) -> RefMut<Vec<T>> {
         assert!(!self.pinned[self.resolve(&index)], "Trying to mutably borrow pinned buffer {}", index);
         RefMut::map(self.buffers[self.resolve(&index)].borrow_mut(), |x| {
@@ -63,7 +72,7 @@ impl<'a> Scratchpad<'a> {
         })
     }
 
-    pub fn get_const<T: ConstType<T>>(&self, index: &BufferRef<T>) -> T {
+    pub fn get_scalar<T: ConstType<T>>(&self, index: &BufferRef<Scalar<T>>) -> T {
         T::unwrap(&*self.get_any(index.any()))
     }
 
@@ -121,6 +130,11 @@ impl<'a> Scratchpad<'a> {
     pub fn set<T: GenericVec<T> + 'a>(&mut self, index: BufferRef<T>, vec: Vec<T>) {
         assert!(!self.pinned[self.resolve(&index)], "Trying to set pinned buffer {}", index);
         *self.buffer_mut(index) = RefCell::new(AnyVec::owned(vec));
+    }
+
+    pub fn set_const<T: ConstType<T> + 'a>(&mut self, index: BufferRef<Scalar<T>>, val: T) {
+        assert!(!self.pinned[self.resolve(&index)], "Trying to set pinned buffer {}", index);
+        *self.buffer_mut(index) = RefCell::new(AnyVec::scalar(val));
     }
 
     pub fn alias<T>(&mut self, original: BufferRef<T>, alias: BufferRef<T>) {
