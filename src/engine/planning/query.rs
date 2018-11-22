@@ -40,11 +40,11 @@ impl NormalFormQuery {
         let len = columns.iter().next().unwrap().1.len();
         let mut executor = QueryExecutor::default();
 
-        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, Filter::None, columns)?;
+        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns)?;
         let mut filter = match filter_type.encoding_type() {
-            EncodingType::BitVec => {
+            EncodingType::U8 => {
                 let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor)?;
-                Filter::BitVec(compiled_filter.u8()?)
+                Filter::U8(compiled_filter.u8()?)
             }
             _ => Filter::None,
         };
@@ -53,7 +53,7 @@ impl NormalFormQuery {
         let mut sort_indices = None;
         for (plan, desc) in self.order_by.iter().rev() {
             let (plan, _) = query_plan::order_preserving(
-                QueryPlan::create_query_plan(&plan, filter, columns)?);
+                QueryPlan::compile_expr(&plan, filter, columns)?);
             let ranking = query_plan::prepare(plan, &mut executor)?;
 
             // TODO(clemens): better criterion for using top_n
@@ -81,7 +81,7 @@ impl NormalFormQuery {
 
         let mut select = Vec::new();
         for expr in &self.projection {
-            let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
+            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan);
             }
@@ -89,7 +89,7 @@ impl NormalFormQuery {
         }
         let mut order_by = Vec::new();
         for (expr, desc) in &self.order_by {
-            let (mut plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
+            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan);
             }
@@ -131,11 +131,11 @@ impl NormalFormQuery {
         let mut executor = QueryExecutor::default();
 
         // Filter
-        let (filter_plan, filter_type) = QueryPlan::create_query_plan(&self.filter, Filter::None, columns)?;
+        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns)?;
         let filter = match filter_type.encoding_type() {
-            EncodingType::BitVec => {
+            EncodingType::U8 => {
                 let compiled_filter = query_plan::prepare(filter_plan, &mut executor)?;
-                Filter::BitVec(compiled_filter.u8()?)
+                Filter::U8(compiled_filter.u8()?)
             }
             _ => Filter::None,
         };
@@ -156,11 +156,11 @@ impl NormalFormQuery {
         // TODO(clemens): refine criterion
             if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
                 let max_grouping_key_buf = query_plan::prepare(
-                    constant(RawVal::Int(max_grouping_key), true), &mut executor)?;
+                    scalar_i64(max_grouping_key, true), &mut executor)?;
                 (None,
                  raw_grouping_key,
                  raw_grouping_key_type.clone(),
-                 max_grouping_key_buf.const_i64())
+                 max_grouping_key_buf.scalar_i64()?)
             } else {
                 query_plan::prepare_hashmap_grouping(
                     raw_grouping_key,
@@ -173,7 +173,7 @@ impl NormalFormQuery {
         let mut selector = None;
         let mut selector_index = None;
         for (i, &(aggregator, ref expr)) in self.aggregate.iter().enumerate() {
-            let (plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
+            let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,

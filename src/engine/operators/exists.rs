@@ -5,7 +5,7 @@ use engine::*;
 pub struct Exists<T> {
     pub input: BufferRef<T>,
     pub output: BufferRef<u8>,
-    pub max_index: BufferRef<i64>,
+    pub max_index: BufferRef<Scalar<i64>>,
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
@@ -13,7 +13,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
         let data = scratchpad.get(self.input);
         let mut exists = scratchpad.get_mut(self.output);
 
-        let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
+        let len = scratchpad.get_scalar(&self.max_index) as usize + 1;
         if len > exists.len() {
             exists.resize(len, 0);
         }

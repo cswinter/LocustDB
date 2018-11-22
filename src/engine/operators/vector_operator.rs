@@ -42,6 +42,8 @@ use super::nonzero_indices::NonzeroIndices;
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
+use super::scalar_i64::ScalarI64;
+use super::scalar_str::ScalarStr;
 use super::select::Select;
 use super::slice_pack::*;
 use super::slice_unpack::*;
@@ -162,13 +164,13 @@ impl<'a> VecOperator<'a> {
 
     pub fn inverse_dict_lookup(dict_indices: BufferRef<u64>,
                                dict_data: BufferRef<u8>,
-                               constant: BufferRef<String>,
-                               output: BufferRef<RawVal>) -> BoxedOperator<'a> {
+                               constant: BufferRef<Scalar<&'a str>>,
+                               output: BufferRef<Scalar<i64>>) -> BoxedOperator<'a> {
         Box::new(InverseDictLookup { dict_indices, dict_data, constant, output })
     }
 
-    pub fn encode_int_const(constant: BufferRef<i64>,
-                            output: BufferRef<i64>,
+    pub fn encode_int_const(constant: BufferRef<Scalar<i64>>,
+                            output: BufferRef<Scalar<i64>>,
                             codec: Codec) -> BoxedOperator<'a> {
         Box::new(EncodeIntConstant { constant, output, codec })
     }
@@ -197,6 +199,14 @@ impl<'a> VecOperator<'a> {
         Box::new(Constant { val, hide_value, output })
     }
 
+    pub fn scalar_i64(val: i64, hide_value: bool, output: BufferRef<Scalar<i64>>) -> BoxedOperator<'a> {
+        Box::new(ScalarI64 { val, hide_value, output })
+    }
+
+    pub fn scalar_str(val: String, pinned: BufferRef<Scalar<String>>, output: BufferRef<Scalar<&'a str>>) -> BoxedOperator<'a> {
+        Box::new(ScalarStr { val, pinned, output })
+    }
+
     pub fn constant_expand(val: i64, len: usize, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         match output.tag {
             EncodingType::U8 => Ok(Box::new(ConstantExpand {
@@ -214,38 +224,39 @@ impl<'a> VecOperator<'a> {
         Box::new(ConstantVec { val, output })
     }
 
-    pub fn less_than_vs(lhs: TypedBufferRef, rhs: BufferRef<i64>, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn less_than_vs(lhs: TypedBufferRef, rhs: BufferRef<Scalar<i64>>, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "less_than_vs";
             lhs: IntegerNoU64;
-            Ok(Box::new(VecConstBoolOperator::<_, i64, LessThanInt<_>> { lhs, rhs, output, op: PhantomData }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
         }
     }
 
     pub fn equals_vs(lhs: TypedBufferRef,
                      rhs: TypedBufferRef,
                      output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
-        // TODO(clemens): use specialization to get general Equals<T, U> class and unify
-        if let EncodingType::Str = lhs.tag {
-            return Ok(Box::new(VecConstBoolOperator { lhs: lhs.str()?, rhs: rhs.string()?, output, op: PhantomData::<EqualsString> }));
+        if lhs.tag == EncodingType::Str {
+            return Ok(Box::new(BinaryVSOperator::<&'a str, &'a str, u8, _> {
+                lhs: lhs.str()?,
+                rhs: rhs.scalar_str()?,
+                output,
+                op: PhantomData::<Equals>,
+            }));
         }
         reify_types! {
-            "slice_pack";
+            "equals_vs";
             lhs: IntegerNoU64;
-            Ok(Box::new(VecConstBoolOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<EqualsInt<_>> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Equals> }));
         }
     }
 
     pub fn not_equals_vs(lhs: TypedBufferRef,
                          rhs: TypedBufferRef,
                          output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
-        if let EncodingType::Str = lhs.tag {
-            return Ok(Box::new(VecConstBoolOperator { lhs: lhs.str()?, rhs: rhs.string()?, output, op: PhantomData::<NotEqualsString> }));
-        }
         reify_types! {
-            "slice_pack";
+            "not_equals_vs";
             lhs: IntegerNoU64;
-            Ok(Box::new(VecConstBoolOperator { lhs, rhs: rhs.i64()?, output, op: PhantomData::<NotEqualsInt<_>> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<NotEquals> }));
         }
     }
 
@@ -253,14 +264,14 @@ impl<'a> VecOperator<'a> {
                     mut rhs: TypedBufferRef,
                     output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::Val {
+        if lhs.tag == EncodingType::ScalarI64 {
             mem::swap(&mut lhs, &mut rhs);
         }
-        if rhs.tag == EncodingType::Val {
+        if rhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "addition_vs";
                 lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Addition<_, _>> }));
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Addition<_, _>> }));
             }
         } else {
             reify_types! {
@@ -275,17 +286,17 @@ impl<'a> VecOperator<'a> {
                        rhs: TypedBufferRef,
                        output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::Val {
+        if lhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "subtraction_sv";
                 rhs: IntegerNoU64;
-                Ok(Box::new(BinarySVOperator { lhs: lhs.const_i64(), rhs, output, op: PhantomData::<Subtraction<_, _>> }));
+                Ok(Box::new(BinarySVOperator { lhs: lhs.scalar_i64()?, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
             }
-        } else if rhs.tag == EncodingType::Val {
+        } else if rhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "subtraction_vs";
                 lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Subtraction<_, _>> }));
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Subtraction<_, _>> }));
             }
         } else {
             reify_types! {
@@ -300,14 +311,14 @@ impl<'a> VecOperator<'a> {
                           mut rhs: TypedBufferRef,
                           output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::Val {
+        if lhs.tag == EncodingType::ScalarI64 {
             mem::swap(&mut lhs, &mut rhs);
         }
-        if rhs.tag == EncodingType::Val {
+        if rhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "multiplication_vs";
                 lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Multiplication<_, _>> }));
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Multiplication<_, _>> }));
             }
         } else {
             reify_types! {
@@ -322,17 +333,17 @@ impl<'a> VecOperator<'a> {
                     rhs: TypedBufferRef,
                     output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::Val {
+        if lhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "division_sv";
                 rhs: IntegerNoU64;
-                Ok(Box::new(BinarySVOperator { lhs: lhs.const_i64(), rhs, output, op: PhantomData::<Division<_, _>> }));
+                Ok(Box::new(BinarySVOperator { lhs: lhs.scalar_i64()?, rhs, output, op: PhantomData::<Division<_, _>> }));
             }
-        } else if rhs.tag == EncodingType::Val {
+        } else if rhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "division_vs";
                 lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Division<_, _>> }));
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Division<_, _>> }));
             }
         } else {
             reify_types! {
@@ -347,17 +358,17 @@ impl<'a> VecOperator<'a> {
                   rhs: TypedBufferRef,
                   output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::Val {
+        if lhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "modulo_sv";
                 rhs: IntegerNoU64;
-                Ok(Box::new(BinarySVOperator { lhs: lhs.const_i64(), rhs, output, op: PhantomData::<Modulo<_, _>> }));
+                Ok(Box::new(BinarySVOperator { lhs: lhs.scalar_i64()?, rhs, output, op: PhantomData::<Modulo<_, _>> }));
             }
-        } else if rhs.tag == EncodingType::Val {
+        } else if rhs.tag == EncodingType::ScalarI64 {
             reify_types! {
                 "modulo_vs";
                 lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.const_i64(), output, op: PhantomData::<Modulo<_, _>> }));
+                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Modulo<_, _>> }));
             }
         } else {
             reify_types! {
@@ -425,7 +436,7 @@ impl<'a> VecOperator<'a> {
     pub fn summation(input: TypedBufferRef,
                      grouping: TypedBufferRef,
                      output: BufferRef<i64>,
-                     max_index: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+                     max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "summation";
             input: IntegerNoU64, grouping: Integer;
@@ -433,7 +444,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn count(grouping: TypedBufferRef, output: BufferRef<u32>, max_index: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn count(grouping: TypedBufferRef, output: BufferRef<u32>, max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "count";
             grouping: Integer;
@@ -441,7 +452,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn exists(input: TypedBufferRef, output: BufferRef<u8>, max_index: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn exists(input: TypedBufferRef, output: BufferRef<u8>, max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "exists";
             input: Integer;
@@ -473,11 +484,10 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    // TODO(clemens): allow different types on raw input grouping key and output grouping key
     pub fn hash_map_grouping(raw_grouping_key: TypedBufferRef,
                              unique_out: TypedBufferRef,
                              grouping_key_out: BufferRef<u32>,
-                             cardinality_out: BufferRef<i64>,
+                             cardinality_out: BufferRef<Scalar<i64>>,
                              max_cardinality: usize) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::ByteSlices(columns) = raw_grouping_key.tag {
             return Ok(HashMapGroupingByteSlices::boxed(

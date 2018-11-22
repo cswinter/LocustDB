@@ -99,41 +99,10 @@ impl<'c> GenericVec<Val<'c>> for Val<'c> {
 
     fn t() -> EncodingType { EncodingType::Val }
 }
-/*
-impl<'c> GenericVec<&'c str> for ByteSlices<'c> {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [ByteSlices<'c>] where ByteSlices<'c>: 'a {
-        unsafe {
-            mem::transmute::<_, &'b [ByteSlices<'c>]>(vec.cast_ref_str())
-        }
-    }
-
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<ByteSlices<'c>> where ByteSlices<'c>: 'a {
-        unsafe {
-            mem::transmute::<_, &'b mut Vec<ByteSlices<'c>>>(vec.cast_ref_mut_str())
-        }
-    }
-
-    fn wrap_one(value: &'c str) -> RawVal { RawVal::Str(value.to_string()) }
-
-    fn t() -> EncodingType { EncodingType::Str }
-}
-*/
 
 pub trait GenericIntVec<T>: GenericVec<T> + CastUsize + FromBytes<T> + PrimInt + Hash + 'static {}
 
 impl<T> GenericIntVec<T> for T where T: GenericVec<T> + CastUsize + FromBytes<T> + PrimInt + Copy + Hash + 'static {}
-
-pub trait ConstType<T>: Clone {
-    fn unwrap(vec: &AnyVec) -> T;
-}
-
-impl ConstType<i64> for i64 {
-    fn unwrap(vec: &AnyVec) -> i64 { vec.cast_i64_const() }
-}
-
-impl ConstType<String> for String {
-    fn unwrap(vec: &AnyVec) -> String { vec.cast_str_const() }
-}
 
 
 pub trait FromBytes<T> {

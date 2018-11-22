@@ -3,8 +3,8 @@ use mem_store::*;
 
 #[derive(Debug)]
 pub struct EncodeIntConstant {
-    pub constant: BufferRef<i64>,
-    pub output: BufferRef<i64>,
+    pub constant: BufferRef<Scalar<i64>>,
+    pub output: BufferRef<Scalar<i64>>,
     pub codec: Codec,
 }
 
@@ -12,9 +12,9 @@ impl<'a> VecOperator<'a> for EncodeIntConstant {
     fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        let constant = scratchpad.get_const::<i64>(&self.constant);
+        let constant = scratchpad.get_scalar(&self.constant);
         let result = self.codec.encode_int(constant);
-        scratchpad.set_any(self.output.any(), AnyVec::constant(result));
+        scratchpad.set_any(self.output.any(), AnyVec::scalar_i64(result));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.constant.any()] }

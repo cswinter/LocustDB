@@ -3,7 +3,7 @@ use engine::BufferRef;
 #[derive(Clone, Copy)]
 pub enum Filter {
     None,
-    BitVec(BufferRef<u8>),
+    U8(BufferRef<u8>),
     Indices(BufferRef<usize>),
 }
 

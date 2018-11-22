@@ -6,7 +6,7 @@ pub struct VecSum<T, U> {
     pub input: BufferRef<T>,
     pub grouping: BufferRef<U>,
     pub output: BufferRef<i64>,
-    pub max_index: BufferRef<i64>,
+    pub max_index: BufferRef<Scalar<i64>>,
 }
 
 impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
@@ -16,7 +16,7 @@ impl<'a, T, U> VecOperator<'a> for VecSum<T, U> where
         let grouping = scratchpad.get(self.grouping);
         let mut sums = scratchpad.get_mut(self.output);
 
-        let len = scratchpad.get_const::<i64>(&self.max_index) as usize + 1;
+        let len = scratchpad.get_scalar(&self.max_index) as usize + 1;
         if len > sums.len() {
             sums.resize(len, 0);
         }

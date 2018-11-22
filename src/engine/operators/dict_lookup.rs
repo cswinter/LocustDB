@@ -1,7 +1,6 @@
 use std::str;
 
 use engine::*;
-use ingest::raw_val::RawVal;
 
 
 #[derive(Debug)]
@@ -47,18 +46,18 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DictLookup<'a, T> {
 }
 
 #[derive(Debug)]
-pub struct InverseDictLookup {
+pub struct InverseDictLookup<'a> {
     pub dict_indices: BufferRef<u64>,
     pub dict_data: BufferRef<u8>,
-    pub constant: BufferRef<String>,
-    pub output: BufferRef<RawVal>,
+    pub constant: BufferRef<Scalar<&'a str>>,
+    pub output: BufferRef<Scalar<i64>>,
 }
 
-impl<'a> VecOperator<'a> for InverseDictLookup {
+impl<'a> VecOperator<'a> for InverseDictLookup<'a> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let result = {
             let mut result = -1;
-            let constant = scratchpad.get_const::<String>(&self.constant);
+            let constant = scratchpad.get_scalar(&self.constant);
             let constant = constant.as_bytes();
             let dict_indices = scratchpad.get(self.dict_indices);
             let dict_data = scratchpad.get(self.dict_data);
@@ -72,7 +71,7 @@ impl<'a> VecOperator<'a> for InverseDictLookup {
             }
             result
         };
-        scratchpad.set_any(self.output.any(), AnyVec::constant(RawVal::Int(result)));
+        scratchpad.set_const(self.output, result);
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.constant.any(), self.dict_indices.any(), self.dict_data.any()] }

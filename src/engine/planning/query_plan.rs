@@ -119,9 +119,9 @@ pub enum QueryPlan {
         offset: usize,
     },
 
-    LessThanVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    EqualsVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    NotEqualsVS { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    LessThan { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    Equals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    NotEquals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
 
     Add { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     Subtract { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
@@ -158,6 +158,8 @@ pub enum QueryPlan {
     Convergence(Vec<Box<QueryPlan>>),
 
     Constant { value: RawVal, hide_value: bool },
+    ScalarI64 { value: i64, hide_value: bool },
+    ScalarStr { value: String },
 
     /// Outputs a vector with all values equal to `value`.
     ConstantExpand {
@@ -169,7 +171,11 @@ pub enum QueryPlan {
 
 impl QueryPlan {
     fn is_constant(&self) -> bool {
-        if let QueryPlan::Constant { .. } = self { true } else { false }
+        match self {
+            QueryPlan::Constant { .. } | QueryPlan::ScalarI64 { .. }
+            | QueryPlan::ScalarStr { .. } => true,
+            _ => false,
+        }
     }
 }
 
@@ -183,6 +189,7 @@ pub fn prepare_no_alias(plan: QueryPlan, result: &mut QueryExecutor) -> Result<T
 
 fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
     trace!("{:?}", &plan);
+    // Aliasing constants currently messes with the execution graph in ways the planner can't handle
     let (plan, signature) = if no_alias || plan.is_constant() {
         (plan, [0; 16])
     } else {
@@ -210,6 +217,12 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         }
         QueryPlan::Constant { ref value, hide_value } =>
             VecOperator::constant(value.clone(), hide_value, result.buffer_raw_val("constant")),
+        QueryPlan::ScalarI64 { value, hide_value } =>
+            VecOperator::scalar_i64(value, hide_value, result.buffer_scalar_i64("int_constant")),
+        QueryPlan::ScalarStr { value } =>
+            VecOperator::scalar_str(value.to_string(),
+                                    result.buffer_scalar_string("pinned_string"),
+                                    result.buffer_scalar_str("str_constant")),
         QueryPlan::ConstantExpand { value, t, len } =>
             VecOperator::constant_expand(value, len, result.named_buffer("constant", t))?,
         QueryPlan::DictLookup { indices, offset_len, backing_store } =>
@@ -222,8 +235,8 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
             VecOperator::inverse_dict_lookup(
                 prepare(*offset_len, result)?.u64()?,
                 prepare(*backing_store, result)?.u8()?,
-                prepare(*constant, result)?.string()?,
-                result.buffer_raw_val("encoded")),
+                prepare(*constant, result)?.scalar_str()?,
+                result.buffer_scalar_i64("encoded")),
         QueryPlan::Cast { input, input_type: _, target_type } =>
             VecOperator::type_conversion(
                 prepare(*input, result)?,
@@ -252,7 +265,7 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
             VecOperator::exists(
                 prepare(*indices, result)?,
                 result.buffer_u8("exists"),
-                prepare(*max_index, result)?.i64()?)?,
+                prepare(*max_index, result)?.scalar_i64()?)?,
         QueryPlan::Compact { plan, select } => {
             let inplace = prepare(*plan, result)?;
             let op = VecOperator::compact(inplace, prepare(*select, result)?)?;
@@ -270,8 +283,8 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         }
         QueryPlan::EncodeIntConstant { constant, codec } =>
             VecOperator::encode_int_const(
-                prepare(*constant, result)?.const_i64(),
-                result.buffer_i64("encoded"),
+                prepare(*constant, result)?.scalar_i64()?,
+                result.buffer_scalar_i64("encoded"),
                 codec),
         QueryPlan::BitPack { lhs, rhs, shift } =>
             VecOperator::bit_shift_left_add(
@@ -308,17 +321,17 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
             return Ok(first.unwrap());
         }
 
-        QueryPlan::LessThanVS { lhs, rhs } =>
+        QueryPlan::LessThan { lhs, rhs } =>
             VecOperator::less_than_vs(
                 prepare(*lhs, result)?,
-                prepare(*rhs, result)?.const_i64(),
+                prepare(*rhs, result)?.scalar_i64()?,
                 result.buffer_u8("less_than"))?,
-        QueryPlan::EqualsVS { lhs, rhs } =>
+        QueryPlan::Equals { lhs, rhs } =>
             VecOperator::equals_vs(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?,
                 result.buffer_u8("equals"))?,
-        QueryPlan::NotEqualsVS { lhs, rhs } =>
+        QueryPlan::NotEquals { lhs, rhs } =>
             VecOperator::not_equals_vs(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?,
@@ -394,10 +407,13 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
 pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
                                 max_cardinality: usize,
                                 result: &mut QueryExecutor)
-                                -> Result<(Option<TypedBufferRef>, TypedBufferRef, Type, BufferRef<i64>), QueryError> {
+                                -> Result<(Option<TypedBufferRef>,
+                                           TypedBufferRef,
+                                           Type,
+                                           BufferRef<Scalar<i64>>), QueryError> {
     let unique_out = result.named_buffer("unique", raw_grouping_key.tag.clone());
     let grouping_key_out = result.buffer_u32("grouping_key");
-    let cardinality_out = result.buffer_i64("cardinality");
+    let cardinality_out = result.buffer_scalar_i64("cardinality");
     result.push(
         VecOperator::hash_map_grouping(raw_grouping_key,
                                        unique_out,
@@ -414,7 +430,7 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
 pub fn prepare_aggregation<'a>(plan: QueryPlan,
                                plan_type: Type,
                                grouping_key: TypedBufferRef,
-                               max_index: BufferRef<i64>,
+                               max_index: BufferRef<Scalar<i64>>,
                                aggregator: Aggregator,
                                result: &mut QueryExecutor<'a>)
                                -> Result<(TypedBufferRef, Type), QueryError> {
@@ -486,7 +502,7 @@ lazy_static! {
 }
 
 impl QueryPlan {
-    pub fn create_query_plan(
+    pub fn compile_expr(
         expr: &Expr,
         filter: Filter,
         columns: &HashMap<String, Arc<DataSource>>) -> Result<(QueryPlan, Type), QueryError> {
@@ -504,7 +520,7 @@ impl QueryPlan {
                         plan = fixed_width;
                     }
                     plan = match filter {
-                        Filter::BitVec(filter) => query_syntax::filter(plan, filter.tagged()),
+                        Filter::U8(filter) => query_syntax::filter(plan, filter.tagged()),
                         Filter::Indices(indices) => select(plan, indices.tagged()),
                         Filter::None => plan,
                     };
@@ -513,16 +529,16 @@ impl QueryPlan {
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
             }
             Func2(LT, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::Integer, BasicType::Integer) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
                                 let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
-                                less_than_vs(plan_lhs, encoded)
+                                less_than(plan_lhs, encoded)
                             } else {
-                                less_than_vs(plan_lhs, plan_rhs)
+                                less_than(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "< operator only implemented for column < constant")
@@ -533,16 +549,16 @@ impl QueryPlan {
                 }
             }
             Func2(Equals, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
                                 let encoded = type_lhs.codec.clone().unwrap().encode_str(plan_rhs);
-                                equals_vs(plan_lhs, encoded)
+                                equals(plan_lhs, encoded)
                             } else {
-                                equals_vs(plan_lhs, plan_rhs)
+                                equals(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
@@ -553,9 +569,9 @@ impl QueryPlan {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
                                 let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
-                                equals_vs(plan_lhs, encoded)
+                                equals(plan_lhs, encoded)
                             } else {
-                                equals_vs(plan_lhs, plan_rhs)
+                                equals(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
@@ -566,16 +582,16 @@ impl QueryPlan {
                 }
             }
             Func2(NotEquals, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
                 match (type_lhs.decoded, type_rhs.decoded) {
                     (BasicType::String, BasicType::String) => {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
                                 let encoded = type_lhs.codec.clone().unwrap().encode_str(plan_rhs);
-                                not_equals_vs(plan_lhs, encoded)
+                                not_equals(plan_lhs, encoded)
                             } else {
-                                not_equals_vs(plan_lhs, plan_rhs)
+                                not_equals(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
@@ -586,9 +602,9 @@ impl QueryPlan {
                         let plan = if type_rhs.is_scalar {
                             if type_lhs.is_encoded() {
                                 let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
-                                not_equals_vs(plan_lhs, encoded)
+                                not_equals(plan_lhs, encoded)
                             } else {
-                                not_equals_vs(plan_lhs, plan_rhs)
+                                not_equals(plan_lhs, plan_rhs)
                             }
                         } else {
                             bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
@@ -599,24 +615,24 @@ impl QueryPlan {
                 }
             }
             Func2(Or, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
                 (plan_lhs | plan_rhs, Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
                 (plan_lhs & plan_rhs, Type::bit_vec())
             }
             Func2(function, ref lhs, ref rhs) => {
-                let (mut plan_lhs, mut type_lhs) = QueryPlan::create_query_plan(lhs, filter, columns)?;
-                let (mut plan_rhs, mut type_rhs) = QueryPlan::create_query_plan(rhs, filter, columns)?;
+                let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
+                let (mut plan_rhs, mut type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
 
                 let declarations = match FUNCTION_REGISTRY.get(&function) {
                     Some(patterns) => patterns,
@@ -642,7 +658,7 @@ impl QueryPlan {
                 (plan, declaration.type_out.clone())
             }
             Func1(ToYear, ref inner) => {
-                let (plan, t) = QueryPlan::create_query_plan(inner, filter, columns)?;
+                let (plan, t) = QueryPlan::compile_expr(inner, filter, columns)?;
                 if t.decoded != BasicType::Integer {
                     bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                 }
@@ -652,7 +668,8 @@ impl QueryPlan {
                 };
                 (to_year(decoded), t.decoded())
             }
-            Const(ref v) => (constant(v.clone(), false), Type::scalar(v.get_type())),
+            Const(RawVal::Int(i)) => (scalar_i64(i, false), Type::scalar(BasicType::Integer)),
+            Const(RawVal::Str(ref s)) => (scalar_str(s), Type::scalar(BasicType::String)),
             ref x => bail!(QueryError::NotImplemented, "{:?}.compile_vec()", x),
         })
     }
@@ -670,10 +687,10 @@ impl QueryPlan {
             ),
             Filter { ref plan, .. } => plan.encoding_range(),
             // TODO(clemens): this is just wrong
-            Divide { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. } } =>
+            Divide { ref lhs, rhs: box ScalarI64 { value: c, .. } } =>
                 lhs.encoding_range().map(|(min, max)|
                     if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
-            Add { ref lhs, rhs: box Constant { value: RawVal::Int(c), .. }, .. } =>
+            Add { ref lhs, rhs: box ScalarI64 { value: c, .. }, .. } =>
                 lhs.encoding_range().map(|(min, max)| (min + c, max + c)),
             Cast { ref input, .. } => input.encoding_range(),
             LZ4Decode { ref bytes, .. } => bytes.encoding_range(),
@@ -819,26 +836,26 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 }
                 Convergence(new_plans)
             }
-            LessThanVS { lhs, rhs } => {
+            LessThan { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                LessThanVS { lhs, rhs }
+                LessThan { lhs, rhs }
             }
-            EqualsVS { lhs, rhs } => {
+            Equals { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                EqualsVS { lhs, rhs }
+                Equals { lhs, rhs }
             }
-            NotEqualsVS { lhs, rhs } => {
+            NotEquals { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
                 let (rhs, s2) = replace_common_subexpression(*rhs, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                NotEqualsVS { lhs, rhs }
+                NotEquals { lhs, rhs }
             }
             Add { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);
@@ -937,6 +954,14 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 }
                 Constant { value, hide_value }
             }
+            ScalarI64 { value, hide_value } => {
+                hasher.input(&(value as u64).to_ne_bytes());
+                ScalarI64 { value, hide_value }
+            }
+            ScalarStr { value } => {
+                hasher.input_str(&value);
+                ScalarStr { value }
+            }
             ConstantExpand { value, t, len } => {
                 hasher.input(&value.to_ne_bytes());
                 hasher.input(&discriminant_value(&t).to_ne_bytes());
@@ -962,7 +987,7 @@ pub fn compile_grouping_key(
         let t = Type::new(BasicType::Integer, Some(Codec::opaque(EncodingType::U8, BasicType::Integer, true, true, true, true)));
         let mut plan = syntax::constant_expand(0, EncodingType::U8, partition_length);
         plan = match filter {
-            Filter::BitVec(filter) => query_syntax::filter(plan, filter.tagged()),
+            Filter::U8(filter) => query_syntax::filter(plan, filter.tagged()),
             Filter::Indices(indices) => select(plan, indices.tagged()),
             Filter::None => plan,
         };
@@ -972,7 +997,7 @@ pub fn compile_grouping_key(
             vec![],
         ))
     } else if exprs.len() == 1 {
-        QueryPlan::create_query_plan(&exprs[0], filter, columns)
+        QueryPlan::compile_expr(&exprs[0], filter, columns)
             .map(|(gk_plan, gk_type)| {
                 let encoding_range = QueryPlan::encoding_range(&gk_plan);
                 debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
@@ -981,7 +1006,7 @@ pub fn compile_grouping_key(
                     None => (1 << 62, 0),
                 };
                 let gk_plan = if offset != 0 {
-                    gk_plan + constant(RawVal::Int(offset), true)
+                    gk_plan + scalar_i64(offset, true)
                 } else { gk_plan };
 
                 let decoded_group_by = gk_type.codec.clone().map_or(
@@ -989,7 +1014,7 @@ pub fn compile_grouping_key(
                     |codec| codec.decode(QueryPlan::EncodedGroupByPlaceholder));
                 let decoded_group_by = if offset == 0 { decoded_group_by } else {
                     syntax::cast(
-                        decoded_group_by + constant(RawVal::Int(-offset), true),
+                        decoded_group_by + scalar_i64(-offset, true),
                         EncodingType::I64,
                         gk_type.encoding_type())
                 };
@@ -1005,7 +1030,7 @@ pub fn compile_grouping_key(
         let mut pack = Vec::new();
         let mut decode_plans = Vec::new();
         for (i, expr) in exprs.iter().enumerate() {
-            let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
+            let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
             pack.push(Box::new(slice_pack(query_plan, exprs.len(), i)));
 
             // TODO(clemens): negative integers can throw off sort oder - need to move into positive range
@@ -1047,7 +1072,7 @@ fn try_bitpacking(
     let mut decode_plans = Vec::with_capacity(exprs.len());
     let mut order_preserving = true;
     for expr in exprs.iter().rev() {
-        let (query_plan, plan_type) = QueryPlan::create_query_plan(expr, filter, columns)?;
+        let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
         let encoding_range = QueryPlan::encoding_range(&query_plan);
         debug!("Encoding range of {:?} for {:?}", &encoding_range, &query_plan);
         if let Some((min, max)) = encoding_range {
@@ -1060,7 +1085,7 @@ fn try_bitpacking(
             let adjusted_max = if subtract_offset { max - min } else { max };
             order_preserving = order_preserving && plan_type.is_order_preserving();
             let query_plan = if subtract_offset {
-                query_plan + constant(RawVal::Int(-min), true)
+                query_plan + scalar_i64(-min, true)
             } else {
                 syntax::cast(query_plan, plan_type.encoding_type(), EncodingType::I64)
             };
@@ -1076,7 +1101,7 @@ fn try_bitpacking(
                 total_width as u8,
                 bits(adjusted_max) as u8);
             if subtract_offset {
-                decode_plan = decode_plan + constant(RawVal::Int(min), true);
+                decode_plan = decode_plan + scalar_i64(min, true);
             }
             decode_plan = syntax::cast(decode_plan, EncodingType::I64, plan_type.encoding_type());
             if let Some(codec) = plan_type.codec.clone() {

@@ -42,7 +42,7 @@ impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for BinaryOperator<LHS, RHS, Out, Op
 
 pub struct BinaryVSOperator<LHS, RHS, Out, Op> {
     pub lhs: BufferRef<LHS>,
-    pub rhs: BufferRef<RHS>,
+    pub rhs: BufferRef<Scalar<RHS>>,
     pub output: BufferRef<Out>,
     pub op: PhantomData<Op>,
 }
@@ -54,7 +54,7 @@ impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for BinaryVSOperator<LHS, RHS, Out, 
           Op: BinaryOp<LHS, RHS, Out> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let lhs = scratchpad.get(self.lhs);
-        let rhs = scratchpad.get_const(&self.rhs);
+        let rhs = scratchpad.get_scalar(&self.rhs);
         let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear(); }
         for &l in lhs.iter() {
@@ -78,7 +78,7 @@ impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for BinaryVSOperator<LHS, RHS, Out, 
 }
 
 pub struct BinarySVOperator<LHS, RHS, Out, Op> {
-    pub lhs: BufferRef<LHS>,
+    pub lhs: BufferRef<Scalar<LHS>>,
     pub rhs: BufferRef<RHS>,
     pub output: BufferRef<Out>,
     pub op: PhantomData<Op>,
@@ -90,7 +90,7 @@ impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for BinarySVOperator<LHS, RHS, Out, 
           Out: GenericVec<Out> + 'a,
           Op: BinaryOp<LHS, RHS, Out> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        let lhs = scratchpad.get_const(&self.lhs);
+        let lhs = scratchpad.get_scalar(&self.lhs);
         let rhs = scratchpad.get(self.rhs);
         let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear(); }

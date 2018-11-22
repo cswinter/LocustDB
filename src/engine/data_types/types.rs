@@ -7,8 +7,11 @@ pub enum EncodingType {
     USize,
     Val,
     Null,
-    BitVec,
-    Constant,
+
+    ScalarI64,
+    ScalarStr,
+    ScalarString,
+    ConstVal,
 
     U8,
     U16,
@@ -27,7 +30,6 @@ impl EncodingType {
             EncodingType::I64 => BasicType::Integer,
             EncodingType::Val => BasicType::Val,
             EncodingType::Null => BasicType::Null,
-            EncodingType::BitVec => BasicType::Boolean,
             _ => panic!("{:?} does not have a corresponding BasicType", &self)
         }
     }
@@ -49,7 +51,7 @@ impl BasicType {
             BasicType::Integer => EncodingType::I64,
             BasicType::Val => EncodingType::Val,
             BasicType::Null => EncodingType::Null,
-            BasicType::Boolean => EncodingType::BitVec,
+            BasicType::Boolean => EncodingType::U8,
         }
     }
 }

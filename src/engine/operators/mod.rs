@@ -28,6 +28,8 @@ mod nonzero_compact;
 mod nonzero_indices;
 mod numeric_operators;
 mod parameterized_vec_vec_int_op;
+mod scalar_i64;
+mod scalar_str;
 mod select;
 mod sort_by;
 mod sort_by_slices;

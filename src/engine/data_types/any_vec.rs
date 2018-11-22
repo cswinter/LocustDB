@@ -31,8 +31,9 @@ pub trait AnyVec<'a>: Send + Sync {
     fn cast_ref_mixed(&self) -> &[Val<'a>] { panic!(self.type_error("cast_ref_mixed")) }
     fn cast_ref_merge_op(&self) -> &[MergeOp] { panic!(self.type_error("cast_ref_merge_op")) }
     fn cast_ref_premerge(&self) -> &[Premerge] { panic!(self.type_error("cast_ref_merge_op")) }
-    fn cast_str_const(&self) -> string::String { panic!(self.type_error("cast_str_const")) }
-    fn cast_i64_const(&self) -> i64 { panic!(self.type_error("cast_i64_const")) }
+    fn cast_ref_scalar_string(&self) -> &String { panic!(self.type_error("cast_ref_scalar_string")) }
+    fn cast_scalar_i64(&self) -> i64 { panic!(self.type_error("cast_scalar_i64")) }
+    fn cast_scalar_str(&self) -> &'a str { panic!(self.type_error("cast_scalar_str")) }
     fn cast_ref_byte_slices(&self) -> &ByteSlices<'a> { panic!(self.type_error("cast_ref_byte_slices")) }
 
     fn cast_ref_mut_str(&mut self) -> &mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
@@ -72,6 +73,10 @@ impl<'a> fmt::Debug for BoxedVec<'a> {
 impl<'a> AnyVec<'a> {
     pub fn owned<T: GenericVec<T> + 'a>(data: Vec<T>) -> BoxedVec<'a> { Box::new(data) }
     pub fn constant(value: RawVal) -> BoxedVec<'a> { Box::new(value) }
+    pub fn scalar_i64(value: i64) -> BoxedVec<'a> { Box::new(RawVal::Int(value)) }
+    pub fn scalar<T: ConstType<T> + 'a>(val: T) -> BoxedVec<'a> {
+        Box::new(ScalarVal { val })
+    }
     pub fn empty(length: usize) -> BoxedVec<'a> { Box::new(length) }
 }
 
@@ -262,17 +267,17 @@ impl<'a> AnyVec<'a> for usize {
 impl<'a> AnyVec<'a> for RawVal {
     fn len(&self) -> usize { 0 }
     fn get_raw(&self, _i: usize) -> RawVal { self.clone() }
-    fn get_type(&self) -> EncodingType { EncodingType::Constant }
+    fn get_type(&self) -> EncodingType { EncodingType::ConstVal }
     fn type_error(&self, func_name: &str) -> String { format!("Constant.{}", func_name) }
     fn append_all(&mut self, _other: &AnyVec<'a>, _count: usize) -> Option<BoxedVec<'a>> { panic!("Constant.extend") }
     fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedVec<'b> where 'a: 'b { Box::new(self.clone()) }
-    fn cast_str_const(&self) -> string::String {
+    fn cast_ref_scalar_string(&self) -> &string::String {
         match self {
-            RawVal::Str(s) => s.clone(),
+            RawVal::Str(s) => &s,
             _ => panic!("{}.cast_str_const", &self),
         }
     }
-    fn cast_i64_const(&self) -> i64 {
+    fn cast_scalar_i64(&self) -> i64 {
         match self {
             RawVal::Int(i) => *i,
             _ => panic!("{}.cast_i64_const", &self),
