@@ -1,4 +1,4 @@
-use super::proc_macro::TokenStream;
+use super::proc_macro::{TokenStream, Span};
 use syn::parse::{Parse, ParseStream, Result};
 use syn::token::{Brace, Match};
 use syn::punctuated::Punctuated;
@@ -7,6 +7,11 @@ use syn::{Arm, Pat, Block, Stmt, parse_macro_input, parse_quote, Expr, Ident, Li
 
 struct TypeExpand {
     name: LitStr,
+    productions: Vec<Production>,
+}
+
+#[derive(Clone)]
+struct Production {
     specs: Vec<Declaration>,
     expr: Expr,
 }
@@ -22,14 +27,23 @@ impl Parse for TypeExpand {
         let name: LitStr = input.parse()?;
         input.parse::<Token![;]>()?;
 
+        let productions = Punctuated::<Production, Token![;]>::parse_separated_nonempty(input)?;
+
+        Ok(TypeExpand {
+            name,
+            productions: productions.into_iter().collect(),
+        })
+    }
+}
+
+impl Parse for Production {
+    fn parse(input: ParseStream) -> Result<Self> {
         let specs = Punctuated::<Declaration, Token![,]>::parse_separated_nonempty(input)?;
         input.parse::<Token![;]>()?;
 
         let expr: Expr = input.parse()?;
-        input.parse::<Token![;]>()?;
 
-        Ok(TypeExpand {
-            name,
+        Ok(Production {
             specs: specs.into_iter().collect(),
             expr,
         })
@@ -52,20 +66,23 @@ impl Parse for Declaration {
 pub fn reify_types(input: TokenStream) -> TokenStream {
     let TypeExpand {
         name,
-        specs,
-        expr,
+        productions,
     } = parse_macro_input!(input as TypeExpand);
 
+    let mut all_match_arms = Vec::new();
+    let mut unified_variable_groups = Vec::new();
     let mut type_equalities = Vec::<Stmt>::new();
-    let mut type_domains = Vec::with_capacity(specs.len());
-    let mut variable_groups = Vec::with_capacity(specs.len());
-    for Declaration { variables, t } in specs {
-        if variables.len() > 1 {
-            let v0 = variables[0].clone();
-            for v in &variables[1..] {
-                let name0 = LitStr::new(&format!("{}", &v0), v0.span());
-                let name1 = LitStr::new(&format!("{}", &v), v.span());
-                type_equalities.push(parse_quote! {
+
+    for Production { specs, expr } in productions {
+        let mut type_domains = Vec::with_capacity(specs.len());
+        let mut variable_groups = Vec::with_capacity(specs.len());
+        for Declaration { variables, t } in specs {
+            if variables.len() > 1 {
+                let v0 = variables[0].clone();
+                for v in &variables[1..] {
+                    let name0 = LitStr::new(&format!("{}", &v0), v0.span());
+                    let name1 = LitStr::new(&format!("{}", &v), v.span());
+                    type_equalities.push(parse_quote! {
                     if #v0.tag != #v.tag {
                         return Err(
                             fatal!("Expected identical types for `{}` ({:?}) and `{}` ({:?}).",
@@ -74,68 +91,90 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
                         )
                     }
                 });
+                }
             }
-        }
-        type_domains.push(match types(&t) {
-            Some(ts) => ts,
-            None => {
-                t.span().unstable().error(format!("{} is not a valid type.", t)).emit();
-                return TokenStream::new();
-            }
-        });
-        variable_groups.push(variables);
-    }
-
-    let mut cross_product = Vec::new();
-    let mut indices = vec![0; type_domains.len()];
-    'outer: loop {
-        cross_product.push(
-            indices
-                .iter()
-                .enumerate()
-                .map(|(t, &i)| type_domains[t][i])
-                .collect::<Vec<_>>()
-        );
-
-        for i in 0..type_domains.len() {
-            indices[i] += 1;
-            if indices[i] < type_domains[i].len() {
-                break;
-            }
-            if i == type_domains.len() - 1 {
-                break 'outer;
+            type_domains.push(match types(&t) {
+                Some(ts) => ts,
+                None => {
+                    t.span().unstable().error(format!("{} is not a valid type.", t)).emit();
+                    return TokenStream::new();
+                }
+            });
+            variable_groups.push(variables.clone());
+            if unified_variable_groups.len() < variable_groups.len() {
+                unified_variable_groups.push(variables);
             } else {
-                indices[i] = 0;
+                let i = variable_groups.len() - 1;
+                if variable_groups[i] != unified_variable_groups[i] {
+                    t.span().unstable().error(format!(
+                        "Set of variables must be identical in all type declarations, but found {:?} and {:?}.",
+                        variable_groups[i],
+                        unified_variable_groups[i])).emit();
+                    return TokenStream::new();
+                }
             }
         }
+        if variable_groups.len() != unified_variable_groups.len() {
+            Span::call_site().error(format!(
+                "Set of variables must be identical for all type declarations, but {:?} and {:?} have different number of variables.",
+                variable_groups,
+                unified_variable_groups)).emit();
+            return TokenStream::new();
+        }
+
+        let mut cross_product = Vec::new();
+        let mut indices = vec![0; type_domains.len()];
+        'outer: loop {
+            cross_product.push(
+                indices
+                    .iter()
+                    .enumerate()
+                    .map(|(t, &i)| type_domains[t][i])
+                    .collect::<Vec<_>>()
+            );
+
+            for i in 0..type_domains.len() {
+                indices[i] += 1;
+                if indices[i] < type_domains[i].len() {
+                    break;
+                }
+                if i == type_domains.len() - 1 {
+                    break 'outer;
+                } else {
+                    indices[i] = 0;
+                }
+            }
+        }
+
+        let match_arms = cross_product.into_iter().map(|types| {
+            let mut pattern = types[0].pattern();
+            let mut block: Block = parse_quote!({
+                #expr
+            });
+            for (i, t) in types.into_iter().enumerate() {
+                for v in variable_groups[i].clone().into_iter() {
+                    block.stmts.insert(block.stmts.len() - 1, t.reify(v));
+                }
+                if i != 0 {
+                    let p2 = t.pattern();
+                    pattern = parse_quote!((#pattern, #p2));
+                }
+            }
+
+            parse_quote!(#pattern => #block)
+        }).collect::<Vec<Arm>>();
+
+        all_match_arms.extend(match_arms);
     }
 
-    let mut match_arms = cross_product.into_iter().map(|types| {
-        let mut pattern = types[0].pattern();
-        let mut block: Block = parse_quote!({
-            #expr
-        });
-        for (i, t) in types.into_iter().enumerate() {
-            for v in variable_groups[i].clone().into_iter() {
-                block.stmts.insert(block.stmts.len() - 1, t.reify(v));
-            }
-            if i != 0 {
-                let p2 = t.pattern();
-                pattern = parse_quote!((#pattern, #p2));
-            }
-        }
-
-        parse_quote!(#pattern => #block)
-    }).collect::<Vec<Arm>>();
-
-    let variable = variable_groups[0][0].clone();
+    let variable = unified_variable_groups[0][0].clone();
     let mut match_expr: Expr = parse_quote!(#variable.tag);
-    for vg in &variable_groups[1..] {
+    for vg in &unified_variable_groups[1..] {
         let variable = vg[0].clone();
         match_expr = parse_quote!((#match_expr, #variable.tag))
     }
 
-    match_arms.push(parse_quote! {
+    all_match_arms.push(parse_quote! {
         t => Err(fatal!("{} not supported for type {:?}", #name, t)),
     });
 
@@ -144,7 +183,7 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
         match_token: Match::default(),
         expr: Box::new(match_expr),
         brace_token: Brace::default(),
-        arms: match_arms,
+        arms: all_match_arms,
     };
 
     TokenStream::from(quote! {
@@ -159,7 +198,9 @@ fn types(t: &Ident) -> Option<Vec<Type>> {
         "Integer" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64]),
         "Primitive" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::Str]),
         "PrimitiveNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64, Type::Str]),
-        "Const" => Some(vec![Type::ConstI64, Type::ConstStr]),
+        "Const" => Some(vec![Type::ScalarI64, Type::ScalarStr]),
+        "ScalarI64" => Some(vec![Type::ScalarI64]),
+        "ScalarStr" => Some(vec![Type::ScalarStr]),
         _ => None,
     }
 }
@@ -172,8 +213,8 @@ enum Type {
     U64,
     I64,
     Str,
-    ConstI64,
-    ConstStr,
+    ScalarI64,
+    ScalarStr,
 }
 
 impl Type {
@@ -185,8 +226,8 @@ impl Type {
             Type::U64 => parse_quote!(EncodingType::U64),
             Type::I64 => parse_quote!(EncodingType::I64),
             Type::Str => parse_quote!(EncodingType::Str),
-            Type::ConstI64 => parse_quote!(EncodingType::ConstStr),
-            Type::ConstStr => parse_quote!(EncodingType::ConstI64),
+            Type::ScalarI64 => parse_quote!(EncodingType::ScalarI64),
+            Type::ScalarStr => parse_quote!(EncodingType::ScalarStr),
         }
     }
 
@@ -198,8 +239,8 @@ impl Type {
             Type::U64 => parse_quote!( let #variable = #variable.buffer.u64(); ),
             Type::I64 => parse_quote!( let #variable = #variable.buffer.i64(); ),
             Type::Str => parse_quote!( let #variable = #variable.buffer.str(); ),
-            Type::ConstI64 => parse_quote!( let #variable = #variable.buffer.scalar_i64(); ),
-            Type::ConstStr => parse_quote!( let #variable = #variable.buffer.scalar_str(); ),
+            Type::ScalarI64 => parse_quote!( let #variable = #variable.buffer.scalar_i64(); ),
+            Type::ScalarStr => parse_quote!( let #variable = #variable.buffer.scalar_str(); ),
         }
     }
 }

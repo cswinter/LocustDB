@@ -1,7 +1,6 @@
 use std::fmt::Write;
 use std::intrinsics::type_name;
 use std::marker::PhantomData;
-use std::mem;
 use std::result::Result;
 
 use itertools::Itertools;
@@ -117,7 +116,7 @@ impl<'a> VecOperator<'a> {
         reify_types![
             "dict_lookup";
             indices: Integer;
-            Ok(Box::new(DictLookup { indices, output, dict_indices, dict_data }));
+            Ok(Box::new(DictLookup { indices, output, dict_indices, dict_data }))
         ]
     }
 
@@ -131,7 +130,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "lz4_decode";
             decoded: Integer;
-            Ok(Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true }));
+            Ok(Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true }))
         }
     }
 
@@ -158,7 +157,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "delta_decode";
             encoded: Integer;
-            Ok(Box::new(DeltaDecode { encoded, decoded, previous: 0 }));
+            Ok(Box::new(DeltaDecode { encoded, decoded, previous: 0 }))
         }
     }
 
@@ -181,7 +180,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "filter";
             input, output: Primitive;
-            Ok(Box::new(Filter { input, filter, output }));
+            Ok(Box::new(Filter { input, filter, output }))
         }
     }
 
@@ -191,7 +190,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "select";
             input, output: Primitive;
-            Ok(Box::new(Select { input, indices, output }));
+            Ok(Box::new(Select { input, indices, output }))
         }
     }
 
@@ -228,7 +227,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "less_than_vs";
             lhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThan> }))
         }
     }
 
@@ -246,7 +245,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "equals_vs";
             lhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Equals> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Equals> }))
         }
     }
 
@@ -256,29 +255,22 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "not_equals_vs";
             lhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<NotEquals> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<NotEquals> }))
         }
     }
 
-    pub fn addition(mut lhs: TypedBufferRef,
-                    mut rhs: TypedBufferRef,
+    pub fn addition(lhs: TypedBufferRef,
+                    rhs: TypedBufferRef,
                     output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::ScalarI64 {
-            mem::swap(&mut lhs, &mut rhs);
-        }
-        if rhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "addition_vs";
-                lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Addition<_, _>> }));
-            }
-        } else {
-            reify_types! {
-                "addition";
-                lhs: IntegerNoU64, rhs: IntegerNoU64;
-                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
-            }
+        reify_types! {
+            "addition";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Addition<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }))
         }
     }
 
@@ -286,46 +278,29 @@ impl<'a> VecOperator<'a> {
                        rhs: TypedBufferRef,
                        output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "subtraction_sv";
-                rhs: IntegerNoU64;
-                Ok(Box::new(BinarySVOperator { lhs: lhs.scalar_i64()?, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
-            }
-        } else if rhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "subtraction_vs";
-                lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Subtraction<_, _>> }));
-            }
-        } else {
-            reify_types! {
-                "subtraction";
-                lhs: IntegerNoU64, rhs: IntegerNoU64;
-                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
-            }
+        reify_types! {
+            "subtraction";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }))
         }
     }
 
-    pub fn multiplication(mut lhs: TypedBufferRef,
-                          mut rhs: TypedBufferRef,
+    pub fn multiplication(lhs: TypedBufferRef,
+                          rhs: TypedBufferRef,
                           output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::ScalarI64 {
-            mem::swap(&mut lhs, &mut rhs);
-        }
-        if rhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "multiplication_vs";
-                lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Multiplication<_, _>> }));
-            }
-        } else {
-            reify_types! {
-                "multiplication";
-                lhs: IntegerNoU64, rhs: IntegerNoU64;
-                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
-            }
+        reify_types! {
+            "multiplication";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }))
         }
     }
 
@@ -333,24 +308,14 @@ impl<'a> VecOperator<'a> {
                     rhs: TypedBufferRef,
                     output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "division_sv";
-                rhs: IntegerNoU64;
-                Ok(Box::new(BinarySVOperator { lhs: lhs.scalar_i64()?, rhs, output, op: PhantomData::<Division<_, _>> }));
-            }
-        } else if rhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "division_vs";
-                lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Division<_, _>> }));
-            }
-        } else {
-            reify_types! {
-                "division";
-                lhs: IntegerNoU64, rhs: IntegerNoU64;
-                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
-            }
+        reify_types! {
+            "division";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }))
         }
     }
 
@@ -358,24 +323,14 @@ impl<'a> VecOperator<'a> {
                   rhs: TypedBufferRef,
                   output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         let output = output.i64()?;
-        if lhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "modulo_sv";
-                rhs: IntegerNoU64;
-                Ok(Box::new(BinarySVOperator { lhs: lhs.scalar_i64()?, rhs, output, op: PhantomData::<Modulo<_, _>> }));
-            }
-        } else if rhs.tag == EncodingType::ScalarI64 {
-            reify_types! {
-                "modulo_vs";
-                lhs: IntegerNoU64;
-                Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Modulo<_, _>> }));
-            }
-        } else {
-            reify_types! {
-                "modulo";
-                lhs: IntegerNoU64, rhs: IntegerNoU64;
-                Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
-            }
+        reify_types! {
+            "modulo";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }))
         }
     }
 
@@ -405,7 +360,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "slice_pack";
             input: Integer;
-            Ok(Box::new(SlicePackInt { input, output, stride, offset }));
+            Ok(Box::new(SlicePackInt { input, output, stride, offset }))
         }
     }
 
@@ -416,7 +371,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "slice_unpack";
             output: Integer;
-            Ok(Box::new(SliceUnpackInt { input, output, stride, offset }));
+            Ok(Box::new(SliceUnpackInt { input, output, stride, offset }))
         }
     }
 
@@ -424,7 +379,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "type_conversion";
             input: Integer, output: Integer;
-            Ok(Box::new(TypeConversionOperator { input, output }));
+            Ok(Box::new(TypeConversionOperator { input, output }))
         }
     }
 
@@ -440,7 +395,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "summation";
             input: IntegerNoU64, grouping: Integer;
-            Ok(Box::new(VecSum { input, grouping, output, max_index }));
+            Ok(Box::new(VecSum { input, grouping, output, max_index }))
         }
     }
 
@@ -448,7 +403,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "count";
             grouping: Integer;
-            Ok(Box::new(VecCount { grouping, output, max_index }));
+            Ok(Box::new(VecCount { grouping, output, max_index }))
         }
     }
 
@@ -456,7 +411,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "exists";
             input: Integer;
-            Ok(Box::new(Exists { input, output, max_index }));
+            Ok(Box::new(Exists { input, output, max_index }))
         }
     }
 
@@ -464,7 +419,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "nonzero_compact";
             data: Integer;
-            Ok(Box::new(NonzeroCompact { data }));
+            Ok(Box::new(NonzeroCompact { data }))
         }
     }
 
@@ -472,7 +427,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "nonzero_indices";
             input: Integer, output: Integer;
-            Ok(Box::new(NonzeroIndices { input, output }));
+            Ok(Box::new(NonzeroIndices { input, output }))
         }
     }
 
@@ -480,7 +435,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "compact";
             data: Integer, select: Integer;
-            Ok(Compact::boxed(data, select));
+            Ok(Compact::boxed(data, select))
         }
     }
 
@@ -496,7 +451,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "hash_map_grouping";
             raw_grouping_key, unique_out: Primitive;
-            Ok(HashMapGrouping::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality));
+            Ok(HashMapGrouping::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, max_cardinality))
         }
     }
 
@@ -516,7 +471,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "sort_indices";
             ranking: Primitive;
-            Ok(Box::new(SortBy { ranking, output, indices, descending, stable }));
+            Ok(Box::new(SortBy { ranking, output, indices, descending, stable }))
         }
     }
 
@@ -528,13 +483,13 @@ impl<'a> VecOperator<'a> {
             reify_types! {
                 "top_n_desc";
                 input, keys: Primitive;
-                Ok(Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpGreaterThan> }));
+                Ok(Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "top_n_asc";
                 input, keys: Primitive;
-                Ok(Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpLessThan> }));
+                Ok(Box::new(TopN { input, keys, indices: indices_out, last_index: 0, n, c: PhantomData::<CmpLessThan> }))
             }
         }
     }
@@ -546,7 +501,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "merge_deduplicate";
             left, right, merged_out: Primitive;
-            Ok(Box::new(MergeDeduplicate { left, right, deduplicated: merged_out, merge_ops: ops_out }));
+            Ok(Box::new(MergeDeduplicate { left, right, deduplicated: merged_out, merge_ops: ops_out }))
         }
     }
 
@@ -558,13 +513,13 @@ impl<'a> VecOperator<'a> {
             reify_types! {
                 "partition";
                 left, right: Primitive;
-                Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpGreaterThan> }));
+                Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "partition";
                 left, right: Primitive;
-                Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpLessThan> }));
+                Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpLessThan> }))
             }
         }
     }
@@ -579,13 +534,13 @@ impl<'a> VecOperator<'a> {
             reify_types! {
                 "subpartition";
                 left, right: Primitive;
-                Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpGreaterThan> }));
+                Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "subpartition";
                 left, right: Primitive;
-                Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpLessThan> }));
+                Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpLessThan> }))
             }
         }
     }
@@ -598,7 +553,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "merge_deduplicate_partitioned";
             left, right, merged_out: Primitive;
-            Ok(Box::new(MergeDeduplicatePartitioned { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out }));
+            Ok(Box::new(MergeDeduplicatePartitioned { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out }))
         }
     }
 
@@ -609,7 +564,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "merge_drop";
             left, right, merged_out: Primitive;
-            Ok(Box::new(MergeDrop { merge_ops, left, right, deduplicated: merged_out }));
+            Ok(Box::new(MergeDrop { merge_ops, left, right, deduplicated: merged_out }))
         }
     }
 
@@ -631,13 +586,13 @@ impl<'a> VecOperator<'a> {
             reify_types! {
                 "merge_partitioned_desc";
                 left, right, merged_out: Primitive;
-                Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpGreaterThan> }));
+                Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "merge_partitioned_asc";
                 left, right, merged_out: Primitive;
-                Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpLessThan> }));
+                Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpLessThan> }))
             }
         }
     }
@@ -652,13 +607,13 @@ impl<'a> VecOperator<'a> {
             reify_types! {
                 "merge_desc";
                 left, right, merged_out: Primitive;
-                Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpGreaterThan> }));
+                Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "merge_desc";
                 left, right, merged_out: Primitive;
-                Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpLessThan> }));
+                Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpLessThan> }))
             }
         }
     }
@@ -670,7 +625,7 @@ impl<'a> VecOperator<'a> {
         reify_types! {
                 "merge_keep";
                 left, right, merged_out: Primitive;
-                Ok(Box::new(MergeKeep { merge_ops, left, right, merged: merged_out }));
+                Ok(Box::new(MergeKeep { merge_ops, left, right, merged: merged_out }))
         }
     }
 }
