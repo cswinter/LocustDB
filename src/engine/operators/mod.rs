@@ -6,6 +6,7 @@ mod bit_unpack;
 mod bool_op;
 mod column_ops;
 mod compact;
+mod comparison_operators;
 mod constant;
 mod constant_expand;
 mod constant_vec;
@@ -39,7 +40,6 @@ mod top_n;
 mod type_conversion;
 mod unhexpack_strings;
 mod unpack_strings;
-mod vec_const_bool_op;
 #[cfg(feature = "enable_lz4")]
 mod lz4_decode;
 mod merge_deduplicate_partitioned;

@@ -55,7 +55,7 @@ use super::top_n::TopN;
 use super::type_conversion::TypeConversionOperator;
 use super::unhexpack_strings::UnhexpackStrings;
 use super::unpack_strings::UnpackStrings;
-use super::vec_const_bool_op::*;
+use super::comparison_operators::*;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
@@ -179,7 +179,7 @@ impl<'a> VecOperator<'a> {
                   output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "filter";
-            input, output: Primitive;
+            input, output: PrimitiveUSize;
             Ok(Box::new(Filter { input, filter, output }))
         }
     }
@@ -189,7 +189,7 @@ impl<'a> VecOperator<'a> {
                   output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "select";
-            input, output: Primitive;
+            input, output: PrimitiveUSize;
             Ok(Box::new(Select { input, indices, output }))
         }
     }
@@ -223,39 +223,83 @@ impl<'a> VecOperator<'a> {
         Box::new(ConstantVec { val, output })
     }
 
-    pub fn less_than_vs(lhs: TypedBufferRef, rhs: BufferRef<Scalar<i64>>, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn less_than(lhs: TypedBufferRef, rhs: TypedBufferRef, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
-            "less_than_vs";
-            lhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThan> }))
+            "less_than";
+            lhs: Str, rhs: ScalarStr;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            lhs: ScalarStr, rhs: Str;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            lhs: Str, rhs: Str;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThan> }))
         }
     }
 
-    pub fn equals_vs(lhs: TypedBufferRef,
-                     rhs: TypedBufferRef,
-                     output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
-        if lhs.tag == EncodingType::Str {
-            return Ok(Box::new(BinaryVSOperator::<&'a str, &'a str, u8, _> {
-                lhs: lhs.str()?,
-                rhs: rhs.scalar_str()?,
-                output,
-                op: PhantomData::<Equals>,
-            }));
-        }
+    pub fn less_than_equals(lhs: TypedBufferRef, rhs: TypedBufferRef, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
-            "equals_vs";
-            lhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<Equals> }))
+            "less_than_equals";
+            lhs: Str, rhs: ScalarStr;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+            lhs: ScalarStr, rhs: Str;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+            lhs: Str, rhs: Str;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }))
         }
     }
 
-    pub fn not_equals_vs(lhs: TypedBufferRef,
-                         rhs: TypedBufferRef,
-                         output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn equals(lhs: TypedBufferRef,
+                  rhs: TypedBufferRef,
+                  output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
-            "not_equals_vs";
-            lhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs: rhs.scalar_i64()?, output, op: PhantomData::<NotEquals> }))
+            "equals";
+            lhs: Str, rhs: ScalarStr;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Equals> }));
+            lhs: ScalarStr, rhs: Str;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Equals> }));
+            lhs: Str, rhs: Str;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Equals> }));
+
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Equals> }));
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Equals> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Equals> }))
+        }
+    }
+
+    pub fn not_equals(lhs: TypedBufferRef,
+                      rhs: TypedBufferRef,
+                      output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "not_equals";
+            lhs: Str, rhs: ScalarStr;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }));
+            lhs: ScalarStr, rhs: Str;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<NotEquals> }));
+            lhs: Str, rhs: Str;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }));
+
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }));
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<NotEquals> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }))
         }
     }
 

@@ -83,14 +83,14 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
                     let name0 = LitStr::new(&format!("{}", &v0), v0.span());
                     let name1 = LitStr::new(&format!("{}", &v), v.span());
                     type_equalities.push(parse_quote! {
-                    if #v0.tag != #v.tag {
-                        return Err(
-                            fatal!("Expected identical types for `{}` ({:?}) and `{}` ({:?}).",
-                                   #name0, #v0.tag,
-                                   #name1, #v.tag),
-                        )
-                    }
-                });
+                        if #v0.tag != #v.tag {
+                            return Err(
+                                fatal!("Expected identical types for `{}` ({:?}) and `{}` ({:?}).",
+                                       #name0, #v0.tag,
+                                       #name1, #v.tag),
+                            )
+                        }
+                    });
                 }
             }
             type_domains.push(match types(&t) {
@@ -194,9 +194,11 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
 
 fn types(t: &Ident) -> Option<Vec<Type>> {
     match t.to_string().as_ref() {
+        "Str" => Some(vec![Type::Str]),
         "IntegerNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64]),
         "Integer" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64]),
         "Primitive" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::Str]),
+        "PrimitiveUSize" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::Str, Type::USize]),
         "PrimitiveNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64, Type::Str]),
         "Const" => Some(vec![Type::ScalarI64, Type::ScalarStr]),
         "ScalarI64" => Some(vec![Type::ScalarI64]),
@@ -215,6 +217,7 @@ enum Type {
     Str,
     ScalarI64,
     ScalarStr,
+    USize,
 }
 
 impl Type {
@@ -226,6 +229,7 @@ impl Type {
             Type::U64 => parse_quote!(EncodingType::U64),
             Type::I64 => parse_quote!(EncodingType::I64),
             Type::Str => parse_quote!(EncodingType::Str),
+            Type::USize => parse_quote!(EncodingType::USize),
             Type::ScalarI64 => parse_quote!(EncodingType::ScalarI64),
             Type::ScalarStr => parse_quote!(EncodingType::ScalarStr),
         }
@@ -239,6 +243,7 @@ impl Type {
             Type::U64 => parse_quote!( let #variable = #variable.buffer.u64(); ),
             Type::I64 => parse_quote!( let #variable = #variable.buffer.i64(); ),
             Type::Str => parse_quote!( let #variable = #variable.buffer.str(); ),
+            Type::USize => parse_quote!( let #variable = #variable.buffer.usize(); ),
             Type::ScalarI64 => parse_quote!( let #variable = #variable.buffer.scalar_i64(); ),
             Type::ScalarStr => parse_quote!( let #variable = #variable.buffer.scalar_str(); ),
         }

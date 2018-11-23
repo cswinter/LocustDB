@@ -34,8 +34,12 @@ pub struct Query {
 
 impl NormalFormQuery {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self, columns: &'a HashMap<String, Arc<DataSource>>, explain: bool, show: bool, partition: usize)
-                   -> Result<(BatchResult<'a>, Option<String>), QueryError> {
+    pub fn run<'a>(&self,
+                   columns: &'a HashMap<String, Arc<DataSource>>,
+                   explain: bool,
+                   show: bool,
+                   partition: usize,
+                   partition_length: usize) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
         let len = columns.iter().next().unwrap().1.len();
         let mut executor = QueryExecutor::default();
@@ -65,9 +69,11 @@ impl NormalFormQuery {
             } else {
                 // TODO(clemens): Optimization: sort directly if only single column selected
                 match sort_indices {
-                    None => query_plan::prepare(
-                        sort_by(ranking, indices(ranking), *desc, false /* unstable sort */),
-                        &mut executor)?,
+                    None => {
+                        query_plan::prepare(
+                            sort_by(ranking, indices(ranking), *desc, false /* unstable sort */),
+                            &mut executor)?
+                    }
                     Some(indices) => query_plan::prepare(
                         sort_by(ranking, indices, *desc, true /* stable sort */),
                         &mut executor)?,
@@ -75,9 +81,20 @@ impl NormalFormQuery {
             });
         }
         if let Some(sort_indices) = sort_indices {
-            filter = Filter::Indices(sort_indices.usize()?);
+            filter = if let Filter::U8(where_true) = filter {
+                let buffer = executor.named_buffer("indices", EncodingType::Null);
+                let indices_op = VecOperator::constant_vec(AnyVec::empty(partition_length), buffer.any());
+                executor.push(indices_op);
+                Filter::Indices(
+                    query_plan::prepare(
+                        query_syntax::select(
+                            query_syntax::filter(indices(buffer), where_true.tagged()),
+                            sort_indices),
+                        &mut executor)?.usize()?)
+            } else {
+                Filter::Indices(sort_indices.usize()?)
+            };
         }
-
 
         let mut select = Vec::new();
         for expr in &self.projection {
