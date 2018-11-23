@@ -41,7 +41,6 @@ impl NormalFormQuery {
                    partition: usize,
                    partition_length: usize) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
-        let len = columns.iter().next().unwrap().1.len();
         let mut executor = QueryExecutor::default();
 
         let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns)?;
@@ -62,7 +61,7 @@ impl NormalFormQuery {
 
             // TODO(clemens): better criterion for using top_n
             // TODO(clemens): top_n for multiple columns?
-            sort_indices = Some(if limit < len / 2 && self.order_by.len() == 1 {
+            sort_indices = Some(if limit < partition_length / 2 && self.order_by.len() == 1 {
                 query_plan::prepare(
                     top_n(ranking, limit, *desc),
                     &mut executor)?

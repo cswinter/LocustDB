@@ -237,6 +237,14 @@ fn test_division() {
 }
 
 #[test]
+fn test_regex() {
+    test_query(
+        "SELECT first_name FROM default WHERE regex(first_name, '^C.+h.a');",
+        &[vec![Str("Cynthia")]],
+    );
+}
+
+#[test]
 fn test_not_equals() {
     use Value::*;
     test_query(
@@ -267,6 +275,7 @@ fn test_order_by_aggregate() {
         ],
     )
 }
+
 
 #[test]
 fn test_groupless_aggregate() {

@@ -437,6 +437,10 @@ impl<'a> VecOperator<'a> {
         Box::new(MapOperator { input, output, map: ToYear })
     }
 
+    pub fn regex(input: BufferRef<&'a str>, r: &str, output: BufferRef<u8>) -> BoxedOperator<'a> {
+        Box::new(MapOperator { input, output, map: RegexMatch { r: regex::Regex::new(r).unwrap() } })
+    }
+
     pub fn summation(input: TypedBufferRef,
                      grouping: TypedBufferRef,
                      output: BufferRef<i64>,
