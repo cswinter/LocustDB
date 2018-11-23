@@ -26,9 +26,11 @@ use super::dict_lookup::*;
 use super::encode_const::*;
 use super::exists::Exists;
 use super::filter::Filter;
+use super::functions::*;
 use super::hashmap_grouping::HashMapGrouping;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
 use super::indices::Indices;
+use super::map_operator::MapOperator;
 use super::merge::Merge;
 use super::merge_aggregate::MergeAggregate;
 use super::merge_deduplicate::MergeDeduplicate;
@@ -50,7 +52,6 @@ use super::sort_by::SortBy;
 use super::sort_by_slices::SortBySlices;
 use super::subpartition::SubPartition;
 use super::sum::VecSum;
-use super::to_year::ToYear;
 use super::top_n::TopN;
 use super::type_conversion::TypeConversionOperator;
 use super::unhexpack_strings::UnhexpackStrings;
@@ -427,9 +428,13 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn not(input: BufferRef<u8>, output: BufferRef<u8>) -> BoxedOperator<'a> {
+        Box::new(MapOperator { input, output, map: BooleanNot })
+    }
+
     #[allow(clippy::wrong_self_convention)]
     pub fn to_year(input: BufferRef<i64>, output: BufferRef<i64>) -> BoxedOperator<'a> {
-        Box::new(ToYear { input, output })
+        Box::new(MapOperator { input, output, map: ToYear })
     }
 
     pub fn summation(input: TypedBufferRef,

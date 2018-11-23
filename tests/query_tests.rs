@@ -280,6 +280,8 @@ fn test_groupless_aggregate() {
     );
     test_query_nyc(
         "SELECT count(0) FROM default WHERE passenger_count = 1;",
+        // TODO(clemens): Use this once parser bug is fixed
+        // "SELECT count(0) FROM default WHERE NOT passenger_count <> 1;",
         &[vec![Int(6016)]],
     );
 }
