@@ -132,7 +132,7 @@ impl QueryTask {
                     &'static HashMap<String, Arc<DataSource>>>(&cols)
             };
             let (mut batch_result, explain) = match if self.main_phase.aggregate.is_empty() {
-                self.main_phase.run(unsafe_cols, self.explain, show, id)
+                self.main_phase.run(unsafe_cols, self.explain, show, id, partition.len())
             } else {
                 self.main_phase.run_aggregate(unsafe_cols, self.explain, show, id, partition.len())
             } {
@@ -225,7 +225,8 @@ impl QueryTask {
                 let full_result = final_pass.run(cols,
                                                  self.explain,
                                                  !self.show.is_empty(),
-                                                 0xdeadbeef).unwrap().0;
+                                                 0xdeadbeef,
+                                                 cols.iter().next().map(|(_, c)| c.len()).unwrap_or(0)).unwrap().0;
                 self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains)
             } else {
                 self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains)

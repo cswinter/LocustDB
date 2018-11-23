@@ -139,13 +139,14 @@ fn map_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
         SQLOperator::Minus => Func2Type::Subtract,
         SQLOperator::Multiply => Func2Type::Multiply,
         SQLOperator::Divide => Func2Type::Divide,
-        SQLOperator::Modulus=>Func2Type::Modulo,
+        SQLOperator::Modulus => Func2Type::Modulo,
         SQLOperator::Gt => Func2Type::GT,
+        SQLOperator::GtEq => Func2Type::GTE,
         SQLOperator::Lt => Func2Type::LT,
+        SQLOperator::LtEq => Func2Type::LTE,
         SQLOperator::Eq => Func2Type::Equals,
         SQLOperator::NotEq => Func2Type::NotEquals,
         SQLOperator::Or => Func2Type::Or,
-        _ => return Err(QueryError::NotImplemented(format!("Unsupported operator {:?}", o))),
     })
 }
 

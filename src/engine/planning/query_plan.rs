@@ -120,6 +120,7 @@ pub enum QueryPlan {
     },
 
     LessThan { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    LessThanEquals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     Equals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     NotEquals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
 
@@ -320,22 +321,26 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
             }
             return Ok(first.unwrap());
         }
-
         QueryPlan::LessThan { lhs, rhs } =>
-            VecOperator::less_than_vs(
+            VecOperator::less_than(
                 prepare(*lhs, result)?,
-                prepare(*rhs, result)?.scalar_i64()?,
+                prepare(*rhs, result)?,
                 result.buffer_u8("less_than"))?,
+        QueryPlan::LessThanEquals { lhs, rhs } =>
+            VecOperator::less_than_equals(
+                prepare(*lhs, result)?,
+                prepare(*rhs, result)?,
+                result.buffer_u8("less_than_equals"))?,
         QueryPlan::Equals { lhs, rhs } =>
-            VecOperator::equals_vs(
+            VecOperator::equals(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?,
                 result.buffer_u8("equals"))?,
         QueryPlan::NotEquals { lhs, rhs } =>
-            VecOperator::not_equals_vs(
+            VecOperator::not_equals(
                 prepare(*lhs, result)?,
                 prepare(*rhs, result)?,
-                result.buffer_u8("equals"))?,
+                result.buffer_u8("not_equals"))?,
 
         QueryPlan::Add { lhs, rhs } =>
             VecOperator::addition(
@@ -473,6 +478,7 @@ struct Function2 {
     pub type_rhs: BasicType,
     pub type_lhs: BasicType,
     pub type_out: Type,
+    pub encoding_invariance: bool,
 }
 
 impl Function2 {
@@ -482,12 +488,28 @@ impl Function2 {
             type_lhs: BasicType::Integer,
             type_rhs: BasicType::Integer,
             type_out: Type::unencoded(BasicType::Integer).mutable(),
+            encoding_invariance: false,
+        }
+    }
+
+    pub fn comparison_op(factory: Box<Fn(Box<QueryPlan>, Box<QueryPlan>) -> QueryPlan + Sync>,
+                         t: BasicType) -> Function2 {
+        Function2 {
+            factory,
+            type_lhs: t,
+            type_rhs: t,
+            type_out: Type::unencoded(BasicType::Boolean).mutable(),
+            encoding_invariance: true,
         }
     }
 }
 
 lazy_static! {
-    static ref FUNCTION_REGISTRY: HashMap<Func2Type, Vec<Function2>> = vec![
+    static ref FUNCTION_REGISTRY: HashMap<Func2Type, Vec<Function2>> = function_registry();
+}
+
+fn function_registry() -> HashMap<Func2Type, Vec<Function2>> {
+    vec![
         (Func2Type::Add,
          vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Add { lhs, rhs }))]),
         (Func2Type::Subtract,
@@ -498,7 +520,37 @@ lazy_static! {
          vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Divide { lhs, rhs }))]),
         (Func2Type::Modulo,
          vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Modulo { lhs, rhs }))]),
-    ].into_iter().collect();
+        (Func2Type::LT,
+         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs, rhs }),
+                                       BasicType::Integer),
+              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs, rhs }),
+                                       BasicType::String)]),
+        (Func2Type::LTE,
+         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs, rhs }),
+                                       BasicType::Integer),
+              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs, rhs }),
+                                       BasicType::String)]),
+        (Func2Type::GT,
+         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs: rhs, rhs: lhs }),
+                                       BasicType::Integer),
+              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs: rhs, rhs: lhs }),
+                                       BasicType::String)]),
+        (Func2Type::GTE,
+         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs: rhs, rhs: lhs }),
+                                       BasicType::Integer),
+              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs: rhs, rhs: lhs }),
+                                       BasicType::String)]),
+        (Func2Type::Equals,
+         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::Equals { lhs, rhs }),
+                                       BasicType::Integer),
+              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::Equals { lhs, rhs }),
+                                       BasicType::String)]),
+        (Func2Type::NotEquals,
+         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::NotEquals { lhs, rhs }),
+                                       BasicType::Integer),
+              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::NotEquals { lhs, rhs }),
+                                       BasicType::String)]),
+    ].into_iter().collect()
 }
 
 impl QueryPlan {
@@ -527,92 +579,6 @@ impl QueryPlan {
                     (plan, t)
                 }
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
-            }
-            Func2(LT, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
-                match (type_lhs.decoded, type_rhs.decoded) {
-                    (BasicType::Integer, BasicType::Integer) => {
-                        let plan = if type_rhs.is_scalar {
-                            if type_lhs.is_encoded() {
-                                let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
-                                less_than(plan_lhs, encoded)
-                            } else {
-                                less_than(plan_lhs, plan_rhs)
-                            }
-                        } else {
-                            bail!(QueryError::NotImplemented, "< operator only implemented for column < constant")
-                        };
-                        (plan, Type::new(BasicType::Boolean, None).mutable())
-                    }
-                    _ => bail!(QueryError::TypeError, "{:?} < {:?}", type_lhs, type_rhs)
-                }
-            }
-            Func2(Equals, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
-                match (type_lhs.decoded, type_rhs.decoded) {
-                    (BasicType::String, BasicType::String) => {
-                        let plan = if type_rhs.is_scalar {
-                            if type_lhs.is_encoded() {
-                                let encoded = type_lhs.codec.clone().unwrap().encode_str(plan_rhs);
-                                equals(plan_lhs, encoded)
-                            } else {
-                                equals(plan_lhs, plan_rhs)
-                            }
-                        } else {
-                            bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
-                        };
-                        (plan, Type::new(BasicType::Boolean, None).mutable())
-                    }
-                    (BasicType::Integer, BasicType::Integer) => {
-                        let plan = if type_rhs.is_scalar {
-                            if type_lhs.is_encoded() {
-                                let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
-                                equals(plan_lhs, encoded)
-                            } else {
-                                equals(plan_lhs, plan_rhs)
-                            }
-                        } else {
-                            bail!(QueryError::NotImplemented, "= operator only implemented for column = constant")
-                        };
-                        (plan, Type::new(BasicType::Boolean, None).mutable())
-                    }
-                    _ => bail!(QueryError::TypeError, "{:?} = {:?}", type_lhs, type_rhs)
-                }
-            }
-            Func2(NotEquals, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
-                match (type_lhs.decoded, type_rhs.decoded) {
-                    (BasicType::String, BasicType::String) => {
-                        let plan = if type_rhs.is_scalar {
-                            if type_lhs.is_encoded() {
-                                let encoded = type_lhs.codec.clone().unwrap().encode_str(plan_rhs);
-                                not_equals(plan_lhs, encoded)
-                            } else {
-                                not_equals(plan_lhs, plan_rhs)
-                            }
-                        } else {
-                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
-                        };
-                        (plan, Type::new(BasicType::Boolean, None).mutable())
-                    }
-                    (BasicType::Integer, BasicType::Integer) => {
-                        let plan = if type_rhs.is_scalar {
-                            if type_lhs.is_encoded() {
-                                let encoded = encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap());
-                                not_equals(plan_lhs, encoded)
-                            } else {
-                                not_equals(plan_lhs, plan_rhs)
-                            }
-                        } else {
-                            bail!(QueryError::NotImplemented, "<> operator only implemented for column <> constant")
-                        };
-                        (plan, Type::new(BasicType::Boolean, None).mutable())
-                    }
-                    _ => bail!(QueryError::TypeError, "{:?} <> {:?}", type_lhs, type_rhs)
-                }
             }
             Func2(Or, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
@@ -647,11 +613,29 @@ impl QueryPlan {
                         function, type_lhs, type_rhs),
                 };
 
-                if let Some(codec) = type_lhs.codec {
-                    plan_lhs = codec.decode(plan_lhs);
-                }
-                if let Some(codec) = type_rhs.codec {
-                    plan_rhs = codec.decode(plan_rhs);
+                if declaration.encoding_invariance && type_lhs.is_scalar && type_rhs.is_encoded() {
+                    plan_lhs = if type_rhs.decoded == BasicType::Integer {
+                        encode_int_constant(plan_lhs, type_rhs.codec.clone().unwrap())
+                    } else if type_rhs.decoded == BasicType::String {
+                        type_rhs.codec.clone().unwrap().encode_str(plan_lhs)
+                    } else {
+                        panic!("whoops");
+                    };
+                } else if declaration.encoding_invariance && type_rhs.is_scalar && type_lhs.is_encoded() {
+                    plan_rhs = if type_lhs.decoded == BasicType::Integer {
+                        encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap())
+                    } else if type_lhs.decoded == BasicType::String {
+                        type_lhs.codec.clone().unwrap().encode_str(plan_rhs)
+                    } else {
+                        panic!("whoops");
+                    };
+                } else {
+                    if let Some(codec) = type_lhs.codec {
+                        plan_lhs = codec.decode(plan_lhs);
+                    }
+                    if let Some(codec) = type_rhs.codec {
+                        plan_rhs = codec.decode(plan_rhs);
+                    }
                 }
 
                 let plan = (declaration.factory)(Box::new(plan_lhs), Box::new(plan_rhs));
@@ -842,6 +826,13 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s1);
                 hasher.input(&s2);
                 LessThan { lhs, rhs }
+            }
+            LessThanEquals { lhs, rhs } => {
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                LessThanEquals { lhs, rhs }
             }
             Equals { lhs, rhs } => {
                 let (lhs, s1) = replace_common_subexpression(*lhs, executor);

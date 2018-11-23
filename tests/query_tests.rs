@@ -25,6 +25,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
     let mut opts = Options::default();
+    // opts.threads = 1;
     let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/edge_cases.csv", "default")
@@ -378,6 +379,37 @@ fn test_numeric_operators() {
             vec![Int(-7)],
             vec![Int(2)],
             vec![Int(-2)]
+        ],
+    );
+}
+
+#[test]
+fn test_comparison_operators() {
+    test_query_ec(
+        "SELECT u8_offset_encoded, negative FROM default WHERE u8_offset_encoded < negative ORDER BY id;",
+        &[
+            vec![Int(275), Int(4031)],
+            vec![Int(511), Int(4010)],
+        ],
+    );
+    test_query_ec(
+        "SELECT non_dense_ints FROM default WHERE non_dense_ints = id ORDER BY id;",
+        &[
+            vec![Int(0)],
+            vec![Int(4)],
+        ],
+    );
+    test_query_ec(
+        "SELECT id FROM default WHERE id <> id / 8 + id ORDER BY id;",
+        &[
+            vec![Int(8)],
+            vec![Int(9)],
+        ],
+    );
+    test_query_ec(
+        "SELECT id FROM default WHERE id <= 4 AND non_dense_ints >= 3 AND enum > string_packed;",
+        &[
+            vec![Int(4)],
         ],
     );
 }
