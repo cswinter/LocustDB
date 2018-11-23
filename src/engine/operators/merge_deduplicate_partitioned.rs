@@ -12,7 +12,7 @@ pub struct MergeDeduplicatePartitioned<T> {
     pub merge_ops: BufferRef<MergeOp>,
 }
 
-impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<T> {
+impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDeduplicatePartitioned<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (deduplicated, merge_ops) = {
             let partitioning = scratchpad.get(self.partitioning);

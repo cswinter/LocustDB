@@ -16,7 +16,7 @@ pub struct MergePartitioned<T, C> {
     pub c: PhantomData<C>,
 }
 
-impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for MergePartitioned<T, C> {
+impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for MergePartitioned<T, C> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (merged, merge_ops) = {
             let partitioning = scratchpad.get(self.partitioning);

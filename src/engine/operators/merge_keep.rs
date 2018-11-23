@@ -9,7 +9,7 @@ pub struct MergeKeep<T> {
     pub merged: BufferRef<T>,
 }
 
-impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeKeep<T> {
+impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeKeep<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let merged = {
             let ops = scratchpad.get(self.merge_ops);

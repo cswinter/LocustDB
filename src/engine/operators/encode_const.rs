@@ -14,7 +14,7 @@ impl<'a> VecOperator<'a> for EncodeIntConstant {
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         let constant = scratchpad.get_scalar(&self.constant);
         let result = self.codec.encode_int(constant);
-        scratchpad.set_any(self.output.any(), AnyVec::scalar_i64(result));
+        scratchpad.set_any(self.output.any(), Data::scalar_i64(result));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.constant.any()] }

@@ -29,16 +29,16 @@ impl<'a> ByteSlices<'a> {
     }
 }
 
-impl<'a> AnyVec<'a> for ByteSlices<'a> {
+impl<'a> Data<'a> for ByteSlices<'a> {
     fn len(&self) -> usize { self.data.len() / self.row_len }
     fn get_raw(&self, _i: usize) -> RawVal { panic!(self.type_error("get_raw")) }
     fn get_type(&self) -> EncodingType { EncodingType::ByteSlices(self.row_len) }
 
-    fn append_all(&mut self, _other: &AnyVec<'a>, _count: usize) -> Option<BoxedVec<'a>> {
+    fn append_all(&mut self, _other: &Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
         panic!(self.type_error("append_all"))
     }
 
-    fn slice_box<'b>(&'b self, _from: usize, _to: usize) -> BoxedVec<'b> where 'a: 'b {
+    fn slice_box<'b>(&'b self, _from: usize, _to: usize) -> BoxedData<'b> where 'a: 'b {
         panic!(self.type_error("slice_box"))
         // let to = min(to, self.len());
         // Box::new(&self[self.row_len * from..self.row_len * to])

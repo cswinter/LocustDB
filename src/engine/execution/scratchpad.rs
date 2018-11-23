@@ -6,17 +6,17 @@ use std::mem;
 use engine::*;
 
 pub struct Scratchpad<'a> {
-    buffers: Vec<RefCell<BoxedVec<'a>>>,
+    buffers: Vec<RefCell<BoxedData<'a>>>,
     aliases: Vec<Option<usize>>,
-    columns: HashMap<String, Vec<&'a AnyVec<'a>>>,
+    columns: HashMap<String, Vec<&'a Data<'a>>>,
     pinned: Vec<bool>,
 }
 
 impl<'a> Scratchpad<'a> {
-    pub fn new(count: usize, columns: HashMap<String, Vec<&'a AnyVec<'a>>>) -> Scratchpad<'a> {
+    pub fn new(count: usize, columns: HashMap<String, Vec<&'a Data<'a>>>) -> Scratchpad<'a> {
         let mut buffers = Vec::with_capacity(count);
         for _ in 0..count {
-            buffers.push(RefCell::new(AnyVec::empty(0)));
+            buffers.push(RefCell::new(Data::empty(0)));
         }
         Scratchpad {
             buffers,
@@ -26,27 +26,27 @@ impl<'a> Scratchpad<'a> {
         }
     }
 
-    pub fn get_any(&self, index: BufferRef<Any>) -> Ref<AnyVec<'a>> {
+    pub fn get_any(&self, index: BufferRef<Any>) -> Ref<Data<'a>> {
         Ref::map(self.buffer(index).borrow(), |x| x.as_ref())
     }
 
-    pub fn get_any_mut(&self, index: BufferRef<Any>) -> RefMut<AnyVec<'a> + 'a> {
+    pub fn get_any_mut(&self, index: BufferRef<Any>) -> RefMut<Data<'a> + 'a> {
         assert!(!self.pinned[self.resolve(&index)], "Trying to mutably borrow pinned buffer {}", index);
         RefMut::map(self.buffer(index).borrow_mut(), |x| x.borrow_mut())
     }
 
-    pub fn get_column_data(&self, name: &str, section_index: usize) -> &'a AnyVec<'a> {
+    pub fn get_column_data(&self, name: &str, section_index: usize) -> &'a Data<'a> {
         match self.columns.get(name) {
             Some(ref col) => col[section_index],
             None => panic!("No column of name {} ({:?})", name, self.columns.keys()),
         }
     }
 
-    pub fn get<T: GenericVec<T> + 'a>(&self, index: BufferRef<T>) -> Ref<[T]> {
+    pub fn get<T: VecData<T> + 'a>(&self, index: BufferRef<T>) -> Ref<[T]> {
         Ref::map(self.buffer(index).borrow(), |x| T::unwrap(x.as_ref()))
     }
 
-    pub fn get_pinned<T: GenericVec<T> + 'a>(&mut self, index: BufferRef<T>) -> &'a [T] {
+    pub fn get_pinned<T: VecData<T> + 'a>(&mut self, index: BufferRef<T>) -> &'a [T] {
         let i = self.resolve(&index);
         self.pinned[i] = true;
         let buffer = self.get(index);
@@ -64,15 +64,15 @@ impl<'a> Scratchpad<'a> {
         }
     }
 
-    pub fn get_mut<T: GenericVec<T> + 'a>(&self, index: BufferRef<T>) -> RefMut<Vec<T>> {
+    pub fn get_mut<T: VecData<T> + 'a>(&self, index: BufferRef<T>) -> RefMut<Vec<T>> {
         assert!(!self.pinned[self.resolve(&index)], "Trying to mutably borrow pinned buffer {}", index);
         RefMut::map(self.buffers[self.resolve(&index)].borrow_mut(), |x| {
-            let a: &mut AnyVec<'a> = x.borrow_mut();
+            let a: &mut Data<'a> = x.borrow_mut();
             T::unwrap_mut(a)
         })
     }
 
-    pub fn get_scalar<T: ConstType<T>>(&self, index: &BufferRef<Scalar<T>>) -> T {
+    pub fn get_scalar<T: ScalarData<T>>(&self, index: &BufferRef<Scalar<T>>) -> T {
         T::unwrap(&*self.get_any(index.any()))
     }
 
@@ -80,7 +80,7 @@ impl<'a> Scratchpad<'a> {
                            projections: &[BufferRef<Any>],
                            aggregations: &[(BufferRef<Any>, Aggregator)],
                            rankings: &[(BufferRef<Any>, bool)])
-                           -> (Vec<BoxedVec<'a>>, Vec<usize>, Vec<(usize, Aggregator)>, Vec<(usize, bool)>) {
+                           -> (Vec<BoxedData<'a>>, Vec<usize>, Vec<(usize, Aggregator)>, Vec<(usize, bool)>) {
         let mut collected_buffers = HashMap::<usize, usize>::default();
         let mut columns = Vec::new();
         let mut projection_indices = Vec::new();
@@ -91,7 +91,7 @@ impl<'a> Scratchpad<'a> {
             } else {
                 collected_buffers.insert(i, columns.len());
                 projection_indices.push(columns.len());
-                let data = mem::replace(self.buffer_mut(projection), RefCell::new(AnyVec::empty(0)));
+                let data = mem::replace(self.buffer_mut(projection), RefCell::new(Data::empty(0)));
                 columns.push(data.into_inner());
             }
         }
@@ -103,7 +103,7 @@ impl<'a> Scratchpad<'a> {
             } else {
                 collected_buffers.insert(i, columns.len());
                 aggregation_indices.push((columns.len(), aggregator));
-                let data = mem::replace(self.buffer_mut(aggregation), RefCell::new(AnyVec::empty(0)));
+                let data = mem::replace(self.buffer_mut(aggregation), RefCell::new(Data::empty(0)));
                 columns.push(data.into_inner());
             }
         }
@@ -115,26 +115,26 @@ impl<'a> Scratchpad<'a> {
             } else {
                 collected_buffers.insert(i, columns.len());
                 ranking_indices.push((columns.len(), desc));
-                let data = mem::replace(self.buffer_mut(ranking), RefCell::new(AnyVec::empty(0)));
+                let data = mem::replace(self.buffer_mut(ranking), RefCell::new(Data::empty(0)));
                 columns.push(data.into_inner());
             }
         }
         (columns, projection_indices, aggregation_indices, ranking_indices)
     }
 
-    pub fn set_any(&mut self, index: BufferRef<Any>, vec: BoxedVec<'a>) {
+    pub fn set_any(&mut self, index: BufferRef<Any>, vec: BoxedData<'a>) {
         assert!(!self.pinned[self.resolve(&index)], "Trying to set pinned buffer {}", index);
         *self.buffer_mut(index) = RefCell::new(vec);
     }
 
-    pub fn set<T: GenericVec<T> + 'a>(&mut self, index: BufferRef<T>, vec: Vec<T>) {
+    pub fn set<T: VecData<T> + 'a>(&mut self, index: BufferRef<T>, vec: Vec<T>) {
         assert!(!self.pinned[self.resolve(&index)], "Trying to set pinned buffer {}", index);
-        *self.buffer_mut(index) = RefCell::new(AnyVec::owned(vec));
+        *self.buffer_mut(index) = RefCell::new(Data::owned(vec));
     }
 
-    pub fn set_const<T: ConstType<T> + 'a>(&mut self, index: BufferRef<Scalar<T>>, val: T) {
+    pub fn set_const<T: ScalarData<T> + 'a>(&mut self, index: BufferRef<Scalar<T>>, val: T) {
         assert!(!self.pinned[self.resolve(&index)], "Trying to set pinned buffer {}", index);
-        *self.buffer_mut(index) = RefCell::new(AnyVec::scalar(val));
+        *self.buffer_mut(index) = RefCell::new(Data::scalar(val));
     }
 
     pub fn alias<T>(&mut self, original: BufferRef<T>, alias: BufferRef<T>) {
@@ -142,11 +142,11 @@ impl<'a> Scratchpad<'a> {
         self.aliases[alias.i] = Some(original.i)
     }
 
-    fn buffer<T>(&self, buffer: BufferRef<T>) -> &RefCell<BoxedVec<'a>> {
+    fn buffer<T>(&self, buffer: BufferRef<T>) -> &RefCell<BoxedData<'a>> {
         &self.buffers[self.resolve(&buffer)]
     }
 
-    fn buffer_mut<T>(&mut self, buffer: BufferRef<T>) -> &mut RefCell<BoxedVec<'a>> {
+    fn buffer_mut<T>(&mut self, buffer: BufferRef<T>) -> &mut RefCell<BoxedData<'a>> {
         let i = self.resolve(&buffer);
         assert!(!self.pinned[i], "Trying to mutably borrow pinned buffer {}", buffer);
         &mut self.buffers[i]
@@ -170,7 +170,7 @@ impl<'a> Scratchpad<'a> {
         self.pinned[i] = false;
     }
 
-    pub fn collect_pinned(self) -> Vec<BoxedVec<'a>> {
+    pub fn collect_pinned(self) -> Vec<BoxedData<'a>> {
         self.buffers
             .into_iter()
             .zip(self.pinned.iter())

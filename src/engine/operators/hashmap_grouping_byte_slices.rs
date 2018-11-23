@@ -50,7 +50,7 @@ impl<'a> VecOperator<'a> for HashMapGroupingByteSlices {
             }
             RawVal::Int(unique.len() as i64)
         };
-        scratchpad.set_any(self.cardinality_out.any(), AnyVec::constant(count));
+        scratchpad.set_any(self.cardinality_out.any(), Data::constant(count));
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

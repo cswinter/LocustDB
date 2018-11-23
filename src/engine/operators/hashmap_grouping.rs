@@ -7,7 +7,7 @@ use ingest::raw_val::RawVal;
 
 
 #[derive(Debug)]
-pub struct HashMapGrouping<T: GenericVec<T> + Hash> {
+pub struct HashMapGrouping<T: VecData<T> + Hash> {
     input: BufferRef<T>,
     unique_out: BufferRef<T>,
     grouping_key_out: BufferRef<u32>,
@@ -15,7 +15,7 @@ pub struct HashMapGrouping<T: GenericVec<T> + Hash> {
     map: FnvHashMap<T, u32>,
 }
 
-impl<'a, T: GenericVec<T> + Hash + 'a> HashMapGrouping<T> {
+impl<'a, T: VecData<T> + Hash + 'a> HashMapGrouping<T> {
     pub fn boxed(input: BufferRef<T>,
                  unique_out: BufferRef<T>,
                  grouping_key_out: BufferRef<u32>,
@@ -31,7 +31,7 @@ impl<'a, T: GenericVec<T> + Hash + 'a> HashMapGrouping<T> {
     }
 }
 
-impl<'a, T: GenericVec<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
+impl<'a, T: VecData<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let count = {
             let raw_grouping_key = scratchpad.get(self.input);
@@ -46,7 +46,7 @@ impl<'a, T: GenericVec<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
             }
             RawVal::Int(unique.len() as i64)
         };
-        scratchpad.set_any(self.cardinality_out.any(), AnyVec::constant(count));
+        scratchpad.set_any(self.cardinality_out.any(), Data::constant(count));
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

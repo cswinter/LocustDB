@@ -8,7 +8,7 @@ pub struct Select<T> {
     pub output: BufferRef<T>,
 }
 
-impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: GenericVec<T> {
+impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: VecData<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get(self.input);
         let indices = scratchpad.get(self.indices);

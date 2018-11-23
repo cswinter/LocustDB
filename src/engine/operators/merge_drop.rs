@@ -9,7 +9,7 @@ pub struct MergeDrop<T> {
     pub deduplicated: BufferRef<T>,
 }
 
-impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDrop<T> {
+impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDrop<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let deduplicated = {
             let ops = scratchpad.get(self.merge_ops);
@@ -31,7 +31,7 @@ impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for MergeDrop<T> {
     }
 }
 
-fn merge_drop<'a, T: GenericVec<T> + 'a>(ops: &[MergeOp], left: &[T], right: &[T]) -> Vec<T> {
+fn merge_drop<'a, T: VecData<T> + 'a>(ops: &[MergeOp], left: &[T], right: &[T]) -> Vec<T> {
     // TODO(clemens): this is an overestimate
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;

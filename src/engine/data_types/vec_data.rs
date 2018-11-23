@@ -16,54 +16,54 @@ use mem_store::value::Val;
 use engine::data_types::*;
 
 
-pub trait GenericVec<T>: PartialEq + Ord + Copy + Debug + Display + Sync + Send + HeapSizeOf {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [T] where T: 'a;
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<T> where T: 'a;
+pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Display + Sync + Send + HeapSizeOf {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [T] where T: 'a;
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<T> where T: 'a;
     fn wrap_one(_value: T) -> RawVal { panic!("Can't wrap scalar of type {:?}", Self::t()) }
     fn t() -> EncodingType;
 }
 
-impl GenericVec<u8> for u8 {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [u8] where u8: 'a { vec.cast_ref_u8() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<u8> where u8: 'a { vec.cast_ref_mut_u8() }
+impl VecData<u8> for u8 {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [u8] where u8: 'a { vec.cast_ref_u8() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<u8> where u8: 'a { vec.cast_ref_mut_u8() }
     fn t() -> EncodingType { EncodingType::U8 }
 }
 
-impl GenericVec<u16> for u16 {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [u16] where u16: 'a { vec.cast_ref_u16() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<u16> where u16: 'a { vec.cast_ref_mut_u16() }
+impl VecData<u16> for u16 {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [u16] where u16: 'a { vec.cast_ref_u16() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<u16> where u16: 'a { vec.cast_ref_mut_u16() }
     fn t() -> EncodingType { EncodingType::U16 }
 }
 
-impl GenericVec<u32> for u32 {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [u32] where u32: 'a { vec.cast_ref_u32() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<u32> where u32: 'a { vec.cast_ref_mut_u32() }
+impl VecData<u32> for u32 {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [u32] where u32: 'a { vec.cast_ref_u32() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<u32> where u32: 'a { vec.cast_ref_mut_u32() }
     fn wrap_one(value: u32) -> RawVal { RawVal::Int(i64::from(value)) }
     fn t() -> EncodingType { EncodingType::U32 }
 }
 
-impl GenericVec<i64> for i64 {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [i64] where i64: 'a { vec.cast_ref_i64() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<i64> where i64: 'a { vec.cast_ref_mut_i64() }
+impl VecData<i64> for i64 {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [i64] where i64: 'a { vec.cast_ref_i64() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<i64> where i64: 'a { vec.cast_ref_mut_i64() }
     fn wrap_one(value: i64) -> RawVal { RawVal::Int(value) }
     fn t() -> EncodingType { EncodingType::I64 }
 }
 
-impl GenericVec<u64> for u64 {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [u64] where u64: 'a { vec.cast_ref_u64() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<u64> where u64: 'a { vec.cast_ref_mut_u64() }
+impl VecData<u64> for u64 {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [u64] where u64: 'a { vec.cast_ref_u64() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<u64> where u64: 'a { vec.cast_ref_mut_u64() }
     fn wrap_one(value: u64) -> RawVal { RawVal::Int(value as i64) }
     fn t() -> EncodingType { EncodingType::U64 }
 }
 
-impl GenericVec<usize> for usize {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [usize] where usize: 'a { vec.cast_ref_usize() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<usize> where usize: 'a { vec.cast_ref_mut_usize() }
+impl VecData<usize> for usize {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [usize] where usize: 'a { vec.cast_ref_usize() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<usize> where usize: 'a { vec.cast_ref_mut_usize() }
     fn t() -> EncodingType { EncodingType::USize }
 }
 
-impl<'c> GenericVec<&'c str> for &'c str {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [&'c str] where &'c str: 'a {
+impl<'c> VecData<&'c str> for &'c str {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [&'c str] where &'c str: 'a {
         // TODO(clemens): Probably wrong, but after many hours I haven't found any other way of making all of this work :(
         // Might require associated type constructors to solve easily...
         unsafe {
@@ -71,7 +71,7 @@ impl<'c> GenericVec<&'c str> for &'c str {
         }
     }
 
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<&'c str> where &'c str: 'a {
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<&'c str> where &'c str: 'a {
         unsafe {
             mem::transmute::<_, &'b mut Vec<&'c str>>(vec.cast_ref_mut_str())
         }
@@ -82,14 +82,14 @@ impl<'c> GenericVec<&'c str> for &'c str {
     fn t() -> EncodingType { EncodingType::Str }
 }
 
-impl<'c> GenericVec<Val<'c>> for Val<'c> {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [Val<'c>] where Val<'c>: 'a {
+impl<'c> VecData<Val<'c>> for Val<'c> {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [Val<'c>] where Val<'c>: 'a {
         unsafe {
             mem::transmute::<_, &'b [Val<'c>]>(vec.cast_ref_mixed())
         }
     }
 
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<Val<'c>> where RawVal: 'a {
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<Val<'c>> where RawVal: 'a {
         unsafe {
             mem::transmute::<_, &'b mut Vec<Val<'c>>>(vec.cast_ref_mut_mixed())
         }
@@ -100,9 +100,9 @@ impl<'c> GenericVec<Val<'c>> for Val<'c> {
     fn t() -> EncodingType { EncodingType::Val }
 }
 
-pub trait GenericIntVec<T>: GenericVec<T> + CastUsize + FromBytes<T> + PrimInt + Hash + 'static {}
+pub trait GenericIntVec<T>: VecData<T> + CastUsize + FromBytes<T> + PrimInt + Hash + 'static {}
 
-impl<T> GenericIntVec<T> for T where T: GenericVec<T> + CastUsize + FromBytes<T> + PrimInt + Copy + Hash + 'static {}
+impl<T> GenericIntVec<T> for T where T: VecData<T> + CastUsize + FromBytes<T> + PrimInt + Copy + Hash + 'static {}
 
 
 pub trait FromBytes<T> {
@@ -176,9 +176,9 @@ impl Display for MergeOp {
     }
 }
 
-impl GenericVec<MergeOp> for MergeOp {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [MergeOp] where MergeOp: 'a { vec.cast_ref_merge_op() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<MergeOp> where MergeOp: 'a { vec.cast_ref_mut_merge_op() }
+impl VecData<MergeOp> for MergeOp {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [MergeOp] where MergeOp: 'a { vec.cast_ref_merge_op() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<MergeOp> where MergeOp: 'a { vec.cast_ref_mut_merge_op() }
     fn t() -> EncodingType { EncodingType::MergeOp }
 }
 
@@ -195,9 +195,9 @@ impl Display for Premerge {
     }
 }
 
-impl GenericVec<Premerge> for Premerge {
-    fn unwrap<'a, 'b>(vec: &'b AnyVec<'a>) -> &'b [Premerge] where Premerge: 'a { vec.cast_ref_premerge() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut AnyVec<'a>) -> &'b mut Vec<Premerge> where Premerge: 'a { vec.cast_ref_mut_premerge() }
+impl VecData<Premerge> for Premerge {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [Premerge] where Premerge: 'a { vec.cast_ref_premerge() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<Premerge> where Premerge: 'a { vec.cast_ref_mut_premerge() }
     fn t() -> EncodingType { EncodingType::Premerge }
 }
 

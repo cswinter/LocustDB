@@ -97,7 +97,7 @@ impl<'a> QueryExecutor<'a> {
 
     pub fn encoded_group_by(&self) -> Option<TypedBufferRef> { self.encoded_group_by }
 
-    pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a AnyVec<'a>>>) -> Scratchpad<'a> {
+    pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a Data<'a>>>) -> Scratchpad<'a> {
         self.stages = self.partition();
         Scratchpad::new(self.count, columns)
     }

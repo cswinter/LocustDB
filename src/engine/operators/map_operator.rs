@@ -9,8 +9,8 @@ pub struct MapOperator<Input, Output, Map> {
 }
 
 impl<'a, Input, Output, Map> VecOperator<'a> for MapOperator<Input, Output, Map>
-    where Input: GenericVec<Input> + 'a,
-          Output: GenericVec<Output> + 'a,
+    where Input: VecData<Input> + 'a,
+          Output: VecData<Output> + 'a,
           Map: MapOp<Input, Output> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let input = scratchpad.get(self.input);

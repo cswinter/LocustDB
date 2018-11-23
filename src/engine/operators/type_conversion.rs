@@ -8,7 +8,7 @@ pub struct TypeConversionOperator<T, U> {
 }
 
 impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
-    T: GenericVec<T> + Copy, U: GenericVec<U>, T: Cast<U> {
+    T: VecData<T> + Copy, U: VecData<U>, T: Cast<U> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let data = scratchpad.get(self.input);
         let mut output = scratchpad.get_mut(self.output);

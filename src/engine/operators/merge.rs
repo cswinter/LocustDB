@@ -15,7 +15,7 @@ pub struct Merge<T, C: Debug> {
     pub c: PhantomData<C>,
 }
 
-impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge<T, C> {
+impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge<T, C> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let (merged, ops) = {
             let left = scratchpad.get(self.left);
@@ -37,7 +37,7 @@ impl<'a, T: GenericVec<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Me
     }
 }
 
-fn merge<'a, T: GenericVec<T> + 'a, C: Comparator<T>>(left: &[T], right: &[T], limit: usize) -> (Vec<T>, Vec<u8>) {
+fn merge<'a, T: VecData<T> + 'a, C: Comparator<T>>(left: &[T], right: &[T], limit: usize) -> (Vec<T>, Vec<u8>) {
     let len = cmp::min(left.len() + right.len(), limit);
     let mut result = Vec::with_capacity(len);
     let mut ops = Vec::<u8>::with_capacity(len);
