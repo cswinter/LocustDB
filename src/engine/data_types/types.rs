@@ -4,6 +4,18 @@ use mem_store::*;
 pub enum EncodingType {
     Str,
     I64,
+    U8,
+    U16,
+    U32,
+    U64,
+
+    NullableStr,
+    NullableI64,
+    NullableU8,
+    NullableU16,
+    NullableU32,
+    NullableU64,
+
     USize,
     Val,
     Null,
@@ -12,11 +24,6 @@ pub enum EncodingType {
     ScalarStr,
     ScalarString,
     ConstVal,
-
-    U8,
-    U16,
-    U32,
-    U64,
 
     ByteSlices(usize),
     Premerge,
@@ -33,12 +40,27 @@ impl EncodingType {
             _ => panic!("{:?} does not have a corresponding BasicType", &self)
         }
     }
+
+    pub fn nullable(&self) -> EncodingType {
+        match self {
+            EncodingType::Str => EncodingType::NullableStr,
+            EncodingType::I64 => EncodingType::NullableI64,
+            EncodingType::U8 => EncodingType::NullableU8,
+            EncodingType::U16 => EncodingType::NullableU16,
+            EncodingType::U32 => EncodingType::NullableU32,
+            EncodingType::U64 => EncodingType::NullableU64,
+            _ => panic!("{:?} does not have a corresponding nullable type", &self)
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, HeapSizeOf)]
 pub enum BasicType {
     String,
     Integer,
+    NullableString,
+    NullableInteger,
+
     Val,
     Null,
     Boolean,
@@ -49,6 +71,8 @@ impl BasicType {
         match self {
             BasicType::String => EncodingType::Str,
             BasicType::Integer => EncodingType::I64,
+            BasicType::NullableString => EncodingType::NullableStr,
+            BasicType::NullableInteger => EncodingType::NullableI64,
             BasicType::Val => EncodingType::Val,
             BasicType::Null => EncodingType::Null,
             BasicType::Boolean => EncodingType::U8,

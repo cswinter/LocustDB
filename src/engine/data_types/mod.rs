@@ -1,8 +1,9 @@
-mod data;
 mod byte_slices;
-mod vec_data;
+mod data;
+mod nullable_vec_data;
 mod scalar_data;
 mod types;
+mod vec_data;
 
 pub use self::types::*;
 pub use self::data::*;

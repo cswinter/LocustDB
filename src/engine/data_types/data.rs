@@ -89,12 +89,11 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
     fn len(&self) -> usize { Vec::len(self) }
     fn get_raw(&self, i: usize) -> RawVal { T::wrap_one(self[i]) }
     fn get_type(&self) -> EncodingType { T::t() }
+    fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedData<'b> where 'a: 'b {
         let to = min(to, self.len());
         Box::new(&self[from..to])
     }
-
-    fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
 
     default fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>> {
         if other.get_type() != self.get_type() {
