@@ -132,6 +132,8 @@ pub enum QueryPlan {
 
     And { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
     Or { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
+    Not { input: Box<QueryPlan> },
+
     ToYear { timestamp: Box<QueryPlan> },
 
     /// Outputs a vector of indices from `0..plan.len()`
@@ -380,6 +382,8 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
             result.push(op);
             return Ok(inplace);
         }
+        QueryPlan::Not { input } =>
+            VecOperator::not(prepare(*input, result)?.u8()?, result.buffer_u8("negated")),
         QueryPlan::ToYear { timestamp } =>
             VecOperator::to_year(prepare(*timestamp, result)?.i64()?, result.buffer_i64("year")),
         QueryPlan::EncodedGroupByPlaceholder => return Ok(result.encoded_group_by().unwrap()),
@@ -505,10 +509,10 @@ impl Function2 {
 }
 
 lazy_static! {
-    static ref FUNCTION_REGISTRY: HashMap<Func2Type, Vec<Function2>> = function_registry();
+    static ref FUNCTION2_REGISTRY: HashMap<Func2Type, Vec<Function2>> = function2_registry();
 }
 
-fn function_registry() -> HashMap<Func2Type, Vec<Function2>> {
+fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
     vec![
         (Func2Type::Add,
          vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Add { lhs, rhs }))]),
@@ -560,7 +564,6 @@ impl QueryPlan {
         columns: &HashMap<String, Arc<DataSource>>) -> Result<(QueryPlan, Type), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
-        use self::Func1Type::*;
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
@@ -600,7 +603,7 @@ impl QueryPlan {
                 let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
                 let (mut plan_rhs, mut type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
 
-                let declarations = match FUNCTION_REGISTRY.get(&function) {
+                let declarations = match FUNCTION2_REGISTRY.get(&function) {
                     Some(patterns) => patterns,
                     None => bail!(QueryError::NotImplemented, "function {:?}", function),
                 };
@@ -641,16 +644,30 @@ impl QueryPlan {
                 let plan = (declaration.factory)(Box::new(plan_lhs), Box::new(plan_rhs));
                 (plan, declaration.type_out.clone())
             }
-            Func1(ToYear, ref inner) => {
+            Func1(ftype, ref inner) => {
                 let (plan, t) = QueryPlan::compile_expr(inner, filter, columns)?;
-                if t.decoded != BasicType::Integer {
-                    bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
-                }
                 let decoded = match t.codec.clone() {
                     Some(codec) => codec.decode(plan),
                     None => plan,
                 };
-                (to_year(decoded), t.decoded())
+                let plan = match ftype {
+                    Func1Type::ToYear => {
+                        if t.decoded != BasicType::Integer {
+                            bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
+                        }
+                        to_year(decoded)
+                    }
+                    Func1Type::Not => {
+                        if t.decoded != BasicType::Boolean {
+                            bail!(QueryError::TypeError, "Found NOT({:?}), expected NOT(boolean)", &t)
+                        }
+                        not(decoded)
+                    }
+                    Func1Type::Negate => {
+                        bail!(QueryError::TypeError, "Found negate({:?}), expected negate(integer)", &t)
+                    }
+                };
+                (plan, t.decoded())
             }
             Const(RawVal::Int(i)) => (scalar_i64(i, false), Type::scalar(BasicType::Integer)),
             Const(RawVal::Str(ref s)) => (scalar_str(s), Type::scalar(BasicType::String)),
@@ -896,6 +913,11 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s1);
                 hasher.input(&s2);
                 Or { lhs, rhs }
+            }
+            Not { input } => {
+                let (input, s1) = replace_common_subexpression(*input, executor);
+                hasher.input(&s1);
+                Not { input }
             }
             ToYear { timestamp } => {
                 let (timestamp, s1) = replace_common_subexpression(*timestamp, executor);
