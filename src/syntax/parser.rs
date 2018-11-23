@@ -112,6 +112,13 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 }
                 Expr::Func1(Func1Type::ToYear, expr(&args[0])?)
             }
+            "REGEX" => {
+                if args.len() != 2 {
+                    return Err(QueryError::ParseError(
+                        "Expected two arguments in regex function".to_string()));
+                }
+                Expr::Func2(Func2Type::RegexMatch, expr(&args[0])?, expr(&args[1])?)
+            }
             "COUNT" => {
                 if args.len() != 1 {
                     return Err(QueryError::ParseError(

@@ -8,6 +8,7 @@ use chrono::{Datelike, NaiveDateTime};
 use crypto::digest::Digest;
 use crypto::md5::Md5;
 use itertools::Itertools;
+use regex::Regex;
 
 use ::QueryError;
 use engine::*;
@@ -135,6 +136,8 @@ pub enum QueryPlan {
     Not { input: Box<QueryPlan> },
 
     ToYear { timestamp: Box<QueryPlan> },
+
+    Regex { plan: Box<QueryPlan>, regex: String },
 
     /// Outputs a vector of indices from `0..plan.len()`
     Indices { plan: Box<QueryPlan> },
@@ -386,6 +389,8 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
             VecOperator::not(prepare(*input, result)?.u8()?, result.buffer_u8("negated")),
         QueryPlan::ToYear { timestamp } =>
             VecOperator::to_year(prepare(*timestamp, result)?.i64()?, result.buffer_i64("year")),
+        QueryPlan::Regex { plan, regex } =>
+            VecOperator::regex(prepare(*plan, result)?.str()?, &regex, result.buffer_u8("matches")),
         QueryPlan::EncodedGroupByPlaceholder => return Ok(result.encoded_group_by().unwrap()),
         QueryPlan::Indices { plan } => VecOperator::indices(
             prepare(*plan, result)?,
@@ -598,6 +603,23 @@ impl QueryPlan {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
                 (plan_lhs & plan_rhs, Type::bit_vec())
+            }
+            Func2(RegexMatch, ref expr, ref regex) => {
+                match regex {
+                    box Const(RawVal::Str(regex)) => {
+                        Regex::new(&regex).map_err(|e| QueryError::TypeError(
+                            format!("`{}` is not a valid regex: {}", regex, e)))?;
+                        let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns)?;
+                        if t.decoded != BasicType::String {
+                            bail!(QueryError::TypeError, "Expected expression of type `String` as first argument to regex. Actual: {:?}", t)
+                        }
+                        if let Some(codec) = t.codec.clone() {
+                            plan = codec.decode(plan);
+                        }
+                        (query_syntax::regex(plan, regex), t)
+                    }
+                    _ => bail!(QueryError::TypeError, "Expected string constant as second argument to `regex`, actual: {:?}", regex),
+                }
             }
             Func2(function, ref lhs, ref rhs) => {
                 let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
@@ -918,6 +940,12 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 let (input, s1) = replace_common_subexpression(*input, executor);
                 hasher.input(&s1);
                 Not { input }
+            }
+            Regex { plan, regex } => {
+                let (plan, s1) = replace_common_subexpression(*plan, executor);
+                hasher.input(&s1);
+                hasher.input_str(&regex);
+                Regex { plan, regex }
             }
             ToYear { timestamp } => {
                 let (timestamp, s1) = replace_common_subexpression(*timestamp, executor);

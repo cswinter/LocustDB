@@ -1,6 +1,7 @@
 use std::i64;
 
 use chrono::{NaiveDateTime, Datelike};
+use regex;
 
 use super::map_operator::MapOp;
 
@@ -21,3 +22,16 @@ impl MapOp<u8, u8> for BooleanNot {
 }
 
 
+pub struct RegexMatch {
+    pub r: regex::Regex
+}
+
+impl<'a> MapOp<&'a str, u8> for RegexMatch {
+    fn apply(&self, s: &'a str) -> u8 {
+        match self.r.find(s) {
+            Some(_) => 1,
+            None => 0,
+        }
+    }
+    fn name() -> &'static str { "not" }
+}
