@@ -10,7 +10,7 @@ pub struct SortBy<T> {
     pub stable: bool,
 }
 
-impl<'a, T: GenericVec<T> + 'a> VecOperator<'a> for SortBy<T> {
+impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortBy<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.alias(self.indices, self.output);
         let ranking = scratchpad.get(self.ranking);

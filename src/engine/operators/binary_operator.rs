@@ -11,9 +11,9 @@ pub struct BinaryOperator<LHS, RHS, Out, Op> {
 }
 
 impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for BinaryOperator<LHS, RHS, Out, Op>
-    where LHS: GenericVec<LHS> + 'a,
-          RHS: GenericVec<RHS> + 'a,
-          Out: GenericVec<Out> + 'a,
+    where LHS: VecData<LHS> + 'a,
+          RHS: VecData<RHS> + 'a,
+          Out: VecData<Out> + 'a,
           Op: BinaryOp<LHS, RHS, Out> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let lhs = scratchpad.get(self.lhs);
@@ -48,9 +48,9 @@ pub struct BinaryVSOperator<LHS, RHS, Out, Op> {
 }
 
 impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for BinaryVSOperator<LHS, RHS, Out, Op>
-    where LHS: GenericVec<LHS> + 'a,
-          RHS: ConstType<RHS> + Copy + 'a,
-          Out: GenericVec<Out> + 'a,
+    where LHS: VecData<LHS> + 'a,
+          RHS: ScalarData<RHS> + Copy + 'a,
+          Out: VecData<Out> + 'a,
           Op: BinaryOp<LHS, RHS, Out> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let lhs = scratchpad.get(self.lhs);
@@ -85,9 +85,9 @@ pub struct BinarySVOperator<LHS, RHS, Out, Op> {
 }
 
 impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for BinarySVOperator<LHS, RHS, Out, Op>
-    where LHS: ConstType<LHS> + Copy + 'a,
-          RHS: GenericVec<RHS> + 'a,
-          Out: GenericVec<Out> + 'a,
+    where LHS: ScalarData<LHS> + Copy + 'a,
+          RHS: VecData<RHS> + 'a,
+          Out: VecData<Out> + 'a,
           Op: BinaryOp<LHS, RHS, Out> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
         let lhs = scratchpad.get_scalar(&self.lhs);

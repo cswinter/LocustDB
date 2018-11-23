@@ -10,7 +10,7 @@ use errors::QueryError;
 
 
 pub struct BatchResult<'a> {
-    pub columns: Vec<BoxedVec<'a>>,
+    pub columns: Vec<BoxedData<'a>>,
     pub projection: Vec<usize>,
     pub aggregations: Vec<(usize, Aggregator)>,
     pub order_by: Vec<(usize, bool)>,
@@ -18,7 +18,7 @@ pub struct BatchResult<'a> {
     pub batch_count: usize,
     pub show: bool,
     // Buffers that are referenced by query result - unsafe to drop before results are converted into owned values
-    pub unsafe_referenced_buffers: Vec<BoxedVec<'a>>,
+    pub unsafe_referenced_buffers: Vec<BoxedData<'a>>,
 }
 
 impl<'a> BatchResult<'a> {
@@ -293,7 +293,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
 fn set<'a>(executor: &mut QueryExecutor<'a>,
            name: &'static str,
-           vec: BoxedVec<'a>) -> TypedBufferRef {
+           vec: BoxedData<'a>) -> TypedBufferRef {
     let buffer = executor.named_buffer(name, vec.get_type());
     let op = VecOperator::constant_vec(vec, buffer.any());
     executor.push(op);

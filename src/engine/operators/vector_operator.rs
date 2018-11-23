@@ -220,7 +220,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn constant_vec(val: BoxedVec<'a>, output: BufferRef<Any>) -> BoxedOperator<'a> {
+    pub fn constant_vec(val: BoxedData<'a>, output: BufferRef<Any>) -> BoxedOperator<'a> {
         Box::new(ConstantVec { val, output })
     }
 

@@ -82,7 +82,7 @@ impl NormalFormQuery {
         if let Some(sort_indices) = sort_indices {
             filter = if let Filter::U8(where_true) = filter {
                 let buffer = executor.named_buffer("indices", EncodingType::Null);
-                let indices_op = VecOperator::constant_vec(AnyVec::empty(partition_length), buffer.any());
+                let indices_op = VecOperator::constant_vec(Data::empty(partition_length), buffer.any());
                 executor.push(indices_op);
                 Filter::Indices(
                     query_plan::prepare(
@@ -343,7 +343,7 @@ impl NormalFormQuery {
         }
     }
 
-    fn column_data(columns: &HashMap<String, Arc<DataSource>>) -> HashMap<String, Vec<&AnyVec>> {
+    fn column_data(columns: &HashMap<String, Arc<DataSource>>) -> HashMap<String, Vec<&Data>> {
         columns.iter()
             .map(|(name, column)| (name.to_string(), column.data_sections()))
             .collect()

@@ -16,7 +16,7 @@ pub struct Partition<T, C> {
 }
 
 impl<'a, T, C> VecOperator<'a> for Partition<T, C>
-    where T: GenericVec<T> + 'a, C: Comparator<T> + Debug {
+    where T: VecData<T> + 'a, C: Comparator<T> + Debug {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let premerge = {
             let left = scratchpad.get(self.left);
@@ -38,7 +38,7 @@ impl<'a, T, C> VecOperator<'a> for Partition<T, C>
 }
 
 pub fn partition<'a, T, C>(left: &[T], right: &[T], limit: usize) -> Vec<Premerge>
-    where T: GenericVec<T> + 'a, C: Comparator<T> {
+    where T: VecData<T> + 'a, C: Comparator<T> {
     let mut result = Vec::new();
     let mut i = 0;
     let mut j = 0;

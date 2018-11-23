@@ -7,13 +7,13 @@ pub struct Compact<T, U> {
     select: BufferRef<U>,
 }
 
-impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> Compact<T, U> {
+impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> Compact<T, U> {
     pub fn boxed(data: BufferRef<T>, select: BufferRef<U>) -> BoxedOperator<'a> {
         Box::new(Compact { data, select })
     }
 }
 
-impl<'a, T: GenericVec<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact<T, U> {
+impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact<T, U> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
         let mut data = scratchpad.get_mut(self.data);
         let select = scratchpad.get(self.select);
