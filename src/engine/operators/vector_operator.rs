@@ -38,8 +38,10 @@ use super::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
 use super::merge_drop::MergeDrop;
 use super::merge_keep::MergeKeep;
 use super::merge_partitioned::MergePartitioned;
+use super::propagate_nullability::PropagateNullability;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
+use super::nullable::MakeNullable;
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
@@ -108,6 +110,26 @@ impl<'a> VecOperator<'a> {
             current_index: 0,
             has_more: true,
         })
+    }
+
+    pub fn nullable(data: TypedBufferRef,
+                    present: BufferRef<u8>,
+                    nullable_data: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        match data.tag {
+            EncodingType::U8 => Ok(Box::new(MakeNullable { data: data.u8()?, present, nullable_data: nullable_data.nullable_u8()? })),
+            EncodingType::I64 => Ok(Box::new(MakeNullable { data: data.i64()?, present, nullable_data: nullable_data.nullable_i64()? })),
+            _ => Err(fatal!("nullable not implemented for type {:?}", data.tag)),
+        }
+    }
+
+    pub fn propagate_nullability(nullability: BufferRef<Nullable<Any>>,
+                                 data: TypedBufferRef,
+                                 output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        match data.tag {
+            EncodingType::U8 => Ok(Box::new(PropagateNullability { from: nullability, to: data.u8()?, output: output.nullable_u8()? })),
+            EncodingType::I64 => Ok(Box::new(PropagateNullability { from: nullability, to: data.i64()?, output: output.nullable_i64()? })),
+            _ => Err(fatal!("propagate_nullability not implemented for type {:?}", data.tag)),
+        }
     }
 
     pub fn dict_lookup(indices: TypedBufferRef,
@@ -307,15 +329,14 @@ impl<'a> VecOperator<'a> {
     pub fn addition(lhs: TypedBufferRef,
                     rhs: TypedBufferRef,
                     output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
-        let output = output.i64()?;
         reify_types! {
             "addition";
             lhs: ScalarI64, rhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Addition<_, _>> }));
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output: output.i64()?, op: PhantomData::<Addition<_, _>> }));
             lhs: IntegerNoU64, rhs: ScalarI64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output: output.i64()?, op: PhantomData::<Addition<_, _>> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
-            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }))
+            Ok(Box::new(BinaryOperator { lhs, rhs, output: output.i64()?, op: PhantomData::<Addition<_, _>> }))
         }
     }
 

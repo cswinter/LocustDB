@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::marker::PhantomData;
 
+use bitvec::BitVec;
 use engine::*;
 use super::*;
 use ingest::raw_val::RawVal;
@@ -313,6 +314,13 @@ impl<'a> QueryExecutor<'a> {
                     for output in self.ops[op].outputs() {
                         let data = scratchpad.get_any(output);
                         println!("{}", data.display());
+                        if let Some(present) = scratchpad.get_null_map(output) {
+                            print!("null map: ");
+                            for i in 0..cmp::min(present.len() * 8, 100) {
+                                if (&*present).is_set(i) { print!("1") } else { print!("0") }
+                            }
+                            println!()
+                        }
                     }
                 }
                 has_more |= self.ops[op].has_more() && stream;

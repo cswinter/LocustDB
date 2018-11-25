@@ -120,9 +120,14 @@ impl Codec {
         let mut stack = vec![plan];
         for op in ops {
             let plan = match *op {
+                CodecOp::Nullable => {
+                    let present = stack.pop().unwrap();
+                    let data = stack.pop().unwrap();
+                    nullable(data, present)
+                }
                 CodecOp::Add(_, x) => stack.pop().unwrap() + scalar_i64(x, true),
                 CodecOp::Delta(_) => delta_decode(stack.pop().unwrap()),
-                CodecOp::ToI64(t) => cast(stack.pop().unwrap(), t, EncodingType::I64),
+                CodecOp::ToI64(_) => cast(stack.pop().unwrap(), EncodingType::I64),
                 CodecOp::PushDataSection(section_index) =>
                     column_section(
                         &self.column_name,
@@ -257,6 +262,7 @@ impl Codec {
 
 #[derive(Debug, Clone, Copy, PartialEq, HeapSizeOf)]
 pub enum CodecOp {
+    Nullable,
     Add(EncodingType, i64),
     Delta(EncodingType),
     ToI64(EncodingType),
@@ -271,6 +277,7 @@ pub enum CodecOp {
 impl CodecOp {
     fn output_type(&self) -> BasicType {
         match self {
+            CodecOp::Nullable => BasicType::Integer,
             CodecOp::Add(_, _) => BasicType::Integer,
             CodecOp::Delta(_) => BasicType::Integer,
             CodecOp::ToI64(_) => BasicType::Integer,
@@ -285,6 +292,7 @@ impl CodecOp {
 
     fn is_summation_preserving(&self) -> bool {
         match self {
+            CodecOp::Nullable => false,
             CodecOp::Add(_, x) => *x == 0,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
@@ -299,6 +307,7 @@ impl CodecOp {
 
     fn is_order_preserving(&self) -> bool {
         match self {
+            CodecOp::Nullable => false,
             CodecOp::Add(_, _) => true,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
@@ -313,6 +322,7 @@ impl CodecOp {
 
     fn is_positive_integer(&self) -> bool {
         match self {
+            CodecOp::Nullable => false,
             CodecOp::Add(_, _) => true,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true, // TODO(clemens): no it's not (hack to make grouping key work)
@@ -327,6 +337,7 @@ impl CodecOp {
 
     fn is_elementwise_decodable(&self) -> bool {
         match self {
+            CodecOp::Nullable => true,
             CodecOp::Add(_, _) => true,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
@@ -341,6 +352,7 @@ impl CodecOp {
 
     fn arg_count(&self) -> usize {
         match self {
+            CodecOp::Nullable => 0,
             CodecOp::Add(_, _) => 1,
             CodecOp::Delta(_) => 1,
             CodecOp::ToI64(_) => 1,
@@ -355,6 +367,7 @@ impl CodecOp {
 
     fn signature(&self, alternate: bool) -> String {
         match self {
+            CodecOp::Nullable => format!("Nullable"),
             CodecOp::Add(t, amount) => if alternate {
                 format!("Add({:?}, {})", t, amount)
             } else {

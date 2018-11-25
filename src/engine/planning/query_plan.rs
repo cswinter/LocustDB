@@ -35,6 +35,12 @@ pub enum QueryPlan {
     /// Retrieves a specific buffer.
     ReadBuffer { buffer: TypedBufferRef },
 
+    /// Combines a vector with a null map.
+    Nullable { data: Box<QueryPlan>, present: Box<QueryPlan> },
+
+    /// Combines a vector with the null map of another vector.
+    PropagateNullability { nullable: Box<QueryPlan>, data: Box<QueryPlan> },
+
     /// Resolves dictionary indices to their original string value.
     DictLookup {
         indices: Box<QueryPlan>,
@@ -52,7 +58,6 @@ pub enum QueryPlan {
     /// Casts `input` to the specified type.
     Cast {
         input: Box<QueryPlan>,
-        input_type: EncodingType,
         target_type: EncodingType,
     },
 
@@ -214,6 +219,18 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         }
         QueryPlan::ColumnSection { name, section, t, .. } =>
             VecOperator::read_column_data(name, section, result.named_buffer("column", t).any()),
+        QueryPlan::Nullable { data, present } => {
+            let data = prepare(*data, result)?;
+            VecOperator::nullable(data,
+                                  prepare(*present, result)?.u8()?,
+                                  result.named_buffer("nullable", data.tag.nullable()))?
+        }
+        QueryPlan::PropagateNullability { nullable, data } => {
+            let data = prepare(*data, result)?;
+            VecOperator::propagate_nullability(prepare(*nullable, result)?.nullable_any()?,
+                                               data,
+                                               result.named_buffer("nullable", data.tag.nullable()))?
+        }
         QueryPlan::Filter { plan, select } => {
             let input = prepare(*plan, result)?;
             let t = input.tag.clone();
@@ -243,10 +260,9 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
                 prepare(*backing_store, result)?.u8()?,
                 prepare(*constant, result)?.scalar_str()?,
                 result.buffer_scalar_i64("encoded")),
-        QueryPlan::Cast { input, input_type: _, target_type } =>
-            VecOperator::type_conversion(
-                prepare(*input, result)?,
-                result.named_buffer("casted", target_type))?,
+        QueryPlan::Cast { input, target_type } => return propagate_nulls1(input, result, |input, result| {
+            VecOperator::type_conversion(input, result.named_buffer("casted", target_type))
+        }),
         QueryPlan::DeltaDecode { plan } =>
             VecOperator::delta_decode(
                 prepare(*plan, result)?,
@@ -347,11 +363,9 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
                 prepare(*rhs, result)?,
                 result.buffer_u8("not_equals"))?,
 
-        QueryPlan::Add { lhs, rhs } =>
-            VecOperator::addition(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_i64("addition").tagged())?,
+        QueryPlan::Add { lhs, rhs } => return propagate_nulls2(lhs, rhs, result, |lhs, rhs, result| {
+            VecOperator::addition(lhs, rhs, result.buffer_i64("addition").tagged())
+        }),
         QueryPlan::Subtract { lhs, rhs } =>
             VecOperator::subtraction(
                 prepare(*lhs, result)?,
@@ -416,6 +430,38 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         result.cache_last(signature);
     }
     Ok(result.last_buffer())
+}
+
+fn propagate_nulls1<'a, F>(plan: Box<QueryPlan>,
+                           result: &mut QueryExecutor<'a>, op: F) -> Result<TypedBufferRef, QueryError>
+    where F: Fn(TypedBufferRef, &mut QueryExecutor<'a>) -> Result<BoxedOperator<'a>, QueryError> {
+    let plan = prepare(*plan, result)?;
+    if plan.tag.is_nullable() {
+        let operator = op(plan.forget_nullability(), result)?;
+        result.push(operator);
+        prepare(propagate_nullability(plan, result.last_buffer()), result)
+    } else {
+        let operator = op(plan, result)?;
+        result.push(operator);
+        Ok(result.last_buffer())
+    }
+}
+
+fn propagate_nulls2<'a, F>(lhs: Box<QueryPlan>,
+                           rhs: Box<QueryPlan>,
+                           result: &mut QueryExecutor<'a>, op: F) -> Result<TypedBufferRef, QueryError>
+    where F: Fn(TypedBufferRef, TypedBufferRef, &mut QueryExecutor<'a>) -> Result<BoxedOperator<'a>, QueryError> {
+    let lhs = prepare(*lhs, result)?;
+    let rhs = prepare(*rhs, result)?;
+    if lhs.tag.is_nullable() {
+        let operator = op(lhs.forget_nullability(), rhs, result)?;
+        result.push(operator);
+        prepare(propagate_nullability(lhs, result.last_buffer()), result)
+    } else {
+        let operator = op(lhs, rhs, result)?;
+        result.push(operator);
+        Ok(result.last_buffer())
+    }
 }
 
 pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
@@ -741,6 +787,20 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&buffer.buffer.i.to_ne_bytes());
                 ReadBuffer { buffer }
             }
+            Nullable { data, present } => {
+                let (data, s1) = replace_common_subexpression(*data, executor);
+                let (present, s2) = replace_common_subexpression(*present, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                Nullable { data, present }
+            }
+            PropagateNullability { nullable, data } => {
+                let (data, s1) = replace_common_subexpression(*data, executor);
+                let (nullable, s2) = replace_common_subexpression(*nullable, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                PropagateNullability { nullable, data }
+            }
             DictLookup { indices, offset_len, backing_store } => {
                 let (indices, s1) = replace_common_subexpression(*indices, executor);
                 let (offset_len, s2) = replace_common_subexpression(*offset_len, executor);
@@ -759,12 +819,11 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&s3);
                 InverseDictLookup { offset_len, backing_store, constant }
             }
-            Cast { input, input_type, target_type } => {
+            Cast { input, target_type } => {
                 let (input, s1) = replace_common_subexpression(*input, executor);
                 hasher.input(&s1);
-                hasher.input(&discriminant_value(&input_type).to_ne_bytes());
                 hasher.input(&discriminant_value(&target_type).to_ne_bytes());
-                Cast { input, input_type, target_type }
+                Cast { input, target_type }
             }
             LZ4Decode { bytes, decoded_len, t } => {
                 let (bytes, s1) = replace_common_subexpression(*bytes, executor);
@@ -1056,7 +1115,6 @@ pub fn compile_grouping_key(
                 let decoded_group_by = if offset == 0 { decoded_group_by } else {
                     syntax::cast(
                         decoded_group_by + scalar_i64(-offset, true),
-                        EncodingType::I64,
                         gk_type.encoding_type())
                 };
 
@@ -1128,7 +1186,7 @@ fn try_bitpacking(
             let query_plan = if subtract_offset {
                 query_plan + scalar_i64(-min, true)
             } else {
-                syntax::cast(query_plan, plan_type.encoding_type(), EncodingType::I64)
+                syntax::cast(query_plan, EncodingType::I64)
             };
 
             if total_width == 0 {
@@ -1144,7 +1202,7 @@ fn try_bitpacking(
             if subtract_offset {
                 decode_plan = decode_plan + scalar_i64(min, true);
             }
-            decode_plan = syntax::cast(decode_plan, EncodingType::I64, plan_type.encoding_type());
+            decode_plan = syntax::cast(decode_plan,  plan_type.encoding_type());
             if let Some(codec) = plan_type.codec.clone() {
                 decode_plan = codec.decode(decode_plan);
             }

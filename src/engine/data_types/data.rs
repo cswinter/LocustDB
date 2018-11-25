@@ -9,6 +9,7 @@ use ingest::raw_val::RawVal;
 use mem_store::value::Val;
 use mem_store::column::DataSource;
 use mem_store::codec::Codec;
+use super::NullableVec;
 
 
 pub type BoxedData<'a> = Box<Data<'a> + 'a>;
@@ -18,6 +19,7 @@ pub trait Data<'a>: Send + Sync {
     fn get_raw(&self, i: usize) -> RawVal;
     fn get_type(&self) -> EncodingType;
     fn type_error(&self, func_name: &str) -> String;
+    // TODO(clemens): move this into an operator
     fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>>;
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedData<'b> where 'a: 'b;
 
@@ -26,6 +28,8 @@ pub trait Data<'a>: Send + Sync {
     fn cast_ref_u32(&self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
     fn cast_ref_u16(&self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
     fn cast_ref_u8(&self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
+
+    fn cast_ref_null_map(&self) -> &[u8] { panic!(self.type_error("cast_ref_null_map")) }
 
     fn cast_ref_u64(&self) -> &[u64] { panic!(self.type_error("cast_ref_u64")) }
     fn cast_ref_usize(&self) -> &[usize] { panic!(self.type_error("cast_ref_usize")) }
@@ -53,6 +57,8 @@ pub trait Data<'a>: Send + Sync {
     fn cast_ref_mut_byte_slices(&mut self) -> &mut ByteSlices<'a> { panic!(self.type_error("cast_ref_mut_byte_slices")) }
 
     fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
+
+    fn make_nullable(&mut self, _present: &[u8]) -> BoxedData<'a> { panic!(self.type_error("nullable")) }
 
     fn display(&self) -> String;
 }
@@ -109,6 +115,14 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
             self.extend_from_slice(&x[0..min(x.len(), count)]);
             None
         }
+    }
+
+    fn make_nullable(&mut self, present: &[u8]) -> BoxedData<'a> {
+        let data = mem::replace(self, Vec::new());
+        Box::new(NullableVec {
+            data,
+            present: present.iter().map(|i| *i).collect(),
+        })
     }
 
     fn display(&self) -> String { format!("Vec<{:?}>{}", T::t(), display_slice(&self, 120)) }
@@ -178,7 +192,6 @@ impl<'a> Data<'a> for Vec<Premerge> {
     fn cast_ref_premerge(&self) -> &[Premerge] { self }
     fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { self }
 }
-
 
 impl<'a, T: VecData<T> + 'a> Data<'a> for &'a [T] {
     fn len(&self) -> usize { <[T]>::len(self) }

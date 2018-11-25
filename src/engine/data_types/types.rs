@@ -52,6 +52,27 @@ impl EncodingType {
             _ => panic!("{:?} does not have a corresponding nullable type", &self)
         }
     }
+
+    pub fn is_nullable(&self) -> bool {
+        match self {
+            EncodingType::NullableStr | EncodingType::NullableI64 |
+            EncodingType::NullableU8 | EncodingType::NullableU16 |
+            EncodingType::NullableU32 | EncodingType::NullableU64 => true,
+            _ => false,
+        }
+    }
+
+    pub fn non_nullable(&self) -> EncodingType {
+        match self {
+            EncodingType::NullableStr => EncodingType::Str,
+            EncodingType::NullableI64 => EncodingType::I64,
+            EncodingType::NullableU8 => EncodingType::U8,
+            EncodingType::NullableU16 => EncodingType::U16,
+            EncodingType::NullableU32 => EncodingType::U32,
+            EncodingType::NullableU64 => EncodingType::U64,
+            _ => *self,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, HeapSizeOf)]

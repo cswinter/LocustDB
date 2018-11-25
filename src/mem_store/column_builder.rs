@@ -8,9 +8,11 @@ use std::sync::Arc;
 use mem_store::integers::*;
 use mem_store::column::*;
 use mem_store::strings::*;
+use bitvec::*;
 
 
 pub trait ColumnBuilder<T: ?Sized>: Default {
+    fn new(allow_null: bool) -> Self;
     fn push(&mut self, elem: &T);
     fn finalize(self, name: &str) -> Arc<Column>;
 }
@@ -30,6 +32,8 @@ impl Default for StringColBuilder {
 }
 
 impl<T: AsRef<str>> ColumnBuilder<T> for StringColBuilder {
+    fn new(_allow_null: bool) -> StringColBuilder { StringColBuilder::default() }
+
     fn push(&mut self, elem: &T) {
         let str_opt = Some(Rc::new(elem.as_ref().to_string()));
         self.data.push(str_opt.clone());
@@ -44,30 +48,49 @@ impl<T: AsRef<str>> ColumnBuilder<T> for StringColBuilder {
 
 pub struct IntColBuilder {
     data: Vec<i64>,
+    present: Vec<u8>,
     min: i64,
     max: i64,
     increasing: u64,
     allow_delta_encode: bool,
     last: i64,
+    nullable: bool,
+    any_null: bool,
 }
 
 impl Default for IntColBuilder {
     fn default() -> IntColBuilder {
         IntColBuilder {
             data: Vec::new(),
+            present: Vec::new(),
             min: i64::MAX,
             max: i64::MIN,
             increasing: 0,
             allow_delta_encode: true,
             last: i64::MIN,
+            nullable: true,
+            any_null: false,
         }
     }
 }
 
-impl ColumnBuilder<i64> for IntColBuilder {
+impl ColumnBuilder<Option<i64>> for IntColBuilder {
+    fn new(allow_null: bool) -> IntColBuilder {
+        let mut result = IntColBuilder::default();
+        result.nullable = allow_null;
+        result
+    }
+
     #[inline]
-    fn push(&mut self, elem: &i64) {
-        let elem = *elem;
+    fn push(&mut self, elem: &Option<i64>) {
+        if self.nullable && elem.is_some() {
+            self.present.set(self.data.len())
+        } else {
+            self.any_null = true;
+        }
+
+        // TODO(clemens): cannot set arbitrary values for null to help compression?
+        let elem = elem.unwrap_or(0);
         self.min = cmp::min(elem, self.min);
         self.max = cmp::max(elem, self.max);
         if elem > self.last {
@@ -83,7 +106,13 @@ impl ColumnBuilder<i64> for IntColBuilder {
         // TODO(clemens): heuristic for deciding delta encoding could probably be improved
         let delta_encode = self.allow_delta_encode &&
             (self.increasing * 10 > self.data.len() as u64 * 9 && cfg!(feature = "enable_lz4"));
-        IntegerColumn::new_boxed(name, self.data, self.min, self.max, delta_encode)
+        let present = if self.any_null && self.nullable { Some(self.present) } else { None };
+        IntegerColumn::new_boxed(name,
+                                 self.data,
+                                 self.min,
+                                 self.max,
+                                 delta_encode,
+                                 present)
     }
 }
 

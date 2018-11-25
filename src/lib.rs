@@ -47,6 +47,7 @@ mod scheduler;
 mod locustdb;
 mod disk_store;
 mod stringpack;
+mod bitvec;
 pub mod unit_fmt;
 
 pub use engine::query_task::QueryOutput;
