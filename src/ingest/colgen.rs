@@ -22,7 +22,7 @@ pub fn int_markov_chain(
     elements: Vec<i64>,
     transition_probabilities: Vec<Vec<f64>>) -> Box<ColumnGenerator> {
     Box::new(MarkovChain {
-        elem: elements,
+        elem: elements.into_iter().map(Some).collect(),
         p_transition: transition_probabilities,
         s: PhantomData::<IntColBuilder>,
     })
@@ -38,7 +38,7 @@ pub fn splayed(offset: i64, coefficient: i64) -> Box<ColumnGenerator> {
 
 pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<ColumnGenerator> {
     Box::new(Weighted {
-        elem: values,
+        elem: values.into_iter().map(Some).collect(),
         weights,
         s: PhantomData::<IntColBuilder>,
     })
@@ -151,9 +151,9 @@ impl ColumnGenerator for UniformInteger {
         let mut rng = seeded_rng(seed);
         let mut builder = IntColBuilder::default();
         for _ in 0..length {
-            builder.push(&rng.gen_range::<i64>(self.low, self.high));
+            builder.push(&Some(rng.gen_range::<i64>(self.low, self.high)));
         }
-        ColumnBuilder::<i64>::finalize(builder, name)
+        ColumnBuilder::<Option<i64>>::finalize(builder, name)
     }
 }
 
@@ -167,12 +167,12 @@ impl ColumnGenerator for Splayed {
         let mut rng = seeded_rng(partition);
         let mut builder = IntColBuilder::default();
         for _ in 0..length {
-            builder.push(&rng.gen_range::<i64>(
+            builder.push(&Some(rng.gen_range::<i64>(
                 self.offset + self.coefficient * length as i64 * partition as i64,
                 self.offset + self.coefficient * length as i64 * (partition as i64 + 1),
-            ));
+            )));
         }
-        ColumnBuilder::<i64>::finalize(builder, name)
+        ColumnBuilder::<Option<i64>>::finalize(builder, name)
     }
 }
 
@@ -232,7 +232,7 @@ impl ColumnGenerator for IncrementingInteger {
     fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
         let mut builder = IntColBuilder::default();
         for i in seed as i64 * length as i64..length as i64 * (seed as i64 + 1) {
-            builder.push(&i);
+            builder.push(&Some(i));
         }
         builder.finalize(name)
     }

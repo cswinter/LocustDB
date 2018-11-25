@@ -163,6 +163,7 @@ fn deserialize_column(data: &[u8]) -> Column {
     let codec = column.get_codec().unwrap().iter().map(|op| {
         use storage_format_capnp::codec_op::Which::*;
         match op.which().unwrap() {
+            Nullable(_) => CodecOp::Nullable,
             Add(add) => {
                 let add = add.unwrap();
                 CodecOp::Add(deserialize_type(add.get_type().unwrap()), add.get_amount())
@@ -295,6 +296,7 @@ fn serialize_column(col: &Column) -> Vec<u8> {
             for (i, &op) in col.codec().ops().iter().enumerate() {
                 let mut capnp_op = codec.reborrow().get(i as u32);
                 match op {
+                    CodecOp::Nullable => capnp_op.set_nullable(()),
                     CodecOp::Add(t, amount) => {
                         let mut add = capnp_op.init_add();
                         add.set_type(encoding_type_to_capnp(t));

@@ -24,6 +24,7 @@ pub struct Options {
     extractors: IngestionTransform,
     ignore_cols: HashSet<String>,
     always_string: HashSet<String>,
+    allow_nulls: bool,
     unzip: bool,
 }
 
@@ -37,6 +38,7 @@ impl Options {
             extractors: HashMap::new(),
             ignore_cols: HashSet::new(),
             always_string: HashSet::new(),
+            allow_nulls: false,
             unzip: filename.ends_with(".gz"),
         }
     }
@@ -63,6 +65,11 @@ impl Options {
 
     pub fn with_always_string(mut self, always_string: &[&str]) -> Options {
         self.always_string = always_string.into_iter().map(|&x| x.to_owned()).collect();
+        self
+    }
+
+    pub fn allow_nulls(mut self) -> Options {
+        self.allow_nulls = true;
         self
     }
 }
@@ -97,7 +104,7 @@ fn auto_ingest<T>(ldb: &InnerLocustDB, records: T, colnames: &[String], opts: &O
     where T: Iterator<Item=csv::StringRecord> {
     let ignore = colnames.iter().map(|x| opts.ignore_cols.contains(x)).collect::<Vec<_>>();
     let string = colnames.iter().map(|x| opts.always_string.contains(x)).collect::<Vec<_>>();
-    let mut raw_cols = (0..colnames.len()).map(|_| RawCol::new()).collect::<Vec<_>>();
+    let mut raw_cols = (0..colnames.len()).map(|_| RawCol::new(opts.allow_nulls)).collect::<Vec<_>>();
     let mut row_num = 0usize;
     for row in records {
         for (i, val) in row.iter().enumerate() {
@@ -167,16 +174,18 @@ struct RawCol {
     lhex: bool,
     uhex: bool,
     string_bytes: usize,
+    allow_null: bool,
 }
 
 impl RawCol {
-    fn new() -> RawCol {
+    fn new(allow_null: bool) -> RawCol {
         RawCol {
             types: ColType::nothing(),
             values: IndexedPackedStrings::default(),
             lhex: true,
             uhex: true,
             string_bytes: 0,
+            allow_null,
         }
     }
 
@@ -196,11 +205,11 @@ impl RawCol {
             let mut builder = IntColBuilder::default();
             for s in self.values.iter() {
                 let int = if s.is_empty() {
-                    0
+                    if self.allow_null { None } else { Some(0) }
                 } else if let Ok(int) = s.parse::<i64>() {
-                    int
+                    Some(int)
                 } else if let Ok(float) = s.parse::<f64>() {
-                    float as i64
+                    Some(float as i64)
                 } else {
                     unreachable!("{} should be parseable as int or float. {} {:?}", s, name, self.types)
                 };
@@ -217,7 +226,7 @@ impl RawCol {
     fn extract(&mut self, name: &str, extractor: extractor::Extractor) -> Arc<Column> {
         let mut builder = IntColBuilder::default();
         for s in self.values.iter() {
-            builder.push(&extractor(s));
+            builder.push(&Some(extractor(s)));
         }
         self.clear();
         builder.finalize(name)

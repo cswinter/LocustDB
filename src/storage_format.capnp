@@ -37,6 +37,7 @@ struct CodecOp {
         lz4 @5 :LZ4;
         unpackStrings @6 :Void;
         unhexpackStrings @7 :UnhexpackStrings;
+        nullable  @8 :Void;
     }
 }
 

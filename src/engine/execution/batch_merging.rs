@@ -257,19 +257,25 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             })
         } else { // Select query
             // TODO(clemens): make this work for differently aliased columns (need to send through query planner)
-            ensure!(
-                        batch1.projection  == batch2.projection,
-                        "Different projections in select batches ({:?}, {:?})",
-                        &batch1.projection, &batch2.projection
-                    );
+            ensure!(batch1.projection  == batch2.projection,
+                    "Different projections in select batches ({:?}, {:?})",
+                    &batch1.projection, &batch2.projection);
             let mut result = Vec::with_capacity(batch1.columns.len());
+            let show = batch1.show || batch2.show;
             for (mut col1, col2) in batch1.columns.into_iter().zip(batch2.columns) {
+                if show {
+                    println!("Merging columns");
+                    println!("{}", col1.display());
+                    println!("{}", col2.display());
+                }
                 let count = if col1.len() >= limit { 0 } else {
                     min(col2.len(), limit - col1.len())
                 };
                 if let Some(newcol) = col1.append_all(&*col2, count) {
+                    if show { println!("{}", newcol.display()); }
                     result.push(newcol)
                 } else {
+                    if show { println!("{}", col1.display()); }
                     result.push(col1)
                 }
             }

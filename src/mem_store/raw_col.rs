@@ -60,8 +60,8 @@ impl MixedCol {
             for v in self.data {
                 match v {
                     RawVal::Str(_) => panic!("Unexpected string in int column!"),
-                    RawVal::Int(i) => builder.push(&i),
-                    RawVal::Null => builder.push(&0),
+                    RawVal::Int(i) => builder.push(&Some(i)),
+                    RawVal::Null => builder.push(&None),
                 }
             }
             builder.finalize(name)

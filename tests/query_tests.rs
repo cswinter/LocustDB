@@ -29,8 +29,10 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/edge_cases.csv", "default")
-            .with_partition_size(3)));
+            .with_partition_size(3)
+            .allow_nulls()));
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
+    // let result = block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
@@ -56,6 +58,26 @@ fn test_select_string() {
         &[
             vec!["Adam".into()],
             vec!["Adam".into()]
+        ],
+    )
+}
+
+// TODO(clemens): enable once sort works on nullable columns
+// #[test]
+fn test_select_nullable_integer() {
+    test_query_ec(
+        "SELECT nullable_int FROM default ORDER BY id;",
+        &[
+            vec![Int(-1)],
+            vec![Int(-40)],
+            vec![Null],
+            vec![Null],
+            vec![Int(10)],
+            vec![Null],
+            vec![Null],
+            vec![Int(20)],
+            vec![Null],
+            vec![Int(13)],
         ],
     )
 }
