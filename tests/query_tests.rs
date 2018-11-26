@@ -62,22 +62,21 @@ fn test_select_string() {
     )
 }
 
-// TODO(clemens): enable once sort works on nullable columns
-// #[test]
+#[test]
 fn test_select_nullable_integer() {
     test_query_ec(
-        "SELECT nullable_int FROM default ORDER BY id;",
+        "SELECT nullable_int FROM default ORDER BY id DESC;",
         &[
-            vec![Int(-1)],
-            vec![Int(-40)],
+            vec![Int(13)],
+            vec![Null],
+            vec![Int(20)],
             vec![Null],
             vec![Null],
             vec![Int(10)],
             vec![Null],
             vec![Null],
-            vec![Int(20)],
-            vec![Null],
-            vec![Int(13)],
+            vec![Int(-40)],
+            vec![Int(-1)],
         ],
     )
 }

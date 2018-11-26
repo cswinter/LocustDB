@@ -59,6 +59,7 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
 
 impl<'a> Data<'a> for NullableVec<i64> {
     fn cast_ref_i64(&self) -> &[i64] { &self.data }
+    // fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { &mut self.data }
     fn to_mixed(&self) -> Vec<Val<'a>> {
         self.data.iter().enumerate().map(|(i, x)| {
             if self.present.is_set(i) { Val::Integer(*x) } else { Val::Null }
@@ -68,14 +69,17 @@ impl<'a> Data<'a> for NullableVec<i64> {
 
 impl<'a> Data<'a> for NullableVec<u32> {
     fn cast_ref_u32(&self) -> &[u32] { &self.data }
+    // fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { &mut self.data }
 }
 
 impl<'a> Data<'a> for NullableVec<u16> {
     fn cast_ref_u16(&self) -> &[u16] { &self.data }
+    // fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { &mut self.data }
 }
 
 impl<'a> Data<'a> for NullableVec<u8> {
     fn cast_ref_u8(&self) -> &[u8] { &self.data }
+    // fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { &mut self.data }
 }
 
 pub fn display_nullable_slice<T: fmt::Display>(slice: &[T], present: &[u8], max_chars: usize) -> String {

@@ -47,12 +47,13 @@ impl BufferRef<Any> {
     pub fn u16(self) -> BufferRef<u16> { self.transmute() }
     pub fn u8(self) -> BufferRef<u8> { self.transmute() }
 
-    pub fn nullable_any(&self) -> BufferRef<Nullable<Any>> { self.transmute() }
+    pub fn cast_nullable_any(&self) -> BufferRef<Nullable<Any>> { self.transmute() }
 
     pub fn nullable_u8(self) -> BufferRef<Nullable<u8>> { self.transmute() }
     pub fn nullable_u16(self) -> BufferRef<Nullable<u16>> { self.transmute() }
     pub fn nullable_u32(self) -> BufferRef<Nullable<u32>> { self.transmute() }
     pub fn nullable_i64(self) -> BufferRef<Nullable<i64>> { self.transmute() }
+    pub fn nullable_str<'a>(self) -> BufferRef<Nullable<&'a str>> { self.transmute() }
 
     pub fn scalar_i64(self) -> BufferRef<Scalar<i64>> { self.transmute() }
     pub fn scalar_str<'a>(self) -> BufferRef<Scalar<&'a str>> { self.transmute() }
@@ -96,6 +97,7 @@ impl BufferRef<usize> {
 
 impl<T> BufferRef<Nullable<T>> {
     pub fn cast_non_nullable(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
+    pub fn nullable_any(self) -> BufferRef<Nullable<Any>> { unsafe { mem::transmute(self) } }
 }
 
 impl<T: Clone> BufferRef<T> {
@@ -121,7 +123,7 @@ impl TypedBufferRef {
 
     pub fn nullable_any<'a>(&self) -> Result<BufferRef<Nullable<Any>>, QueryError> {
         ensure!(self.tag.is_nullable(), "{:?} is not nullable", self.tag);
-        Ok(self.buffer.nullable_any())
+        Ok(self.buffer.cast_nullable_any())
     }
 
     pub fn str<'a>(&self) -> Result<BufferRef<&'a str>, QueryError> {

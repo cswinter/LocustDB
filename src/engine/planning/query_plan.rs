@@ -36,10 +36,13 @@ pub enum QueryPlan {
     ReadBuffer { buffer: TypedBufferRef },
 
     /// Combines a vector with a null map.
-    Nullable { data: Box<QueryPlan>, present: Box<QueryPlan> },
+    AssembleNullable { data: Box<QueryPlan>, present: Box<QueryPlan> },
 
     /// Combines a vector with the null map of another vector.
     PropagateNullability { nullable: Box<QueryPlan>, data: Box<QueryPlan> },
+
+    /// Combines a vector with a null map where none of the elements are null.
+    MakeNullable { data: Box<QueryPlan> },
 
     /// Resolves dictionary indices to their original string value.
     DictLookup {
@@ -178,6 +181,9 @@ pub enum QueryPlan {
         t: EncodingType,
         len: usize,
     },
+
+    /// Merges `lhs` and `rhs` such that the resulting vector contains an element from lhs at position `i` iff `take_left[i] == 1`.
+    MergeKeep { take_left: Box<QueryPlan>, lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
 }
 
 impl QueryPlan {
@@ -219,11 +225,17 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         }
         QueryPlan::ColumnSection { name, section, t, .. } =>
             VecOperator::read_column_data(name, section, result.named_buffer("column", t).any()),
-        QueryPlan::Nullable { data, present } => {
+        QueryPlan::AssembleNullable { data, present } => {
             let data = prepare(*data, result)?;
             VecOperator::nullable(data,
                                   prepare(*present, result)?.u8()?,
                                   result.named_buffer("nullable", data.tag.nullable()))?
+        }
+        QueryPlan::MakeNullable { data } => {
+            let data = prepare(*data, result)?;
+            VecOperator::make_nullable(data,
+                                       result.buffer_u8("present"),
+                                       result.named_buffer("nullable", data.tag.nullable()))?
         }
         QueryPlan::PropagateNullability { nullable, data } => {
             let data = prepare(*data, result)?;
@@ -424,6 +436,20 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
                 n, desc)?
         }
         QueryPlan::ReadBuffer { buffer } => return Ok(buffer),
+        QueryPlan::MergeKeep { take_left, lhs, rhs } => {
+            let mut lhs = prepare(*lhs, result)?;
+            let mut rhs = prepare(*rhs, result)?;
+            if lhs.tag.is_nullable() && !rhs.tag.is_nullable() {
+                rhs = prepare(make_nullable(rhs), result)?;
+            } else if !lhs.tag.is_nullable() && rhs.tag.is_nullable() {
+                lhs = prepare(make_nullable(lhs), result)?;
+            }
+            VecOperator::merge_keep(
+                prepare(*take_left, result)?.u8()?,
+                lhs,
+                rhs,
+                result.named_buffer("merged", lhs.tag))?
+        }
     };
     result.push(operation);
     if signature != [0; 16] {
@@ -787,12 +813,17 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&buffer.buffer.i.to_ne_bytes());
                 ReadBuffer { buffer }
             }
-            Nullable { data, present } => {
+            AssembleNullable { data, present } => {
                 let (data, s1) = replace_common_subexpression(*data, executor);
                 let (present, s2) = replace_common_subexpression(*present, executor);
                 hasher.input(&s1);
                 hasher.input(&s2);
-                Nullable { data, present }
+                AssembleNullable { data, present }
+            }
+            MakeNullable { data } => {
+                let (data, s1) = replace_common_subexpression(*data, executor);
+                hasher.input(&s1);
+                MakeNullable { data }
             }
             PropagateNullability { nullable, data } => {
                 let (data, s1) = replace_common_subexpression(*data, executor);
@@ -1067,6 +1098,15 @@ fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -
                 hasher.input(&discriminant_value(&t).to_ne_bytes());
                 ConstantExpand { value, t, len }
             }
+            QueryPlan::MergeKeep { take_left, lhs, rhs } => {
+                let (take_left, s3) = replace_common_subexpression(*take_left, executor);
+                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
+                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
+                hasher.input(&s1);
+                hasher.input(&s2);
+                hasher.input(&s3);
+                QueryPlan::MergeKeep { take_left, lhs, rhs }
+            }
         };
 
         hasher.result(&mut signature);
@@ -1202,7 +1242,7 @@ fn try_bitpacking(
             if subtract_offset {
                 decode_plan = decode_plan + scalar_i64(min, true);
             }
-            decode_plan = syntax::cast(decode_plan,  plan_type.encoding_type());
+            decode_plan = syntax::cast(decode_plan, plan_type.encoding_type());
             if let Some(codec) = plan_type.codec.clone() {
                 decode_plan = codec.decode(decode_plan);
             }

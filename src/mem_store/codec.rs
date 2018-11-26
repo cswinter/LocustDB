@@ -123,7 +123,7 @@ impl Codec {
                 CodecOp::Nullable => {
                     let present = stack.pop().unwrap();
                     let data = stack.pop().unwrap();
-                    nullable(data, present)
+                    assemble_nullable(data, present)
                 }
                 CodecOp::Add(_, x) => stack.pop().unwrap() + scalar_i64(x, true),
                 CodecOp::Delta(_) => delta_decode(stack.pop().unwrap()),
@@ -337,7 +337,7 @@ impl CodecOp {
 
     fn is_elementwise_decodable(&self) -> bool {
         match self {
-            CodecOp::Nullable => true,
+            CodecOp::Nullable => false,
             CodecOp::Add(_, _) => true,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
