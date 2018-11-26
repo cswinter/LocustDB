@@ -214,8 +214,9 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 if ileft == final_sort_col_index1 && iright == final_sort_col_index2 {
                     projection.push(merged_final_sort_col.any());
                 } else {
-                    let merged = executor.named_buffer("merged_cols", left[ileft].tag);
-                    executor.push(VecOperator::merge_keep(merge_ops, left[ileft], right[iright], merged)?);
+                    let merged = query_plan::prepare(
+                        query_syntax::merge_keep(merge_ops.tagged(), left[ileft], right[iright]),
+                        &mut executor)?;
                     projection.push(merged.any());
                     merges.insert((ileft, iright), merged.any());
                 }

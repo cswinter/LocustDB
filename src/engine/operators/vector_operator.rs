@@ -12,6 +12,7 @@ use mem_store::*;
 use locustdb_derive::reify_types;
 use QueryError;
 
+use super::assemble_nullable::AssembleNullable;
 use super::binary_operator::*;
 use super::bit_unpack::BitUnpackOperator;
 use super::bool_op::*;
@@ -30,24 +31,24 @@ use super::functions::*;
 use super::hashmap_grouping::HashMapGrouping;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
 use super::indices::Indices;
+use super::make_nullable::MakeNullable;
 use super::map_operator::MapOperator;
 use super::merge::Merge;
 use super::merge_aggregate::MergeAggregate;
 use super::merge_deduplicate::MergeDeduplicate;
 use super::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
 use super::merge_drop::MergeDrop;
-use super::merge_keep::MergeKeep;
+use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
-use super::propagate_nullability::PropagateNullability;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
-use super::nullable::MakeNullable;
+use super::propagate_nullability::PropagateNullability;
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
 use super::scalar_i64::ScalarI64;
 use super::scalar_str::ScalarStr;
-use super::select::Select;
+use super::select::*;
 use super::slice_pack::*;
 use super::slice_unpack::*;
 use super::sort_by::SortBy;
@@ -116,9 +117,19 @@ impl<'a> VecOperator<'a> {
                     present: BufferRef<u8>,
                     nullable_data: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         match data.tag {
+            EncodingType::U8 => Ok(Box::new(AssembleNullable { data: data.u8()?, present, nullable_data: nullable_data.nullable_u8()? })),
+            EncodingType::I64 => Ok(Box::new(AssembleNullable { data: data.i64()?, present, nullable_data: nullable_data.nullable_i64()? })),
+            _ => Err(fatal!("nullable not implemented for type {:?}", data.tag)),
+        }
+    }
+
+    pub fn make_nullable(data: TypedBufferRef,
+                         present: BufferRef<u8>,
+                         nullable_data: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        match data.tag {
             EncodingType::U8 => Ok(Box::new(MakeNullable { data: data.u8()?, present, nullable_data: nullable_data.nullable_u8()? })),
             EncodingType::I64 => Ok(Box::new(MakeNullable { data: data.i64()?, present, nullable_data: nullable_data.nullable_i64()? })),
-            _ => Err(fatal!("nullable not implemented for type {:?}", data.tag)),
+            _ => Err(fatal!("make_nullable not implemented for type {:?}", data.tag)),
         }
     }
 
@@ -213,7 +224,9 @@ impl<'a> VecOperator<'a> {
         reify_types! {
             "select";
             input, output: PrimitiveUSize;
-            Ok(Box::new(Select { input, indices, output }))
+            Ok(Box::new(Select { input, indices, output }));
+            input, output: NullablePrimitive;
+            Ok(Box::new(SelectNullable { input, indices, output }))
         }
     }
 
@@ -698,6 +711,8 @@ impl<'a> VecOperator<'a> {
                       merged_out: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
                 "merge_keep";
+                left, right, merged_out: NullablePrimitive;
+                Ok(Box::new(MergeKeepNullable { merge_ops, left, right, merged: merged_out }));
                 left, right, merged_out: Primitive;
                 Ok(Box::new(MergeKeep { merge_ops, left, right, merged: merged_out }))
         }

@@ -1,6 +1,7 @@
 pub mod vector_operator;
 pub mod comparator;
 
+mod assemble_nullable;
 mod binary_operator;
 mod bit_unpack;
 mod bool_op;
@@ -20,6 +21,7 @@ mod functions;
 mod hashmap_grouping;
 mod hashmap_grouping_byte_slices;
 mod indices;
+mod make_nullable;
 mod map_operator;
 mod merge;
 mod merge_aggregate;
@@ -29,7 +31,6 @@ mod merge_keep;
 mod merge_partitioned;
 mod nonzero_compact;
 mod nonzero_indices;
-mod nullable;
 mod numeric_operators;
 mod parameterized_vec_vec_int_op;
 mod propagate_nullability;

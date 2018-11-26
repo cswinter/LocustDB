@@ -75,6 +75,15 @@ impl<'a> Scratchpad<'a> {
         })
     }
 
+    pub fn get_mut_nullable<T: VecData<T> + 'a>(&self, index: BufferRef<Nullable<T>>) -> (RefMut<Vec<T>>, RefMut<Vec<u8>>) {
+        (self.get_mut(index.cast_non_nullable()),
+         self.get_mut(BufferRef {
+             i: self.null_maps[index.i].unwrap(),
+             name: "null_map",
+             t: PhantomData::<u8>,
+         }))
+    }
+
     pub fn get_data_mut<T: VecData<T> + 'a>(&self, index: BufferRef<Nullable<T>>) -> RefMut<Vec<T>> {
         self.get_mut(index.cast_non_nullable())
     }
@@ -85,24 +94,36 @@ impl<'a> Scratchpad<'a> {
 
     pub fn get_nullable<T: VecData<T> + 'a>(&self, index: BufferRef<Nullable<T>>) -> (Ref<[T]>, Ref<[u8]>) {
         let data = self.get(index.cast_non_nullable());
-        let present_index = BufferRef {
-            i: self.null_maps[index.i].unwrap(),
-            name: "null_map",
-            t: PhantomData::<u8>,
-        };
-        let present = self.get(present_index);
+        let present = self.get_null_map(index.nullable_any());
         (data, present)
     }
 
-    pub fn get_null_map(&self, index: BufferRef<Any>) -> Option<Ref<[u8]>> {
-        self.null_maps[index.i].map(|i| {
-            let present_index = BufferRef {
-                i,
-                name: "null_map",
-                t: PhantomData::<u8>,
-            };
-            self.get(present_index)
-        })
+    pub fn get_null_map(&self, index: BufferRef<Nullable<Any>>) -> Ref<[u8]> {
+        match self.null_maps[index.i] {
+            Some(null_map_index) => {
+                let present_index = BufferRef {
+                    i: null_map_index,
+                    name: "null_map",
+                    t: PhantomData::<u8>,
+                };
+                self.get(present_index)
+            }
+            None => Ref::map(self.get_any(index.any()), |x| x.cast_ref_null_map()),
+        }
+    }
+
+    pub fn try_get_null_map(&self, index: BufferRef<Any>) -> Option<Ref<[u8]>> {
+        match self.null_maps[index.i] {
+            Some(null_map_index) => {
+                let present_index = BufferRef {
+                    i: null_map_index,
+                    name: "null_map",
+                    t: PhantomData::<u8>,
+                };
+                Some(self.get(present_index))
+            }
+            None => None,
+        }
     }
 
     pub fn collect_aliased(&mut self,
@@ -164,6 +185,25 @@ impl<'a> Scratchpad<'a> {
     pub fn set<T: VecData<T> + 'a>(&mut self, index: BufferRef<T>, vec: Vec<T>) {
         assert!(!self.pinned[self.resolve(&index)], "Trying to set pinned buffer {}", index);
         *self.buffer_mut(index) = RefCell::new(Data::owned(vec));
+    }
+
+    pub fn set_nullable<T: VecData<T> + 'a>(&mut self, index: BufferRef<Nullable<T>>, data: Vec<T>, present: Vec<u8>) {
+        assert!(!self.pinned[self.resolve(&index)], "Trying to set pinned buffer {}", index);
+        match self.null_maps[index.i] {
+            Some(nm_index) => *self.buffer_mut(BufferRef {
+                i: nm_index,
+                name: "present",
+                t: PhantomData::<u8>,
+            }) = RefCell::new(Box::new(present)),
+            None => {
+                self.buffers.push(RefCell::new(Box::new(present)));
+                self.aliases.push(None);
+                self.pinned.push(false);
+                self.null_maps.push(None);
+                self.null_maps[index.i] = Some(self.buffers.len() - 1);
+            }
+        }
+        *self.buffer_mut(index) = RefCell::new(Box::new(data));
     }
 
     pub fn set_data<T: VecData<T> + 'a>(&mut self, index: BufferRef<Nullable<T>>, vec: Vec<T>) {

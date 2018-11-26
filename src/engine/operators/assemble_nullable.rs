@@ -1,13 +1,13 @@
 use engine::*;
 
 #[derive(Debug)]
-pub struct MakeNullable<T> {
+pub struct AssembleNullable<T> {
     pub data: BufferRef<T>,
     pub present: BufferRef<u8>,
     pub nullable_data: BufferRef<Nullable<T>>,
 }
 
-impl<'a, T: GenericIntVec<T>> VecOperator<'a> for MakeNullable<T> {
+impl<'a, T: GenericIntVec<T>> VecOperator<'a> for AssembleNullable<T> {
     fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>) {}
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
