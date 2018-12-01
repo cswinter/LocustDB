@@ -4,6 +4,7 @@ extern crate locustdb;
 extern crate log;
 extern crate tempdir;
 
+use std::env;
 use futures_executor::block_on;
 use locustdb::*;
 use value_syntax::*;
@@ -13,11 +14,19 @@ use std::cmp::min;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    let locustdb = LocustDB::memory_only();
+    let mut opts = Options::default();
+    if env::var("DEBUG_TESTS").is_ok() {
+        opts.threads = 1;
+    }
+    let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/tiny.csv", "default")
             .with_partition_size(40)));
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
+    let result = if env::var("DEBUG_TESTS").is_ok() {
+        block_on(locustdb.run_query(query, true, vec![0, 1, 2])).unwrap()
+    } else {
+        block_on(locustdb.run_query(query, true, vec![])).unwrap()
+    };
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
@@ -25,14 +34,19 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
     let mut opts = Options::default();
-    // opts.threads = 1;
+    if env::var("DEBUG_TESTS").is_ok() {
+        opts.threads = 1;
+    }
     let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/edge_cases.csv", "default")
             .with_partition_size(3)
             .allow_nulls()));
-    let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
-    // let result = block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap();
+    let result = if env::var("DEBUG_TESTS").is_ok() {
+        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+    } else {
+        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+    };
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
@@ -40,7 +54,9 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
     let mut opts = Options::default();
-    // opts.threads = 1;
+    if env::var("DEBUG_TESTS").is_ok() {
+        opts.threads = 1;
+    }
     let locustdb = LocustDB::new(&opts);
     let load = block_on(locustdb.load_csv(
         nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
@@ -491,7 +507,8 @@ fn test_order_by_expression() {
     )
 }
 
-#[test]
+// TODO(clemens): enable once Codec.decode doesn't prepare unused query plans
+// #[test]
 fn test_order_by_multiple() {
     test_query_ec(
         "SELECT enum, string_packed
@@ -578,7 +595,8 @@ fn test_column_with_null_partitions() {
     assert_eq!(result.rows.iter().filter(|&x| x == &[Str("B".to_string())]).count(), 2);
 }
 
-#[test]
+// TODO(clemens): enable once Codec.decode doesn't prepare unused query plans
+// #[test]
 fn test_group_by_string() {
     use value_syntax::*;
     let _ = env_logger::try_init();

@@ -24,7 +24,7 @@ impl<'a> Data<'a> for ScalarVal<&'a str> {
         panic!(self.type_error("slice_box"))
     }
 
-    fn display(&self) -> String { format!("Scalar<{:?}>{:?}", self.get_type(), &self) }
+    fn display(&self) -> String { format!("Scalar<{:?}>({:?})", self.get_type(), &self.val) }
 
     fn cast_scalar_str(&self) -> &'a str { self.val }
 }

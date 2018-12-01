@@ -3,9 +3,12 @@ extern crate proc_macro;
 #[macro_use]
 extern crate quote;
 extern crate syn;
+#[macro_use] extern crate lazy_static;
+extern crate regex;
 
 mod reify_types;
 mod enum_syntax;
+mod ast_builder;
 
 use self::proc_macro::TokenStream;
 
@@ -18,3 +21,6 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
 pub fn enum_syntax(input: TokenStream) -> TokenStream {
     enum_syntax::enum_syntax(input)
 }
+
+#[proc_macro_derive(ASTBuilder, attributes(newstyle, input, internal, output))]
+pub fn ast_builder(input: TokenStream) -> TokenStream { ast_builder::ast_builder(input) }

@@ -46,6 +46,10 @@ impl<'a> QueryExecutor<'a> {
         self.named_buffer(name, EncodingType::Str).str().unwrap()
     }
 
+    pub fn buffer_str2(&mut self, name: &'static str) -> BufferRef<&'static str> {
+        self.named_buffer(name, EncodingType::Str).str().unwrap()
+    }
+
     pub fn buffer_usize(&mut self, name: &'static str) -> BufferRef<usize> {
         self.named_buffer(name, EncodingType::USize).usize().unwrap()
     }
@@ -66,7 +70,7 @@ impl<'a> QueryExecutor<'a> {
         self.named_buffer(name, EncodingType::ScalarI64).scalar_i64().unwrap()
     }
 
-    pub fn buffer_scalar_str(&mut self, name: &'static str) -> BufferRef<Scalar<&'a str>> {
+    pub fn buffer_scalar_str<'b>(&mut self, name: &'static str) -> BufferRef<Scalar<&'b str>> {
         self.named_buffer(name, EncodingType::ScalarStr).scalar_str().unwrap()
     }
 
@@ -87,6 +91,7 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub fn last_buffer(&self) -> TypedBufferRef { self.last_buffer }
+    pub fn set_last_buffer(&mut self, buffer: TypedBufferRef) { self.last_buffer = buffer; }
 
     pub fn push(&mut self, op: Box<VecOperator<'a> + 'a>) {
         self.ops.push(op);
@@ -155,6 +160,9 @@ impl<'a> QueryExecutor<'a> {
 
         // Group operators into stages
         let mut visited = vec![false; self.ops.len()];
+        let mut dependencies_visited = vec![false; self.ops.len()];
+        let mut topo_pushed = vec![false; self.ops.len()];
+        let mut stage = vec![-1i32; self.ops.len()];
         let mut stages = vec![];
         loop {
             // Find an op that hasn't been assigned to a stage yet
@@ -172,6 +180,7 @@ impl<'a> QueryExecutor<'a> {
             let mut stream = false;
             while let Some(current) = to_visit.pop() {
                 let op = &self.ops[current];
+                stage[current] = stages.len() as i32;
                 ops.push(current);
 
                 // Find producers that can be streamed
@@ -201,9 +210,40 @@ impl<'a> QueryExecutor<'a> {
                     }
                 }
             }
-            ops.sort();
             let mut has_streaming_producer = false;
-            let ops = ops.into_iter().map(|op| {
+
+            // Topological sort of ops
+            let mut total_order = vec![];
+            while let Some(op) = ops.pop() {
+                if !dependencies_visited[op] {
+                    dependencies_visited[op] = true;
+                    ops.push(op);
+                    for input in self.ops[op].inputs() {
+                        for &parent in &producers[input.i] {
+                            if stage[parent] == stages.len() as i32 {
+                                if parent == op {
+                                    panic!("CYCLE: {}", self.ops[op].display(true));
+                                }
+                                ops.push(parent);
+                            }
+                        }
+                        if self.ops[op].mutates(input.i) {
+                            for &consumer in &consumers[input.i] {
+                                if consumer != op && stage[consumer] == stages.len() as i32 {
+                                    ops.push(consumer);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if !topo_pushed[op] {
+                        topo_pushed[op] = true;
+                        total_order.push(op);
+                    }
+                }
+            }
+
+            let ops = total_order.into_iter().map(|op| {
                 has_streaming_producer |= self.ops[op].is_streaming_producer();
                 let mut streaming_consumers = false;
                 let mut block_consumers = false;
@@ -216,13 +256,16 @@ impl<'a> QueryExecutor<'a> {
                     }
                 }
                 (op, streaming_consumers && !block_consumers)
-            }).collect();
+            }).collect::<Vec<_>>();
+
             // TODO(clemens): Make streaming possible for stages reading from temp results
-            stages.push(ExecutorStage { ops, stream: stream && has_streaming_producer })
+            stages.push(ExecutorStage {
+                ops,
+                stream: stream && has_streaming_producer,
+            })
         }
 
-        // TODO(clemens): need some kind of "anti-dependency" or "consume" marker to enforce ordering of e.g. NonzeroCompact
-        // ## Topological Sort ##
+        // ## Topological Sort of Stages ##
         // Determine what stage each operation is in
         let mut stage_for_op = vec![0; self.ops.len()];
         for (i, stage) in stages.iter().enumerate() {
@@ -239,6 +282,11 @@ impl<'a> QueryExecutor<'a> {
                 for input in self.ops[op].inputs() {
                     for &producer in &producers[input.i] {
                         deps.insert(stage_for_op[producer]);
+                    }
+                    if self.ops[op].mutates(input.i) {
+                        for &consumer in &consumers[input.i] {
+                            deps.insert(stage_for_op[consumer]);
+                        }
                     }
                 }
             }

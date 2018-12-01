@@ -65,6 +65,13 @@ impl BufferRef<Any> {
     fn transmute<T>(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
 }
 
+// TODO(clemens): remove this, temporary hack because ther is no buffer type for ByteSlices
+impl BufferRef<Any> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::Null)
+    }
+}
+
 impl BufferRef<u32> {
     pub fn tagged(&self) -> TypedBufferRef {
         TypedBufferRef::new(self.any(), EncodingType::U32)
@@ -77,9 +84,21 @@ impl BufferRef<u8> {
     }
 }
 
+impl<'a> BufferRef<&'a str> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::Str)
+    }
+}
+
 impl BufferRef<i64> {
     pub fn tagged(&self) -> TypedBufferRef {
         TypedBufferRef::new(self.any(), EncodingType::I64)
+    }
+}
+
+impl<'a> BufferRef<Scalar<&'a str>> {
+    pub fn tagged(&self) -> TypedBufferRef {
+        TypedBufferRef::new(self.any(), EncodingType::ScalarStr)
     }
 }
 
