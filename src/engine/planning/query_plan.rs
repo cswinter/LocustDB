@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::i64;
-use std::marker::PhantomData;
 use std::result::Result;
 use std::sync::Arc;
 
@@ -14,94 +13,6 @@ use mem_store::*;
 use mem_store::column::DataSource;
 use syntax::expression::*;
 use locustdb_derive::ASTBuilder;
-
-
-#[derive(Default)]
-pub struct QueryPlanner {
-    operations: Vec<QueryPlan>,
-    buffer_to_operation: Vec<Option<usize>>,
-    cache: HashMap<[u8; 16], Vec<TypedBufferRef>>,
-    checkpoint: usize,
-    cache_checkpoint: HashMap<[u8; 16], Vec<TypedBufferRef>>,
-
-    buffer_count: usize,
-    shared_buffers: HashMap<&'static str, TypedBufferRef>,
-}
-
-impl QueryPlanner {
-    pub fn prepare<'a>(&self) -> Result<QueryExecutor<'a>, QueryError> {
-        let mut result = QueryExecutor::default();
-        result.set_buffer_count(self.buffer_count);
-        for operation in &self.operations {
-            prepare(operation.clone(), &mut result)?;
-        }
-        Ok(result)
-    }
-
-    pub fn checkpoint(&mut self) {
-        self.checkpoint = self.operations.len();
-        self.cache_checkpoint = self.cache.clone();
-    }
-
-    pub fn reset(&mut self) {
-        self.operations.truncate(self.checkpoint);
-        std::mem::swap(&mut self.cache, &mut self.cache_checkpoint);
-    }
-
-    pub fn resolve(&self, buffer: &TypedBufferRef) -> &QueryPlan {
-        let op_index = self.buffer_to_operation[buffer.buffer.i]
-            .expect(&format!("Not entry found for {:?}", buffer));
-        &self.operations[op_index]
-    }
-
-    fn enable_common_subexpression_elimination(&self) -> bool { true }
-
-    fn named_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
-        let buffer = TypedBufferRef::new(BufferRef { i: self.buffer_count, name, t: PhantomData }, tag);
-        self.buffer_count += 1;
-        buffer
-    }
-
-    fn buffer_str<'a>(&mut self, name: &'static str) -> BufferRef<&'a str> {
-        self.named_buffer(name, EncodingType::Str).str().unwrap()
-    }
-
-    fn buffer_usize(&mut self, name: &'static str) -> BufferRef<usize> {
-        self.named_buffer(name, EncodingType::USize).usize().unwrap()
-    }
-
-    fn buffer_i64(&mut self, name: &'static str) -> BufferRef<i64> {
-        self.named_buffer(name, EncodingType::I64).i64().unwrap()
-    }
-
-    fn buffer_u32(&mut self, name: &'static str) -> BufferRef<u32> {
-        self.named_buffer(name, EncodingType::U32).u32().unwrap()
-    }
-
-    fn buffer_u8(&mut self, name: &'static str) -> BufferRef<u8> {
-        self.named_buffer(name, EncodingType::U8).u8().unwrap()
-    }
-
-    fn buffer_scalar_i64(&mut self, name: &'static str) -> BufferRef<Scalar<i64>> {
-        self.named_buffer(name, EncodingType::ScalarI64).scalar_i64().unwrap()
-    }
-
-    fn buffer_scalar_str<'a>(&mut self, name: &'static str) -> BufferRef<Scalar<&'a str>> {
-        self.named_buffer(name, EncodingType::ScalarStr).scalar_str().unwrap()
-    }
-
-    fn buffer_scalar_string(&mut self, name: &'static str) -> BufferRef<Scalar<String>> {
-        self.named_buffer(name, EncodingType::ScalarString).scalar_string().unwrap()
-    }
-
-    fn shared_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
-        if self.shared_buffers.get(name).is_none() {
-            let buffer = self.named_buffer(name, tag);
-            self.shared_buffers.insert(name, buffer);
-        }
-        self.shared_buffers[name]
-    }
-}
 
 
 #[derive(Debug, Clone, ASTBuilder)]
@@ -426,63 +337,6 @@ pub enum QueryPlan {
         #[output(t = "lhs")]
         merged: TypedBufferRef,
     },
-}
-
-// TODO(clemens): make method private?
-pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
-    trace!("{:?}", &plan);
-    let operation: Box<VecOperator> = match plan {
-        QueryPlan::Select { plan, indices, selection } => VecOperator::select(plan, indices, selection)?,
-        QueryPlan::ColumnSection { name, section, column_section, .. } => VecOperator::read_column_data(name, section, column_section.any()),
-        QueryPlan::AssembleNullable { data, present, nullable } => VecOperator::nullable(data, present, nullable)?,
-        QueryPlan::MakeNullable { data, present, nullable } => VecOperator::make_nullable(data, present, nullable)?,
-        QueryPlan::PropagateNullability { nullable, data, nullable_data } => VecOperator::propagate_nullability(nullable.nullable_any()?, data, nullable_data)?,
-        QueryPlan::Filter { plan, select, filtered } => VecOperator::filter(plan, select, filtered)?,
-        QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),
-        QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value.to_string(), pinned_string, scalar_str),
-        QueryPlan::NullVec { len, nulls } => VecOperator::null_vec(len, nulls.any()),
-        QueryPlan::ConstantExpand { value, len, expanded } => VecOperator::constant_expand(value, len, expanded)?,
-        QueryPlan::DictLookup { indices, offset_len, backing_store, decoded } => VecOperator::dict_lookup(indices, offset_len, backing_store, decoded)?,
-        QueryPlan::InverseDictLookup { offset_len, backing_store, constant, decoded } => VecOperator::inverse_dict_lookup(offset_len, backing_store, constant, decoded),
-        QueryPlan::Cast { input, casted } => VecOperator::type_conversion(input, casted)?,
-        QueryPlan::DeltaDecode { plan, delta_decoded } => VecOperator::delta_decode(plan, delta_decoded)?,
-        QueryPlan::LZ4Decode { bytes, decoded_len, decoded } => VecOperator::lz4_decode(bytes, decoded_len, decoded)?,
-        QueryPlan::UnpackStrings { bytes, unpacked_strings } => VecOperator::unpack_strings(bytes, unpacked_strings),
-        QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
-        QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } =>
-            VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
-        QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
-        QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
-        QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
-        QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,
-        QueryPlan::NonzeroIndices { plan, nonzero_indices } => VecOperator::nonzero_indices(plan, nonzero_indices)?,
-        QueryPlan::NonzeroCompact { plan, compacted } => VecOperator::nonzero_compact(plan, compacted)?,
-        QueryPlan::BitPack { lhs, rhs, shift, bit_packed } => VecOperator::bit_shift_left_add(lhs, rhs, bit_packed, shift),
-        QueryPlan::BitUnpack { plan, shift, width, unpacked } => VecOperator::bit_unpack(plan, shift, width, unpacked),
-        QueryPlan::SlicePack { plan, stride, offset, packed } => VecOperator::slice_pack(plan, stride, offset, packed)?,
-        QueryPlan::SliceUnpack { plan, stride, offset, unpacked } => VecOperator::slice_unpack(plan, stride, offset, unpacked)?,
-        QueryPlan::LessThan { lhs, rhs, less_than } => VecOperator::less_than(lhs, rhs, less_than)?,
-        QueryPlan::LessThanEquals { lhs, rhs, less_than_equals } => VecOperator::less_than_equals(lhs, rhs, less_than_equals)?,
-        QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals)?,
-        QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals)?,
-        QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum)?,
-        QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference)?,
-        QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product)?,
-        QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division)?,
-        QueryPlan::Modulo { lhs, rhs, modulo } => VecOperator::modulo(lhs, rhs, modulo)?,
-        QueryPlan::Or { lhs, rhs, or } => VecOperator::or(lhs, rhs, or),
-        QueryPlan::And { lhs, rhs, and } => VecOperator::and(lhs, rhs, and),
-        QueryPlan::Not { input, not } => VecOperator::not(input, not),
-        QueryPlan::ToYear { timestamp, year } => VecOperator::to_year(timestamp, year),
-        QueryPlan::Regex { plan, regex, matches } => VecOperator::regex(plan, &regex, matches),
-        QueryPlan::Indices { plan, indices } => VecOperator::indices(plan, indices),
-        QueryPlan::SortBy { ranking, indices, desc, stable, permutation } => VecOperator::sort_by(ranking, indices, desc, stable, permutation)?,
-        QueryPlan::TopN { ranking, n, desc, tmp_keys, top_n } => VecOperator::top_n(ranking, tmp_keys, n, desc, top_n)?,
-        QueryPlan::Connect { input, output } => VecOperator::identity(input, output),
-        QueryPlan::MergeKeep { take_left, lhs, rhs, merged } => VecOperator::merge_keep(take_left, lhs, rhs, merged)?,
-    };
-    result.push(operation);
-    Ok(result.last_buffer())
 }
 
 pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
@@ -958,5 +812,62 @@ fn try_bitpacking(
             None
         }
     )
+}
+
+// TODO(clemens): make method private?
+pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
+    trace!("{:?}", &plan);
+    let operation: Box<VecOperator> = match plan {
+        QueryPlan::Select { plan, indices, selection } => VecOperator::select(plan, indices, selection)?,
+        QueryPlan::ColumnSection { name, section, column_section, .. } => VecOperator::read_column_data(name, section, column_section.any()),
+        QueryPlan::AssembleNullable { data, present, nullable } => VecOperator::nullable(data, present, nullable)?,
+        QueryPlan::MakeNullable { data, present, nullable } => VecOperator::make_nullable(data, present, nullable)?,
+        QueryPlan::PropagateNullability { nullable, data, nullable_data } => VecOperator::propagate_nullability(nullable.nullable_any()?, data, nullable_data)?,
+        QueryPlan::Filter { plan, select, filtered } => VecOperator::filter(plan, select, filtered)?,
+        QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),
+        QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value.to_string(), pinned_string, scalar_str),
+        QueryPlan::NullVec { len, nulls } => VecOperator::null_vec(len, nulls.any()),
+        QueryPlan::ConstantExpand { value, len, expanded } => VecOperator::constant_expand(value, len, expanded)?,
+        QueryPlan::DictLookup { indices, offset_len, backing_store, decoded } => VecOperator::dict_lookup(indices, offset_len, backing_store, decoded)?,
+        QueryPlan::InverseDictLookup { offset_len, backing_store, constant, decoded } => VecOperator::inverse_dict_lookup(offset_len, backing_store, constant, decoded),
+        QueryPlan::Cast { input, casted } => VecOperator::type_conversion(input, casted)?,
+        QueryPlan::DeltaDecode { plan, delta_decoded } => VecOperator::delta_decode(plan, delta_decoded)?,
+        QueryPlan::LZ4Decode { bytes, decoded_len, decoded } => VecOperator::lz4_decode(bytes, decoded_len, decoded)?,
+        QueryPlan::UnpackStrings { bytes, unpacked_strings } => VecOperator::unpack_strings(bytes, unpacked_strings),
+        QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
+        QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } =>
+            VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
+        QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
+        QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
+        QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
+        QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,
+        QueryPlan::NonzeroIndices { plan, nonzero_indices } => VecOperator::nonzero_indices(plan, nonzero_indices)?,
+        QueryPlan::NonzeroCompact { plan, compacted } => VecOperator::nonzero_compact(plan, compacted)?,
+        QueryPlan::BitPack { lhs, rhs, shift, bit_packed } => VecOperator::bit_shift_left_add(lhs, rhs, bit_packed, shift),
+        QueryPlan::BitUnpack { plan, shift, width, unpacked } => VecOperator::bit_unpack(plan, shift, width, unpacked),
+        QueryPlan::SlicePack { plan, stride, offset, packed } => VecOperator::slice_pack(plan, stride, offset, packed)?,
+        QueryPlan::SliceUnpack { plan, stride, offset, unpacked } => VecOperator::slice_unpack(plan, stride, offset, unpacked)?,
+        QueryPlan::LessThan { lhs, rhs, less_than } => VecOperator::less_than(lhs, rhs, less_than)?,
+        QueryPlan::LessThanEquals { lhs, rhs, less_than_equals } => VecOperator::less_than_equals(lhs, rhs, less_than_equals)?,
+        QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals)?,
+        QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals)?,
+        QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum)?,
+        QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference)?,
+        QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product)?,
+        QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division)?,
+        QueryPlan::Modulo { lhs, rhs, modulo } => VecOperator::modulo(lhs, rhs, modulo)?,
+        QueryPlan::Or { lhs, rhs, or } => VecOperator::or(lhs, rhs, or),
+        QueryPlan::And { lhs, rhs, and } => VecOperator::and(lhs, rhs, and),
+        QueryPlan::Not { input, not } => VecOperator::not(input, not),
+        QueryPlan::ToYear { timestamp, year } => VecOperator::to_year(timestamp, year),
+        QueryPlan::Regex { plan, regex, matches } => VecOperator::regex(plan, &regex, matches),
+        QueryPlan::Indices { plan, indices } => VecOperator::indices(plan, indices),
+        QueryPlan::SortBy { ranking, indices, desc, stable, permutation } => VecOperator::sort_by(ranking, indices, desc, stable, permutation)?,
+        QueryPlan::TopN { ranking, n, desc, tmp_keys, top_n } => VecOperator::top_n(ranking, tmp_keys, n, desc, top_n)?,
+        QueryPlan::Connect { input, output } => VecOperator::identity(input, output),
+        QueryPlan::MergeKeep { take_left, lhs, rhs, merged } => VecOperator::merge_keep(take_left, lhs, rhs, merged)?,
+    };
+    result.push(operation);
+    Ok(result.last_buffer())
 }
 
