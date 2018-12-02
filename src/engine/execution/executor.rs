@@ -178,39 +178,120 @@ impl<'a> QueryExecutor<'a> {
 
             let mut ops = vec![];
             let mut stream = false;
+            let mut transitive_input = vec![false; self.ops.len()];
+            let mut transitive_output = vec![false; self.ops.len()];
+            let mut consumers_to_revisit = vec![];
+            let mut producers_to_revisit = vec![];
             while let Some(current) = to_visit.pop() {
                 let op = &self.ops[current];
-                stage[current] = stages.len() as i32;
+                let current_stage = stages.len() as i32;
+                stage[current] = current_stage;
                 ops.push(current);
+                // Mark any new transitive inputs/outputs
+                let mut inputs = vec![current];
+                while let Some(op) = inputs.pop() {
+                    if transitive_input[op] { continue; }
+                    transitive_input[op] = true;
+                    for input in self.ops[op].inputs() {
+                        for &p in &producers[input.i] {
+                            inputs.push(p);
+                        }
+                    }
+                }
+                let mut outputs = vec![current];
+                while let Some(op) = outputs.pop() {
+                    // Could do cycle detect here
+                    if transitive_output[op] { continue; }
+                    transitive_output[op] = true;
+                    for output in self.ops[op].outputs() {
+                        for &c in &consumers[output.i] {
+                            outputs.push(c);
+                        }
+                    }
+                }
 
                 // Find producers that can be streamed
                 for input in op.inputs() {
                     if op.can_stream_input(input.i) {
-                        for &p in &producers[input.i] {
-                            let can_stream =
-                                self.ops[p].can_stream_output(input.i) && !streaming_disabled[p];
-                            if !visited[p] && can_stream {
-                                to_visit.push(p);
-                                visited[p] = true;
-                                stream = stream || self.ops[p].allocates();
+                        'l1: for &p in &producers[input.i] {
+                            if visited[p] { continue; }
+                            let can_stream = self.ops[p].can_stream_output(input.i) && !streaming_disabled[p];
+                            if !can_stream { continue; }
+                            // Including op in this stage would introduce a cycle if any of the
+                            // outputs is consumed by a transitive input to stage
+                            for output in self.ops[p].outputs() {
+                                for &c in &consumers[output.i] {
+                                    if transitive_input[c] && stage[c] != current_stage {
+                                        producers_to_revisit.push(p);
+                                        continue 'l1;
+                                    }
+                                }
                             }
+
+                            visited[p] = true;
+                            to_visit.push(p);
+                            stream = stream || self.ops[p].allocates();
                         }
                     }
                 }
                 // Find consumers that can be streamed to
                 for output in op.outputs() {
                     if op.can_stream_output(output.i) && !streaming_disabled[current] {
-                        for &consumer in &consumers[output.i] {
-                            if !visited[consumer] && self.ops[consumer].can_stream_input(output.i) {
-                                to_visit.push(consumer);
-                                visited[consumer] = true;
-                                stream = stream || self.ops[consumer].allocates();
+                        'l2: for &consumer in &consumers[output.i] {
+                            if visited[consumer] { continue; }
+                            if !self.ops[consumer].can_stream_input(output.i) { continue; }
+                            // Including op in this stage would introduce a cycle if any of the
+                            // inputs is produces by a transitive output to stage
+                            for input in self.ops[consumer].inputs() {
+                                for &p in &producers[input.i] {
+                                    if transitive_output[p] && stage[p] != current_stage {
+                                        consumers_to_revisit.push(consumer);
+                                        continue 'l2;
+                                    }
+                                }
                             }
+
+                            visited[consumer] = true;
+                            to_visit.push(consumer);
+                            stream = stream || self.ops[consumer].allocates();
                         }
                     }
                 }
+
+                // Maybe some of the operations that were excluded because they would introduce
+                // cycle are now possible to include because additional operations are part of
+                // the stage.
+                if to_visit.is_empty() {
+                    let ptr = std::mem::replace(&mut producers_to_revisit, vec![]);
+                    'l3: for p in ptr {
+                        for output in self.ops[p].outputs() {
+                            for &c in &consumers[output.i] {
+                                if transitive_input[c] && stage[c] != current_stage {
+                                    producers_to_revisit.push(p);
+                                    continue 'l3;
+                                }
+                            }
+                        }
+                        visited[p] = true;
+                        to_visit.push(p);
+                        stream = stream || self.ops[p].allocates();
+                    }
+                    let ctr = std::mem::replace(&mut consumers_to_revisit, vec![]);
+                    'l4: for consumer in ctr {
+                        for input in self.ops[consumer].inputs() {
+                            for &p in &producers[input.i] {
+                                if transitive_output[p] && stage[p] != current_stage {
+                                    consumers_to_revisit.push(consumer);
+                                    continue 'l4;
+                                }
+                            }
+                        }
+                        visited[consumer] = true;
+                        to_visit.push(consumer);
+                        stream = stream || self.ops[consumer].allocates();
+                    }
+                }
             }
-            let mut has_streaming_producer = false;
 
             // Topological sort of ops
             let mut total_order = vec![];
@@ -222,7 +303,7 @@ impl<'a> QueryExecutor<'a> {
                         for &parent in &producers[input.i] {
                             if stage[parent] == stages.len() as i32 {
                                 if parent == op {
-                                    panic!("CYCLE: {}", self.ops[op].display(true));
+                                    panic!("TRIVIAL CYCLE: {}", self.ops[op].display(true));
                                 }
                                 ops.push(parent);
                             }
@@ -243,6 +324,8 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
+            // Determine if stage/ops should be streaming
+            let mut has_streaming_producer = false;
             let ops = total_order.into_iter().map(|op| {
                 has_streaming_producer |= self.ops[op].is_streaming_producer();
                 let mut streaming_consumers = false;
@@ -276,16 +359,20 @@ impl<'a> QueryExecutor<'a> {
 
         // Determine what stages each stage depends on
         let mut dependencies = Vec::new();
-        for stage in &stages {
+        for (istage, stage) in stages.iter().enumerate() {
             let mut deps = HashSet::new();
             for &(op, _) in &stage.ops {
                 for input in self.ops[op].inputs() {
                     for &producer in &producers[input.i] {
-                        deps.insert(stage_for_op[producer]);
+                        if stage_for_op[producer] != istage {
+                            deps.insert(stage_for_op[producer]);
+                        }
                     }
                     if self.ops[op].mutates(input.i) {
                         for &consumer in &consumers[input.i] {
-                            deps.insert(stage_for_op[consumer]);
+                            if stage_for_op[consumer] != istage {
+                                deps.insert(stage_for_op[consumer]);
+                            }
                         }
                     }
                 }
@@ -294,28 +381,38 @@ impl<'a> QueryExecutor<'a> {
         }
 
         let mut visited = vec![false; stages.len()];
+        let mut committed = vec![false; stages.len()];
         let mut total_order = Vec::new();
         fn visit(stage_index: usize,
                  dependencies: &[HashSet<usize>],
-                 stage: &[ExecutorStage],
+                 stages: &[ExecutorStage],
                  visited: &mut Vec<bool>,
+                 committed: &mut Vec<bool>,
                  total_order: &mut Vec<ExecutorStage>) {
-            if visited[stage_index] { return; }
+            if committed[stage_index] { return; }
             trace!(">>> Visit {}", stage_index);
+            if visited[stage_index] {
+                error!("CYCLE DETECTED");
+                for (i, _) in stages.iter().enumerate() {
+                    error!("Stage {} Dependencies {:?}", i, &dependencies[i]);
+                }
+                return;
+            }
             visited[stage_index] = true;
             for &dependency in &dependencies[stage_index] {
-                visit(dependency, dependencies, stage, visited, total_order);
+                visit(dependency, dependencies, stages, visited, committed, total_order);
             }
             trace!(">>> Commit {}", stage_index);
-            total_order.push(stage[stage_index].clone());
+            committed[stage_index] = true;
+            total_order.push(stages[stage_index].clone());
         };
-        stages.iter().enumerate().for_each(|(i, _)| {
+        stages.iter().enumerate().for_each(|(i, stage)| {
             trace!(">>> Stage {}", i);
             trace!("Dependencies: {:?}", &dependencies[i]);
-            for (op, _) in &stages[i].ops {
+            for (op, _) in &stage.ops {
                 trace!("{}", &self.ops[*op].display(true));
             }
-            visit(i, &dependencies, &stages, &mut visited, &mut total_order)
+            visit(i, &dependencies, &stages, &mut visited, &mut committed, &mut total_order)
         });
         total_order
     }

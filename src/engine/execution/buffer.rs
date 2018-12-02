@@ -138,7 +138,7 @@ fn color_code(s: &str, i: usize) -> String {
         "\x1b[35m",
         "\x1b[36m",
     ];
-    if std::env::var("DEBUG_TESTS").is_ok() {
+    if std::env::var("COLOR").is_ok() {
         format!("{}{}\x1b[0m", colors[i % colors.len()], s)
     } else {
         s.to_string()
