@@ -8,7 +8,7 @@ use mem_store::column::DataSource;
 use engine::*;
 use errors::QueryError;
 
-
+#[derive(Debug)]
 pub struct BatchResult<'a> {
     pub columns: Vec<BoxedData<'a>>,
     pub projection: Vec<usize>,
@@ -34,11 +34,16 @@ impl<'a> BatchResult<'a> {
             info_str = format!("{}:columns[{}].len = {}", info_str, i, select.len()).to_owned();
         }
         let all_lengths_same = lengths.iter().all(|x| *x == lengths[0]);
-        if all_lengths_same {
-            Ok(())
-        } else {
-            Err(fatal!(info_str))
+        if !all_lengths_same {
+            return Err(fatal!(info_str));
         }
+        for (i, _) in &self.aggregations {
+            if *i >= self.columns.len() {
+                return Err(fatal!("Aggregation exceeds number of columns ({}): {:?}", self.columns.len(), &self.aggregations));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn into_columns(self) -> HashMap<String, Arc<DataSource + 'a>> {
@@ -65,10 +70,17 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         "Unequal number of order by in left ({}) and right ({}) batch result.",
         batch1.order_by.len(), batch2.order_by.len(),
     );
+    ensure!(
+        batch1.aggregations.len()  == batch2.aggregations.len(),
+        "Unequal number of aggregations in left ({:?}) and right ({:?}) batch result.",
+        batch1.aggregations.len(), batch2.aggregations.len(),
+    );
+
+
+    let mut executor = QueryExecutor::default();
 
     if !batch1.aggregations.is_empty() {
         // Aggregation query
-        let mut executor = QueryExecutor::default();
         let left = batch1.columns.into_iter()
             .map(|vec| set(&mut executor, "left", vec))
             .collect::<Vec<_>>();
@@ -124,7 +136,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         };
 
         let mut aggregates = Vec::with_capacity(batch1.aggregations.len());
-        for (&(ileft, aggregator), &(iright, _)) in batch1.aggregations.iter().zip(batch1.aggregations.iter()) {
+        for (&(ileft, aggregator), &(iright, _)) in batch1.aggregations.iter().zip(batch2.aggregations.iter()) {
             let left = left[ileft].i64()?;
             let right = right[iright].i64()?;
             let aggregated = executor.buffer_i64("aggregated");
@@ -140,7 +152,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         executor.run(1, &mut results, batch1.show || batch2.show);
 
         let (columns, projection, aggregations, _) = results.collect_aliased(&group_by_cols, &aggregates, &[]);
-        Ok(BatchResult {
+        let result = BatchResult {
             columns,
             projection,
             aggregations,
@@ -153,12 +165,13 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 urb.extend(batch2.unsafe_referenced_buffers.into_iter());
                 urb
             },
-        })
+        };
+        result.validate()?;
+        Ok(result)
     } else {
         // No aggregation
         if !batch1.order_by.is_empty() {
             // Sort query
-            let mut executor = QueryExecutor::default();
             let left = batch1.columns.into_iter()
                 .map(|vec| set(&mut executor, "left", vec))
                 .collect::<Vec<_>>();
@@ -215,7 +228,12 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     projection.push(merged_final_sort_col.any());
                 } else {
                     let merged = query_plan::prepare(
-                        query_syntax::merge_keep(merge_ops.tagged(), left[ileft], right[iright]),
+                        QueryPlan::MergeKeep {
+                            take_left: merge_ops,
+                            lhs: left[ileft],
+                            rhs: right[iright],
+                            merged: executor.named_buffer("merged", left[ileft].tag),
+                        },
                         &mut executor)?;
                     projection.push(merged.any());
                     merges.insert((ileft, iright), merged.any());

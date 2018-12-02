@@ -3,14 +3,9 @@ use engine::*;
 
 #[derive(Debug)]
 pub struct Compact<T, U> {
-    data: BufferRef<T>,
-    select: BufferRef<U>,
-}
-
-impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> Compact<T, U> {
-    pub fn boxed(data: BufferRef<T>, select: BufferRef<U>) -> BoxedOperator<'a> {
-        Box::new(Compact { data, select })
-    }
+    pub data: BufferRef<T>,
+    pub select: BufferRef<U>,
+    pub compacted: BufferRef<T>,
 }
 
 impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact<T, U> {
@@ -28,10 +23,15 @@ impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact<T,
         data.truncate(j);
     }
 
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.alias(self.data, self.compacted);
+    }
+
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any(), self.select.any()] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.compacted.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
+    fn mutates(&self, i: usize) -> bool { i == self.data.i }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

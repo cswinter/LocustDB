@@ -30,6 +30,7 @@ use super::filter::Filter;
 use super::functions::*;
 use super::hashmap_grouping::HashMapGrouping;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
+use super::identity::Identity;
 use super::indices::Indices;
 use super::make_nullable::MakeNullable;
 use super::map_operator::MapOperator;
@@ -42,10 +43,11 @@ use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
-use super::propagate_nullability::PropagateNullability;
+use super::null_vec::NullVec;
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
+use super::propagate_nullability::PropagateNullability;
 use super::scalar_i64::ScalarI64;
 use super::scalar_str::ScalarStr;
 use super::select::*;
@@ -73,6 +75,7 @@ pub trait VecOperator<'a> {
     fn outputs(&self) -> Vec<BufferRef<Any>>;
     fn can_stream_input(&self, i: usize) -> bool;
     fn can_stream_output(&self, i: usize) -> bool;
+    fn mutates(&self, _i: usize) -> bool { false }
     fn allocates(&self) -> bool;
     fn is_streaming_producer(&self) -> bool { false }
     fn has_more(&self) -> bool { false }
@@ -80,6 +83,7 @@ pub trait VecOperator<'a> {
 
     fn display(&self, full: bool) -> String {
         let mut s = String::new();
+        // TODO(clemens): spacing is off if ansi color codes are used
         if self.display_output() {
             write!(s, "{:<12} = ", self.outputs().iter().map(|o| format!("{}", o)).join(", ")).unwrap();
         }
@@ -143,6 +147,13 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn identity(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {
+        Box::new(Identity {
+            input: input.any(),
+            output: output.any(),
+        })
+    }
+
     pub fn dict_lookup(indices: TypedBufferRef,
                        dict_indices: BufferRef<u64>,
                        dict_data: BufferRef<u8>,
@@ -156,8 +167,8 @@ impl<'a> VecOperator<'a> {
 
     #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(encoded: BufferRef<u8>,
-                      decoded: TypedBufferRef,
-                      decoded_len: usize) -> Result<BoxedOperator<'a>, QueryError> {
+                      decoded_len: usize,
+                      decoded: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         use super::lz4_decode::LZ4Decode;
         use std::io::Read;
         let reader: Box<Read> = Box::new(&[] as &[u8]);
@@ -170,8 +181,8 @@ impl<'a> VecOperator<'a> {
 
     #[cfg(not(feature = "enable_lz4"))]
     pub fn lz4_decode(_: BufferRef<u8>,
-                      _: TypedBufferRef,
-                      _: usize) -> Result<BoxedOperator<'a>, QueryError> {
+                      _: usize,
+                      _: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         panic!("LZ4 is not enabled in this build of LocustDB. Recompile with `features enable_lz4`")
     }
 
@@ -180,10 +191,10 @@ impl<'a> VecOperator<'a> {
     }
 
     pub fn unhexpack_strings(packed: BufferRef<u8>,
-                             unpacked: BufferRef<&'a str>,
-                             stringstore: BufferRef<u8>,
                              uppercase: bool,
-                             total_bytes: usize) -> BoxedOperator<'a> {
+                             total_bytes: usize,
+                             stringstore: BufferRef<u8>,
+                             unpacked: BufferRef<&'a str>) -> BoxedOperator<'a> {
         Box::new(UnhexpackStrings::<'a> { packed, unpacked, stringstore, uppercase, total_bytes, iterator: None, has_more: true })
     }
 
@@ -203,8 +214,8 @@ impl<'a> VecOperator<'a> {
     }
 
     pub fn encode_int_const(constant: BufferRef<Scalar<i64>>,
-                            output: BufferRef<Scalar<i64>>,
-                            codec: Codec) -> BoxedOperator<'a> {
+                            codec: Codec,
+                            output: BufferRef<Scalar<i64>>) -> BoxedOperator<'a> {
         Box::new(EncodeIntConstant { constant, output, codec })
     }
 
@@ -240,6 +251,10 @@ impl<'a> VecOperator<'a> {
 
     pub fn scalar_str(val: String, pinned: BufferRef<Scalar<String>>, output: BufferRef<Scalar<&'a str>>) -> BoxedOperator<'a> {
         Box::new(ScalarStr { val, pinned, output })
+    }
+
+    pub fn null_vec(len: usize, output: BufferRef<Any>) -> BoxedOperator<'a> {
+        Box::new(NullVec { len, output })
     }
 
     pub fn constant_expand(val: i64, len: usize, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
@@ -341,22 +356,21 @@ impl<'a> VecOperator<'a> {
 
     pub fn addition(lhs: TypedBufferRef,
                     rhs: TypedBufferRef,
-                    output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+                    output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "addition";
             lhs: ScalarI64, rhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output: output.i64()?, op: PhantomData::<Addition<_, _>> }));
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Addition<_, _>> }));
             lhs: IntegerNoU64, rhs: ScalarI64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs, output: output.i64()?, op: PhantomData::<Addition<_, _>> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
-            Ok(Box::new(BinaryOperator { lhs, rhs, output: output.i64()?, op: PhantomData::<Addition<_, _>> }))
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }))
         }
     }
 
     pub fn subtraction(lhs: TypedBufferRef,
                        rhs: TypedBufferRef,
-                       output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
-        let output = output.i64()?;
+                       output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "subtraction";
             lhs: ScalarI64, rhs: IntegerNoU64;
@@ -370,8 +384,7 @@ impl<'a> VecOperator<'a> {
 
     pub fn multiplication(lhs: TypedBufferRef,
                           rhs: TypedBufferRef,
-                          output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
-        let output = output.i64()?;
+                          output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "multiplication";
             lhs: ScalarI64, rhs: IntegerNoU64;
@@ -385,8 +398,7 @@ impl<'a> VecOperator<'a> {
 
     pub fn division(lhs: TypedBufferRef,
                     rhs: TypedBufferRef,
-                    output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
-        let output = output.i64()?;
+                    output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "division";
             lhs: ScalarI64, rhs: IntegerNoU64;
@@ -400,8 +412,7 @@ impl<'a> VecOperator<'a> {
 
     pub fn modulo(lhs: TypedBufferRef,
                   rhs: TypedBufferRef,
-                  output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
-        let output = output.i64()?;
+                  output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "modulo";
             lhs: ScalarI64, rhs: IntegerNoU64;
@@ -413,12 +424,12 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn or(lhs: BufferRef<u8>, rhs: BufferRef<u8>) -> BoxedOperator<'a> {
-        BooleanOperator::<BooleanOr>::compare(lhs, rhs)
+    pub fn or(lhs: BufferRef<u8>, rhs: BufferRef<u8>, output: BufferRef<u8>) -> BoxedOperator<'a> {
+        BooleanOperator::<BooleanOr>::compare(lhs, rhs, output)
     }
 
-    pub fn and(lhs: BufferRef<u8>, rhs: BufferRef<u8>) -> BoxedOperator<'a> {
-        BooleanOperator::<BooleanAnd>::compare(lhs, rhs)
+    pub fn and(lhs: BufferRef<u8>, rhs: BufferRef<u8>, output: BufferRef<u8>) -> BoxedOperator<'a> {
+        BooleanOperator::<BooleanAnd>::compare(lhs, rhs, output)
     }
 
     pub fn bit_shift_left_add(lhs: BufferRef<i64>,
@@ -428,11 +439,11 @@ impl<'a> VecOperator<'a> {
         Box::new(ParameterizedVecVecIntegerOperator::<BitShiftLeftAdd> { lhs, rhs, output, parameter: shift_amount, op: PhantomData })
     }
 
-    pub fn bit_unpack(inner: BufferRef<i64>, output: BufferRef<i64>, shift: u8, width: u8) -> BoxedOperator<'a> {
+    pub fn bit_unpack(inner: BufferRef<i64>, shift: u8, width: u8, output: BufferRef<i64>) -> BoxedOperator<'a> {
         Box::new(BitUnpackOperator { input: inner, output, shift, width })
     }
 
-    pub fn slice_pack(input: TypedBufferRef, output: BufferRef<Any>, stride: usize, offset: usize) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn slice_pack(input: TypedBufferRef, stride: usize, offset: usize, output: BufferRef<Any>) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::Str = input.tag {
             return Ok(Box::new(SlicePackString { input: input.str()?, output, stride, offset }));
         }
@@ -443,7 +454,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn slice_unpack(input: BufferRef<Any>, output: TypedBufferRef, stride: usize, offset: usize) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn slice_unpack(input: BufferRef<Any>, stride: usize, offset: usize, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::Str = output.tag {
             return Ok(Box::new(SliceUnpackString { input, output: output.str()?, stride, offset }));
         }
@@ -477,8 +488,8 @@ impl<'a> VecOperator<'a> {
 
     pub fn summation(input: TypedBufferRef,
                      grouping: TypedBufferRef,
-                     output: BufferRef<i64>,
-                     max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+                     max_index: BufferRef<Scalar<i64>>,
+                     output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "summation";
             input: IntegerNoU64, grouping: Integer;
@@ -486,7 +497,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn count(grouping: TypedBufferRef, output: BufferRef<u32>, max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn count(grouping: TypedBufferRef, max_index: BufferRef<Scalar<i64>>, output: BufferRef<u32>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "count";
             grouping: Integer;
@@ -494,7 +505,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn exists(input: TypedBufferRef, output: BufferRef<u8>, max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn exists(input: TypedBufferRef, max_index: BufferRef<Scalar<i64>>, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "exists";
             input: Integer;
@@ -502,11 +513,11 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn nonzero_compact(data: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn nonzero_compact(data: TypedBufferRef, compacted: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "nonzero_compact";
-            data: Integer;
-            Ok(Box::new(NonzeroCompact { data }))
+            data, compacted: Integer;
+            Ok(Box::new(NonzeroCompact { data, compacted }))
         }
     }
 
@@ -518,19 +529,19 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn compact(data: TypedBufferRef, select: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn compact(data: TypedBufferRef, select: TypedBufferRef, compacted: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "compact";
-            data: Integer, select: Integer;
-            Ok(Compact::boxed(data, select))
+            data, compacted: Integer, select: Integer;
+            Ok(Box::new(Compact { data, select, compacted }))
         }
     }
 
     pub fn hash_map_grouping(raw_grouping_key: TypedBufferRef,
+                             max_cardinality: usize,
                              unique_out: TypedBufferRef,
                              grouping_key_out: BufferRef<u32>,
-                             cardinality_out: BufferRef<Scalar<i64>>,
-                             max_cardinality: usize) -> Result<BoxedOperator<'a>, QueryError> {
+                             cardinality_out: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::ByteSlices(columns) = raw_grouping_key.tag {
             return Ok(HashMapGroupingByteSlices::boxed(
                 raw_grouping_key.buffer, unique_out.buffer, grouping_key_out, cardinality_out, columns));
@@ -548,9 +559,9 @@ impl<'a> VecOperator<'a> {
 
     pub fn sort_by(ranking: TypedBufferRef,
                    indices: BufferRef<usize>,
-                   output: BufferRef<usize>,
                    descending: bool,
-                   stable: bool) -> Result<BoxedOperator<'a>, QueryError> {
+                   stable: bool,
+                   output: BufferRef<usize>) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::ByteSlices(_) = ranking.tag {
             return Ok(Box::new(
                 SortBySlices { ranking: ranking.any(), output, indices, descending, stable }));
@@ -564,8 +575,8 @@ impl<'a> VecOperator<'a> {
 
     pub fn top_n(input: TypedBufferRef,
                  keys: TypedBufferRef,
-                 indices_out: BufferRef<usize>,
-                 n: usize, desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+                 n: usize, desc: bool,
+                 indices_out: BufferRef<usize>) -> Result<BoxedOperator<'a>, QueryError> {
         if desc {
             reify_types! {
                 "top_n_desc";

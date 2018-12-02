@@ -1,13 +1,20 @@
 [package]
 authors = ["Clemens Winter <clemenswinter1@gmail.com>"]
+edition = "2018"
 name = "locustdb-derive"
 version = "0.1.0"
-edition = "2018"
+[dependencies]
+lazy_static = "*"
+quote = "0.6"
+regex = "*"
+
+[dependencies.proc-macro2]
+features = ["nightly"]
+version = "0.4"
+
+[dependencies.syn]
+features = ["full", "fold", "extra-traits"]
+version = "0.15"
 
 [lib]
 proc-macro = true
-
-[dependencies]
-quote = "0.6"
-syn = { version="0.15", features = ["full", "fold", "extra-traits"] }
-proc-macro2 = { version = "0.4", features = ["nightly"] }

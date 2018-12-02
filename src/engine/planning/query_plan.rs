@@ -2,12 +2,8 @@ use std::collections::HashMap;
 use std::i64;
 use std::result::Result;
 use std::sync::Arc;
-use std::ops::{Add, BitAnd, BitOr, Div};
 
 use chrono::{Datelike, NaiveDateTime};
-use crypto::digest::Digest;
-use crypto::md5::Md5;
-use itertools::Itertools;
 use regex::Regex;
 
 use ::QueryError;
@@ -16,546 +12,386 @@ use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column::DataSource;
 use syntax::expression::*;
-use self::syntax::*;
-use locustdb_derive::EnumSyntax;
+use locustdb_derive::ASTBuilder;
 
 
-type TypedPlan = (QueryPlan, Type);
-
-#[derive(Debug, Clone, EnumSyntax)]
+#[derive(Debug, Clone, ASTBuilder)]
 pub enum QueryPlan {
     /// Retrieves the buffer for the specified section of the column with name `name`.
     ColumnSection {
         name: String,
         section: usize,
+        #[nohash]
         range: Option<(i64, i64)>,
-        t: EncodingType,
+        #[output(t_provided)]
+        column_section: TypedBufferRef,
     },
-
-    /// Retrieves a specific buffer.
-    ReadBuffer { buffer: TypedBufferRef },
-
+    Connect {
+        input: TypedBufferRef,
+        output: TypedBufferRef,
+    },
     /// Combines a vector with a null map.
-    AssembleNullable { data: Box<QueryPlan>, present: Box<QueryPlan> },
-
+    AssembleNullable {
+        data: TypedBufferRef,
+        present: BufferRef<u8>,
+        #[output(t = "data.nullable")]
+        nullable: TypedBufferRef,
+    },
     /// Combines a vector with the null map of another vector.
-    PropagateNullability { nullable: Box<QueryPlan>, data: Box<QueryPlan> },
-
+    PropagateNullability {
+        nullable: TypedBufferRef,
+        data: TypedBufferRef,
+        #[output(t = "data.nullable")]
+        nullable_data: TypedBufferRef,
+    },
     /// Combines a vector with a null map where none of the elements are null.
-    MakeNullable { data: Box<QueryPlan> },
-
+    MakeNullable {
+        data: TypedBufferRef,
+        #[internal]
+        present: BufferRef<u8>,
+        #[output(t = "data.nullable")]
+        nullable: TypedBufferRef,
+    },
     /// Resolves dictionary indices to their original string value.
     DictLookup {
-        indices: Box<QueryPlan>,
-        offset_len: Box<QueryPlan>,
-        backing_store: Box<QueryPlan>,
+        indices: TypedBufferRef,
+        offset_len: BufferRef<u64>,
+        backing_store: BufferRef<u8>,
+        #[output]
+        decoded: BufferRef<&'static str>,
     },
-
     /// Determines what dictionary index a string constant corresponds to.
     InverseDictLookup {
-        offset_len: Box<QueryPlan>,
-        backing_store: Box<QueryPlan>,
-        constant: Box<QueryPlan>,
+        offset_len: BufferRef<u64>,
+        backing_store: BufferRef<u8>,
+        constant: BufferRef<Scalar<&'static str>>,
+        #[output]
+        decoded: BufferRef<Scalar<i64>>,
     },
-
     /// Casts `input` to the specified type.
     Cast {
-        input: Box<QueryPlan>,
-        target_type: EncodingType,
+        input: TypedBufferRef,
+        #[output(t_provided)]
+        casted: TypedBufferRef,
     },
-
     /// LZ4 decodes `bytes` into `decoded_len` elements of type `t`.
     LZ4Decode {
-        bytes: Box<QueryPlan>,
+        bytes: BufferRef<u8>,
         decoded_len: usize,
-        t: EncodingType,
+        #[output(t_provided)]
+        decoded: TypedBufferRef,
     },
-
     /// Decodes a byte array of tightly packed strings.
-    UnpackStrings { bytes: Box<QueryPlan> },
-
+    UnpackStrings {
+        bytes: BufferRef<u8>,
+        #[output]
+        unpacked_strings: BufferRef<&'static str>,
+    },
     /// Decodes a byte array of tightly packed, hex encoded string.
     UnhexpackStrings {
-        bytes: Box<QueryPlan>,
+        bytes: BufferRef<u8>,
         uppercase: bool,
         total_bytes: usize,
+        #[internal]
+        string_store: BufferRef<u8>,
+        #[output]
+        unpacked_strings: BufferRef<&'static str>,
     },
-
     /// Decodes delta encoded integers.
-    DeltaDecode { plan: Box<QueryPlan> },
-
+    DeltaDecode {
+        plan: TypedBufferRef,
+        #[output]
+        delta_decoded: BufferRef<i64>,
+    },
+    HashMapGrouping {
+        raw_grouping_key: TypedBufferRef,
+        max_cardinality: usize,
+        #[output(t = "raw_grouping_key")]
+        unique: TypedBufferRef,
+        #[output]
+        grouping_key: BufferRef<u32>,
+        #[output]
+        cardinality: BufferRef<Scalar<i64>>,
+    },
     /// Creates a byte vector of size `max_index` and sets all entries
     /// corresponding to `indices` to 1.
-    Exists { indices: Box<QueryPlan>, max_index: Box<QueryPlan> },
-
+    Exists {
+        indices: TypedBufferRef,
+        max_index: BufferRef<Scalar<i64>>,
+        #[output]
+        exists: BufferRef<u8>,
+    },
     /// Deletes all zero entries from `plan`.
-    NonzeroCompact { plan: Box<QueryPlan> },
-
+    NonzeroCompact {
+        plan: TypedBufferRef,
+        #[output(t = "plan")]
+        compacted: TypedBufferRef,
+    },
     /// Determines the indices of all entries in `plan` that are non-zero.
     NonzeroIndices {
-        plan: Box<QueryPlan>,
-        indices_type: EncodingType,
+        plan: TypedBufferRef,
+        #[output(t_provided)]
+        nonzero_indices: TypedBufferRef,
     },
-
     /// Deletes all entries in `plan` for which the corresponding entry in `select` is 0.
     Compact {
-        plan: Box<QueryPlan>,
-        select: Box<QueryPlan>,
+        plan: TypedBufferRef,
+        select: TypedBufferRef,
+        #[output(t = "plan")]
+        compacted: TypedBufferRef,
     },
-
-    /// Encodes `constant` according to `codec`.
-    EncodeIntConstant {
-        constant: Box<QueryPlan>,
-        codec: Codec,
-    },
-
     /// Sums `lhs` and `rhs << shift`.
     BitPack {
-        lhs: Box<QueryPlan>,
-        rhs: Box<QueryPlan>,
+        lhs: BufferRef<i64>,
+        rhs: BufferRef<i64>,
         shift: i64,
+        #[output]
+        bit_packed: BufferRef<i64>,
     },
-
     /// Retrieves the integer bit packed into `plan` at `shift..shift+width`.
-    BitUnpack { plan: Box<QueryPlan>, shift: u8, width: u8 },
-
-    SlicePack { plan: Box<QueryPlan>, stride: usize, offset: usize },
-
-    SliceUnpack {
-        plan: Box<QueryPlan>,
-        t: EncodingType,
+    BitUnpack {
+        plan: BufferRef<i64>,
+        shift: u8,
+        width: u8,
+        #[output]
+        unpacked: BufferRef<i64>,
+    },
+    SlicePack {
+        plan: TypedBufferRef,
         stride: usize,
         offset: usize,
+        #[output(shared)]
+        packed: BufferRef<Any>,
     },
-
-    LessThan { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    LessThanEquals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    Equals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    NotEquals { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-
-    Add { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    Subtract { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    Multiply { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    Divide { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    Modulo { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-
-    And { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    Or { lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-    Not { input: Box<QueryPlan> },
-
-    ToYear { timestamp: Box<QueryPlan> },
-
-    Regex { plan: Box<QueryPlan>, regex: String },
-
+    SliceUnpack {
+        plan: BufferRef<Any>,
+        stride: usize,
+        offset: usize,
+        #[output(t_provided)]
+        unpacked: TypedBufferRef,
+    },
+    Count {
+        grouping_key: TypedBufferRef,
+        max_index: BufferRef<Scalar<i64>>,
+        #[output]
+        count: BufferRef<u32>,
+    },
+    Sum {
+        grouping_key: TypedBufferRef,
+        plan: TypedBufferRef,
+        max_index: BufferRef<Scalar<i64>>,
+        #[output]
+        count: BufferRef<i64>,
+    },
+    LessThan {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        less_than: BufferRef<u8>,
+    },
+    LessThanEquals {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        less_than_equals: BufferRef<u8>,
+    },
+    Equals {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        equals: BufferRef<u8>,
+    },
+    NotEquals {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        not_equals: BufferRef<u8>,
+    },
+    Add {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        sum: BufferRef<i64>,
+    },
+    Subtract {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        difference: BufferRef<i64>,
+    },
+    Multiply {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        product: BufferRef<i64>,
+    },
+    Divide {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        division: BufferRef<i64>,
+    },
+    Modulo {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        modulo: BufferRef<i64>,
+    },
+    And {
+        lhs: BufferRef<u8>,
+        rhs: BufferRef<u8>,
+        #[output]
+        and: BufferRef<u8>,
+    },
+    Or {
+        lhs: BufferRef<u8>,
+        rhs: BufferRef<u8>,
+        #[output]
+        or: BufferRef<u8>,
+    },
+    Not {
+        input: BufferRef<u8>,
+        #[output]
+        not: BufferRef<u8>,
+    },
+    ToYear {
+        timestamp: BufferRef<i64>,
+        #[output]
+        year: BufferRef<i64>,
+    },
+    Regex {
+        plan: BufferRef<&'static str>,
+        regex: String,
+        #[output]
+        matches: BufferRef<u8>,
+    },
     /// Outputs a vector of indices from `0..plan.len()`
-    Indices { plan: Box<QueryPlan> },
-
+    Indices {
+        plan: TypedBufferRef,
+        #[output]
+        indices: BufferRef<usize>,
+    },
     /// Outputs a permutation of `indices` under which `ranking` is sorted.
     SortBy {
-        ranking: Box<QueryPlan>,
-        indices: Box<QueryPlan>,
+        ranking: TypedBufferRef,
+        indices: BufferRef<usize>,
         desc: bool,
         stable: bool,
+        #[output]
+        permutation: BufferRef<usize>,
     },
-
     /// Outputs the `n` largest/smallest elements of `ranking` and their corresponding indices.
-    TopN { ranking: Box<QueryPlan>, n: usize, desc: bool },
-
+    TopN {
+        ranking: TypedBufferRef,
+        n: usize,
+        desc: bool,
+        #[internal(t = "ranking")]
+        tmp_keys: TypedBufferRef,
+        #[output]
+        top_n: BufferRef<usize>,
+    },
     /// Outputs all elements in `plan` where the index corresponds to an entry in `indices`.
-    Select { plan: Box<QueryPlan>, indices: Box<QueryPlan> },
-
+    Select {
+        plan: TypedBufferRef,
+        indices: BufferRef<usize>,
+        #[output(t = "plan")]
+        selection: TypedBufferRef,
+    },
     /// Outputs all elements in `plan` for which the corresponding entry in `select` is nonzero.
-    Filter { plan: Box<QueryPlan>, select: Box<QueryPlan> },
-
-    EncodedGroupByPlaceholder,
-
-    Convergence(Vec<Box<QueryPlan>>),
-
-    Constant { value: RawVal, hide_value: bool },
-    ScalarI64 { value: i64, hide_value: bool },
-    ScalarStr { value: String },
-
+    Filter {
+        plan: TypedBufferRef,
+        select: BufferRef<u8>,
+        #[output(t = "plan")]
+        filtered: TypedBufferRef,
+    },
+    NullVec {
+        len: usize,
+        #[output(t_provided)]
+        nulls: TypedBufferRef,
+    },
+    ScalarI64 {
+        value: i64,
+        hide_value: bool,
+        #[output]
+        scalar_i64: BufferRef<Scalar<i64>>,
+    },
+    ScalarStr {
+        value: String,
+        #[internal]
+        pinned_string: BufferRef<Scalar<String>>,
+        #[output]
+        scalar_str: BufferRef<Scalar<&'static str>>,
+    },
     /// Outputs a vector with all values equal to `value`.
     ConstantExpand {
         value: i64,
-        t: EncodingType,
         len: usize,
+        #[output(t_provided)]
+        expanded: TypedBufferRef,
     },
-
     /// Merges `lhs` and `rhs` such that the resulting vector contains an element from lhs at position `i` iff `take_left[i] == 1`.
-    MergeKeep { take_left: Box<QueryPlan>, lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
-}
-
-impl QueryPlan {
-    fn is_constant(&self) -> bool {
-        match self {
-            QueryPlan::Constant { .. } | QueryPlan::ScalarI64 { .. }
-            | QueryPlan::ScalarStr { .. } => true,
-            _ => false,
-        }
-    }
-}
-
-pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
-    _prepare(plan, false, result)
-}
-
-pub fn prepare_no_alias(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
-    _prepare(plan, true, result)
-}
-
-fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
-    trace!("{:?}", &plan);
-    // Aliasing constants currently messes with the execution graph in ways the planner can't handle
-    let (plan, signature) = if no_alias || plan.is_constant() {
-        (plan, [0; 16])
-    } else {
-        // TODO(clemens): O(n^2) :(   use visitor pattern?
-        let (box plan, signature) = replace_common_subexpression(plan, result);
-        (plan, signature)
-    };
-    trace!("{:?} {}", &plan, to_hex_string(&signature));
-    let operation: Box<VecOperator> = match plan {
-        QueryPlan::Select { plan, indices } => {
-            let input = prepare(*plan, result)?;
-            let t = input.tag.clone();
-            VecOperator::select(input,
-                                prepare(*indices, result)?.usize()?,
-                                result.named_buffer("selection", t))?
-        }
-        QueryPlan::ColumnSection { name, section, t, .. } =>
-            VecOperator::read_column_data(name, section, result.named_buffer("column", t).any()),
-        QueryPlan::AssembleNullable { data, present } => {
-            let data = prepare(*data, result)?;
-            VecOperator::nullable(data,
-                                  prepare(*present, result)?.u8()?,
-                                  result.named_buffer("nullable", data.tag.nullable()))?
-        }
-        QueryPlan::MakeNullable { data } => {
-            let data = prepare(*data, result)?;
-            VecOperator::make_nullable(data,
-                                       result.buffer_u8("present"),
-                                       result.named_buffer("nullable", data.tag.nullable()))?
-        }
-        QueryPlan::PropagateNullability { nullable, data } => {
-            let data = prepare(*data, result)?;
-            VecOperator::propagate_nullability(prepare(*nullable, result)?.nullable_any()?,
-                                               data,
-                                               result.named_buffer("nullable", data.tag.nullable()))?
-        }
-        QueryPlan::Filter { plan, select } => {
-            let input = prepare(*plan, result)?;
-            let t = input.tag.clone();
-            VecOperator::filter(input,
-                                prepare(*select, result)?.u8()?,
-                                result.named_buffer("filtered", t))?
-        }
-        QueryPlan::Constant { ref value, hide_value } =>
-            VecOperator::constant(value.clone(), hide_value, result.buffer_raw_val("constant")),
-        QueryPlan::ScalarI64 { value, hide_value } =>
-            VecOperator::scalar_i64(value, hide_value, result.buffer_scalar_i64("int_constant")),
-        QueryPlan::ScalarStr { value } =>
-            VecOperator::scalar_str(value.to_string(),
-                                    result.buffer_scalar_string("pinned_string"),
-                                    result.buffer_scalar_str("str_constant")),
-        QueryPlan::ConstantExpand { value, t, len } =>
-            VecOperator::constant_expand(value, len, result.named_buffer("constant", t))?,
-        QueryPlan::DictLookup { indices, offset_len, backing_store } =>
-            VecOperator::dict_lookup(
-                prepare(*indices, result)?,
-                prepare(*offset_len, result)?.u64()?,
-                prepare(*backing_store, result)?.u8()?,
-                result.buffer_str("decoded"))?,
-        QueryPlan::InverseDictLookup { offset_len, backing_store, constant } =>
-            VecOperator::inverse_dict_lookup(
-                prepare(*offset_len, result)?.u64()?,
-                prepare(*backing_store, result)?.u8()?,
-                prepare(*constant, result)?.scalar_str()?,
-                result.buffer_scalar_i64("encoded")),
-        QueryPlan::Cast { input, target_type } => return propagate_nulls1(input, result, |input, result| {
-            VecOperator::type_conversion(input, result.named_buffer("casted", target_type))
-        }),
-        QueryPlan::DeltaDecode { plan } =>
-            VecOperator::delta_decode(
-                prepare(*plan, result)?,
-                result.buffer_i64("decoded"))?,
-        QueryPlan::LZ4Decode { bytes, decoded_len, t } =>
-            VecOperator::lz4_decode(
-                prepare(*bytes, result)?.u8()?,
-                result.named_buffer("decoded", t),
-                decoded_len)?,
-        QueryPlan::UnpackStrings { bytes } =>
-            VecOperator::unpack_strings(
-                prepare(*bytes, result)?.u8()?,
-                result.buffer_str("unpacked")),
-        QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes } => {
-            let stringstore = result.buffer_u8("stringstore");
-            VecOperator::unhexpack_strings(
-                prepare(*bytes, result)?.u8()?,
-                result.buffer_str("unpacked"),
-                stringstore, uppercase, total_bytes)
-        }
-        QueryPlan::Exists { indices, max_index } =>
-            VecOperator::exists(
-                prepare(*indices, result)?,
-                result.buffer_u8("exists"),
-                prepare(*max_index, result)?.scalar_i64()?)?,
-        QueryPlan::Compact { plan, select } => {
-            let inplace = prepare(*plan, result)?;
-            let op = VecOperator::compact(inplace, prepare(*select, result)?)?;
-            result.push(op);
-            return Ok(inplace);
-        }
-        QueryPlan::NonzeroIndices { plan, indices_type } =>
-            VecOperator::nonzero_indices(
-                prepare(*plan, result)?,
-                result.named_buffer("nonzero_indices", indices_type))?,
-        QueryPlan::NonzeroCompact { plan } => {
-            let inplace = prepare(*plan, result)?;
-            result.push(VecOperator::nonzero_compact(inplace)?);
-            return Ok(inplace);
-        }
-        QueryPlan::EncodeIntConstant { constant, codec } =>
-            VecOperator::encode_int_const(
-                prepare(*constant, result)?.scalar_i64()?,
-                result.buffer_scalar_i64("encoded"),
-                codec),
-        QueryPlan::BitPack { lhs, rhs, shift } =>
-            VecOperator::bit_shift_left_add(
-                prepare(*lhs, result)?.i64()?,
-                prepare(*rhs, result)?.i64()?,
-                result.buffer_i64("bitpacked"),
-                shift),
-        QueryPlan::BitUnpack { plan, shift, width } =>
-            VecOperator::bit_unpack(
-                prepare(*plan, result)?.i64()?,
-                result.buffer_i64("unpacked"),
-                shift,
-                width),
-        QueryPlan::SlicePack { plan, stride, offset } =>
-            VecOperator::slice_pack(
-                prepare(*plan, result)?,
-                result.shared_buffer("slicepack", EncodingType::ByteSlices(stride)).any(),
-                stride,
-                offset)?,
-        QueryPlan::SliceUnpack { plan, t, stride, offset } =>
-            VecOperator::slice_unpack(
-                prepare(*plan, result)?.any(),
-                result.named_buffer("unpacked", t),
-                stride,
-                offset)?,
-        QueryPlan::Convergence(plans) => {
-            let mut first = None;
-            for p in plans {
-                let x = prepare(*p, result)?;
-                if first.is_none() {
-                    first = Some(x);
-                }
-            }
-            return Ok(first.unwrap());
-        }
-        QueryPlan::LessThan { lhs, rhs } =>
-            VecOperator::less_than(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_u8("less_than"))?,
-        QueryPlan::LessThanEquals { lhs, rhs } =>
-            VecOperator::less_than_equals(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_u8("less_than_equals"))?,
-        QueryPlan::Equals { lhs, rhs } =>
-            VecOperator::equals(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_u8("equals"))?,
-        QueryPlan::NotEquals { lhs, rhs } =>
-            VecOperator::not_equals(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_u8("not_equals"))?,
-
-        QueryPlan::Add { lhs, rhs } => return propagate_nulls2(lhs, rhs, result, |lhs, rhs, result| {
-            VecOperator::addition(lhs, rhs, result.buffer_i64("addition").tagged())
-        }),
-        QueryPlan::Subtract { lhs, rhs } =>
-            VecOperator::subtraction(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_i64("subtraction").tagged())?,
-        QueryPlan::Multiply { lhs, rhs } =>
-            VecOperator::multiplication(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_i64("multiplication").tagged())?,
-        QueryPlan::Divide { lhs, rhs } =>
-            VecOperator::division(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_i64("division").tagged())?,
-        QueryPlan::Modulo { lhs, rhs } =>
-            VecOperator::modulo(
-                prepare(*lhs, result)?,
-                prepare(*rhs, result)?,
-                result.buffer_i64("modulo").tagged())?,
-
-        QueryPlan::Or { lhs, rhs } => {
-            let inplace = prepare(*lhs, result)?;
-            let op = VecOperator::or(inplace.u8()?, prepare(*rhs, result)?.u8()?);
-            result.push(op);
-            return Ok(inplace);
-        }
-        QueryPlan::And { lhs, rhs } => {
-            let inplace = prepare(*lhs, result)?;
-            let op = VecOperator::and(inplace.u8()?, prepare(*rhs, result)?.u8()?);
-            result.push(op);
-            return Ok(inplace);
-        }
-        QueryPlan::Not { input } =>
-            VecOperator::not(prepare(*input, result)?.u8()?, result.buffer_u8("negated")),
-        QueryPlan::ToYear { timestamp } =>
-            VecOperator::to_year(prepare(*timestamp, result)?.i64()?, result.buffer_i64("year")),
-        QueryPlan::Regex { plan, regex } =>
-            VecOperator::regex(prepare(*plan, result)?.str()?, &regex, result.buffer_u8("matches")),
-        QueryPlan::EncodedGroupByPlaceholder => return Ok(result.encoded_group_by().unwrap()),
-        QueryPlan::Indices { plan } => VecOperator::indices(
-            prepare(*plan, result)?,
-            result.buffer_usize("indices")),
-        QueryPlan::SortBy { ranking, indices, desc, stable } => VecOperator::sort_by(
-            prepare(*ranking, result)?,
-            prepare(*indices, result)?.usize()?,
-            result.buffer_usize("permutation"),
-            desc,
-            stable)?,
-        QueryPlan::TopN { ranking, n, desc } => {
-            let plan = prepare(*ranking, result)?;
-            VecOperator::top_n(
-                plan,
-                result.named_buffer("tmp_keys", plan.tag),
-                result.buffer_usize("top_n"),
-                n, desc)?
-        }
-        QueryPlan::ReadBuffer { buffer } => return Ok(buffer),
-        QueryPlan::MergeKeep { take_left, lhs, rhs } => {
-            let mut lhs = prepare(*lhs, result)?;
-            let mut rhs = prepare(*rhs, result)?;
-            if lhs.tag.is_nullable() && !rhs.tag.is_nullable() {
-                rhs = prepare(make_nullable(rhs), result)?;
-            } else if !lhs.tag.is_nullable() && rhs.tag.is_nullable() {
-                lhs = prepare(make_nullable(lhs), result)?;
-            }
-            VecOperator::merge_keep(
-                prepare(*take_left, result)?.u8()?,
-                lhs,
-                rhs,
-                result.named_buffer("merged", lhs.tag))?
-        }
-    };
-    result.push(operation);
-    if signature != [0; 16] {
-        result.cache_last(signature);
-    }
-    Ok(result.last_buffer())
-}
-
-fn propagate_nulls1<'a, F>(plan: Box<QueryPlan>,
-                           result: &mut QueryExecutor<'a>, op: F) -> Result<TypedBufferRef, QueryError>
-    where F: Fn(TypedBufferRef, &mut QueryExecutor<'a>) -> Result<BoxedOperator<'a>, QueryError> {
-    let plan = prepare(*plan, result)?;
-    if plan.tag.is_nullable() {
-        let operator = op(plan.forget_nullability(), result)?;
-        result.push(operator);
-        prepare(propagate_nullability(plan, result.last_buffer()), result)
-    } else {
-        let operator = op(plan, result)?;
-        result.push(operator);
-        Ok(result.last_buffer())
-    }
-}
-
-fn propagate_nulls2<'a, F>(lhs: Box<QueryPlan>,
-                           rhs: Box<QueryPlan>,
-                           result: &mut QueryExecutor<'a>, op: F) -> Result<TypedBufferRef, QueryError>
-    where F: Fn(TypedBufferRef, TypedBufferRef, &mut QueryExecutor<'a>) -> Result<BoxedOperator<'a>, QueryError> {
-    let lhs = prepare(*lhs, result)?;
-    let rhs = prepare(*rhs, result)?;
-    if lhs.tag.is_nullable() {
-        let operator = op(lhs.forget_nullability(), rhs, result)?;
-        result.push(operator);
-        prepare(propagate_nullability(lhs, result.last_buffer()), result)
-    } else {
-        let operator = op(lhs, rhs, result)?;
-        result.push(operator);
-        Ok(result.last_buffer())
-    }
+    MergeKeep {
+        take_left: BufferRef<u8>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "lhs")]
+        merged: TypedBufferRef,
+    },
 }
 
 pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
                                 max_cardinality: usize,
-                                result: &mut QueryExecutor)
+                                planner: &mut QueryPlanner)
                                 -> Result<(Option<TypedBufferRef>,
                                            TypedBufferRef,
                                            Type,
                                            BufferRef<Scalar<i64>>), QueryError> {
-    let unique_out = result.named_buffer("unique", raw_grouping_key.tag.clone());
-    let grouping_key_out = result.buffer_u32("grouping_key");
-    let cardinality_out = result.buffer_scalar_i64("cardinality");
-    result.push(
-        VecOperator::hash_map_grouping(raw_grouping_key,
-                                       unique_out,
-                                       grouping_key_out,
-                                       cardinality_out,
-                                       max_cardinality)?);
+    let (unique_out, grouping_key_out, cardinality_out) =
+        planner.hash_map_grouping(raw_grouping_key, max_cardinality);
     Ok((Some(unique_out),
-        grouping_key_out.tagged(),
+        grouping_key_out.into(),
         Type::encoded(Codec::opaque(EncodingType::U32, BasicType::Integer, false, false, true, true)),
         cardinality_out))
 }
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
-pub fn prepare_aggregation<'a>(plan: QueryPlan,
-                               plan_type: Type,
-                               grouping_key: TypedBufferRef,
-                               max_index: BufferRef<Scalar<i64>>,
-                               aggregator: Aggregator,
-                               result: &mut QueryExecutor<'a>)
-                               -> Result<(TypedBufferRef, Type), QueryError> {
-    let output_location;
-    let (operation, t): (BoxedOperator<'a>, _) = match (aggregator, plan) {
-        (Aggregator::Count, _) => {
-            output_location = result.named_buffer("count", EncodingType::U32);
-            (VecOperator::count(grouping_key,
-                                output_location.u32()?,
-                                max_index)?,
-             Type::encoded(Codec::integer_cast(EncodingType::U32)))
-        }
+pub fn prepare_aggregation(plan: TypedBufferRef,
+                           plan_type: Type,
+                           grouping_key: TypedBufferRef,
+                           max_index: BufferRef<Scalar<i64>>,
+                           aggregator: Aggregator,
+                           planner: &mut QueryPlanner)
+                           -> Result<(TypedBufferRef, Type), QueryError> {
+    Ok(match (aggregator, plan) {
+        (Aggregator::Count, _) => (
+            planner.count(grouping_key, max_index).into(),
+            Type::encoded(Codec::integer_cast(EncodingType::U32))
+        ),
         (Aggregator::Sum, mut plan) => {
-            output_location = result.named_buffer("sum", EncodingType::I64);
             if !plan_type.is_summation_preserving() {
-                plan = plan_type.codec.clone().unwrap().decode(plan);
+                plan = plan_type.codec.clone().unwrap().decode(plan, planner);
             }
-            (VecOperator::summation(prepare(plan, result)?,
-                                    grouping_key,
-                                    output_location.i64()?,
-                                    max_index)?, // TODO(clemens): determine dense groupings
+            // TODO(clemens): determine dense groupings
+            (planner.sum(grouping_key, plan, max_index).into(),
              Type::unencoded(BasicType::Integer))
         }
-    };
-    result.push(operation);
-    Ok((output_location, t))
+    })
 }
 
-pub fn order_preserving((plan, t): (QueryPlan, Type)) -> (QueryPlan, Type) {
+pub fn order_preserving((plan, t): (TypedBufferRef, Type),
+                        planner: &mut QueryPlanner) -> (TypedBufferRef, Type) {
     if t.is_order_preserving() {
         (plan, t)
     } else {
         let new_type = t.decoded();
-        (t.codec.unwrap().decode(plan), new_type)
+        (t.codec.unwrap().decode(plan, planner), new_type)
     }
 }
 
+type Factory = Box<Fn(&mut QueryPlanner, TypedBufferRef, TypedBufferRef) -> TypedBufferRef + Sync>;
+
 struct Function2 {
-    pub factory: Box<Fn(Box<QueryPlan>, Box<QueryPlan>) -> QueryPlan + Sync>,
+    pub factory: Factory,
     pub type_rhs: BasicType,
     pub type_lhs: BasicType,
     pub type_out: Type,
@@ -563,7 +399,7 @@ struct Function2 {
 }
 
 impl Function2 {
-    pub fn integer_op(factory: Box<Fn(Box<QueryPlan>, Box<QueryPlan>) -> QueryPlan + Sync>) -> Function2 {
+    pub fn integer_op(factory: Factory) -> Function2 {
         Function2 {
             factory,
             type_lhs: BasicType::Integer,
@@ -573,7 +409,7 @@ impl Function2 {
         }
     }
 
-    pub fn comparison_op(factory: Box<Fn(Box<QueryPlan>, Box<QueryPlan>) -> QueryPlan + Sync>,
+    pub fn comparison_op(factory: Factory,
                          t: BasicType) -> Function2 {
         Function2 {
             factory,
@@ -592,44 +428,44 @@ lazy_static! {
 fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
     vec![
         (Func2Type::Add,
-         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Add { lhs, rhs }))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.add(lhs, rhs).into()))]),
         (Func2Type::Subtract,
-         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Subtract { lhs, rhs }))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.subtract(lhs, rhs).into()))]),
         (Func2Type::Multiply,
-         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Multiply { lhs, rhs }))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs).into()))]),
         (Func2Type::Divide,
-         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Divide { lhs, rhs }))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.divide(lhs, rhs).into()))]),
         (Func2Type::Modulo,
-         vec![Function2::integer_op(Box::new(|lhs, rhs| QueryPlan::Modulo { lhs, rhs }))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.modulo(lhs, rhs).into()))]),
         (Func2Type::LT,
-         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs, rhs }),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs, rhs }),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs).into()),
                                        BasicType::String)]),
         (Func2Type::LTE,
-         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs, rhs }),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs, rhs }),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs).into()),
                                        BasicType::String)]),
         (Func2Type::GT,
-         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs: rhs, rhs: lhs }),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThan { lhs: rhs, rhs: lhs }),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs).into()),
                                        BasicType::String)]),
         (Func2Type::GTE,
-         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs: rhs, rhs: lhs }),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::LessThanEquals { lhs: rhs, rhs: lhs }),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs).into()),
                                        BasicType::String)]),
         (Func2Type::Equals,
-         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::Equals { lhs, rhs }),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::Equals { lhs, rhs }),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs).into()),
                                        BasicType::String)]),
         (Func2Type::NotEquals,
-         vec![Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::NotEquals { lhs, rhs }),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|lhs, rhs| QueryPlan::NotEquals { lhs, rhs }),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs).into()),
                                        BasicType::String)]),
     ].into_iter().collect()
 }
@@ -638,22 +474,23 @@ impl QueryPlan {
     pub fn compile_expr(
         expr: &Expr,
         filter: Filter,
-        columns: &HashMap<String, Arc<DataSource>>) -> Result<(QueryPlan, Type), QueryError> {
+        columns: &HashMap<String, Arc<DataSource>>,
+        planner: &mut QueryPlanner) -> Result<(TypedBufferRef, Type), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    let mut plan = column_section(name, 0, c.range(), c.encoding_type());
+                    let mut plan = planner.column_section(name, 0, c.range(), c.encoding_type());
                     let mut t = c.full_type();
                     if !c.codec().is_elementwise_decodable() {
-                        let (codec, fixed_width) = c.codec().ensure_fixed_width(plan);
+                        let (codec, fixed_width) = c.codec().ensure_fixed_width(plan, planner);
                         t = Type::encoded(codec);
                         plan = fixed_width;
                     }
                     plan = match filter {
-                        Filter::U8(filter) => query_syntax::filter(plan, filter.tagged()),
-                        Filter::Indices(indices) => select(plan, indices.tagged()),
+                        Filter::U8(filter) => planner.filter(plan, filter),
+                        Filter::Indices(indices) => planner.select(plan, indices),
                         Filter::None => plan,
                     };
                     (plan, t)
@@ -661,41 +498,41 @@ impl QueryPlan {
                 None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
             }
             Func2(Or, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, planner)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
-                (plan_lhs | plan_rhs, Type::bit_vec())
+                (planner.or(plan_lhs.u8()?, plan_rhs.u8()?).into(), Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
-                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, planner)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
-                (plan_lhs & plan_rhs, Type::bit_vec())
+                (planner.and(plan_lhs.u8()?, plan_rhs.u8()?).into(), Type::bit_vec())
             }
             Func2(RegexMatch, ref expr, ref regex) => {
                 match regex {
                     box Const(RawVal::Str(regex)) => {
                         Regex::new(&regex).map_err(|e| QueryError::TypeError(
                             format!("`{}` is not a valid regex: {}", regex, e)))?;
-                        let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns)?;
+                        let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
                         if t.decoded != BasicType::String {
                             bail!(QueryError::TypeError, "Expected expression of type `String` as first argument to regex. Actual: {:?}", t)
                         }
                         if let Some(codec) = t.codec.clone() {
-                            plan = codec.decode(plan);
+                            plan = codec.decode(plan, planner);
                         }
-                        (query_syntax::regex(plan, regex), t)
+                        (planner.regex(plan.str()?, regex).into(), t)
                     }
                     _ => bail!(QueryError::TypeError, "Expected string constant as second argument to `regex`, actual: {:?}", regex),
                 }
             }
             Func2(function, ref lhs, ref rhs) => {
-                let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns)?;
-                let (mut plan_rhs, mut type_rhs) = QueryPlan::compile_expr(rhs, filter, columns)?;
+                let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner)?;
+                let (mut plan_rhs, mut type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, planner)?;
 
                 let declarations = match FUNCTION2_REGISTRY.get(&function) {
                     Some(patterns) => patterns,
@@ -712,36 +549,44 @@ impl QueryPlan {
 
                 if declaration.encoding_invariance && type_lhs.is_scalar && type_rhs.is_encoded() {
                     plan_lhs = if type_rhs.decoded == BasicType::Integer {
-                        encode_int_constant(plan_lhs, type_rhs.codec.clone().unwrap())
+                        if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_lhs) {
+                            planner.scalar_i64(type_rhs.codec.unwrap().encode_int(value), true).into()
+                        } else {
+                            panic!("whoops");
+                        }
                     } else if type_rhs.decoded == BasicType::String {
-                        type_rhs.codec.clone().unwrap().encode_str(plan_lhs)
+                        type_rhs.codec.clone().unwrap().encode_str(plan_lhs.scalar_str()?, planner).into()
                     } else {
                         panic!("whoops");
                     };
                 } else if declaration.encoding_invariance && type_rhs.is_scalar && type_lhs.is_encoded() {
                     plan_rhs = if type_lhs.decoded == BasicType::Integer {
-                        encode_int_constant(plan_rhs, type_lhs.codec.clone().unwrap())
+                        if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_rhs) {
+                            planner.scalar_i64(type_lhs.codec.unwrap().encode_int(value), true).into()
+                        } else {
+                            panic!("whoops");
+                        }
                     } else if type_lhs.decoded == BasicType::String {
-                        type_lhs.codec.clone().unwrap().encode_str(plan_rhs)
+                        type_lhs.codec.clone().unwrap().encode_str(plan_rhs.scalar_str()?, planner).into()
                     } else {
                         panic!("whoops");
                     };
                 } else {
                     if let Some(codec) = type_lhs.codec {
-                        plan_lhs = codec.decode(plan_lhs);
+                        plan_lhs = codec.decode(plan_lhs, planner);
                     }
                     if let Some(codec) = type_rhs.codec {
-                        plan_rhs = codec.decode(plan_rhs);
+                        plan_rhs = codec.decode(plan_rhs, planner);
                     }
                 }
 
-                let plan = (declaration.factory)(Box::new(plan_lhs), Box::new(plan_rhs));
+                let plan = (declaration.factory)(planner, plan_lhs, plan_rhs);
                 (plan, declaration.type_out.clone())
             }
             Func1(ftype, ref inner) => {
-                let (plan, t) = QueryPlan::compile_expr(inner, filter, columns)?;
+                let (plan, t) = QueryPlan::compile_expr(inner, filter, columns, planner)?;
                 let decoded = match t.codec.clone() {
-                    Some(codec) => codec.decode(plan),
+                    Some(codec) => codec.decode(plan, planner),
                     None => plan,
                 };
                 let plan = match ftype {
@@ -749,13 +594,13 @@ impl QueryPlan {
                         if t.decoded != BasicType::Integer {
                             bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                         }
-                        to_year(decoded)
+                        planner.to_year(decoded.i64()?).into()
                     }
                     Func1Type::Not => {
                         if t.decoded != BasicType::Boolean {
                             bail!(QueryError::TypeError, "Found NOT({:?}), expected NOT(boolean)", &t)
                         }
-                        not(decoded)
+                        planner.not(decoded.u8()?).into()
                     }
                     Func1Type::Negate => {
                         bail!(QueryError::TypeError, "Found negate({:?}), expected negate(integer)", &t)
@@ -763,357 +608,41 @@ impl QueryPlan {
                 };
                 (plan, t.decoded())
             }
-            Const(RawVal::Int(i)) => (scalar_i64(i, false), Type::scalar(BasicType::Integer)),
-            Const(RawVal::Str(ref s)) => (scalar_str(s), Type::scalar(BasicType::String)),
+            Const(RawVal::Int(i)) => (planner.scalar_i64(i, false).into(), Type::scalar(BasicType::Integer)),
+            Const(RawVal::Str(ref s)) => (planner.scalar_str(s).into(), Type::scalar(BasicType::String)),
             ref x => bail!(QueryError::NotImplemented, "{:?}.compile_vec()", x),
         })
     }
-
-    fn encoding_range(&self) -> Option<(i64, i64)> {
-        // TODO(clemens): need more principled approach - this currently doesn't work for all partially decodings
-        // Example: [LZ4, Add, Delta] will have as bottom decoding range the range after Delta, but without the Add :/
-        // This works in this case because we always have to decode the Delta, but is hard to reason about and has caused bugs
-        use self::QueryPlan::*;
-        match *self {
-            ColumnSection { range, .. } => range,
-            ToYear { ref timestamp } => timestamp.encoding_range().map(|(min, max)|
-                (i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
-                 i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
-            ),
-            Filter { ref plan, .. } => plan.encoding_range(),
-            // TODO(clemens): this is just wrong
-            Divide { ref lhs, rhs: box ScalarI64 { value: c, .. } } =>
-                lhs.encoding_range().map(|(min, max)|
-                    if c > 0 { (min / c, max / c) } else { (max / c, min / c) }),
-            Add { ref lhs, rhs: box ScalarI64 { value: c, .. }, .. } =>
-                lhs.encoding_range().map(|(min, max)| (min + c, max + c)),
-            Cast { ref input, .. } => input.encoding_range(),
-            LZ4Decode { ref bytes, .. } => bytes.encoding_range(),
-            DeltaDecode { ref plan, .. } => plan.encoding_range(),
-            _ => None, // TODO(clemens): many more cases where we can determine range
-        }
-    }
 }
 
-fn replace_common_subexpression(plan: QueryPlan, executor: &mut QueryExecutor) -> (Box<QueryPlan>, [u8; 16]) {
-    use std::intrinsics::discriminant_value;
+fn encoding_range(plan: &TypedBufferRef, planner: &QueryPlanner) -> Option<(i64, i64)> {
+    // TODO(clemens): need more principled approach - this currently doesn't work for all partially decodings
+    // Example: [LZ4, Add, Delta] will have as bottom decoding range the range after indices, max_index Delta, but without the Add :/
+    // This works in this case because we always have to decode the Delta, but is hard to reason about and has caused bugs
     use self::QueryPlan::*;
-
-    unsafe /* dicriminant_value */ {
-        let mut signature = [0u8; 16];
-        let mut hasher = Md5::new();
-        hasher.input(&discriminant_value(&plan).to_ne_bytes());
-        let plan = match plan {
-            ColumnSection { name, section, range, t } => {
-                hasher.input_str(&name);
-                hasher.input(&section.to_ne_bytes());
-                ColumnSection { name, section, range, t }
-            }
-            ReadBuffer { buffer } => {
-                hasher.input(&buffer.buffer.i.to_ne_bytes());
-                ReadBuffer { buffer }
-            }
-            AssembleNullable { data, present } => {
-                let (data, s1) = replace_common_subexpression(*data, executor);
-                let (present, s2) = replace_common_subexpression(*present, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                AssembleNullable { data, present }
-            }
-            MakeNullable { data } => {
-                let (data, s1) = replace_common_subexpression(*data, executor);
-                hasher.input(&s1);
-                MakeNullable { data }
-            }
-            PropagateNullability { nullable, data } => {
-                let (data, s1) = replace_common_subexpression(*data, executor);
-                let (nullable, s2) = replace_common_subexpression(*nullable, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                PropagateNullability { nullable, data }
-            }
-            DictLookup { indices, offset_len, backing_store } => {
-                let (indices, s1) = replace_common_subexpression(*indices, executor);
-                let (offset_len, s2) = replace_common_subexpression(*offset_len, executor);
-                let (backing_store, s3) = replace_common_subexpression(*backing_store, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                hasher.input(&s3);
-                DictLookup { indices, offset_len, backing_store }
-            }
-            InverseDictLookup { offset_len, backing_store, constant } => {
-                let (offset_len, s1) = replace_common_subexpression(*offset_len, executor);
-                let (backing_store, s2) = replace_common_subexpression(*backing_store, executor);
-                let (constant, s3) = replace_common_subexpression(*constant, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                hasher.input(&s3);
-                InverseDictLookup { offset_len, backing_store, constant }
-            }
-            Cast { input, target_type } => {
-                let (input, s1) = replace_common_subexpression(*input, executor);
-                hasher.input(&s1);
-                hasher.input(&discriminant_value(&target_type).to_ne_bytes());
-                Cast { input, target_type }
-            }
-            LZ4Decode { bytes, decoded_len, t } => {
-                let (bytes, s1) = replace_common_subexpression(*bytes, executor);
-                hasher.input(&s1);
-                hasher.input(&discriminant_value(&t).to_ne_bytes());
-                LZ4Decode { bytes, decoded_len, t }
-            }
-            UnpackStrings { bytes } => {
-                let (bytes, s1) = replace_common_subexpression(*bytes, executor);
-                hasher.input(&s1);
-                UnpackStrings { bytes }
-            }
-            UnhexpackStrings { bytes, uppercase, total_bytes } => {
-                let (bytes, s1) = replace_common_subexpression(*bytes, executor);
-                hasher.input(&s1);
-                hasher.input(&total_bytes.to_ne_bytes());
-                hasher.input(&[uppercase as u8]);
-                UnhexpackStrings { bytes, uppercase, total_bytes }
-            }
-            DeltaDecode { plan } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                DeltaDecode { plan }
-            }
-            Exists { indices, max_index } => {
-                let (indices, s1) = replace_common_subexpression(*indices, executor);
-                let (max_index, s2) = replace_common_subexpression(*max_index, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Exists { indices, max_index }
-            }
-            NonzeroCompact { plan } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                NonzeroCompact { plan }
-            }
-            NonzeroIndices { plan, indices_type } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                hasher.input(&discriminant_value(&indices_type).to_ne_bytes());
-                NonzeroIndices { plan, indices_type }
-            }
-            Compact { plan, select } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                let (select, s2) = replace_common_subexpression(*select, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Compact { plan, select }
-            }
-            EncodeIntConstant { constant, codec } => {
-                // TODO(clemens): codec needs to be part of signature (easy once we encode using actual query plan rather than codec)
-                let (constant, s1) = replace_common_subexpression(*constant, executor);
-                hasher.input(&s1);
-                EncodeIntConstant { constant, codec }
-            }
-            BitPack { lhs, rhs, shift } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                hasher.input(&(shift as u64).to_ne_bytes());
-                BitPack { lhs, rhs, shift }
-            }
-            BitUnpack { plan, shift, width } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                hasher.input(&shift.to_ne_bytes());
-                hasher.input(&width.to_ne_bytes());
-                BitUnpack { plan, shift, width }
-            }
-            SlicePack { plan, stride, offset } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                hasher.input(&stride.to_ne_bytes());
-                hasher.input(&offset.to_ne_bytes());
-                SlicePack { plan, stride, offset }
-            }
-            SliceUnpack { plan, t, stride, offset } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                hasher.input(&stride.to_ne_bytes());
-                hasher.input(&offset.to_ne_bytes());
-                hasher.input(&discriminant_value(&t).to_ne_bytes());
-                SliceUnpack { plan, t, stride, offset }
-            }
-            Convergence(plans) => {
-                let mut new_plans = Vec::new();
-                for p in plans {
-                    let (p, s) = replace_common_subexpression(*p, executor);
-                    new_plans.push(p);
-                    hasher.input(&s);
-                }
-                Convergence(new_plans)
-            }
-            LessThan { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                LessThan { lhs, rhs }
-            }
-            LessThanEquals { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                LessThanEquals { lhs, rhs }
-            }
-            Equals { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Equals { lhs, rhs }
-            }
-            NotEquals { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                NotEquals { lhs, rhs }
-            }
-            Add { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Add { lhs, rhs }
-            }
-            Subtract { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Subtract { lhs, rhs }
-            }
-            Multiply { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Multiply { lhs, rhs }
-            }
-            Divide { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Divide { lhs, rhs }
-            }
-            Modulo { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Modulo { lhs, rhs }
-            }
-            And { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                And { lhs, rhs }
-            }
-            Or { lhs, rhs } => {
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Or { lhs, rhs }
-            }
-            Not { input } => {
-                let (input, s1) = replace_common_subexpression(*input, executor);
-                hasher.input(&s1);
-                Not { input }
-            }
-            Regex { plan, regex } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                hasher.input_str(&regex);
-                Regex { plan, regex }
-            }
-            ToYear { timestamp } => {
-                let (timestamp, s1) = replace_common_subexpression(*timestamp, executor);
-                hasher.input(&s1);
-                ToYear { timestamp }
-            }
-            Indices { plan } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                hasher.input(&s1);
-                Indices { plan }
-            }
-            SortBy { ranking, indices, desc, stable } => {
-                let (ranking, s1) = replace_common_subexpression(*ranking, executor);
-                let (indices, s2) = replace_common_subexpression(*indices, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                hasher.input(&[desc as u8]);
-                SortBy { ranking, indices, desc, stable }
-            }
-            TopN { ranking, n, desc } => {
-                let (ranking, s1) = replace_common_subexpression(*ranking, executor);
-                hasher.input(&s1);
-                hasher.input(&n.to_ne_bytes());
-                hasher.input(&[desc as u8]);
-                TopN { ranking, n, desc }
-            }
-            Select { plan, indices } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                let (indices, s2) = replace_common_subexpression(*indices, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Select { plan, indices }
-            }
-            Filter { plan, select } => {
-                let (plan, s1) = replace_common_subexpression(*plan, executor);
-                let (select, s2) = replace_common_subexpression(*select, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                Filter { plan, select }
-            }
-            EncodedGroupByPlaceholder => EncodedGroupByPlaceholder,
-            Constant { value, hide_value } => {
-                match value {
-                    RawVal::Int(i) => hasher.input(&(i as u64).to_ne_bytes()),
-                    RawVal::Str(ref s) => hasher.input_str(s),
-                    RawVal::Null => {}
-                }
-                Constant { value, hide_value }
-            }
-            ScalarI64 { value, hide_value } => {
-                hasher.input(&(value as u64).to_ne_bytes());
-                ScalarI64 { value, hide_value }
-            }
-            ScalarStr { value } => {
-                hasher.input_str(&value);
-                ScalarStr { value }
-            }
-            ConstantExpand { value, t, len } => {
-                hasher.input(&value.to_ne_bytes());
-                hasher.input(&discriminant_value(&t).to_ne_bytes());
-                ConstantExpand { value, t, len }
-            }
-            QueryPlan::MergeKeep { take_left, lhs, rhs } => {
-                let (take_left, s3) = replace_common_subexpression(*take_left, executor);
-                let (lhs, s1) = replace_common_subexpression(*lhs, executor);
-                let (rhs, s2) = replace_common_subexpression(*rhs, executor);
-                hasher.input(&s1);
-                hasher.input(&s2);
-                hasher.input(&s3);
-                QueryPlan::MergeKeep { take_left, lhs, rhs }
-            }
-        };
-
-        hasher.result(&mut signature);
-        match executor.get(&signature) {
-            Some(plan) => (Box::new(plan), signature),
-            None => (Box::new(plan), signature),
-        }
+    match *planner.resolve(plan) {
+        ColumnSection { range, .. } => range,
+        ToYear { timestamp, .. } => encoding_range(&timestamp.into(), planner).map(|(min, max)|
+            (i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
+             i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
+        ),
+        Filter { ref plan, .. } => encoding_range(plan, planner),
+        // TODO(clemens): this is just wrong
+        Divide { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = planner.resolve(rhs) {
+            encoding_range(lhs, planner).map(|(min, max)|
+                if *c > 0 { (min / *c, max / *c) } else { (max / *c, min / *c) })
+        } else {
+            None
+        },
+        Add { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = planner.resolve(rhs) {
+            encoding_range(lhs, planner).map(|(min, max)| (min + *c, max + *c))
+        } else {
+            None
+        },
+        Cast { ref input, .. } => encoding_range(input, planner),
+        LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), planner),
+        DeltaDecode { ref plan, .. } => encoding_range(plan, planner),
+        _ => None, // TODO(clemens): many more cases where we can determine range
     }
 }
 
@@ -1121,65 +650,73 @@ pub fn compile_grouping_key(
     exprs: &[Expr],
     filter: Filter,
     columns: &HashMap<String, Arc<DataSource>>,
-    partition_length: usize)
-    -> Result<(TypedPlan, i64, Vec<TypedPlan>), QueryError> {
+    partition_length: usize,
+    planner: &mut QueryPlanner)
+    -> Result<((TypedBufferRef, Type), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef), QueryError> {
     if exprs.is_empty() {
         let t = Type::new(BasicType::Integer, Some(Codec::opaque(EncodingType::U8, BasicType::Integer, true, true, true, true)));
-        let mut plan = syntax::constant_expand(0, EncodingType::U8, partition_length);
+        let mut plan = planner.constant_expand(0, partition_length, EncodingType::U8);
         plan = match filter {
-            Filter::U8(filter) => query_syntax::filter(plan, filter.tagged()),
-            Filter::Indices(indices) => select(plan, indices.tagged()),
+            Filter::U8(filter) => planner.filter(plan, filter),
+            Filter::Indices(indices) => planner.select(plan, indices),
             Filter::None => plan,
         };
         Ok((
             (plan, t),
             1,
             vec![],
+            planner.named_buffer("empty_group_by", EncodingType::Null)
         ))
     } else if exprs.len() == 1 {
-        QueryPlan::compile_expr(&exprs[0], filter, columns)
+        QueryPlan::compile_expr(&exprs[0], filter, columns, planner)
             .map(|(gk_plan, gk_type)| {
-                let encoding_range = QueryPlan::encoding_range(&gk_plan);
+                let encoding_range = encoding_range(&gk_plan, planner);
                 debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
                 let (max_cardinality, offset) = match encoding_range {
                     Some((min, max)) => if min < 0 { (max - min, -min) } else { (max, 0) }
                     None => (1 << 62, 0),
                 };
                 let gk_plan = if offset != 0 {
-                    gk_plan + scalar_i64(offset, true)
+                    let offset = planner.scalar_i64(offset, true);
+                    planner.add(gk_plan, offset.into()).into()
                 } else { gk_plan };
 
+                let encoded_group_by_placeholder = planner.named_buffer(
+                    "encoded_group_by_placeholder", gk_type.encoding_type());
                 let decoded_group_by = gk_type.codec.clone().map_or(
-                    QueryPlan::EncodedGroupByPlaceholder,
-                    |codec| codec.decode(QueryPlan::EncodedGroupByPlaceholder));
+                    encoded_group_by_placeholder,
+                    |codec| codec.decode(encoded_group_by_placeholder, planner));
                 let decoded_group_by = if offset == 0 { decoded_group_by } else {
-                    syntax::cast(
-                        decoded_group_by + scalar_i64(-offset, true),
-                        gk_type.encoding_type())
+                    let offset = planner.scalar_i64(-offset, true);
+                    let sum = planner.add(decoded_group_by, offset.into()).into();
+                    planner.cast(sum, gk_type.encoding_type())
                 };
 
                 ((gk_plan.clone(), gk_type.clone()),
                  max_cardinality,
-                 vec![(decoded_group_by, gk_type.decoded())])
+                 vec![(decoded_group_by, gk_type.decoded())],
+                 encoded_group_by_placeholder)
             })
-    } else if let Some(result) = try_bitpacking(exprs, filter, columns)? {
+    } else if let Some(result) = try_bitpacking(exprs, filter, columns, planner)? {
         Ok(result)
     } else {
         info!("Failed to bitpack grouping key");
         let mut pack = Vec::new();
         let mut decode_plans = Vec::new();
+        let encoded_group_by_placeholder =
+            planner.named_buffer("encoded_group_by_placeholder", EncodingType::ByteSlices(exprs.len()));
         for (i, expr) in exprs.iter().enumerate() {
-            let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
-            pack.push(Box::new(slice_pack(query_plan, exprs.len(), i)));
+            let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
+            pack.push(planner.slice_pack(query_plan, exprs.len(), i));
 
-            // TODO(clemens): negative integers can throw off sort oder - need to move into positive range
-            let mut decode_plan = slice_unpack(
-                QueryPlan::EncodedGroupByPlaceholder,
-                plan_type.encoding_type(),
+            // TODO(clemens): negative integers can throw off sort order - need to move into positive range
+            let mut decode_plan = planner.slice_unpack(
+                encoded_group_by_placeholder.any(),
                 exprs.len(),
-                i);
+                i,
+                plan_type.encoding_type());
             if let Some(codec) = plan_type.codec.clone() {
-                decode_plan = codec.decode(decode_plan);
+                decode_plan = codec.decode(decode_plan, planner);
             }
             decode_plans.push(
                 (decode_plan,
@@ -1193,26 +730,30 @@ pub fn compile_grouping_key(
             false /* is_positive_integer */,
             false /* is_fixed_width */,
         ));
-        Ok(((QueryPlan::Convergence(pack), t),
+        Ok(((pack[0].into(), t),
             i64::MAX,
-            decode_plans))
+            decode_plans,
+            encoded_group_by_placeholder))
     }
 }
 
 fn try_bitpacking(
     exprs: &[Expr],
     filter: Filter,
-    columns: &HashMap<String, Arc<DataSource>>)
-    -> Result<Option<(TypedPlan, i64, Vec<TypedPlan>)>, QueryError> {
+    columns: &HashMap<String, Arc<DataSource>>,
+    planner: &mut QueryPlanner)
+    -> Result<Option<((TypedBufferRef, Type), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef)>, QueryError> {
+    planner.checkpoint();
     // TODO(clemens): use u64 as grouping key type
     let mut total_width = 0;
     let mut largest_key = 0;
-    let mut plan = None;
+    let mut plan: Option<BufferRef<i64>> = None;
     let mut decode_plans = Vec::with_capacity(exprs.len());
     let mut order_preserving = true;
+    let encoded_group_by_placeholder = planner.buffer_i64("encoded_group_by_placeholder");
     for expr in exprs.iter().rev() {
-        let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
-        let encoding_range = QueryPlan::encoding_range(&query_plan);
+        let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
+        let encoding_range = encoding_range(&query_plan, planner);
         debug!("Encoding range of {:?} for {:?}", &encoding_range, &query_plan);
         if let Some((min, max)) = encoding_range {
             fn bits(max: i64) -> i64 {
@@ -1224,33 +765,36 @@ fn try_bitpacking(
             let adjusted_max = if subtract_offset { max - min } else { max };
             order_preserving = order_preserving && plan_type.is_order_preserving();
             let query_plan = if subtract_offset {
-                query_plan + scalar_i64(-min, true)
+                let offset = planner.scalar_i64(-min, true);
+                planner.add(query_plan, offset.into())
             } else {
-                syntax::cast(query_plan, EncodingType::I64)
+                planner.cast(query_plan, EncodingType::I64).i64()?
             };
 
             if total_width == 0 {
                 plan = Some(query_plan);
             } else if adjusted_max > 0 {
-                plan = plan.map(|plan| bit_pack(plan, query_plan, total_width));
+                plan = plan.map(|plan| planner.bit_pack(plan, query_plan, total_width));
             }
 
-            let mut decode_plan = bit_unpack(
-                QueryPlan::EncodedGroupByPlaceholder,
+            let mut decode_plan = planner.bit_unpack(
+                encoded_group_by_placeholder,
                 total_width as u8,
-                bits(adjusted_max) as u8);
+                bits(adjusted_max) as u8).into();
             if subtract_offset {
-                decode_plan = decode_plan + scalar_i64(min, true);
+                let offset = planner.scalar_i64(min, true);
+                decode_plan = planner.add(decode_plan, offset.into()).into();
             }
-            decode_plan = syntax::cast(decode_plan, plan_type.encoding_type());
+            decode_plan = planner.cast(decode_plan, plan_type.encoding_type());
             if let Some(codec) = plan_type.codec.clone() {
-                decode_plan = codec.decode(decode_plan);
+                decode_plan = codec.decode(decode_plan, planner);
             }
             decode_plans.push((decode_plan, plan_type.decoded()));
 
             largest_key += adjusted_max << total_width;
             total_width += bits(adjusted_max);
         } else {
+            planner.reset();
             return Ok(None);
         }
     }
@@ -1261,52 +805,69 @@ fn try_bitpacking(
                 decode_plans.reverse();
                 let t = Type::encoded(Codec::opaque(
                     EncodingType::I64, BasicType::Integer, false, order_preserving, true, true));
-                ((plan, t), largest_key, decode_plans)
+                ((plan.into(), t), largest_key, decode_plans, encoded_group_by_placeholder.into())
             })
         } else {
+            planner.reset();
             None
         }
     )
 }
 
-fn to_hex_string(bytes: &[u8]) -> String {
-    bytes.iter()
-        .map(|b| format!("{:02X}", b))
-        .join("")
+// TODO(clemens): make method private?
+pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
+    trace!("{:?}", &plan);
+    let operation: Box<VecOperator> = match plan {
+        QueryPlan::Select { plan, indices, selection } => VecOperator::select(plan, indices, selection)?,
+        QueryPlan::ColumnSection { name, section, column_section, .. } => VecOperator::read_column_data(name, section, column_section.any()),
+        QueryPlan::AssembleNullable { data, present, nullable } => VecOperator::nullable(data, present, nullable)?,
+        QueryPlan::MakeNullable { data, present, nullable } => VecOperator::make_nullable(data, present, nullable)?,
+        QueryPlan::PropagateNullability { nullable, data, nullable_data } => VecOperator::propagate_nullability(nullable.nullable_any()?, data, nullable_data)?,
+        QueryPlan::Filter { plan, select, filtered } => VecOperator::filter(plan, select, filtered)?,
+        QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),
+        QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value.to_string(), pinned_string, scalar_str),
+        QueryPlan::NullVec { len, nulls } => VecOperator::null_vec(len, nulls.any()),
+        QueryPlan::ConstantExpand { value, len, expanded } => VecOperator::constant_expand(value, len, expanded)?,
+        QueryPlan::DictLookup { indices, offset_len, backing_store, decoded } => VecOperator::dict_lookup(indices, offset_len, backing_store, decoded)?,
+        QueryPlan::InverseDictLookup { offset_len, backing_store, constant, decoded } => VecOperator::inverse_dict_lookup(offset_len, backing_store, constant, decoded),
+        QueryPlan::Cast { input, casted } => VecOperator::type_conversion(input, casted)?,
+        QueryPlan::DeltaDecode { plan, delta_decoded } => VecOperator::delta_decode(plan, delta_decoded)?,
+        QueryPlan::LZ4Decode { bytes, decoded_len, decoded } => VecOperator::lz4_decode(bytes, decoded_len, decoded)?,
+        QueryPlan::UnpackStrings { bytes, unpacked_strings } => VecOperator::unpack_strings(bytes, unpacked_strings),
+        QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
+        QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } =>
+            VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
+        QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
+        QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
+        QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
+        QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,
+        QueryPlan::NonzeroIndices { plan, nonzero_indices } => VecOperator::nonzero_indices(plan, nonzero_indices)?,
+        QueryPlan::NonzeroCompact { plan, compacted } => VecOperator::nonzero_compact(plan, compacted)?,
+        QueryPlan::BitPack { lhs, rhs, shift, bit_packed } => VecOperator::bit_shift_left_add(lhs, rhs, bit_packed, shift),
+        QueryPlan::BitUnpack { plan, shift, width, unpacked } => VecOperator::bit_unpack(plan, shift, width, unpacked),
+        QueryPlan::SlicePack { plan, stride, offset, packed } => VecOperator::slice_pack(plan, stride, offset, packed)?,
+        QueryPlan::SliceUnpack { plan, stride, offset, unpacked } => VecOperator::slice_unpack(plan, stride, offset, unpacked)?,
+        QueryPlan::LessThan { lhs, rhs, less_than } => VecOperator::less_than(lhs, rhs, less_than)?,
+        QueryPlan::LessThanEquals { lhs, rhs, less_than_equals } => VecOperator::less_than_equals(lhs, rhs, less_than_equals)?,
+        QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals)?,
+        QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals)?,
+        QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum)?,
+        QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference)?,
+        QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product)?,
+        QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division)?,
+        QueryPlan::Modulo { lhs, rhs, modulo } => VecOperator::modulo(lhs, rhs, modulo)?,
+        QueryPlan::Or { lhs, rhs, or } => VecOperator::or(lhs, rhs, or),
+        QueryPlan::And { lhs, rhs, and } => VecOperator::and(lhs, rhs, and),
+        QueryPlan::Not { input, not } => VecOperator::not(input, not),
+        QueryPlan::ToYear { timestamp, year } => VecOperator::to_year(timestamp, year),
+        QueryPlan::Regex { plan, regex, matches } => VecOperator::regex(plan, &regex, matches),
+        QueryPlan::Indices { plan, indices } => VecOperator::indices(plan, indices),
+        QueryPlan::SortBy { ranking, indices, desc, stable, permutation } => VecOperator::sort_by(ranking, indices, desc, stable, permutation)?,
+        QueryPlan::TopN { ranking, n, desc, tmp_keys, top_n } => VecOperator::top_n(ranking, tmp_keys, n, desc, top_n)?,
+        QueryPlan::Connect { input, output } => VecOperator::identity(input, output),
+        QueryPlan::MergeKeep { take_left, lhs, rhs, merged } => VecOperator::merge_keep(take_left, lhs, rhs, merged)?,
+    };
+    result.push(operation);
+    Ok(result.last_buffer())
 }
 
-impl From<TypedBufferRef> for QueryPlan {
-    fn from(buffer: TypedBufferRef) -> QueryPlan { read_buffer(buffer) }
-}
-
-impl Add for QueryPlan {
-    type Output = QueryPlan;
-
-    fn add(self, other: QueryPlan) -> QueryPlan {
-        add(self, other)
-    }
-}
-
-impl BitOr for QueryPlan {
-    type Output = QueryPlan;
-
-    fn bitor(self, other: QueryPlan) -> QueryPlan {
-        or(self, other)
-    }
-}
-
-impl BitAnd for QueryPlan {
-    type Output = QueryPlan;
-
-    fn bitand(self, other: QueryPlan) -> QueryPlan {
-        and(self, other)
-    }
-}
-
-impl Div for QueryPlan {
-    type Output = QueryPlan;
-
-    fn div(self, other: QueryPlan) -> QueryPlan {
-        divide(self, other)
-    }
-}

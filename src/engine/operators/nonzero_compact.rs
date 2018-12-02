@@ -4,6 +4,7 @@ use engine::*;
 #[derive(Debug)]
 pub struct NonzeroCompact<T> {
     pub data: BufferRef<T>,
+    pub compacted: BufferRef<T>,
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
@@ -20,10 +21,15 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
         data.truncate(j);
     }
 
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.alias(self.data, self.compacted);
+    }
+
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any()] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.compacted.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
+    fn mutates(&self, i: usize) -> bool { i == self.data.i }
     fn allocates(&self) -> bool { false }
 
     fn display_op(&self, _: bool) -> String {

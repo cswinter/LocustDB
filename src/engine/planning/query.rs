@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use ::QueryError;
 use engine::*;
-use engine::query_syntax::*;
 use ingest::raw_val::RawVal;
 use mem_store::column::DataSource;
 use syntax::expression::*;
@@ -41,80 +40,68 @@ impl NormalFormQuery {
                    partition: usize,
                    partition_length: usize) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
-        let mut executor = QueryExecutor::default();
+        let mut planner = QueryPlanner::default();
 
-        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns)?;
+        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, &mut planner)?;
         let mut filter = match filter_type.encoding_type() {
-            EncodingType::U8 => {
-                let mut compiled_filter = query_plan::prepare(filter_plan, &mut executor)?;
-                Filter::U8(compiled_filter.u8()?)
-            }
+            EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             _ => Filter::None,
         };
 
         // Sorting
         let mut sort_indices = None;
         for (plan, desc) in self.order_by.iter().rev() {
-            let (plan, _) = query_plan::order_preserving(
-                QueryPlan::compile_expr(&plan, filter, columns)?);
-            let ranking = query_plan::prepare(plan, &mut executor)?;
+            let (ranking, _) = query_plan::order_preserving(
+                QueryPlan::compile_expr(&plan, filter, columns, &mut planner)?, &mut planner);
 
             // TODO(clemens): better criterion for using top_n
             // TODO(clemens): top_n for multiple columns?
             sort_indices = Some(if limit < partition_length / 2 && self.order_by.len() == 1 {
-                query_plan::prepare(
-                    top_n(ranking, limit, *desc),
-                    &mut executor)?
+                planner.top_n(ranking, limit, *desc)
             } else {
                 // TODO(clemens): Optimization: sort directly if only single column selected
                 match sort_indices {
                     None => {
-                        query_plan::prepare(
-                            sort_by(ranking, indices(ranking), *desc, false /* unstable sort */),
-                            &mut executor)?
+                        let indices = planner.indices(ranking);
+                        planner.sort_by(ranking, indices,
+                                        *desc, false /* unstable sort */)
                     }
-                    Some(indices) => query_plan::prepare(
-                        sort_by(ranking, indices, *desc, true /* stable sort */),
-                        &mut executor)?,
+                    Some(indices) => planner.sort_by(ranking, indices, *desc, true /* stable sort */)
                 }
             });
         }
         if let Some(sort_indices) = sort_indices {
             filter = if let Filter::U8(where_true) = filter {
-                let buffer = executor.named_buffer("indices", EncodingType::Null);
-                let indices_op = VecOperator::constant_vec(Data::empty(partition_length), buffer.any());
-                executor.push(indices_op);
-                Filter::Indices(
-                    query_plan::prepare(
-                        query_syntax::select(
-                            query_syntax::filter(indices(buffer), where_true.tagged()),
-                            sort_indices),
-                        &mut executor)?.usize()?)
+                let buffer = planner.null_vec(partition_length, EncodingType::Null);
+                let indices = planner.indices(buffer).into();
+                let filter = planner.filter(indices, where_true);
+                Filter::Indices(planner.select(filter, sort_indices).usize()?)
             } else {
-                Filter::Indices(sort_indices.usize()?)
+                Filter::Indices(sort_indices)
             };
         }
 
         let mut select = Vec::new();
         for expr in &self.projection {
-            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
+            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, &mut planner)?;
             if let Some(codec) = plan_type.codec {
-                plan = codec.decode(plan);
+                plan = codec.decode(plan, &mut planner);
             }
-            select.push(query_plan::prepare(plan, &mut executor)?.any());
+            select.push(plan.any());
         }
         let mut order_by = Vec::new();
         for (expr, desc) in &self.order_by {
-            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
+            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, &mut planner)?;
             if let Some(codec) = plan_type.codec {
-                plan = codec.decode(plan);
+                plan = codec.decode(plan, &mut planner);
             }
-            order_by.push((query_plan::prepare(plan, &mut executor)?.any(), *desc));
+            order_by.push((plan.any(), *desc));
         };
 
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
+        let mut executor = planner.prepare()?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
@@ -144,24 +131,21 @@ impl NormalFormQuery {
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 
-        let mut executor = QueryExecutor::default();
+        let mut planner = QueryPlanner::default();
 
         // Filter
-        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns)?;
+        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, &mut planner)?;
         let filter = match filter_type.encoding_type() {
-            EncodingType::U8 => {
-                let compiled_filter = query_plan::prepare(filter_plan, &mut executor)?;
-                Filter::U8(compiled_filter.u8()?)
-            }
+            EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             _ => Filter::None,
         };
 
         // Combine all group by columns into a single decodable grouping key
-        let ((grouping_key_plan, raw_grouping_key_type),
+        let ((raw_grouping_key, raw_grouping_key_type),
             max_grouping_key,
-            decode_plans) =
-            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_length)?;
-        let raw_grouping_key = query_plan::prepare(grouping_key_plan, &mut executor)?;
+            decode_plans,
+            encoded_group_by_placeholder) =
+            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_length, &mut planner)?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
         // TODO(clemens): also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
@@ -171,17 +155,16 @@ impl NormalFormQuery {
             aggregation_cardinality) =
         // TODO(clemens): refine criterion
             if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
-                let max_grouping_key_buf = query_plan::prepare(
-                    scalar_i64(max_grouping_key, true), &mut executor)?;
+                let max_grouping_key_buf = planner.scalar_i64(max_grouping_key, true);
                 (None,
                  raw_grouping_key,
                  raw_grouping_key_type.clone(),
-                 max_grouping_key_buf.scalar_i64()?)
+                 max_grouping_key_buf)
             } else {
                 query_plan::prepare_hashmap_grouping(
                     raw_grouping_key,
                     max_grouping_key as usize,
-                    &mut executor)?
+                    &mut planner)?
             };
 
         // Aggregators
@@ -189,14 +172,14 @@ impl NormalFormQuery {
         let mut selector = None;
         let mut selector_index = None;
         for (i, &(aggregator, ref expr)) in self.aggregate.iter().enumerate() {
-            let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns)?;
+            let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, &mut planner)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
                 grouping_key,
                 aggregation_cardinality,
                 aggregator,
-                &mut executor)?;
+                &mut planner)?;
             // TODO(clemens): if summation column is strictly positive, can use sum as well
             if aggregator == Aggregator::Count {
                 selector = Some((aggregate, t.encoding_type()));
@@ -207,20 +190,16 @@ impl NormalFormQuery {
 
         // Determine selector
         let selector = match selector {
-            None => query_plan::prepare(
-                exists(grouping_key, aggregation_cardinality.tagged()),
-                &mut executor)?,
+            None => planner.exists(grouping_key, aggregation_cardinality).into(),
             Some(x) => x.0,
         };
 
         // Construct (encoded) group by column
         let encoded_group_by_column = match encoded_group_by_column {
-            None => query_plan::prepare(
-                nonzero_indices(selector, grouping_key_type.encoding_type()),
-                &mut executor)?,
+            None => planner.nonzero_indices(selector, grouping_key_type.encoding_type()),
             Some(x) => x,
         };
-        executor.set_encoded_group_by(encoded_group_by_column);
+        planner.connect(encoded_group_by_column, encoded_group_by_placeholder);
 
         // Compact and decode aggregation results
         let mut aggregation_cols = Vec::new();
@@ -230,17 +209,11 @@ impl NormalFormQuery {
                                       t: Type| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
-                    Aggregator::Sum => query_plan::prepare(
-                        compact(aggregate, selector),
-                        &mut executor)?,
-                    Aggregator::Count => query_plan::prepare(
-                        nonzero_compact(aggregate),
-                        &mut executor)?,
+                    Aggregator::Sum => planner.compact(aggregate, selector),
+                    Aggregator::Count => planner.nonzero_compact(aggregate),
                 };
                 if t.is_encoded() {
-                    query_plan::prepare(
-                        t.codec.clone().unwrap().decode(read_buffer(compacted)),
-                        &mut executor)
+                    Ok(t.codec.clone().unwrap().decode(compacted, &mut planner))
                 } else {
                     Ok(compacted)
                 }
@@ -264,7 +237,7 @@ impl NormalFormQuery {
         //  Reconstruct all group by columns from grouping
         let mut grouping_columns = Vec::with_capacity(decode_plans.len());
         for (decode_plan, _t) in decode_plans {
-            let decoded = query_plan::prepare_no_alias(decode_plan.clone(), &mut executor)?;
+            let decoded = decode_plan.clone();
             grouping_columns.push(decoded);
         }
 
@@ -272,40 +245,36 @@ impl NormalFormQuery {
         // This is necessary to make it possible to efficiently merge with other batch results
         if !grouping_key_type.is_order_preserving() {
             let sort_indices = if raw_grouping_key_type.is_order_preserving() {
-                query_plan::prepare(
-                    sort_by(encoded_group_by_column,
-                            indices(encoded_group_by_column),
-                            false /* desc */,
-                            false /* stable */),
-                    &mut executor)?
+                let indices = planner.indices(encoded_group_by_column);
+                planner.sort_by(encoded_group_by_column,
+                                indices,
+                                false /* desc */,
+                                false /* stable */)
             } else {
                 if grouping_columns.len() != 1 {
+                    // TODO(clemens): debug print `planner`
                     bail!(QueryError::NotImplemented,
-                        "Grouping key is not order preserving and more than 1 grouping column\nGrouping key type: {:?}\n{}",
-                        &grouping_key_type,
-                        &executor)
+                        "Grouping key is not order preserving and more than 1 grouping column\nGrouping key type: {:?}\nTODO: PLANNER",
+                        &grouping_key_type )
                 }
-                query_plan::prepare(
-                    sort_by(grouping_columns[0],
-                            indices(grouping_columns[0]),
-                            false /* desc */,
-                            false /* stable */),
-                    &mut executor)?
+                let indices = planner.indices(grouping_columns[0]);
+                planner.sort_by(grouping_columns[0],
+                                indices,
+                                false /* desc */,
+                                false /* stable */)
             };
 
             let mut aggregations2 = Vec::new();
             for &(a, aggregator) in &aggregation_cols {
-                aggregations2.push((query_plan::prepare(
-                    query_syntax::select(a, sort_indices),
-                    &mut executor)?, aggregator));
+                aggregations2.push(
+                    (planner.select(a, sort_indices),
+                     aggregator));
             }
             aggregation_cols = aggregations2;
 
             let mut grouping_columns2 = Vec::new();
             for s in &grouping_columns {
-                grouping_columns2.push(query_plan::prepare(
-                    query_syntax::select(*s, sort_indices),
-                    &mut executor)?);
+                grouping_columns2.push(planner.select(*s, sort_indices));
             }
             grouping_columns = grouping_columns2;
         }
@@ -313,6 +282,7 @@ impl NormalFormQuery {
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
+        let mut executor = planner.prepare()?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().map(|c| c.1.len()).unwrap_or(1), &mut results, show);
