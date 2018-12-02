@@ -508,8 +508,7 @@ fn test_order_by_expression() {
     )
 }
 
-// TODO(clemens): enable once Codec.decode doesn't prepare unused query plans
-// #[test]
+#[test]
 fn test_order_by_multiple() {
     test_query_ec(
         "SELECT enum, string_packed
@@ -596,7 +595,7 @@ fn test_column_with_null_partitions() {
     assert_eq!(result.rows.iter().filter(|&x| x == &[Str("B".to_string())]).count(), 2);
 }
 
-// TODO(clemens): enable once Codec.decode doesn't prepare unused query plans
+// TODO(clemens): enable once unused query plans get eliminated
 // #[test]
 fn test_group_by_string() {
     use value_syntax::*;

@@ -21,7 +21,7 @@ macro_rules! trace_start {
         let _guard = $crate::_start(format!( $( $x ),* ).to_owned());
     )
 }
-
+/*
 #[cfg(feature = "trace")]
 macro_rules! trace_replace {
     ( $( $x:expr),* ) => (
@@ -29,7 +29,7 @@ macro_rules! trace_replace {
         let _guard = $crate::_replace(format!( $( $x ),* ).to_owned());
     )
 }
-
+*/
 #[cfg(not(feature = "trace"))]
 macro_rules! trace_start {
     // Drop refs to args (which is no-op) to prevent unused variable warnings.
