@@ -106,7 +106,7 @@ impl Codec {
             if let Some(decoded) = decoded_type {
                 section_types[0] = decoded;
             }
-            Codec::new(ops, self.section_types.clone())
+            Codec::new(ops, section_types)
         };
         codec.set_column_name(&self.column_name);
         codec
@@ -134,10 +134,10 @@ impl Codec {
                 }
                 CodecOp::Add(_, x) => {
                     let lhs = stack.pop().unwrap();
-                    let rhs = planner.scalar_i64(x, true, executor).tagged();
-                    planner.add(lhs, rhs, executor).tagged()
+                    let rhs = planner.scalar_i64(x, true, executor).into();
+                    planner.add(lhs, rhs, executor).into()
                 }
-                CodecOp::Delta(_) => planner.delta_decode(stack.pop().unwrap(), executor).tagged(),
+                CodecOp::Delta(_) => planner.delta_decode(stack.pop().unwrap(), executor).into(),
                 CodecOp::ToI64(_) => planner.cast(stack.pop().unwrap(), EncodingType::I64, executor),
                 CodecOp::PushDataSection(section_index) =>
                     planner.column_section(
@@ -150,13 +150,13 @@ impl Codec {
                     let dict_data = stack.pop().unwrap();
                     let dict_indices = stack.pop().unwrap();
                     let indices = stack.pop().unwrap();
-                    planner.dict_lookup(indices, dict_indices.u64().unwrap(), dict_data.u8().unwrap(), executor).tagged()
+                    planner.dict_lookup(indices, dict_indices.u64().unwrap(), dict_data.u8().unwrap(), executor).into()
                 }
                 CodecOp::LZ4(t, decoded_length) =>
                     planner.lz4_decode(stack.pop().unwrap().u8().unwrap(), decoded_length, t, executor),
-                CodecOp::UnpackStrings => planner.unpack_strings(stack.pop().unwrap().u8().unwrap(), executor).tagged(),
+                CodecOp::UnpackStrings => planner.unpack_strings(stack.pop().unwrap().u8().unwrap(), executor).into(),
                 CodecOp::UnhexpackStrings(upper, total_bytes) =>
-                    planner.unhexpack_strings(stack.pop().unwrap().u8().unwrap(), upper, total_bytes, executor).tagged(),
+                    planner.unhexpack_strings(stack.pop().unwrap().u8().unwrap(), upper, total_bytes, executor).into(),
                 CodecOp::Unknown => panic!("unknown decode plan!"),
             };
             stack.push(plan);
@@ -181,6 +181,7 @@ impl Codec {
 
     pub fn ops(&self) -> &[CodecOp] { &self.ops }
     pub fn encoding_type(&self) -> EncodingType { self.section_types[0] }
+    pub fn section_types(&self) -> &[EncodingType] { &self.section_types }
     pub fn decoded_type(&self) -> BasicType { self.decoded_type }
     pub fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }
     pub fn is_order_preserving(&self) -> bool { self.is_order_preserving }
@@ -188,7 +189,10 @@ impl Codec {
     pub fn is_elementwise_decodable(&self) -> bool { self.is_fixed_width }
     pub fn is_identity(&self) -> bool { self.ops.is_empty() }
 
-    pub fn encode_str(&self, string_const: BufferRef<Scalar<&'static str>>, planner: &mut QueryPlanner, executor: &mut QueryExecutor) -> BufferRef<Scalar<i64>> {
+    pub fn encode_str(&self,
+                      string_const: BufferRef<Scalar<&'static str>>,
+                      planner: &mut QueryPlanner,
+                      executor: &mut QueryExecutor) -> BufferRef<Scalar<i64>> {
         match self.ops[..] {
             [CodecOp::PushDataSection(1), CodecOp::PushDataSection(2), CodecOp::DictLookup(_)] => {
                 let offset_len = planner.column_section(&self.column_name, 1, None, EncodingType::U64, executor).u64().unwrap();

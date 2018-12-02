@@ -78,7 +78,7 @@ impl NormalFormQuery {
                 let buffer = executor.named_buffer("indices", EncodingType::Null);
                 let indices_op = VecOperator::constant_vec(Data::empty(partition_length), buffer.any());
                 executor.push(indices_op);
-                let indices = planner.indices(buffer, &mut executor).tagged();
+                let indices = planner.indices(buffer, &mut executor).into();
                 let filter = planner.filter(indices, where_true, &mut executor);
                 Filter::Indices(planner.select(filter, sort_indices, &mut executor).usize()?)
             } else {
@@ -197,7 +197,7 @@ impl NormalFormQuery {
 
         // Determine selector
         let selector = match selector {
-            None => planner.exists(grouping_key, aggregation_cardinality, &mut executor).tagged(),
+            None => planner.exists(grouping_key, aggregation_cardinality, &mut executor).into(),
             Some(x) => x.0,
         };
 

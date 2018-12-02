@@ -301,14 +301,22 @@ impl<'a> QueryExecutor<'a> {
                  visited: &mut Vec<bool>,
                  total_order: &mut Vec<ExecutorStage>) {
             if visited[stage_index] { return; }
+            trace!(">>> Visit {}", stage_index);
             visited[stage_index] = true;
             for &dependency in &dependencies[stage_index] {
                 visit(dependency, dependencies, stage, visited, total_order);
             }
+            trace!(">>> Commit {}", stage_index);
             total_order.push(stage[stage_index].clone());
         };
-        stages.iter().enumerate().for_each(|(i, _)|
-            visit(i, &dependencies, &stages, &mut visited, &mut total_order));
+        stages.iter().enumerate().for_each(|(i, _)| {
+            trace!(">>> Stage {}", i);
+            trace!("Dependencies: {:?}", &dependencies[i]);
+            for (op, _) in &stages[i].ops {
+                trace!("{}", &self.ops[*op].display(true));
+            }
+            visit(i, &dependencies, &stages, &mut visited, &mut total_order)
+        });
         total_order
     }
 

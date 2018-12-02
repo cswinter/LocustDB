@@ -37,6 +37,6 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortBy<T> {
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
-        format!("sort_by({}, {}; desc={}, stable={})", self.ranking, self.output, self.descending, self.stable)
+        format!("sort_by({}, {}; desc={}, stable={})", self.ranking, self.indices, self.descending, self.stable)
     }
 }

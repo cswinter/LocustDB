@@ -17,7 +17,7 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
         let boxed: Type = parse_quote!(Box<#enum_ident>);
         let string: Type = parse_quote!(String);
         // let attribute: Path = parse_quote!(newstyle);
-        for variant in variants.into_iter() {
+        for (index, variant) in variants.into_iter().enumerate() {
             if let Fields::Named(fields) = variant.fields {
                 let variant_ident = variant.ident.clone();
                 let ident_snake = studley_to_snake(variant.ident);
@@ -26,8 +26,11 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                     let mut new_buffers = Vec::<Stmt>::new();
                     let mut struct_args = Vec::<FieldValue>::new();
                     let mut result = Vec::<Ident>::new();
+                    let mut cache_retrieve = Vec::<Expr>::new();
                     let mut result_type = Vec::<Type>::new();
                     let mut output: Expr = parse_quote!(None);
+                    let mut hashes = Vec::<Stmt>::new();
+                    let mut output_index = 0;
                     for field in fields.named.into_iter() {
                         let field_ident = field.ident.clone().unwrap();
                         let field_type = field.ty;
@@ -55,9 +58,16 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                                 output = parse_quote!(Some(#field_ident.i));
                                 create_buffer(&field_ident, &field_type)
                             };
+                            let index_lit = LitInt::new(output_index as u64, IntSuffix::Usize, Span::call_site());
+                            if attr.tts.to_string().contains("shared") {
+                                cache_retrieve.push(parse_quote!(buffer[#index_lit].any()));
+                            } else {
+                                cache_retrieve.push(convert(parse_quote!(buffer[#index_lit]), &field_type));
+                            }
                             result_type.push(field_type);
                             result.push(field_ident.clone());
                             new_buffers.push(new_buffer);
+                            output_index += 1;
                         } else {
                             if field_type == string {
                                 fn_inputs.push(parse_quote!(#field_ident: &str));
@@ -65,13 +75,32 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                             } else {
                                 fn_inputs.push(parse_quote!(#field_ident: #field_type));
                             }
+                            if field.attrs.iter().find(|attr| attr.path == parse_quote!(nohash)).is_none() {
+                                hashes.push(hash(&field_ident, &field_type));
+                            }
                         }
                         struct_args.push(parse_quote!(#field_ident));
                     }
 
+                    let index = LitInt::new(index as u64, IntSuffix::U64, Span::call_site());
+                    let result2 = result.clone();
                     let item = parse_quote! {
                         pub fn #ident_snake ( &mut self, #(#fn_inputs),* , result: &mut QueryExecutor)
                                                                                  -> (#(#result_type),*) {
+
+                            use crypto::digest::Digest;
+                            use crypto::md5::Md5;
+                            let mut signature = [0u8; 16];
+                            let mut hasher = Md5::new();
+                            if self.enable_common_subexpression_elimination() {
+                                hasher.input(&#index.to_ne_bytes());
+                                #(#hashes)*
+                                hasher.result(&mut signature);
+                                if let Some(buffer) = self.cache.get(&signature) {
+                                    return (#(#cache_retrieve),*)
+                                }
+                            }
+
                             #(#new_buffers)*
 
                             if let Some(output) = #output {
@@ -82,6 +111,10 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                             }
 
                             self.operations.push(#enum_ident::#variant_ident { #(#struct_args),* });
+
+                            if self.enable_common_subexpression_elimination() {
+                                self.cache.insert(signature, vec![#(#result2.into()),*]);
+                            }
 
                             (#(#result),*)
                         }
@@ -159,10 +192,45 @@ fn create_buffer(field_ident: &Ident, field_type: &Type) -> Stmt {
         parse_quote!(let #field_ident = result.buffer_scalar_str(#field_name);)
     } else {
         field_ident.span().unstable().error(format!("{} has unknown buffer type {:?}", field_ident, field_type)).emit();
-        return parse_quote!(let #field_ident = #field_ident;);
+        parse_quote!(let #field_ident = #field_ident;)
     }
 }
 
+fn convert(expr: Expr, field_type: &Type) -> Expr {
+    if *field_type == parse_quote!(BufferRef<u8>) {
+        parse_quote!(#expr.u8().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<&'static str>) {
+        parse_quote!(#expr.str().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<usize>) {
+        parse_quote!(#expr.usize().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<i64>) {
+        parse_quote!(#expr.i64().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<Scalar<i64>>) {
+        parse_quote!(#expr.scalar_i64().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<Scalar<String>>) {
+        parse_quote!(#expr.scalar_string().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<Scalar<&'static str>>) {
+        parse_quote!(#expr.scalar_str().unwrap())
+    } else {
+        expr
+    }
+}
+
+fn hash(field_ident: &Ident, field_type: &Type) -> Stmt {
+    if *field_type == parse_quote!(String) {
+        parse_quote!(hasher.input_str(#field_ident);)
+    } else if *field_type == parse_quote!(usize) || *field_type == parse_quote!(i64) {
+        parse_quote!(hasher.input(&#field_ident.to_ne_bytes());)
+    } else if *field_type == parse_quote!(u8) {
+        parse_quote!(hasher.input(&[#field_ident]);)
+    } else if *field_type == parse_quote!(bool) {
+        parse_quote!(hasher.input(&[#field_ident as u8]);)
+    } else if *field_type == parse_quote!(TypedBufferRef) {
+        parse_quote!(hasher.input(&#field_ident.buffer.i.to_ne_bytes());)
+    } else {
+        parse_quote!(hasher.input(&#field_ident.i.to_ne_bytes());)
+    }
+}
 
 fn parse_type(type_def: String) -> Option<Expr> {
     lazy_static! {

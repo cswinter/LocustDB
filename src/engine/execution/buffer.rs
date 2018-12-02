@@ -66,51 +66,51 @@ impl BufferRef<Any> {
 }
 
 // TODO(clemens): remove this, temporary hack because ther is no buffer type for ByteSlices
-impl BufferRef<Any> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::Null)
+impl From<BufferRef<Any>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Any>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer, EncodingType::Null)
     }
 }
 
-impl BufferRef<u32> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::U32)
+impl From<BufferRef<u32>> for TypedBufferRef {
+    fn from(buffer: BufferRef<u32>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::U32)
     }
 }
 
-impl BufferRef<u8> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::U8)
+impl From<BufferRef<u8>> for TypedBufferRef {
+    fn from(buffer: BufferRef<u8>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::U8)
     }
 }
 
-impl<'a> BufferRef<&'a str> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::Str)
+impl<'a> From<BufferRef<&'a str>> for TypedBufferRef {
+    fn from(buffer: BufferRef<&'a str>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::Str)
     }
 }
 
-impl BufferRef<i64> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::I64)
+impl From<BufferRef<i64>> for TypedBufferRef {
+    fn from(buffer: BufferRef<i64>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::I64)
     }
 }
 
-impl<'a> BufferRef<Scalar<&'a str>> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::ScalarStr)
+impl<'a> From<BufferRef<Scalar<&'a str>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Scalar<&'a str>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::ScalarStr)
     }
 }
 
-impl BufferRef<Scalar<i64>> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::ScalarI64)
+impl From<BufferRef<Scalar<i64>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Scalar<i64>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::ScalarI64)
     }
 }
 
-impl BufferRef<usize> {
-    pub fn tagged(&self) -> TypedBufferRef {
-        TypedBufferRef::new(self.any(), EncodingType::USize)
+impl From<BufferRef<usize>> for TypedBufferRef {
+    fn from(buffer: BufferRef<usize>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::USize)
     }
 }
 
@@ -125,7 +125,23 @@ impl<T: Clone> BufferRef<T> {
 
 impl<T> fmt::Display for BufferRef<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}_{}", self.name, self.i)
+        write!(f, "{}", color_code(&format!("{}_{}", self.name, self.i), self.i))
+    }
+}
+
+fn color_code(s: &str, i: usize) -> String {
+    let colors = vec![
+        "\x1b[31m",
+        "\x1b[32m",
+        "\x1b[33m",
+        "\x1b[34m",
+        "\x1b[35m",
+        "\x1b[36m",
+    ];
+    if std::env::var("DEBUG_TESTS").is_ok() {
+        format!("{}{}\x1b[0m", colors[i % colors.len()], s)
+    } else {
+        s.to_string()
     }
 }
 

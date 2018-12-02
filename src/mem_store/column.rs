@@ -95,8 +95,10 @@ impl Column {
     #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(&mut self) {
         if let Some(CodecOp::LZ4(decoded_type, _)) = self.codec.ops().get(0).map(|c| *c) {
+            trace!("lz4_decode before: {:?}", self);
             self.codec = self.codec.without_lz4();
             self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);
+            trace!("lz4_decode after: {:?}", self);
         }
     }
 
@@ -141,12 +143,13 @@ impl Column {
 
 impl fmt::Debug for Column {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}[{}][{:?}] {:#}, [{:?}]",
+        write!(f, "name={}, len={}, minmax={:?}, codec={:#}, codec.section_types={:?}, sections(type,len)={:?}",
                &self.name,
                self.len(),
                self.range,
                self.codec.signature(true),
-               self.data.iter().map(|d| d.len()).collect::<Vec<_>>())
+            self.codec.section_types(),
+               self.data.iter().map(|d| (d.encoding_type(), d.len())).collect::<Vec<_>>())
     }
 }
 

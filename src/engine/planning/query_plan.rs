@@ -4,9 +4,6 @@ use std::result::Result;
 use std::sync::Arc;
 
 use chrono::{Datelike, NaiveDateTime};
-// use crypto::digest::Digest;
-// use crypto::md5::Md5;
-use itertools::Itertools;
 use regex::Regex;
 
 use ::QueryError;
@@ -23,7 +20,9 @@ use locustdb_derive::ASTBuilder;
 pub struct QueryPlanner {
     operations: Vec<QueryPlan>,
     buffer_to_operation: Vec<Option<usize>>,
+    cache: HashMap<[u8; 16], Vec<TypedBufferRef>>,
     checkpoint: usize,
+    cache_checkpoint: HashMap<[u8; 16], Vec<TypedBufferRef>>,
 }
 
 impl QueryPlanner {
@@ -43,10 +42,12 @@ impl QueryPlanner {
 
     pub fn checkpoint(&mut self) {
         self.checkpoint = self.operations.len();
+        self.cache_checkpoint = self.cache.clone();
     }
 
     pub fn reset(&mut self) {
         self.operations.truncate(self.checkpoint);
+        std::mem::swap(&mut self.cache, &mut self.cache_checkpoint);
     }
 
     pub fn resolve(&self, buffer: &TypedBufferRef) -> &QueryPlan {
@@ -54,6 +55,8 @@ impl QueryPlanner {
             .expect(&format!("Not entry found for {:?}", buffer));
         &self.operations[op_index]
     }
+
+    fn enable_common_subexpression_elimination(&self) -> bool { true }
 }
 
 
@@ -64,6 +67,7 @@ pub enum QueryPlan {
     ColumnSection {
         name: String,
         section: usize,
+        #[nohash]
         range: Option<(i64, i64)>,
         #[output(t_provided)]
         column_section: TypedBufferRef,
@@ -198,15 +202,6 @@ pub enum QueryPlan {
         select: TypedBufferRef,
         #[output(t = "plan")]
         compacted: TypedBufferRef,
-    },
-
-    /// Encodes `constant` according to `codec`.
-    #[newstyle]
-    EncodeIntConstant {
-        constant: BufferRef<Scalar<i64>>,
-        codec: Codec,
-        #[output]
-        encoded: BufferRef<Scalar<i64>>,
     },
 
     /// Sums `lhs` and `rhs << shift`.
@@ -427,35 +422,9 @@ pub enum QueryPlan {
     MergeKeep { take_left: Box<QueryPlan>, lhs: Box<QueryPlan>, rhs: Box<QueryPlan> },
 }
 
-impl QueryPlan {
-    fn is_constant(&self) -> bool {
-        match self {
-            QueryPlan::Constant { .. } | QueryPlan::ScalarI64 { .. }
-            | QueryPlan::ScalarStr { .. } => true,
-            _ => false,
-        }
-    }
-}
-
+// TODO(clemens): make method private?
 pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
-    _prepare(plan, false, result)
-}
-
-pub fn prepare_no_alias(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
-    _prepare(plan, true, result)
-}
-
-fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
     trace!("{:?}", &plan);
-    // Aliasing constants currently messes with the execution graph in ways the planner can't handle
-    let (plan, signature) = if no_alias || plan.is_constant() {
-        (plan, [0; 16])
-    } else {
-        // TODO(clemens): O(n^2) :(   use visitor pattern?
-        let (box plan, signature) = replace_common_subexpression(plan, result);
-        (plan, signature)
-    };
-    trace!("{:?} {}", &plan, to_hex_string(&signature));
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select { plan, indices, selection } => VecOperator::select(plan, indices, selection)?,
         QueryPlan::ColumnSection { name, section, column_section, .. } =>
@@ -488,7 +457,6 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,
         QueryPlan::NonzeroIndices { plan, nonzero_indices } => VecOperator::nonzero_indices(plan, nonzero_indices)?,
         QueryPlan::NonzeroCompact { plan, compacted } => VecOperator::nonzero_compact(plan, compacted)?,
-        QueryPlan::EncodeIntConstant { constant, codec, encoded } => VecOperator::encode_int_const(constant, codec, encoded),
         QueryPlan::BitPack { lhs, rhs, shift, bit_packed } => VecOperator::bit_shift_left_add(lhs, rhs, bit_packed, shift),
         QueryPlan::BitUnpack { plan, shift, width, unpacked } => VecOperator::bit_unpack(plan, shift, width, unpacked),
         QueryPlan::SlicePack { plan, stride, offset, packed } => VecOperator::slice_pack(plan, stride, offset, packed)?,
@@ -532,9 +500,6 @@ fn _prepare(plan: QueryPlan, no_alias: bool, result: &mut QueryExecutor) -> Resu
         }
     };
     result.push(operation);
-    if signature != [0; 16] {
-        result.cache_last(signature);
-    }
     Ok(result.last_buffer())
 }
 
@@ -587,7 +552,7 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
                                        cardinality_out,
                                        max_cardinality)?);
     Ok((Some(unique_out),
-        grouping_key_out.tagged(),
+        grouping_key_out.into(),
         Type::encoded(Codec::opaque(EncodingType::U32, BasicType::Integer, false, false, true, true)),
         cardinality_out))
 }
@@ -677,44 +642,44 @@ lazy_static! {
 fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
     vec![
         (Func2Type::Add,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.add(lhs, rhs, x).tagged()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.add(lhs, rhs, x).into()))]),
         (Func2Type::Subtract,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.subtract(lhs, rhs, x).tagged()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.subtract(lhs, rhs, x).into()))]),
         (Func2Type::Multiply,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.multiply(lhs, rhs, x).tagged()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.multiply(lhs, rhs, x).into()))]),
         (Func2Type::Divide,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.divide(lhs, rhs, x).tagged()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.divide(lhs, rhs, x).into()))]),
         (Func2Type::Modulo,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.modulo(lhs, rhs, x).tagged()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs, x| qp.modulo(lhs, rhs, x).into()))]),
         (Func2Type::LT,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(lhs, rhs, x).tagged()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(lhs, rhs, x).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(lhs, rhs, x).tagged()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(lhs, rhs, x).into()),
                                        BasicType::String)]),
         (Func2Type::LTE,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(lhs, rhs, x).tagged()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(lhs, rhs, x).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(lhs, rhs, x).tagged()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(lhs, rhs, x).into()),
                                        BasicType::String)]),
         (Func2Type::GT,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(rhs, lhs, x).tagged()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(rhs, lhs, x).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(rhs, lhs, x).tagged()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than(rhs, lhs, x).into()),
                                        BasicType::String)]),
         (Func2Type::GTE,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(rhs, lhs, x).tagged()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(rhs, lhs, x).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(rhs, lhs, x).tagged()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.less_than_equals(rhs, lhs, x).into()),
                                        BasicType::String)]),
         (Func2Type::Equals,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.equals(lhs, rhs, x).tagged()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.equals(lhs, rhs, x).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.equals(lhs, rhs, x).tagged()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.equals(lhs, rhs, x).into()),
                                        BasicType::String)]),
         (Func2Type::NotEquals,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.not_equals(lhs, rhs, x).tagged()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.not_equals(lhs, rhs, x).into()),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.not_equals(lhs, rhs, x).tagged()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs, x| qp.not_equals(lhs, rhs, x).into()),
                                        BasicType::String)]),
     ].into_iter().collect()
 }
@@ -753,7 +718,7 @@ impl QueryPlan {
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
-                (planner.or(plan_lhs.u8()?, plan_rhs.u8()?, result).tagged(), Type::bit_vec())
+                (planner.or(plan_lhs.u8()?, plan_rhs.u8()?, result).into(), Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner, result)?;
@@ -761,7 +726,7 @@ impl QueryPlan {
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
-                (planner.and(plan_lhs.u8()?, plan_rhs.u8()?, result).tagged(), Type::bit_vec())
+                (planner.and(plan_lhs.u8()?, plan_rhs.u8()?, result).into(), Type::bit_vec())
             }
             Func2(RegexMatch, ref expr, ref regex) => {
                 match regex {
@@ -775,7 +740,7 @@ impl QueryPlan {
                         if let Some(codec) = t.codec.clone() {
                             plan = codec.decode(plan, planner, result);
                         }
-                        (planner.regex(plan.str()?, regex, result).tagged(), t)
+                        (planner.regex(plan.str()?, regex, result).into(), t)
                     }
                     _ => bail!(QueryError::TypeError, "Expected string constant as second argument to `regex`, actual: {:?}", regex),
                 }
@@ -799,17 +764,25 @@ impl QueryPlan {
 
                 if declaration.encoding_invariance && type_lhs.is_scalar && type_rhs.is_encoded() {
                     plan_lhs = if type_rhs.decoded == BasicType::Integer {
-                        planner.encode_int_constant(plan_lhs.scalar_i64()?, type_rhs.codec.clone().unwrap(), result).tagged()
+                        if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_lhs) {
+                            planner.scalar_i64(type_rhs.codec.unwrap().encode_int(value), false, result).into()
+                        } else {
+                            panic!("whoops");
+                        }
                     } else if type_rhs.decoded == BasicType::String {
-                        type_rhs.codec.clone().unwrap().encode_str(plan_lhs.scalar_str()?, planner, result).tagged()
+                        type_rhs.codec.clone().unwrap().encode_str(plan_lhs.scalar_str()?, planner, result).into()
                     } else {
                         panic!("whoops");
                     };
                 } else if declaration.encoding_invariance && type_rhs.is_scalar && type_lhs.is_encoded() {
                     plan_rhs = if type_lhs.decoded == BasicType::Integer {
-                        planner.encode_int_constant(plan_rhs.scalar_i64()?, type_lhs.codec.clone().unwrap(), result).tagged()
+                        if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_rhs) {
+                            planner.scalar_i64(type_lhs.codec.unwrap().encode_int(value), false, result).into()
+                        } else {
+                            panic!("whoops");
+                        }
                     } else if type_lhs.decoded == BasicType::String {
-                        type_lhs.codec.clone().unwrap().encode_str(plan_rhs.scalar_str()?, planner, result).tagged()
+                        type_lhs.codec.clone().unwrap().encode_str(plan_rhs.scalar_str()?, planner, result).into()
                     } else {
                         panic!("whoops");
                     };
@@ -836,13 +809,13 @@ impl QueryPlan {
                         if t.decoded != BasicType::Integer {
                             bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                         }
-                        planner.to_year(decoded.i64()?, result).tagged()
+                        planner.to_year(decoded.i64()?, result).into()
                     }
                     Func1Type::Not => {
                         if t.decoded != BasicType::Boolean {
                             bail!(QueryError::TypeError, "Found NOT({:?}), expected NOT(boolean)", &t)
                         }
-                        planner.not(decoded.u8()?, result).tagged()
+                        planner.not(decoded.u8()?, result).into()
                     }
                     Func1Type::Negate => {
                         bail!(QueryError::TypeError, "Found negate({:?}), expected negate(integer)", &t)
@@ -850,8 +823,8 @@ impl QueryPlan {
                 };
                 (plan, t.decoded())
             }
-            Const(RawVal::Int(i)) => (planner.scalar_i64(i, false, result).tagged(), Type::scalar(BasicType::Integer)),
-            Const(RawVal::Str(ref s)) => (planner.scalar_str(s, result).tagged(), Type::scalar(BasicType::String)),
+            Const(RawVal::Int(i)) => (planner.scalar_i64(i, false, result).into(), Type::scalar(BasicType::Integer)),
+            Const(RawVal::Str(ref s)) => (planner.scalar_str(s, result).into(), Type::scalar(BasicType::String)),
             ref x => bail!(QueryError::NotImplemented, "{:?}.compile_vec()", x),
         })
     }
@@ -864,7 +837,7 @@ fn encoding_range(plan: &TypedBufferRef, planner: &QueryPlanner) -> Option<(i64,
     use self::QueryPlan::*;
     match *planner.resolve(plan) {
         ColumnSection { range, .. } => range,
-        ToYear { ref timestamp, .. } => encoding_range(&timestamp.tagged(), planner).map(|(min, max)|
+        ToYear { timestamp, .. } => encoding_range(&timestamp.into(), planner).map(|(min, max)|
             (i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
              i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
         ),
@@ -882,7 +855,7 @@ fn encoding_range(plan: &TypedBufferRef, planner: &QueryPlanner) -> Option<(i64,
             None
         },
         Cast { ref input, .. } => encoding_range(input, planner),
-        LZ4Decode { ref bytes, .. } => encoding_range(&bytes.tagged(), planner),
+        LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), planner),
         DeltaDecode { ref plan, .. } => encoding_range(plan, planner),
         _ => None, // TODO(clemens): many more cases where we can determine range
     }
@@ -1231,7 +1204,7 @@ pub fn compile_grouping_key(
                 };
                 let gk_plan = if offset != 0 {
                     let offset = planner.scalar_i64(offset, true, executor);
-                    planner.add(gk_plan, offset.tagged(), executor).tagged()
+                    planner.add(gk_plan, offset.into(), executor).into()
                 } else { gk_plan };
 
                 let encoded_group_by_placeholder = executor.named_buffer(
@@ -1241,7 +1214,7 @@ pub fn compile_grouping_key(
                     |codec| codec.decode(encoded_group_by_placeholder, planner, executor));
                 let decoded_group_by = if offset == 0 { decoded_group_by } else {
                     let offset = planner.scalar_i64(-offset, true, executor);
-                    let sum = planner.add(decoded_group_by, offset.tagged(), executor).tagged();
+                    let sum = planner.add(decoded_group_by, offset.into(), executor).into();
                     planner.cast(sum, gk_type.encoding_type(), executor)
                 };
 
@@ -1284,7 +1257,7 @@ pub fn compile_grouping_key(
             false /* is_positive_integer */,
             false /* is_fixed_width */,
         ));
-        Ok(((pack[0].tagged(), t),
+        Ok(((pack[0].into(), t),
             i64::MAX,
             decode_plans,
             encoded_group_by_placeholder))
@@ -1322,7 +1295,7 @@ fn try_bitpacking(
             order_preserving = order_preserving && plan_type.is_order_preserving();
             let query_plan = if subtract_offset {
                 let offset = planner.scalar_i64(-min, true, executor);
-                planner.add(query_plan, offset.tagged(), executor)
+                planner.add(query_plan, offset.into(), executor)
             } else {
                 planner.cast(query_plan, EncodingType::I64, executor).i64()?
             };
@@ -1337,10 +1310,10 @@ fn try_bitpacking(
                 encoded_group_by_placeholder,
                 total_width as u8,
                 bits(adjusted_max) as u8,
-                executor).tagged();
+                executor).into();
             if subtract_offset {
                 let offset = planner.scalar_i64(min, true, executor);
-                decode_plan = planner.add(decode_plan, offset.tagged(), executor).tagged();
+                decode_plan = planner.add(decode_plan, offset.into(), executor).into();
             }
             decode_plan = planner.cast(decode_plan, plan_type.encoding_type(), executor);
             if let Some(codec) = plan_type.codec.clone() {
@@ -1362,19 +1335,13 @@ fn try_bitpacking(
                 decode_plans.reverse();
                 let t = Type::encoded(Codec::opaque(
                     EncodingType::I64, BasicType::Integer, false, order_preserving, true, true));
-                ((plan.tagged(), t), largest_key, decode_plans, encoded_group_by_placeholder.tagged())
+                ((plan.into(), t), largest_key, decode_plans, encoded_group_by_placeholder.into())
             })
         } else {
             planner.reset();
             None
         }
     )
-}
-
-fn to_hex_string(bytes: &[u8]) -> String {
-    bytes.iter()
-        .map(|b| format!("{:02X}", b))
-        .join("")
 }
 
 impl From<TypedBufferRef> for QueryPlan {
