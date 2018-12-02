@@ -43,10 +43,11 @@ use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
-use super::propagate_nullability::PropagateNullability;
+use super::null_vec::NullVec;
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
+use super::propagate_nullability::PropagateNullability;
 use super::scalar_i64::ScalarI64;
 use super::scalar_str::ScalarStr;
 use super::select::*;
@@ -250,6 +251,10 @@ impl<'a> VecOperator<'a> {
 
     pub fn scalar_str(val: String, pinned: BufferRef<Scalar<String>>, output: BufferRef<Scalar<&'a str>>) -> BoxedOperator<'a> {
         Box::new(ScalarStr { val, pinned, output })
+    }
+
+    pub fn null_vec(len: usize, output: BufferRef<Any>) -> BoxedOperator<'a> {
+        Box::new(NullVec { len, output })
     }
 
     pub fn constant_expand(val: i64, len: usize, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
@@ -483,8 +488,8 @@ impl<'a> VecOperator<'a> {
 
     pub fn summation(input: TypedBufferRef,
                      grouping: TypedBufferRef,
-                     output: BufferRef<i64>,
-                     max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+                     max_index: BufferRef<Scalar<i64>>,
+                     output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "summation";
             input: IntegerNoU64, grouping: Integer;
@@ -492,7 +497,7 @@ impl<'a> VecOperator<'a> {
         }
     }
 
-    pub fn count(grouping: TypedBufferRef, output: BufferRef<u32>, max_index: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+    pub fn count(grouping: TypedBufferRef, max_index: BufferRef<Scalar<i64>>, output: BufferRef<u32>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "count";
             grouping: Integer;
@@ -533,10 +538,10 @@ impl<'a> VecOperator<'a> {
     }
 
     pub fn hash_map_grouping(raw_grouping_key: TypedBufferRef,
+                             max_cardinality: usize,
                              unique_out: TypedBufferRef,
                              grouping_key_out: BufferRef<u32>,
-                             cardinality_out: BufferRef<Scalar<i64>>,
-                             max_cardinality: usize) -> Result<BoxedOperator<'a>, QueryError> {
+                             cardinality_out: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
         if let EncodingType::ByteSlices(columns) = raw_grouping_key.tag {
             return Ok(HashMapGroupingByteSlices::boxed(
                 raw_grouping_key.buffer, unique_out.buffer, grouping_key_out, cardinality_out, columns));

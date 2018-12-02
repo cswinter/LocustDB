@@ -11,9 +11,7 @@ use ingest::raw_val::RawVal;
 
 pub struct QueryExecutor<'a> {
     ops: Vec<Box<VecOperator<'a> + 'a>>,
-    ops_cache: HashMap<[u8; 16], TypedBufferRef>,
     stages: Vec<ExecutorStage>,
-    encoded_group_by: Option<TypedBufferRef>,
     count: usize,
     last_buffer: TypedBufferRef,
     shared_buffers: HashMap<&'static str, TypedBufferRef>,
@@ -27,6 +25,8 @@ struct ExecutorStage {
 }
 
 impl<'a> QueryExecutor<'a> {
+    pub fn set_buffer_count(&mut self, count: usize) { self.count = count }
+
     pub fn named_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
         let buffer = TypedBufferRef::new(BufferRef { i: self.count, name, t: PhantomData }, tag);
         self.count += 1;
@@ -97,12 +97,6 @@ impl<'a> QueryExecutor<'a> {
         self.ops.push(op);
     }
 
-    pub fn set_encoded_group_by(&mut self, gb: TypedBufferRef) {
-        self.encoded_group_by = Some(gb)
-    }
-
-    pub fn encoded_group_by(&self) -> Option<TypedBufferRef> { self.encoded_group_by }
-
     pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a Data<'a>>>) -> Scratchpad<'a> {
         self.stages = self.partition();
         Scratchpad::new(self.count, columns)
@@ -111,14 +105,6 @@ impl<'a> QueryExecutor<'a> {
     pub fn prepare_no_columns(&mut self) -> Scratchpad<'a> {
         self.stages = self.partition();
         Scratchpad::new(self.count, HashMap::default())
-    }
-
-    pub fn get(&self, signature: &[u8; 16]) -> Option<QueryPlan> {
-        self.ops_cache.get(signature).map(|x| query_syntax::read_buffer(*x))
-    }
-
-    pub fn cache_last(&mut self, signature: [u8; 16]) {
-        self.ops_cache.insert(signature, self.last_buffer);
     }
 
     pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
@@ -493,9 +479,7 @@ impl<'a> Default for QueryExecutor<'a> {
     fn default() -> QueryExecutor<'a> {
         QueryExecutor {
             ops: vec![],
-            ops_cache: HashMap::default(),
             stages: vec![],
-            encoded_group_by: None,
             count: 0,
             last_buffer: TypedBufferRef::new(error_buffer_ref("ERROR"), EncodingType::Null),
             shared_buffers: HashMap::default(),

@@ -76,9 +76,11 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         batch1.aggregations.len(), batch2.aggregations.len(),
     );
 
+
+    let mut executor = QueryExecutor::default();
+
     if !batch1.aggregations.is_empty() {
         // Aggregation query
-        let mut executor = QueryExecutor::default();
         let left = batch1.columns.into_iter()
             .map(|vec| set(&mut executor, "left", vec))
             .collect::<Vec<_>>();
@@ -170,7 +172,6 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         // No aggregation
         if !batch1.order_by.is_empty() {
             // Sort query
-            let mut executor = QueryExecutor::default();
             let left = batch1.columns.into_iter()
                 .map(|vec| set(&mut executor, "left", vec))
                 .collect::<Vec<_>>();
@@ -227,7 +228,12 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     projection.push(merged_final_sort_col.any());
                 } else {
                     let merged = query_plan::prepare(
-                        query_syntax::merge_keep(TypedBufferRef::from(merge_ops), left[ileft], right[iright]),
+                        QueryPlan::MergeKeep {
+                            take_left: merge_ops,
+                            lhs: left[ileft],
+                            rhs: right[iright],
+                            merged: executor.named_buffer("merged", left[ileft].tag),
+                        },
                         &mut executor)?;
                     projection.push(merged.any());
                     merges.insert((ileft, iright), merged.any());

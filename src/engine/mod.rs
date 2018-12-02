@@ -8,4 +8,3 @@ pub use self::execution::*;
 pub use self::planning::*;
 pub use self::operators::*;
 
-pub use self::planning::query_plan::syntax as query_syntax;
