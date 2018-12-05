@@ -114,6 +114,18 @@ impl From<BufferRef<usize>> for TypedBufferRef {
     }
 }
 
+impl From<BufferRef<MergeOp>> for TypedBufferRef {
+    fn from(buffer: BufferRef<MergeOp>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::MergeOp)
+    }
+}
+
+impl From<BufferRef<Premerge>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Premerge>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::Premerge)
+    }
+}
+
 impl<T> BufferRef<Nullable<T>> {
     pub fn cast_non_nullable(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
     pub fn nullable_any(self) -> BufferRef<Nullable<Any>> { unsafe { mem::transmute(self) } }
@@ -155,6 +167,8 @@ impl TypedBufferRef {
     pub fn forget_nullability(&self) -> TypedBufferRef {
         TypedBufferRef { buffer: self.buffer, tag: self.tag.non_nullable() }
     }
+
+    pub fn is_nullable(&self) -> bool { self.tag.is_nullable() }
 
     pub fn nullable_any<'a>(&self) -> Result<BufferRef<Nullable<Any>>, QueryError> {
         ensure!(self.tag.is_nullable(), "{:?} is not nullable", self.tag);

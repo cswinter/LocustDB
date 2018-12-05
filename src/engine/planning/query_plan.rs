@@ -23,7 +23,7 @@ pub enum QueryPlan {
         section: usize,
         #[nohash]
         range: Option<(i64, i64)>,
-        #[output(t_provided)]
+        #[output(t = "base=provided")]
         column_section: TypedBufferRef,
     },
     Connect {
@@ -34,14 +34,14 @@ pub enum QueryPlan {
     AssembleNullable {
         data: TypedBufferRef,
         present: BufferRef<u8>,
-        #[output(t = "data.nullable")]
+        #[output(t = "base=data;null=always")]
         nullable: TypedBufferRef,
     },
     /// Combines a vector with the null map of another vector.
     PropagateNullability {
         nullable: TypedBufferRef,
         data: TypedBufferRef,
-        #[output(t = "data.nullable")]
+        #[output(t = "base=data;null=always")]
         nullable_data: TypedBufferRef,
     },
     /// Combines a vector with a null map where none of the elements are null.
@@ -49,7 +49,7 @@ pub enum QueryPlan {
         data: TypedBufferRef,
         #[internal]
         present: BufferRef<u8>,
-        #[output(t = "data.nullable")]
+        #[output(t = "base=data;null=always")]
         nullable: TypedBufferRef,
     },
     /// Resolves dictionary indices to their original string value.
@@ -71,14 +71,14 @@ pub enum QueryPlan {
     /// Casts `input` to the specified type.
     Cast {
         input: TypedBufferRef,
-        #[output(t_provided)]
+        #[output(t = "base=provided;null=input")]
         casted: TypedBufferRef,
     },
     /// LZ4 decodes `bytes` into `decoded_len` elements of type `t`.
     LZ4Decode {
         bytes: BufferRef<u8>,
         decoded_len: usize,
-        #[output(t_provided)]
+        #[output(t = "base=provided")]
         decoded: TypedBufferRef,
     },
     /// Decodes a byte array of tightly packed strings.
@@ -106,7 +106,7 @@ pub enum QueryPlan {
     HashMapGrouping {
         raw_grouping_key: TypedBufferRef,
         max_cardinality: usize,
-        #[output(t = "raw_grouping_key")]
+        #[output(t = "base=raw_grouping_key")]
         unique: TypedBufferRef,
         #[output]
         grouping_key: BufferRef<u32>,
@@ -124,20 +124,20 @@ pub enum QueryPlan {
     /// Deletes all zero entries from `plan`.
     NonzeroCompact {
         plan: TypedBufferRef,
-        #[output(t = "plan")]
+        #[output(t = "base=plan")]
         compacted: TypedBufferRef,
     },
     /// Determines the indices of all entries in `plan` that are non-zero.
     NonzeroIndices {
         plan: TypedBufferRef,
-        #[output(t_provided)]
+        #[output(t = "base=provided")]
         nonzero_indices: TypedBufferRef,
     },
     /// Deletes all entries in `plan` for which the corresponding entry in `select` is 0.
     Compact {
         plan: TypedBufferRef,
         select: TypedBufferRef,
-        #[output(t = "plan")]
+        #[output(t = "base=plan")]
         compacted: TypedBufferRef,
     },
     /// Sums `lhs` and `rhs << shift`.
@@ -167,7 +167,7 @@ pub enum QueryPlan {
         plan: BufferRef<Any>,
         stride: usize,
         offset: usize,
-        #[output(t_provided)]
+        #[output(t = "base=provided")]
         unpacked: TypedBufferRef,
     },
     Count {
@@ -210,8 +210,8 @@ pub enum QueryPlan {
     Add {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        sum: BufferRef<i64>,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        sum: TypedBufferRef,
     },
     Subtract {
         lhs: TypedBufferRef,
@@ -285,7 +285,7 @@ pub enum QueryPlan {
         ranking: TypedBufferRef,
         n: usize,
         desc: bool,
-        #[internal(t = "ranking")]
+        #[internal(t = "base=ranking")]
         tmp_keys: TypedBufferRef,
         #[output]
         top_n: BufferRef<usize>,
@@ -294,19 +294,24 @@ pub enum QueryPlan {
     Select {
         plan: TypedBufferRef,
         indices: BufferRef<usize>,
-        #[output(t = "plan")]
+        #[output(t = "base=plan")]
         selection: TypedBufferRef,
     },
     /// Outputs all elements in `plan` for which the corresponding entry in `select` is nonzero.
     Filter {
         plan: TypedBufferRef,
         select: BufferRef<u8>,
-        #[output(t = "plan")]
+        #[output(t = "base=plan")]
         filtered: TypedBufferRef,
+    },
+    ConstantVec {
+        index: usize,
+        #[output(t = "base=provided")]
+        constant_vec: TypedBufferRef,
     },
     NullVec {
         len: usize,
-        #[output(t_provided)]
+        #[output(t = "base=provided")]
         nulls: TypedBufferRef,
     },
     ScalarI64 {
@@ -326,16 +331,96 @@ pub enum QueryPlan {
     ConstantExpand {
         value: i64,
         len: usize,
-        #[output(t_provided)]
+        #[output(t = "base=provided")]
         expanded: TypedBufferRef,
+    },
+    /// Merges `lhs` and `rhs` and outputs a merge plan .
+    Merge {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        limit: usize,
+        desc: bool,
+        #[output]
+        merge_ops: BufferRef<u8>,
+        #[output(t = "base=lhs;null=lhs,rhs")]
+        merged: TypedBufferRef,
+    },
+    /// Merges `lhs` and `lhs` while respecting the `partitioning` and output a merge plan.
+    MergePartitioned {
+        partitioning: BufferRef<Premerge>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        limit: usize,
+        desc: bool,
+        #[output]
+        take_left: BufferRef<u8>,
+        #[output(t = "base=lhs")]
+        merged: TypedBufferRef,
+    },
+    /// Merges `lhs` and `lhs` dropping duplicates, and outputs a merge plan.
+    MergeDeduplicate {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        merge_ops: BufferRef<MergeOp>,
+        #[output(t = "base=lhs")]
+        merged: TypedBufferRef,
+    },
+    /// Merges `lhs` and `lhs` dropping duplicates while respecting the `partitioning`,
+    /// and output a merge plan.
+    MergeDeduplicatePartitioned {
+        partitioning: BufferRef<Premerge>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        merge_ops: BufferRef<MergeOp>,
+        #[output(t = "base=lhs")]
+        merged: TypedBufferRef,
+    },
+    /// Identifies runs of identical elements when merging `lhs` and `rhs`.
+    /// `lhs` and `rhs` are assumed to be sorted.
+    Partition {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        limit: usize,
+        desc: bool,
+        #[output]
+        partitioning: BufferRef<Premerge>,
+    },
+    /// Identifies runs of identical elements when merging `lhs` and `rhs` within an existing partitioning.
+    /// `lhs` and `rhs` are assumed to be sorted.
+    Subpartition {
+        partitioning: BufferRef<Premerge>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        desc: bool,
+        #[output]
+        subpartitioning: BufferRef<Premerge>,
     },
     /// Merges `lhs` and `rhs` such that the resulting vector contains an element from lhs at position `i` iff `take_left[i] == 1`.
     MergeKeep {
         take_left: BufferRef<u8>,
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output(t = "lhs")]
+        #[output(t = "base=lhs;null=lhs,rhs")]
         merged: TypedBufferRef,
+    },
+    /// Merges `lhs` and `lhs` according to `merge_ops`, dropping duplicates.
+    MergeDrop {
+        merge_ops: BufferRef<MergeOp>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=lhs")]
+        merged: TypedBufferRef,
+    },
+    /// Merges `lhs` and `lhs` according to `merge_ops`, combining duplicates.
+    MergeAggregate {
+        merge_ops: BufferRef<MergeOp>,
+        lhs: BufferRef<i64>,
+        rhs: BufferRef<i64>,
+        aggregator: Aggregator,
+        #[output]
+        merged: BufferRef<i64>,
     },
 }
 
@@ -665,7 +750,7 @@ pub fn compile_grouping_key(
             (plan, t),
             1,
             vec![],
-            planner.named_buffer("empty_group_by", EncodingType::Null)
+            planner.buffer_provider.named_buffer("empty_group_by", EncodingType::Null)
         ))
     } else if exprs.len() == 1 {
         QueryPlan::compile_expr(&exprs[0], filter, columns, planner)
@@ -681,7 +766,7 @@ pub fn compile_grouping_key(
                     planner.add(gk_plan, offset.into()).into()
                 } else { gk_plan };
 
-                let encoded_group_by_placeholder = planner.named_buffer(
+                let encoded_group_by_placeholder = planner.buffer_provider.named_buffer(
                     "encoded_group_by_placeholder", gk_type.encoding_type());
                 let decoded_group_by = gk_type.codec.clone().map_or(
                     encoded_group_by_placeholder,
@@ -704,7 +789,7 @@ pub fn compile_grouping_key(
         let mut pack = Vec::new();
         let mut decode_plans = Vec::new();
         let encoded_group_by_placeholder =
-            planner.named_buffer("encoded_group_by_placeholder", EncodingType::ByteSlices(exprs.len()));
+            planner.buffer_provider.named_buffer("encoded_group_by_placeholder", EncodingType::ByteSlices(exprs.len()));
         for (i, expr) in exprs.iter().enumerate() {
             let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
             pack.push(planner.slice_pack(query_plan, exprs.len(), i));
@@ -750,7 +835,7 @@ fn try_bitpacking(
     let mut plan: Option<BufferRef<i64>> = None;
     let mut decode_plans = Vec::with_capacity(exprs.len());
     let mut order_preserving = true;
-    let encoded_group_by_placeholder = planner.buffer_i64("encoded_group_by_placeholder");
+    let encoded_group_by_placeholder = planner.buffer_provider.buffer_i64("encoded_group_by_placeholder");
     for expr in exprs.iter().rev() {
         let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
         let encoding_range = encoding_range(&query_plan, planner);
@@ -766,7 +851,7 @@ fn try_bitpacking(
             order_preserving = order_preserving && plan_type.is_order_preserving();
             let query_plan = if subtract_offset {
                 let offset = planner.scalar_i64(-min, true);
-                planner.add(query_plan, offset.into())
+                planner.add(query_plan, offset.into()).i64()?
             } else {
                 planner.cast(query_plan, EncodingType::I64).i64()?
             };
@@ -815,7 +900,7 @@ fn try_bitpacking(
 }
 
 // TODO(clemens): make method private?
-pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBufferRef, QueryError> {
+pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, result: &mut QueryExecutor<'a>) -> Result<TypedBufferRef, QueryError> {
     trace!("{:?}", &plan);
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select { plan, indices, selection } => VecOperator::select(plan, indices, selection)?,
@@ -835,8 +920,7 @@ pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBuffe
         QueryPlan::LZ4Decode { bytes, decoded_len, decoded } => VecOperator::lz4_decode(bytes, decoded_len, decoded)?,
         QueryPlan::UnpackStrings { bytes, unpacked_strings } => VecOperator::unpack_strings(bytes, unpacked_strings),
         QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
-        QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } =>
-            VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
+        QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
         QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
         QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
         QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
@@ -851,7 +935,7 @@ pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBuffe
         QueryPlan::LessThanEquals { lhs, rhs, less_than_equals } => VecOperator::less_than_equals(lhs, rhs, less_than_equals)?,
         QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals)?,
         QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals)?,
-        QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum)?,
+        QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum.i64()?)?,
         QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference)?,
         QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product)?,
         QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division)?,
@@ -865,9 +949,17 @@ pub fn prepare(plan: QueryPlan, result: &mut QueryExecutor) -> Result<TypedBuffe
         QueryPlan::SortBy { ranking, indices, desc, stable, permutation } => VecOperator::sort_by(ranking, indices, desc, stable, permutation)?,
         QueryPlan::TopN { ranking, n, desc, tmp_keys, top_n } => VecOperator::top_n(ranking, tmp_keys, n, desc, top_n)?,
         QueryPlan::Connect { input, output } => VecOperator::identity(input, output),
+        QueryPlan::Merge { lhs, rhs, limit, desc, merge_ops, merged } => VecOperator::merge(lhs, rhs, limit, desc, merge_ops, merged)?,
+        QueryPlan::MergePartitioned { partitioning, lhs, rhs, limit, desc, take_left, merged } => VecOperator::merge_partitioned(partitioning, lhs, rhs, limit, desc, take_left, merged)?,
+        QueryPlan::MergeDeduplicate { lhs, rhs, merge_ops, merged } => VecOperator::merge_deduplicate(lhs, rhs, merge_ops, merged)?,
+        QueryPlan::MergeDeduplicatePartitioned { partitioning, lhs, rhs, merge_ops, merged } => VecOperator::merge_deduplicate_partitioned(partitioning, lhs, rhs, merge_ops, merged)?,
+        QueryPlan::Partition { lhs, rhs, limit, desc, partitioning } => VecOperator::partition(lhs, rhs, limit, desc, partitioning)?,
+        QueryPlan::Subpartition { partitioning, lhs, rhs, desc, subpartitioning } => VecOperator::subpartition(partitioning, lhs, rhs, desc, subpartitioning)?,
+        QueryPlan::MergeDrop { merge_ops, lhs, rhs, merged } => VecOperator::merge_drop(merge_ops, lhs, rhs, merged)?,
         QueryPlan::MergeKeep { take_left, lhs, rhs, merged } => VecOperator::merge_keep(take_left, lhs, rhs, merged)?,
+        QueryPlan::MergeAggregate { merge_ops, lhs, rhs, aggregator, merged } => VecOperator::merge_aggregate(merge_ops, lhs, rhs, aggregator, merged),
+        QueryPlan::ConstantVec { index, constant_vec } => VecOperator::constant_vec(std::mem::replace(&mut constant_vecs[index], Data::empty(1)), constant_vec.any()),
     };
     result.push(operation);
     Ok(result.last_buffer())
 }
-
