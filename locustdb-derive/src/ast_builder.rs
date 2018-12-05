@@ -32,24 +32,23 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                     let field_type = field.ty;
                     let ident_str = LitStr::new(&format!("{}", field_ident), Span::call_site());
                     if let Some(attr) = field.attrs.iter().find(|attr| attr.path == parse_quote!(internal)) {
-                        let new_buffer = if let Some(t) = parse_type(attr.tts.to_string()) {
-                            parse_quote!(let #field_ident = self.named_buffer(#ident_str, #t);)
+                        let new_buffer = if let Some((t, fn_arg)) = parse_type(&field_ident, attr.tts.to_string()) {
+                            assert!(fn_arg.is_none(), "Can't provide internal type ({}).", field_ident);
+                            parse_quote!(let #field_ident = self.buffer_provider.named_buffer(#ident_str, #t);)
                         } else {
                             create_buffer(&field_ident, &field_type)
                         };
                         new_buffers.push(new_buffer);
                     } else if let Some(attr) = field.attrs.iter().find(|attr| attr.path == parse_quote!(output)) {
-                        let new_buffer: Stmt = if attr.tts.to_string().contains("t_provided") {
-                            let provided_type_ident = Ident::new(&format!("{}_type", field_ident), Span::call_site());
-                            fn_inputs.push(parse_quote!(#provided_type_ident: EncodingType));
-                            output = parse_quote!(Some(#field_ident.buffer.i));
-                            parse_quote!(let #field_ident = self.named_buffer(#ident_str, #provided_type_ident);)
-                        } else if attr.tts.to_string().contains("shared") {
+                        let new_buffer: Stmt = if attr.tts.to_string().contains("shared") {
                             output = parse_quote!(Some(#field_ident.i));
-                            parse_quote!(let #field_ident = self.shared_buffer(#ident_str, EncodingType::ByteSlices(stride)).any();)
-                        } else if let Some(t) = parse_type(attr.tts.to_string()) {
+                            parse_quote!(let #field_ident = self.buffer_provider.shared_buffer(#ident_str, EncodingType::ByteSlices(stride)).any();)
+                        } else if let Some((t, fn_input)) = parse_type(&field_ident, attr.tts.to_string()) {
+                            if let Some(fn_input) = fn_input {
+                                fn_inputs.push(fn_input);
+                            }
                             output = parse_quote!(Some(#field_ident.buffer.i));
-                            parse_quote!(let #field_ident = self.named_buffer(#ident_str, #t);)
+                            parse_quote!(let #field_ident = self.buffer_provider.named_buffer(#ident_str, #t);)
                         } else {
                             output = parse_quote!(Some(#field_ident.i));
                             create_buffer(&field_ident, &field_type)
@@ -134,21 +133,25 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
 fn create_buffer(field_ident: &Ident, field_type: &Type) -> Stmt {
     let field_name = LitStr::new(&format!("{}", field_ident), Span::call_site());
     if *field_type == parse_quote!(BufferRef<u8>) {
-        parse_quote!(let #field_ident = self.buffer_u8(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_u8(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<&'static str>) {
-        parse_quote!(let #field_ident = self.buffer_str(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_str(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<usize>) {
-        parse_quote!(let #field_ident = self.buffer_usize(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_usize(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<i64>) {
-        parse_quote!(let #field_ident = self.buffer_i64(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_i64(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<u32>) {
-        parse_quote!(let #field_ident = self.buffer_u32(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_u32(#field_name);)
+    } else if *field_type == parse_quote!(BufferRef<MergeOp>) {
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_merge_op(#field_name);)
+    } else if *field_type == parse_quote!(BufferRef<Premerge>) {
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_premerge(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<Scalar<i64>>) {
-        parse_quote!(let #field_ident = self.buffer_scalar_i64(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_scalar_i64(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<Scalar<String>>) {
-        parse_quote!(let #field_ident = self.buffer_scalar_string(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_scalar_string(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<Scalar<&'static str>>) {
-        parse_quote!(let #field_ident = self.buffer_scalar_str(#field_name);)
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_scalar_str(#field_name);)
     } else {
         field_ident.span().unstable().error(format!("{} has unknown buffer type {:?}", field_ident, field_type)).emit();
         parse_quote!(let #field_ident = #field_ident;)
@@ -166,6 +169,10 @@ fn convert(expr: Expr, field_type: &Type) -> Expr {
         parse_quote!(#expr.i64().unwrap())
     } else if *field_type == parse_quote!(BufferRef<u32>) {
         parse_quote!(#expr.u32().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<MergeOp>) {
+        parse_quote!(#expr.merge_op().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<Premerge>) {
+        parse_quote!(#expr.premerge().unwrap())
     } else if *field_type == parse_quote!(BufferRef<Scalar<i64>>) {
         parse_quote!(#expr.scalar_i64().unwrap())
     } else if *field_type == parse_quote!(BufferRef<Scalar<String>>) {
@@ -186,6 +193,8 @@ fn hash(field_ident: &Ident, field_type: &Type) -> Stmt {
         parse_quote!(hasher.input(&[#field_ident]);)
     } else if *field_type == parse_quote!(bool) {
         parse_quote!(hasher.input(&[#field_ident as u8]);)
+    } else if *field_type == parse_quote!(Aggregator) {
+        parse_quote!(hasher.input(&[#field_ident as u8]);)
     } else if *field_type == parse_quote!(TypedBufferRef) {
         parse_quote!(hasher.input(&#field_ident.buffer.i.to_ne_bytes());)
     } else {
@@ -193,18 +202,49 @@ fn hash(field_ident: &Ident, field_type: &Type) -> Stmt {
     }
 }
 
-fn parse_type(type_def: String) -> Option<Expr> {
+fn parse_type(field_ident: &Ident, type_def: String) -> Option<(Expr, Option<FnArg>)> {
     lazy_static! {
         // E.g. `data` in `( t = "data.nullable" )`
-        static ref T_NULLABLE: Regex = Regex::new(r#"t = "(.*)\.nullable""#).unwrap();
         static ref T: Regex = Regex::new(r#"t = "(.*)""#).unwrap();
+        static ref BASE: Regex = Regex::new(r#"base=([^;]*)"#).unwrap();
+        static ref NULL: Regex = Regex::new(r#"null=([^;]*)"#).unwrap();
+
     }
-    if let Some(t) = T_NULLABLE.captures(&type_def) {
-        let ident = Ident::new(t.get(1).unwrap().as_str(), Span::call_site());
-        Some(parse_quote!(#ident.tag.nullable()))
-    } else if let Some(t) = T.captures(&type_def) {
-        let ident = Ident::new(t.get(1).unwrap().as_str(), Span::call_site());
-        Some(parse_quote!(#ident.tag))
+
+    if let Some(t) = T.captures(&type_def) {
+        let t = t.get(1).unwrap().as_str();
+
+        let base = BASE.captures(t)
+            .expect(&format!("No `base` specified for {}", field_ident))
+            .get(1).unwrap().as_str();
+        let mut fn_input = None;
+        let base_type: Expr = if base == "provided" {
+            let provided_type_ident = Ident::new(&format!("{}_type", field_ident), Span::call_site());
+            fn_input = Some(parse_quote!(#provided_type_ident: EncodingType));
+            parse_quote!(#provided_type_ident)
+        } else if base == "i64" {
+            parse_quote!(EncodingType::I64)
+        } else {
+            let ident = Ident::new(base, Span::call_site());
+            parse_quote!(#ident.tag)
+        };
+
+        let null_adjusted_type = match NULL.captures(t) {
+            Some(null) => {
+                let null = null.get(1).unwrap().as_str();
+                if null == "always" {
+                    parse_quote!(#base_type.nullable())
+                } else {
+                    let parents = null.split(",").map(|ident| Ident::new(ident, Span::call_site())).collect::<Vec<_>>();
+                    parse_quote! {
+                        if #(#parents.is_nullable())||* { #base_type.nullable() } else { #base_type }
+                    }
+                }
+            }
+            None => base_type,
+        };
+
+        Some((null_adjusted_type, fn_input))
     } else {
         None
     }

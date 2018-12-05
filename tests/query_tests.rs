@@ -78,8 +78,7 @@ fn test_select_string() {
     )
 }
 
-// #[test]
-// TODO(clemens): reenable once type conversion fixed
+#[test]
 fn test_select_nullable_integer() {
     test_query_ec(
         "SELECT nullable_int FROM default ORDER BY id DESC;",

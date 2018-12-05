@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Aggregator {
-    Sum,
-    Count,
+    Sum = 0,
+    Count = 1,
 }
 
 impl Aggregator {

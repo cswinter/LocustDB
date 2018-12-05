@@ -594,8 +594,8 @@ impl<'a> VecOperator<'a> {
 
     pub fn merge_deduplicate(left: TypedBufferRef,
                              right: TypedBufferRef,
-                             merged_out: TypedBufferRef,
-                             ops_out: BufferRef<MergeOp>) -> Result<BoxedOperator<'a>, QueryError> {
+                             ops_out: BufferRef<MergeOp>,
+                             merged_out: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_deduplicate";
             left, right, merged_out: Primitive;
@@ -605,8 +605,8 @@ impl<'a> VecOperator<'a> {
 
     pub fn partition(left: TypedBufferRef,
                      right: TypedBufferRef,
-                     partition_out: BufferRef<Premerge>,
-                     limit: usize, desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+                     limit: usize, desc: bool,
+                     partition_out: BufferRef<Premerge>) -> Result<BoxedOperator<'a>, QueryError> {
         if desc {
             reify_types! {
                 "partition";
@@ -626,8 +626,8 @@ impl<'a> VecOperator<'a> {
     pub fn subpartition(partitioning: BufferRef<Premerge>,
                         left: TypedBufferRef,
                         right: TypedBufferRef,
-                        subpartition_out: BufferRef<Premerge>,
-                        desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+                        desc: bool,
+                        subpartition_out: BufferRef<Premerge>) -> Result<BoxedOperator<'a>, QueryError> {
         if desc {
             reify_types! {
                 "subpartition";
@@ -646,8 +646,8 @@ impl<'a> VecOperator<'a> {
     pub fn merge_deduplicate_partitioned(partitioning: BufferRef<Premerge>,
                                          left: TypedBufferRef,
                                          right: TypedBufferRef,
-                                         merged_out: TypedBufferRef,
-                                         ops_out: BufferRef<MergeOp>) -> Result<BoxedOperator<'a>, QueryError> {
+                                         ops_out: BufferRef<MergeOp>,
+                                         merged_out: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_deduplicate_partitioned";
             left, right, merged_out: Primitive;
@@ -669,17 +669,17 @@ impl<'a> VecOperator<'a> {
     pub fn merge_aggregate(merge_ops: BufferRef<MergeOp>,
                            left: BufferRef<i64>,
                            right: BufferRef<i64>,
-                           aggregated_out: BufferRef<i64>,
-                           aggregator: Aggregator) -> BoxedOperator<'a> {
+                           aggregator: Aggregator,
+                           aggregated_out: BufferRef<i64>) -> BoxedOperator<'a> {
         Box::new(MergeAggregate { merge_ops, left, right, aggregated: aggregated_out, aggregator })
     }
 
     pub fn merge_partitioned(partitioning: BufferRef<Premerge>,
                              left: TypedBufferRef,
                              right: TypedBufferRef,
-                             merged_out: TypedBufferRef,
+                             limit: usize, desc: bool,
                              ops_out: BufferRef<u8>,
-                             limit: usize, desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+                             merged_out: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         if desc {
             reify_types! {
                 "merge_partitioned_desc";
@@ -697,10 +697,10 @@ impl<'a> VecOperator<'a> {
 
     pub fn merge(left: TypedBufferRef,
                  right: TypedBufferRef,
-                 merged_out: TypedBufferRef,
-                 ops_out: BufferRef<u8>,
                  limit: usize,
-                 desc: bool) -> Result<BoxedOperator<'a>, QueryError> {
+                 desc: bool,
+                 ops_out: BufferRef<u8>,
+                 merged_out: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         if desc {
             reify_types! {
                 "merge_desc";

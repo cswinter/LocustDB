@@ -49,6 +49,12 @@ impl EncodingType {
             EncodingType::U16 => EncodingType::NullableU16,
             EncodingType::U32 => EncodingType::NullableU32,
             EncodingType::U64 => EncodingType::NullableU64,
+            EncodingType::NullableStr => EncodingType::NullableStr,
+            EncodingType::NullableI64 => EncodingType::NullableI64,
+            EncodingType::NullableU8 => EncodingType::NullableU8,
+            EncodingType::NullableU16 => EncodingType::NullableU16,
+            EncodingType::NullableU32 => EncodingType::NullableU32,
+            EncodingType::NullableU64 => EncodingType::NullableU64,
             _ => panic!("{:?} does not have a corresponding nullable type", &self)
         }
     }

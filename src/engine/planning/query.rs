@@ -101,7 +101,7 @@ impl NormalFormQuery {
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = planner.prepare()?;
+        let mut executor = planner.prepare(vec![])?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
@@ -282,7 +282,7 @@ impl NormalFormQuery {
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = planner.prepare()?;
+        let mut executor = planner.prepare(vec![])?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(columns.iter().next().map(|c| c.1.len()).unwrap_or(1), &mut results, show);
