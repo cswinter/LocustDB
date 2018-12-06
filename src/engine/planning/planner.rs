@@ -87,17 +87,77 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         Add { lhs, rhs, sum } if sum.is_nullable() => {
             let sum_non_null = bp.named_buffer("sum_non_null", sum.tag.non_nullable());
-            let add = Add {
+            let mut ops = vec![Add {
                 lhs: lhs.forget_nullability(),
                 rhs: rhs.forget_nullability(),
                 sum: sum_non_null,
+            }];
+            ops.extend(combine_nulls(bp, lhs, rhs, sum_non_null, sum));
+            Rewrite::ReplaceWith(ops)
+        }
+        And { lhs, rhs, and } if and.is_nullable() => {
+            let and_non_null = bp.named_buffer("and_non_null", and.tag.non_nullable());
+            let mut ops = vec![And {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                and: and_non_null,
+            }];
+            ops.extend(combine_nulls(bp, lhs, rhs, and_non_null, and));
+            Rewrite::ReplaceWith(ops)
+        }
+        Or { lhs, rhs, or } if or.is_nullable() => {
+            let or_non_null = bp.named_buffer("or_non_null", or.tag.non_nullable());
+            let mut ops = vec![Or {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                or: or_non_null,
+            }];
+            ops.extend(combine_nulls(bp, lhs, rhs, or_non_null, or));
+            Rewrite::ReplaceWith(ops)
+        }
+        LessThan { lhs, rhs, less_than } if less_than.is_nullable() => {
+            let less_than_non_null = bp.named_buffer("less_than_non_null", less_than.tag.non_nullable());
+            let less_than_op = LessThan {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                less_than: less_than_non_null,
             };
-            let nullable = PropagateNullability {
-                nullable: if lhs.is_nullable() { lhs } else { rhs },
-                data: sum_non_null.into(),
-                nullable_data: sum,
+            let mut ops = combine_nulls(bp, lhs, rhs, less_than_non_null, less_than);
+            ops.push(less_than_op);
+            Rewrite::ReplaceWith(ops)
+        }
+        LessThanEquals { lhs, rhs, less_than_equals } if less_than_equals.is_nullable() => {
+            let less_than_equals_non_null = bp.named_buffer("less_than_equals_non_null", less_than_equals.tag.non_nullable());
+            let less_than_equals_op = LessThanEquals {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                less_than_equals: less_than_equals_non_null,
             };
-            Rewrite::ReplaceWith(vec![add, nullable])
+            let mut ops = combine_nulls(bp, lhs, rhs, less_than_equals_non_null, less_than_equals);
+            ops.push(less_than_equals_op);
+            Rewrite::ReplaceWith(ops)
+        }
+        Equals { lhs, rhs, equals } if equals.is_nullable() => {
+            let equals_non_null = bp.named_buffer("equals_non_null", equals.tag.non_nullable());
+            let equals_op = Equals {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                equals: equals_non_null,
+            };
+            let mut ops = combine_nulls(bp, lhs, rhs, equals_non_null, equals);
+            ops.push(equals_op);
+            Rewrite::ReplaceWith(ops)
+        }
+        NotEquals { lhs, rhs, not_equals } if not_equals.is_nullable() => {
+            let not_equals_non_null = bp.named_buffer("not_equals_non_null", not_equals.tag.non_nullable());
+            let not_equals_op = NotEquals {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                not_equals: not_equals_non_null,
+            };
+            let mut ops = combine_nulls(bp, lhs, rhs, not_equals_non_null, not_equals);
+            ops.push(not_equals_op);
+            Rewrite::ReplaceWith(ops)
         }
         MergeKeep { take_left, lhs, rhs, merged } if lhs.is_nullable() != rhs.is_nullable() => {
             let mut ops = Vec::with_capacity(2);
@@ -115,6 +175,35 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
             Rewrite::ReplaceWith(ops)
         }
         _ => Rewrite::None,
+    }
+}
+
+fn combine_nulls(bp: &mut BufferProvider,
+                 lhs: TypedBufferRef,
+                 rhs: TypedBufferRef,
+                 data: TypedBufferRef,
+                 nullable_data: TypedBufferRef) -> Vec<QueryPlan> {
+    if lhs.is_nullable() && rhs.is_nullable() {
+        let combined_null_map = bp.buffer_u8("combined_null_map");
+        vec![
+            CombineNullMaps {
+                lhs,
+                rhs,
+                present: combined_null_map,
+            },
+            AssembleNullable {
+                data,
+                present: combined_null_map,
+                nullable: nullable_data,
+            }
+        ]
+    } else {
+        vec![
+            PropagateNullability {
+                nullable: if lhs.is_nullable() { lhs } else { rhs },
+                data,
+                nullable_data,
+            }]
     }
 }
 

@@ -44,6 +44,13 @@ pub enum QueryPlan {
         #[output(t = "base=data;null=always")]
         nullable_data: TypedBufferRef,
     },
+    /// Combines the null maps of two vectors, setting the result to null if any if the inputs were null.
+    CombineNullMaps {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output]
+        present: BufferRef<u8>,
+    },
     /// Combines a vector with a null map where none of the elements are null.
     MakeNullable {
         data: TypedBufferRef,
@@ -186,26 +193,26 @@ pub enum QueryPlan {
     LessThan {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        less_than: BufferRef<u8>,
+        #[output(t = "base=u8;null=lhs,rhs")]
+        less_than: TypedBufferRef,
     },
     LessThanEquals {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        less_than_equals: BufferRef<u8>,
+        #[output(t = "base=u8;null=lhs,rhs")]
+        less_than_equals: TypedBufferRef,
     },
     Equals {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        equals: BufferRef<u8>,
+        #[output(t = "base=u8;null=lhs,rhs")]
+        equals: TypedBufferRef,
     },
     NotEquals {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        not_equals: BufferRef<u8>,
+        #[output(t = "base=u8;null=lhs,rhs")]
+        not_equals: TypedBufferRef,
     },
     Add {
         lhs: TypedBufferRef,
@@ -238,16 +245,16 @@ pub enum QueryPlan {
         modulo: BufferRef<i64>,
     },
     And {
-        lhs: BufferRef<u8>,
-        rhs: BufferRef<u8>,
-        #[output]
-        and: BufferRef<u8>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=u8;null=lhs,rhs")]
+        and: TypedBufferRef,
     },
     Or {
-        lhs: BufferRef<u8>,
-        rhs: BufferRef<u8>,
-        #[output]
-        or: BufferRef<u8>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=u8;null=lhs,rhs")]
+        or: TypedBufferRef,
     },
     Not {
         input: BufferRef<u8>,
@@ -301,6 +308,13 @@ pub enum QueryPlan {
     Filter {
         plan: TypedBufferRef,
         select: BufferRef<u8>,
+        #[output(t = "base=plan")]
+        filtered: TypedBufferRef,
+    },
+    /// Outputs all elements in `plan` for which the corresponding entry in `select` is nonzero and not null.
+    NullableFilter {
+        plan: TypedBufferRef,
+        select: BufferRef<Nullable<u8>>,
         #[output(t = "base=plan")]
         filtered: TypedBufferRef,
     },
@@ -575,6 +589,7 @@ impl QueryPlan {
                     }
                     plan = match filter {
                         Filter::U8(filter) => planner.filter(plan, filter),
+                        Filter::NullableU8(filter) => planner.nullable_filter(plan, filter),
                         Filter::Indices(indices) => planner.select(plan, indices),
                         Filter::None => plan,
                     };
@@ -588,7 +603,7 @@ impl QueryPlan {
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
-                (planner.or(plan_lhs.u8()?, plan_rhs.u8()?).into(), Type::bit_vec())
+                (planner.or(plan_lhs, plan_rhs), Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner)?;
@@ -596,7 +611,7 @@ impl QueryPlan {
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
-                (planner.and(plan_lhs.u8()?, plan_rhs.u8()?).into(), Type::bit_vec())
+                (planner.and(plan_lhs, plan_rhs), Type::bit_vec())
             }
             Func2(RegexMatch, ref expr, ref regex) => {
                 match regex {
@@ -743,6 +758,7 @@ pub fn compile_grouping_key(
         let mut plan = planner.constant_expand(0, partition_length, EncodingType::U8);
         plan = match filter {
             Filter::U8(filter) => planner.filter(plan, filter),
+            Filter::NullableU8(filter) => planner.nullable_filter(plan, filter),
             Filter::Indices(indices) => planner.select(plan, indices),
             Filter::None => plan,
         };
@@ -908,7 +924,9 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::AssembleNullable { data, present, nullable } => VecOperator::nullable(data, present, nullable)?,
         QueryPlan::MakeNullable { data, present, nullable } => VecOperator::make_nullable(data, present, nullable)?,
         QueryPlan::PropagateNullability { nullable, data, nullable_data } => VecOperator::propagate_nullability(nullable.nullable_any()?, data, nullable_data)?,
+        QueryPlan::CombineNullMaps { lhs, rhs, present } => VecOperator::combine_null_maps(lhs, rhs, present)?,
         QueryPlan::Filter { plan, select, filtered } => VecOperator::filter(plan, select, filtered)?,
+        QueryPlan::NullableFilter { plan, select, filtered } => VecOperator::nullable_filter(plan, select, filtered)?,
         QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),
         QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value.to_string(), pinned_string, scalar_str),
         QueryPlan::NullVec { len, nulls } => VecOperator::null_vec(len, nulls.any()),
@@ -931,17 +949,17 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::BitUnpack { plan, shift, width, unpacked } => VecOperator::bit_unpack(plan, shift, width, unpacked),
         QueryPlan::SlicePack { plan, stride, offset, packed } => VecOperator::slice_pack(plan, stride, offset, packed)?,
         QueryPlan::SliceUnpack { plan, stride, offset, unpacked } => VecOperator::slice_unpack(plan, stride, offset, unpacked)?,
-        QueryPlan::LessThan { lhs, rhs, less_than } => VecOperator::less_than(lhs, rhs, less_than)?,
-        QueryPlan::LessThanEquals { lhs, rhs, less_than_equals } => VecOperator::less_than_equals(lhs, rhs, less_than_equals)?,
-        QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals)?,
-        QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals)?,
+        QueryPlan::LessThan { lhs, rhs, less_than } => VecOperator::less_than(lhs, rhs, less_than.u8()?)?,
+        QueryPlan::LessThanEquals { lhs, rhs, less_than_equals } => VecOperator::less_than_equals(lhs, rhs, less_than_equals.u8()?)?,
+        QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals.u8()?)?,
+        QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals.u8()?)?,
         QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum.i64()?)?,
         QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference)?,
         QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product)?,
         QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division)?,
         QueryPlan::Modulo { lhs, rhs, modulo } => VecOperator::modulo(lhs, rhs, modulo)?,
-        QueryPlan::Or { lhs, rhs, or } => VecOperator::or(lhs, rhs, or),
-        QueryPlan::And { lhs, rhs, and } => VecOperator::and(lhs, rhs, and),
+        QueryPlan::Or { lhs, rhs, or } => VecOperator::or(lhs.u8()?, rhs.u8()?, or.u8()?),
+        QueryPlan::And { lhs, rhs, and } => VecOperator::and(lhs.u8()?, rhs.u8()?, and.u8()?),
         QueryPlan::Not { input, not } => VecOperator::not(input, not),
         QueryPlan::ToYear { timestamp, year } => VecOperator::to_year(timestamp, year),
         QueryPlan::Regex { plan, regex, matches } => VecOperator::regex(plan, &regex, matches),

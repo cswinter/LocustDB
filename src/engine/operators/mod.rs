@@ -6,6 +6,7 @@ mod binary_operator;
 mod bit_unpack;
 mod bool_op;
 mod column_ops;
+mod combine_null_maps;
 mod compact;
 mod comparison_operators;
 mod constant;
