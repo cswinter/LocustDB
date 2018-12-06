@@ -95,6 +95,46 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
             ops.extend(combine_nulls(bp, lhs, rhs, sum_non_null, sum));
             Rewrite::ReplaceWith(ops)
         }
+        Subtract { lhs, rhs, difference } if difference.is_nullable() => {
+            let difference_non_null = bp.named_buffer("difference_non_null", difference.tag.non_nullable());
+            let mut ops = vec![Subtract {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                difference: difference_non_null,
+            }];
+            ops.extend(combine_nulls(bp, lhs, rhs, difference_non_null, difference));
+            Rewrite::ReplaceWith(ops)
+        }
+        Multiply { lhs, rhs, product } if product.is_nullable() => {
+            let product_non_null = bp.named_buffer("product_non_null", product.tag.non_nullable());
+            let mut ops = vec![Add {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                sum: product_non_null,
+            }];
+            ops.extend(combine_nulls(bp, lhs, rhs, product_non_null, product));
+            Rewrite::ReplaceWith(ops)
+        }
+        Divide { lhs, rhs, division } if division.is_nullable() => {
+            let division_non_null = bp.named_buffer("division_non_null", division.tag.non_nullable());
+            let mut ops = vec![Divide {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                division: division_non_null,
+            }];
+            ops.extend(combine_nulls(bp, lhs, rhs, division_non_null, division));
+            Rewrite::ReplaceWith(ops)
+        }
+        Modulo { lhs, rhs, modulo } if modulo.is_nullable() => {
+            let modulo_non_null = bp.named_buffer("modulo_non_null", modulo.tag.non_nullable());
+            let mut ops = vec![Divide {
+                lhs: lhs.forget_nullability(),
+                rhs: rhs.forget_nullability(),
+                division: modulo_non_null,
+            }];
+            ops.extend(combine_nulls(bp, lhs, rhs, modulo_non_null, modulo));
+            Rewrite::ReplaceWith(ops)
+        }
         And { lhs, rhs, and } if and.is_nullable() => {
             let and_non_null = bp.named_buffer("and_non_null", and.tag.non_nullable());
             let mut ops = vec![And {
