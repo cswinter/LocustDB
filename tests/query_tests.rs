@@ -529,6 +529,48 @@ fn test_order_by_multiple() {
 }
 
 #[test]
+fn test_null_operators() {
+    test_query_ec(
+        "SELECT id, nullable_int, nullable_int2
+         FROM default
+         WHERE nullable_int < nullable_int2
+         ORDER BY id;",
+        &[
+            vec![Int(9), Int(13), Int(14)],
+        ],
+    );
+    test_query_ec(
+        "SELECT id, nullable_int, nullable_int2
+         FROM default
+         WHERE nullable_int = nullable_int2
+         ORDER BY id;",
+        &[
+            vec![Int(1), Int(-40), Int(-40)],
+        ],
+    );
+    test_query_ec(
+        "SELECT id, nullable_int, nullable_int2
+         FROM default
+         WHERE nullable_int <> nullable_int2 AND nullable_int >= nullable_int2
+         ORDER BY id;",
+        &[
+            vec![Int(4), Int(10), Int(9)],
+        ],
+    );
+    test_query_ec(
+        "SELECT id, nullable_int, nullable_int2
+         FROM default
+         WHERE nullable_int <= nullable_int2 OR nullable_int > nullable_int2
+         ORDER BY id;",
+        &[
+            vec![Int(1), Int(-40), Int(-40)],
+            vec![Int(4), Int(10), Int(9)],
+            vec![Int(9), Int(13), Int(14)],
+        ],
+    );
+}
+
+#[test]
 fn test_gen_table() {
     use Value::*;
     let _ = env_logger::try_init();

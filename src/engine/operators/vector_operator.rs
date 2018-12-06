@@ -17,6 +17,7 @@ use super::binary_operator::*;
 use super::bit_unpack::BitUnpackOperator;
 use super::bool_op::*;
 use super::column_ops::*;
+use super::combine_null_maps::CombineNullMaps;
 use super::compact::Compact;
 use super::constant::Constant;
 use super::constant_expand::ConstantExpand;
@@ -26,7 +27,7 @@ use super::delta_decode::*;
 use super::dict_lookup::*;
 use super::encode_const::*;
 use super::exists::Exists;
-use super::filter::Filter;
+use super::filter::{Filter, NullableFilter};
 use super::functions::*;
 use super::hashmap_grouping::HashMapGrouping;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
@@ -137,6 +138,12 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn combine_null_maps(lhs: TypedBufferRef,
+                             rhs: TypedBufferRef,
+                             output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
+        Ok(Box::new(CombineNullMaps { lhs: lhs.nullable_any()?, rhs: rhs.nullable_any()?, output }))
+    }
+
     pub fn propagate_nullability(nullability: BufferRef<Nullable<Any>>,
                                  data: TypedBufferRef,
                                  output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
@@ -226,6 +233,16 @@ impl<'a> VecOperator<'a> {
             "filter";
             input, output: PrimitiveUSize;
             Ok(Box::new(Filter { input, filter, output }))
+        }
+    }
+
+    pub fn nullable_filter(input: TypedBufferRef,
+                           filter: BufferRef<Nullable<u8>>,
+                           output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "nullable_filter";
+            input, output: PrimitiveUSize;
+            Ok(Box::new(NullableFilter { input, filter, output }))
         }
     }
 

@@ -8,14 +8,13 @@ pub struct MakeNullable<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MakeNullable<T> {
-    fn execute(&mut self, _streaming: bool, scratchpad: &mut Scratchpad<'a>) {
-        let len = scratchpad.get(self.data).len();
-        let present = vec![255u8; len / 8 + 1];
+    fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>) {}
+
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
+        let present = vec![255u8; batch_size / 8 + 1];
         scratchpad.set(self.present, present);
         scratchpad.assemble_nullable(self.data, self.present, self.nullable_data);
     }
-
-    fn init(&mut self, _: usize, _: usize, _: &mut Scratchpad<'a>) {}
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any()] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.nullable_data.any(), self.present.any()] }
