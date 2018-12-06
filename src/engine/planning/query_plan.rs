@@ -223,26 +223,26 @@ pub enum QueryPlan {
     Subtract {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        difference: BufferRef<i64>,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        difference: TypedBufferRef,
     },
     Multiply {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        product: BufferRef<i64>,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        product: TypedBufferRef,
     },
     Divide {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        division: BufferRef<i64>,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        division: TypedBufferRef,
     },
     Modulo {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output]
-        modulo: BufferRef<i64>,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        modulo: TypedBufferRef,
     },
     And {
         lhs: TypedBufferRef,
@@ -262,9 +262,9 @@ pub enum QueryPlan {
         not: BufferRef<u8>,
     },
     ToYear {
-        timestamp: BufferRef<i64>,
-        #[output]
-        year: BufferRef<i64>,
+        timestamp: TypedBufferRef,
+        #[output(t = "base=i64;null=timestamp")]
+        year: TypedBufferRef,
     },
     Regex {
         plan: BufferRef<&'static str>,
@@ -694,7 +694,7 @@ impl QueryPlan {
                         if t.decoded != BasicType::Integer {
                             bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                         }
-                        planner.to_year(decoded.i64()?).into()
+                        planner.to_year(decoded).into()
                     }
                     Func1Type::Not => {
                         if t.decoded != BasicType::Boolean {
@@ -954,14 +954,14 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals.u8()?)?,
         QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals.u8()?)?,
         QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum.i64()?)?,
-        QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference)?,
-        QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product)?,
-        QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division)?,
-        QueryPlan::Modulo { lhs, rhs, modulo } => VecOperator::modulo(lhs, rhs, modulo)?,
+        QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference.i64()?)?,
+        QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product.i64()?)?,
+        QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division.i64()?)?,
+        QueryPlan::Modulo { lhs, rhs, modulo } => VecOperator::modulo(lhs, rhs, modulo.i64()?)?,
         QueryPlan::Or { lhs, rhs, or } => VecOperator::or(lhs.u8()?, rhs.u8()?, or.u8()?),
         QueryPlan::And { lhs, rhs, and } => VecOperator::and(lhs.u8()?, rhs.u8()?, and.u8()?),
         QueryPlan::Not { input, not } => VecOperator::not(input, not),
-        QueryPlan::ToYear { timestamp, year } => VecOperator::to_year(timestamp, year),
+        QueryPlan::ToYear { timestamp, year } => VecOperator::to_year(timestamp.i64()?, year.i64()?),
         QueryPlan::Regex { plan, regex, matches } => VecOperator::regex(plan, &regex, matches),
         QueryPlan::Indices { plan, indices } => VecOperator::indices(plan, indices),
         QueryPlan::SortBy { ranking, indices, desc, stable, permutation } => VecOperator::sort_by(ranking, indices, desc, stable, permutation)?,

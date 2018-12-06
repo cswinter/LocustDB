@@ -568,6 +568,23 @@ fn test_null_operators() {
             vec![Int(9), Int(13), Int(14)],
         ],
     );
+    test_query_ec(
+        "SELECT (nullable_int - nullable_int2 / (id + 1)) + (nullable_int - 2 * nullable_int2) % (id + 1)
+         FROM default
+         ORDER BY id;",
+        &[
+            vec![Null],
+            vec![Int(-21)],
+            vec![Null],
+            vec![Null],
+            vec![Int(8)],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Int(7)],
+        ],
+    );
 }
 
 #[test]
