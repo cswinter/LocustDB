@@ -586,6 +586,7 @@ impl QueryPlan {
         expr: &Expr,
         filter: Filter,
         columns: &HashMap<String, Arc<DataSource>>,
+        column_len: usize,
         planner: &mut QueryPlanner) -> Result<(TypedBufferRef, Type), QueryError> {
         use self::Expr::*;
         use self::Func2Type::*;
@@ -607,19 +608,19 @@ impl QueryPlan {
                     };
                     (plan, t)
                 }
-                None => bail!(QueryError::NotImplemented, "Referencing missing column {}", name)
+                None => (planner.null_vec(column_len, EncodingType::Null), Type::new(BasicType::Null, None)),
             }
             Func2(Or, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner)?;
-                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, planner)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, column_len, planner)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} OR {}, expected bool OR bool")
                 }
                 (planner.or(plan_lhs, plan_rhs), Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
-                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner)?;
-                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, planner)?;
+                let (plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, column_len, planner)?;
+                let (plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
@@ -630,7 +631,7 @@ impl QueryPlan {
                     box Const(RawVal::Str(regex)) => {
                         Regex::new(&regex).map_err(|e| QueryError::TypeError(
                             format!("`{}` is not a valid regex: {}", regex, e)))?;
-                        let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
+                        let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns, column_len, planner)?;
                         if t.decoded != BasicType::String {
                             bail!(QueryError::TypeError, "Expected expression of type `String` as first argument to regex. Actual: {:?}", t)
                         }
@@ -643,8 +644,8 @@ impl QueryPlan {
                 }
             }
             Func2(function, ref lhs, ref rhs) => {
-                let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, planner)?;
-                let (mut plan_rhs, mut type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, planner)?;
+                let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, column_len, planner)?;
+                let (mut plan_rhs, mut type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
 
                 let declarations = match FUNCTION2_REGISTRY.get(&function) {
                     Some(patterns) => patterns,
@@ -696,7 +697,7 @@ impl QueryPlan {
                 (plan, declaration.type_out.clone())
             }
             Func1(ftype, ref inner) => {
-                let (plan, t) = QueryPlan::compile_expr(inner, filter, columns, planner)?;
+                let (plan, t) = QueryPlan::compile_expr(inner, filter, columns, column_len, planner)?;
                 let decoded = match t.codec.clone() {
                     Some(codec) => codec.decode(plan, planner),
                     None => plan,
@@ -762,12 +763,12 @@ pub fn compile_grouping_key(
     exprs: &[Expr],
     filter: Filter,
     columns: &HashMap<String, Arc<DataSource>>,
-    partition_length: usize,
+    partition_len: usize,
     planner: &mut QueryPlanner)
     -> Result<((TypedBufferRef, Type), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef), QueryError> {
     if exprs.is_empty() {
         let t = Type::new(BasicType::Integer, Some(Codec::opaque(EncodingType::U8, BasicType::Integer, true, true, true, true)));
-        let mut plan = planner.constant_expand(0, partition_length, EncodingType::U8);
+        let mut plan = planner.constant_expand(0, partition_len, EncodingType::U8);
         plan = match filter {
             Filter::U8(filter) => planner.filter(plan, filter),
             Filter::NullableU8(filter) => planner.nullable_filter(plan, filter),
@@ -781,7 +782,7 @@ pub fn compile_grouping_key(
             planner.buffer_provider.named_buffer("empty_group_by", EncodingType::Null)
         ))
     } else if exprs.len() == 1 {
-        QueryPlan::compile_expr(&exprs[0], filter, columns, planner)
+        QueryPlan::compile_expr(&exprs[0], filter, columns, partition_len, planner)
             .map(|(gk_plan, gk_type)| {
                 let encoding_range = encoding_range(&gk_plan, planner);
                 debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
@@ -810,7 +811,7 @@ pub fn compile_grouping_key(
                  vec![(decoded_group_by, gk_type.decoded())],
                  encoded_group_by_placeholder)
             })
-    } else if let Some(result) = try_bitpacking(exprs, filter, columns, planner)? {
+    } else if let Some(result) = try_bitpacking(exprs, filter, columns, partition_len, planner)? {
         Ok(result)
     } else {
         info!("Failed to bitpack grouping key");
@@ -819,7 +820,7 @@ pub fn compile_grouping_key(
         let encoded_group_by_placeholder =
             planner.buffer_provider.named_buffer("encoded_group_by_placeholder", EncodingType::ByteSlices(exprs.len()));
         for (i, expr) in exprs.iter().enumerate() {
-            let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
+            let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, planner)?;
             pack.push(planner.slice_pack(query_plan, exprs.len(), i));
 
             // TODO(clemens): negative integers can throw off sort order - need to move into positive range
@@ -854,6 +855,7 @@ fn try_bitpacking(
     exprs: &[Expr],
     filter: Filter,
     columns: &HashMap<String, Arc<DataSource>>,
+    partition_len: usize,
     planner: &mut QueryPlanner)
     -> Result<Option<((TypedBufferRef, Type), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef)>, QueryError> {
     planner.checkpoint();
@@ -865,7 +867,7 @@ fn try_bitpacking(
     let mut order_preserving = true;
     let encoded_group_by_placeholder = planner.buffer_provider.buffer_i64("encoded_group_by_placeholder");
     for expr in exprs.iter().rev() {
-        let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, planner)?;
+        let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, planner)?;
         let encoding_range = encoding_range(&query_plan, planner);
         debug!("Encoding range of {:?} for {:?}", &encoding_range, &query_plan);
         if let Some((min, max)) = encoding_range {
@@ -952,7 +954,7 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
         QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
         QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
-        QueryPlan::CountNonNulls {nullable,  grouping_key, max_index, count } => VecOperator::count_non_nulls(nullable, grouping_key, max_index, count)?,
+        QueryPlan::CountNonNulls { nullable, grouping_key, max_index, count } => VecOperator::count_non_nulls(nullable, grouping_key, max_index, count)?,
         QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
         QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
         QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,
