@@ -22,7 +22,7 @@ use super::compact::Compact;
 use super::constant::Constant;
 use super::constant_expand::ConstantExpand;
 use super::constant_vec::ConstantVec;
-use super::count::VecCount;
+use super::count::*;
 use super::delta_decode::*;
 use super::dict_lookup::*;
 use super::encode_const::*;
@@ -57,7 +57,7 @@ use super::slice_unpack::*;
 use super::sort_by::SortBy;
 use super::sort_by_slices::SortBySlices;
 use super::subpartition::SubPartition;
-use super::sum::VecSum;
+use super::sum::*;
 use super::top_n::TopN;
 use super::type_conversion::TypeConversionOperator;
 use super::unhexpack_strings::UnhexpackStrings;
@@ -507,10 +507,18 @@ impl<'a> VecOperator<'a> {
                      grouping: TypedBufferRef,
                      max_index: BufferRef<Scalar<i64>>,
                      output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "summation";
-            input: IntegerNoU64, grouping: Integer;
-            Ok(Box::new(VecSum { input, grouping, output, max_index }))
+        if input.is_nullable() {
+            reify_types! {
+                "nullable_summation";
+                input: NullableInteger, grouping: Integer;
+                Ok(Box::new(VecSumNullable { input, grouping, output, max_index }))
+            }
+        } else {
+            reify_types! {
+                "summation";
+                input: IntegerNoU64, grouping: Integer;
+                Ok(Box::new(VecSum { input, grouping, output, max_index }))
+            }
         }
     }
 
@@ -519,6 +527,17 @@ impl<'a> VecOperator<'a> {
             "count";
             grouping: Integer;
             Ok(Box::new(VecCount { grouping, output, max_index }))
+        }
+    }
+
+    pub fn count_non_nulls(nullable: BufferRef<Nullable<Any>>,
+                           grouping: TypedBufferRef,
+                           max_index: BufferRef<Scalar<i64>>,
+                           output: BufferRef<u32>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "count_non_nulls";
+            grouping: Integer;
+            Ok(Box::new(CountNonNulls { nullable, grouping, output, max_index }))
         }
     }
 
