@@ -1,19 +1,16 @@
 use std::collections::HashMap;
 use std::collections::hash_set::HashSet;
 use std::hash::BuildHasherDefault;
-use std::rc::Rc;
 use std::str;
 use std::sync::Arc;
 use std::{u8, u16, u32};
 
-use num::PrimInt;
 use seahash::SeaHasher;
 use hex;
 
 use stringpack::*;
 use engine::data_types::*;
 use mem_store::*;
-use mem_store::column_builder::UniqueValues;
 
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
@@ -26,7 +23,8 @@ pub fn fast_build_string_column<'a, T>(name: &str,
                                        len: usize,
                                        lhex: bool,
                                        uhex: bool,
-                                       total_bytes: usize)
+                                       total_bytes: usize,
+                                       present: Option<Vec<u8>>)
                                        -> Arc<Column> where T: Iterator<Item=&'a str> + Clone {
     let mut unique_values = HashSetSea::default();
     for s in strings.clone() {
@@ -34,24 +32,25 @@ pub fn fast_build_string_column<'a, T>(name: &str,
         // TODO(clemens): is 2 the right constant? and should probably also depend on the length of the strings
         // TODO(clemens): len > 1000 || name == "string_packed" is a hack to make tests use dictionary encoding. Remove once we are able to group by string packed columns.
         if unique_values.len() == len / DICTIONARY_RATIO && (len > 1000 || name == "string_packed") {
-            let (codec, data) = if (lhex || uhex) && total_bytes / len > 5 {
+            let (mut codec, data) = if (lhex || uhex) && total_bytes / len > 5 {
                 let packed = PackedBytes::from_iterator(strings.map(|s| hex::decode(s).unwrap()));
                 (vec![CodecOp::UnhexpackStrings(uhex, total_bytes)], DataSection::U8(packed.into_vec()))
             } else {
                 let packed = PackedStrings::from_iterator(strings);
                 (string_pack_codec(), DataSection::U8(packed.into_vec()))
             };
-            let mut column = Column::new(
-                name,
-                len,
-                None,
-                codec,
-                vec![data],
-            );
+            let mut column = if let Some(present) = present {
+                codec.push(CodecOp::PushDataSection(1));
+                codec.push(CodecOp::Nullable);
+                Column::new(name, len, None, codec, vec![data, DataSection::U8(present)])
+            } else {
+                Column::new(name, len, None, codec, vec![data])
+            };
             column.lz4_encode();
             return Arc::new(column);
         }
     }
+
     let dict_size = unique_values.len();
     let mut mapping = unique_values.into_iter().collect::<Vec<_>>();
     mapping.sort();
@@ -59,7 +58,8 @@ pub fn fast_build_string_column<'a, T>(name: &str,
     for s in mapping {
         packed_mapping.push(s);
     }
-    let mut column = if dict_size <= From::from(u8::MAX) {
+
+    let (range, mut codec, mut data_sections) = if dict_size <= From::from(u8::MAX) {
         let indices: Vec<u8> = {
             let mut dictionary: HashMapSea<&str, u8> = HashMapSea::default();
             for (i, s) in packed_mapping.iter().enumerate() {
@@ -68,15 +68,12 @@ pub fn fast_build_string_column<'a, T>(name: &str,
             strings.map(|s| dictionary[s]).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
-        Column::new(
-            name,
-            indices.len(),
-            Some((0, dict_size as i64)),
-            dict_codec(EncodingType::U8),
-            vec![DataSection::U8(indices),
-                 DataSection::U64(dictionary_indices),
-                 DataSection::U8(dictionary_data)])
-    } else {
+        (Some((0, dict_size as i64)),
+         dict_codec(EncodingType::U8),
+         vec![DataSection::U8(indices),
+              DataSection::U64(dictionary_indices),
+              DataSection::U8(dictionary_data)])
+    } else if dict_size <= From::from(u16::MAX) {
         let indices: Vec<u16> = {
             let mut dictionary: HashMapSea<&str, u16> = HashMapSea::default();
             for (i, s) in packed_mapping.iter().enumerate() {
@@ -85,93 +82,36 @@ pub fn fast_build_string_column<'a, T>(name: &str,
             strings.map(|s| dictionary[s]).collect()
         };
         let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
-        Column::new(
-            name,
-            indices.len(),
-            Some((0, dict_size as i64)),
-            dict_codec(EncodingType::U16),
-            vec![DataSection::U16(indices),
-                 DataSection::U64(dictionary_indices),
-                 DataSection::U8(dictionary_data)])
+        (Some((0, dict_size as i64)),
+         dict_codec(EncodingType::U16),
+         vec![DataSection::U16(indices),
+              DataSection::U64(dictionary_indices),
+              DataSection::U8(dictionary_data)])
+    } else {
+        let indices: Vec<u32> = {
+            let mut dictionary: HashMapSea<&str, u32> = HashMapSea::default();
+            for (i, s) in packed_mapping.iter().enumerate() {
+                dictionary.insert(&s, i as u32);
+            }
+            strings.map(|s| dictionary[s]).collect()
+        };
+        let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
+        (Some((0, dict_size as i64)),
+         dict_codec(EncodingType::U32),
+         vec![DataSection::U32(indices),
+              DataSection::U64(dictionary_indices),
+              DataSection::U8(dictionary_data)])
     };
+    if let Some(present) = present {
+        codec.insert(0, CodecOp::PushDataSection(3));
+        codec.insert(1, CodecOp::Nullable);
+        data_sections.push(DataSection::U8(present));
+    }
+    let mut column = Column::new(name, len, range, codec, data_sections);
     column.lz4_encode();
     Arc::new(column)
 }
 
-pub fn build_string_column(name: &str,
-                           values: &[Option<Rc<String>>],
-                           unique_values: UniqueValues<Option<Rc<String>>>)
-                           -> Arc<Column> {
-    // TODO(clemens): constant column when there is only one value
-    // TODO(clemens): Improve criterion for dictionary encoding
-    if let Some(u) = unique_values.get_values() {
-        if u.len() * 2 < values.len() {
-            return if u.len() <= From::from(u8::MAX) {
-                let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u8>(values, u);
-                Arc::new(Column::new(
-                    name,
-                    indices.len(),
-                    Some((0, dictionary_indices.len() as i64)),
-                    dict_codec(EncodingType::U8),
-                    vec![DataSection::U8(indices),
-                         DataSection::U64(dictionary_indices),
-                         DataSection::U8(dictionary_data)]))
-            } else if u.len() <= From::from(u16::MAX) {
-                let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u16>(values, u);
-                Arc::new(Column::new(
-                    name,
-                    indices.len(),
-                    Some((0, dictionary_indices.len() as i64)),
-                    dict_codec(EncodingType::U16),
-                    vec![DataSection::U16(indices),
-                         DataSection::U64(dictionary_indices),
-                         DataSection::U8(dictionary_data)]))
-            } else if u.len() <= u32::MAX as usize {
-                let (indices, dictionary_indices, dictionary_data) = dictionary_compress::<u32>(values, u);
-                Arc::new(Column::new(
-                    name,
-                    indices.len(),
-                    Some((0, dictionary_indices.len() as i64)),
-                    dict_codec(EncodingType::U32),
-                    vec![DataSection::U32(indices),
-                         DataSection::U64(dictionary_indices),
-                         DataSection::U8(dictionary_data)]))
-            } else {
-                panic!("Partition with more than 2^32 elements")
-            };
-        }
-    }
-    let packed = PackedStrings::from_nullable_strings(values);
-    Arc::new(Column::new(
-        name,
-        values.len(),
-        None,
-        string_pack_codec(),
-        vec![DataSection::U8(packed.into_vec())]))
-}
-
-pub fn dictionary_compress<T: PrimInt>(strings: &[Option<Rc<String>>],
-                                       unique_values: HashSet<Option<Rc<String>>>)
-                                       -> (Vec<T>, Vec<u64>, Vec<u8>) {
-    // TODO(clemens): handle null values
-    let mut mapping = unique_values.into_iter().map(|o| o.unwrap()).collect::<Vec<_>>();
-    mapping.sort();
-    let mut packed_mapping = IndexedPackedStrings::default();
-    for s in mapping {
-        packed_mapping.push(&s);
-    }
-    let encoded_values: Vec<T> = {
-        let mut reverse_mapping: HashMap<&str, T> = HashMap::default();
-        let mut index = T::zero();
-        for string in packed_mapping.iter() {
-            reverse_mapping.insert(string, index);
-            index = index + T::one();
-        }
-        strings.iter().map(|o| reverse_mapping[o.clone().unwrap().as_ref().as_str()]).collect()
-    };
-    let (dictionary_indices, dictionary_data) = packed_mapping.into_parts();
-    (encoded_values, dictionary_indices, dictionary_data)
-}
 
 pub fn dict_codec(index_type: EncodingType) -> Vec<CodecOp> {
     vec![

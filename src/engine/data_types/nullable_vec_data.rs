@@ -82,6 +82,10 @@ impl<'a> Data<'a> for NullableVec<u8> {
     // fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { &mut self.data }
 }
 
+impl<'a> Data<'a> for NullableVec<&'a str> {
+    fn cast_ref_str(&self) -> &[&'a str] { &self.data }
+}
+
 pub fn display_nullable_slice<T: fmt::Display>(slice: &[T], present: &[u8], max_chars: usize) -> String {
     let mut length = slice.len();
     loop {

@@ -6,7 +6,7 @@ use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column_builder::*;
 
-
+// Can eliminate this? Used by in-memory buffer.
 #[derive(PartialEq, Debug, HeapSizeOf)]
 pub struct MixedCol {
     types: ColType,
@@ -54,7 +54,7 @@ impl MixedCol {
                     RawVal::Null => builder.push(&""),
                 }
             }
-            ColumnBuilder::<String>::finalize(builder, name)
+            ColumnBuilder::<String>::finalize(builder, name, None)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::default();
             for v in self.data {
@@ -64,7 +64,7 @@ impl MixedCol {
                     RawVal::Null => builder.push(&None),
                 }
             }
-            builder.finalize(name)
+            builder.finalize(name, None)
         } else {
             Arc::new(Column::null(name, self.data.len()))
         }

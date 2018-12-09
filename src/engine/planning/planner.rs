@@ -107,10 +107,10 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         Multiply { lhs, rhs, product } if product.is_nullable() => {
             let product_non_null = bp.named_buffer("product_non_null", product.tag.non_nullable());
-            let mut ops = vec![Add {
+            let mut ops = vec![Multiply {
                 lhs: lhs.forget_nullability(),
                 rhs: rhs.forget_nullability(),
-                sum: product_non_null,
+                product: product_non_null,
             }];
             ops.extend(combine_nulls(bp, lhs, rhs, product_non_null, product));
             Rewrite::ReplaceWith(ops)
@@ -127,10 +127,10 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         Modulo { lhs, rhs, modulo } if modulo.is_nullable() => {
             let modulo_non_null = bp.named_buffer("modulo_non_null", modulo.tag.non_nullable());
-            let mut ops = vec![Divide {
+            let mut ops = vec![Modulo {
                 lhs: lhs.forget_nullability(),
                 rhs: rhs.forget_nullability(),
-                division: modulo_non_null,
+                modulo: modulo_non_null,
             }];
             ops.extend(combine_nulls(bp, lhs, rhs, modulo_non_null, modulo));
             Rewrite::ReplaceWith(ops)
@@ -213,6 +213,22 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
             };
             ops.push(MergeKeep { take_left, lhs, rhs, merged });
             Rewrite::ReplaceWith(ops)
+        }
+        DictLookup { indices, offset_len, backing_store, decoded }if indices.is_nullable() => {
+            let decoded_non_null = bp.named_buffer("decoded_non_null", decoded.tag.non_nullable());
+            Rewrite::ReplaceWith(vec![
+                DictLookup {
+                    indices: indices.forget_nullability(),
+                    offset_len,
+                    backing_store,
+                    decoded: decoded_non_null,
+                },
+                PropagateNullability {
+                    nullable: indices,
+                    data: decoded_non_null,
+                    nullable_data: decoded,
+                },
+            ])
         }
         _ => Rewrite::None,
     }

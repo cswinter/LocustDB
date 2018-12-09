@@ -64,8 +64,8 @@ pub enum QueryPlan {
         indices: TypedBufferRef,
         offset_len: BufferRef<u64>,
         backing_store: BufferRef<u8>,
-        #[output]
-        decoded: BufferRef<&'static str>,
+        #[output(t = "base=str;null=indices")]
+        decoded: TypedBufferRef,
     },
     /// Determines what dictionary index a string constant corresponds to.
     InverseDictLookup {
@@ -931,7 +931,7 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value.to_string(), pinned_string, scalar_str),
         QueryPlan::NullVec { len, nulls } => VecOperator::null_vec(len, nulls.any()),
         QueryPlan::ConstantExpand { value, len, expanded } => VecOperator::constant_expand(value, len, expanded)?,
-        QueryPlan::DictLookup { indices, offset_len, backing_store, decoded } => VecOperator::dict_lookup(indices, offset_len, backing_store, decoded)?,
+        QueryPlan::DictLookup { indices, offset_len, backing_store, decoded } => VecOperator::dict_lookup(indices, offset_len, backing_store, decoded.str()?)?,
         QueryPlan::InverseDictLookup { offset_len, backing_store, constant, decoded } => VecOperator::inverse_dict_lookup(offset_len, backing_store, constant, decoded),
         QueryPlan::Cast { input, casted } => VecOperator::type_conversion(input, casted)?,
         QueryPlan::DeltaDecode { plan, delta_decoded } => VecOperator::delta_decode(plan, delta_decoded)?,

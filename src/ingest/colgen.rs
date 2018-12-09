@@ -110,7 +110,7 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> 
             state = alias_method.random(&p[state]);
             builder.push(&self.elem[state]);
         }
-        builder.finalize(name)
+        builder.finalize(name, None)
     }
 }
 
@@ -136,7 +136,7 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for Weighted<T, S> {
             let i = alias_method.random(&p);
             builder.push(&self.elem[i]);
         }
-        builder.finalize(name)
+        builder.finalize(name, None)
     }
 }
 
@@ -153,7 +153,7 @@ impl ColumnGenerator for UniformInteger {
         for _ in 0..length {
             builder.push(&Some(rng.gen_range::<i64>(self.low, self.high)));
         }
-        ColumnBuilder::<Option<i64>>::finalize(builder, name)
+        ColumnBuilder::<Option<i64>>::finalize(builder, name, None)
     }
 }
 
@@ -172,7 +172,7 @@ impl ColumnGenerator for Splayed {
                 self.offset + self.coefficient * length as i64 * (partition as i64 + 1),
             )));
         }
-        ColumnBuilder::<Option<i64>>::finalize(builder, name)
+        ColumnBuilder::<Option<i64>>::finalize(builder, name, None)
     }
 }
 
@@ -204,7 +204,7 @@ impl ColumnGenerator for HexString {
             let bytes: Vec<u8> = rng.sample_iter(&Standard).take(self.length).collect();
             builder.push(&hex::encode(&bytes));
         }
-        ColumnBuilder::<&str>::finalize(builder, name)
+        ColumnBuilder::<&str>::finalize(builder, name, None)
     }
 }
 
@@ -222,7 +222,7 @@ impl ColumnGenerator for RandomString {
             let string: String = rng.sample_iter::<char, _>(&Alphanumeric).take(len).collect();
             builder.push(&string);
         }
-        ColumnBuilder::<&str>::finalize(builder, name)
+        ColumnBuilder::<&str>::finalize(builder, name, None)
     }
 }
 
@@ -234,7 +234,7 @@ impl ColumnGenerator for IncrementingInteger {
         for i in seed as i64 * length as i64..length as i64 * (seed as i64 + 1) {
             builder.push(&Some(i));
         }
-        builder.finalize(name)
+        builder.finalize(name, None)
     }
 }
 
