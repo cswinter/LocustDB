@@ -38,11 +38,11 @@ impl NormalFormQuery {
                    explain: bool,
                    show: bool,
                    partition: usize,
-                   partition_length: usize) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
+                   partition_len: usize) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
         let mut planner = QueryPlanner::default();
 
-        let (filter_plan, _) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, &mut planner)?;
+        let (filter_plan, _) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut planner)?;
         let mut filter = match filter_plan.tag {
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
@@ -53,11 +53,11 @@ impl NormalFormQuery {
         let mut sort_indices = None;
         for (plan, desc) in self.order_by.iter().rev() {
             let (ranking, _) = query_plan::order_preserving(
-                QueryPlan::compile_expr(&plan, filter, columns, &mut planner)?, &mut planner);
+                QueryPlan::compile_expr(&plan, filter, columns, partition_len, &mut planner)?, &mut planner);
 
             // TODO(clemens): better criterion for using top_n
             // TODO(clemens): top_n for multiple columns?
-            sort_indices = Some(if limit < partition_length / 2 && self.order_by.len() == 1 {
+            sort_indices = Some(if limit < partition_len / 2 && self.order_by.len() == 1 {
                 planner.top_n(ranking, limit, *desc)
             } else {
                 // TODO(clemens): Optimization: sort directly if only single column selected
@@ -74,13 +74,13 @@ impl NormalFormQuery {
         if let Some(sort_indices) = sort_indices {
             filter = match filter {
                 Filter::U8(where_true) => {
-                    let buffer = planner.null_vec(partition_length, EncodingType::Null);
+                    let buffer = planner.null_vec(partition_len, EncodingType::Null);
                     let indices = planner.indices(buffer).into();
                     let filter = planner.filter(indices, where_true);
                     Filter::Indices(planner.select(filter, sort_indices).usize()?)
                 }
                 Filter::NullableU8(where_true) => {
-                    let buffer = planner.null_vec(partition_length, EncodingType::Null);
+                    let buffer = planner.null_vec(partition_len, EncodingType::Null);
                     let indices = planner.indices(buffer).into();
                     let filter = planner.nullable_filter(indices, where_true);
                     Filter::Indices(planner.select(filter, sort_indices).usize()?)
@@ -92,7 +92,7 @@ impl NormalFormQuery {
 
         let mut select = Vec::new();
         for expr in &self.projection {
-            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, &mut planner)?;
+            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
@@ -100,7 +100,7 @@ impl NormalFormQuery {
         }
         let mut order_by = Vec::new();
         for (expr, desc) in &self.order_by {
-            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, &mut planner)?;
+            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
@@ -113,7 +113,7 @@ impl NormalFormQuery {
         let mut executor = planner.prepare(vec![])?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
-        executor.run(columns.iter().next().unwrap().1.len(), &mut results, show);
+        executor.run(partition_len, &mut results, show);
         let (columns, projection, _, order_by) = results.collect_aliased(&select, &[], &order_by);
 
         Ok(
@@ -136,14 +136,14 @@ impl NormalFormQuery {
                              explain: bool,
                              show: bool,
                              partition: usize,
-                             partition_length: usize)
+                             partition_len: usize)
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 
         let mut planner = QueryPlanner::default();
 
         // Filter
-        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, &mut planner)?;
+        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut planner)?;
         let filter = match filter_type.encoding_type() {
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
@@ -155,7 +155,7 @@ impl NormalFormQuery {
             max_grouping_key,
             decode_plans,
             encoded_group_by_placeholder) =
-            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_length, &mut planner)?;
+            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_len, &mut planner)?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
         // TODO(clemens): also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
@@ -182,7 +182,7 @@ impl NormalFormQuery {
         let mut selector = None;
         let mut selector_index = None;
         for (i, &(aggregator, ref expr)) in self.aggregate.iter().enumerate() {
-            let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, &mut planner)?;
+            let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
@@ -295,7 +295,7 @@ impl NormalFormQuery {
         let mut executor = planner.prepare(vec![])?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
-        executor.run(columns.iter().next().map(|c| c.1.len()).unwrap_or(1), &mut results, show);
+        executor.run(partition_len, &mut results, show);
         let (columns, projection, aggregations, _) = results.collect_aliased(
             &grouping_columns.iter().map(|s| s.any()).collect::<Vec<_>>(),
             &aggregation_cols.iter().map(|&(s, aggregator)| (s.any(), aggregator)).collect::<Vec<_>>(),
