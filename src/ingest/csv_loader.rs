@@ -1,18 +1,20 @@
 extern crate csv;
 extern crate flate2;
 
-use mem_store::column::*;
-use mem_store::column_builder::*;
-use mem_store::strings::fast_build_string_column;
-use scheduler::*;
-use self::flate2::read::GzDecoder;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::ops::BitOr;
 use std::str;
 use std::sync::Arc;
-use super::extractor;
+
+use bitvec::*;
+use mem_store::column::*;
+use mem_store::column_builder::*;
+use mem_store::strings::fast_build_string_column;
+use scheduler::*;
+use self::flate2::read::GzDecoder;
 use stringpack::*;
+use super::extractor;
 
 type IngestionTransform = HashMap<String, extractor::Extractor>;
 
@@ -175,6 +177,8 @@ struct RawCol {
     uhex: bool,
     string_bytes: usize,
     allow_null: bool,
+    present: Vec<u8>,
+    any_null: bool,
 }
 
 impl RawCol {
@@ -186,6 +190,8 @@ impl RawCol {
             uhex: true,
             string_bytes: 0,
             allow_null,
+            present: Vec::new(),
+            any_null: false,
         }
     }
 
@@ -194,13 +200,23 @@ impl RawCol {
         self.lhex = self.lhex && is_lowercase_hex(elem);
         self.uhex = self.uhex && is_uppercase_hex(elem);
         self.string_bytes += elem.as_bytes().len();
+        if self.allow_null {
+            if elem == "" {
+                self.any_null = true;
+            } else {
+                self.present.set(self.values.len())
+            }
+        }
         self.values.push(elem);
     }
 
     fn finalize(&mut self, name: &str, string: bool) -> Arc<Column> {
+        let present = if self.allow_null && self.any_null {
+            Some(std::mem::replace(&mut self.present, Vec::new()))
+        } else { None };
         let result = if self.types.contains_string || string {
             fast_build_string_column(name, self.values.iter(), self.values.len(),
-                                     self.lhex, self.uhex, self.string_bytes)
+                                     self.lhex, self.uhex, self.string_bytes, present)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::default();
             for s in self.values.iter() {
@@ -215,7 +231,7 @@ impl RawCol {
                 };
                 builder.push(&int);
             }
-            builder.finalize(name)
+            builder.finalize(name, present)
         } else {
             Arc::new(Column::null(name, self.values.len()))
         };
@@ -229,12 +245,13 @@ impl RawCol {
             builder.push(&Some(extractor(s)));
         }
         self.clear();
-        builder.finalize(name)
+        builder.finalize(name, None)
     }
 
     fn clear(&mut self) {
         self.types = ColType::nothing();
         self.values.clear();
+        self.present.clear();
     }
 }
 

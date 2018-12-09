@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::str;
 
 #[derive(Default)]
@@ -41,20 +40,8 @@ pub struct PackedStrings {
     data: Vec<u8>,
 }
 
-// TODO(clemens): encode using variable size length + special value to represent null
+// TODO(clemens): encode using variable size length
 impl PackedStrings {
-    pub fn from_nullable_strings(strings: &[Option<Rc<String>>]) -> PackedStrings {
-        let mut sp = PackedStrings { data: Vec::new() };
-        for string in strings {
-            match *string {
-                Some(ref string) => sp.push(string),
-                None => sp.push(""),
-            }
-        }
-        sp.shrink_to_fit();
-        sp
-    }
-
     pub fn from_iterator<'a>(strings: impl Iterator<Item=&'a str>) -> PackedStrings {
         let mut sp = PackedStrings { data: Vec::new() };
         for string in strings {

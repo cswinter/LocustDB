@@ -98,6 +98,25 @@ fn test_select_nullable_integer() {
 }
 
 #[test]
+fn test_select_nullable_string() {
+    test_query_ec(
+        "SELECT country FROM default ORDER BY id DESC;",
+        &[
+            vec![Str("Germany")],
+            vec![Null],
+            vec![Null],
+            vec![Str("Turkey")],
+            vec![Null],
+            vec![Str("France")],
+            vec![Null],
+            vec![Str("France")],
+            vec![Str("USA")],
+            vec![Str("Germany")]
+        ],
+    )
+}
+
+#[test]
 fn test_select_twice() {
     test_query(
         "select first_name, first_name from default order by first_name limit 2;",
@@ -569,15 +588,27 @@ fn test_null_operators() {
         ],
     );
     test_query_ec(
+        "SELECT country
+         FROM default
+         WHERE country <> 'Germany'
+         ORDER BY id;",
+        &[
+            vec![Str("USA")],
+            vec![Str("France")],
+            vec![Str("France")],
+            vec![Str("Turkey")]
+        ],
+    );
+    test_query_ec(
         "SELECT (nullable_int - nullable_int2 / (id + 1)) + (nullable_int - 2 * nullable_int2) % (id + 1)
          FROM default
          ORDER BY id;",
         &[
             vec![Null],
-            vec![Int(-21)],
+            vec![Int(-20)],
             vec![Null],
             vec![Null],
-            vec![Int(8)],
+            vec![Int(6)],
             vec![Null],
             vec![Null],
             vec![Null],

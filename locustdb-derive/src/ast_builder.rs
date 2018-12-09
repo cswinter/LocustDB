@@ -226,6 +226,8 @@ fn parse_type(field_ident: &Ident, type_def: String) -> Option<(Expr, Option<FnA
             parse_quote!(EncodingType::I64)
         } else if base == "u8" {
             parse_quote!(EncodingType::U8)
+        } else if base == "str" {
+            parse_quote!(EncodingType::Str)
         } else {
             let ident = Ident::new(base, Span::call_site());
             parse_quote!(#ident.tag)

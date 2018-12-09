@@ -134,6 +134,7 @@ impl<'a> VecOperator<'a> {
         match data.tag {
             EncodingType::U8 => Ok(Box::new(MakeNullable { data: data.u8()?, present, nullable_data: nullable_data.nullable_u8()? })),
             EncodingType::I64 => Ok(Box::new(MakeNullable { data: data.i64()?, present, nullable_data: nullable_data.nullable_i64()? })),
+            EncodingType::Str => Ok(Box::new(MakeNullable { data: data.str()?, present, nullable_data: nullable_data.nullable_str()? })),
             _ => Err(fatal!("make_nullable not implemented for type {:?}", data.tag)),
         }
     }
@@ -150,6 +151,7 @@ impl<'a> VecOperator<'a> {
         match data.tag {
             EncodingType::U8 => Ok(Box::new(PropagateNullability { from: nullability, to: data.u8()?, output: output.nullable_u8()? })),
             EncodingType::I64 => Ok(Box::new(PropagateNullability { from: nullability, to: data.i64()?, output: output.nullable_i64()? })),
+            EncodingType::Str => Ok(Box::new(PropagateNullability { from: nullability, to: data.str()?, output: output.nullable_str()? })),
             _ => Err(fatal!("propagate_nullability not implemented for type {:?}", data.tag)),
         }
     }

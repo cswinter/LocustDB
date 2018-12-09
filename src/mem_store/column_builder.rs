@@ -1,94 +1,82 @@
 use std::cmp;
 use std::i64;
-use std::hash::Hash;
-use std::collections::hash_set::HashSet;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use mem_store::integers::*;
 use mem_store::column::*;
 use mem_store::strings::*;
-use bitvec::*;
+use stringpack::*;
 
 
 pub trait ColumnBuilder<T: ?Sized>: Default {
-    fn new(allow_null: bool) -> Self;
+    fn new() -> Self;
     fn push(&mut self, elem: &T);
-    fn finalize(self, name: &str) -> Arc<Column>;
+    fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column>;
 }
 
 pub struct StringColBuilder {
-    data: Vec<Option<Rc<String>>>,
-    uniques: UniqueValues<Option<Rc<String>>>,
+    values: IndexedPackedStrings,
+    lhex: bool,
+    uhex: bool,
+    string_bytes: usize,
 }
 
 impl Default for StringColBuilder {
     fn default() -> StringColBuilder {
         StringColBuilder {
-            data: Vec::new(),
-            uniques: UniqueValues::new(1 << 22), // TODO(clemens): Limit?
+            values: IndexedPackedStrings::default(),
+            lhex: true,
+            uhex: true,
+            string_bytes: 0,
         }
     }
 }
 
 impl<T: AsRef<str>> ColumnBuilder<T> for StringColBuilder {
-    fn new(_allow_null: bool) -> StringColBuilder { StringColBuilder::default() }
+    fn new() -> StringColBuilder { StringColBuilder::default() }
 
     fn push(&mut self, elem: &T) {
-        let str_opt = Some(Rc::new(elem.as_ref().to_string()));
-        self.data.push(str_opt.clone());
-        self.uniques.insert(str_opt);
+        let elem = elem.as_ref();
+        self.lhex = self.lhex && is_lowercase_hex(elem);
+        self.uhex = self.uhex && is_uppercase_hex(elem);
+        self.string_bytes += elem.as_bytes().len();
+        self.values.push(elem);
     }
 
-    fn finalize(self, name: &str) -> Arc<Column> {
-        build_string_column(name, &self.data, self.uniques)
+    fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column> {
+        fast_build_string_column(name, self.values.iter(), self.values.len(),
+                                 self.lhex, self.uhex, self.string_bytes, present)
     }
 }
 
 
 pub struct IntColBuilder {
     data: Vec<i64>,
-    present: Vec<u8>,
     min: i64,
     max: i64,
     increasing: u64,
     allow_delta_encode: bool,
     last: i64,
-    nullable: bool,
-    any_null: bool,
 }
 
 impl Default for IntColBuilder {
     fn default() -> IntColBuilder {
         IntColBuilder {
             data: Vec::new(),
-            present: Vec::new(),
             min: i64::MAX,
             max: i64::MIN,
             increasing: 0,
             allow_delta_encode: true,
             last: i64::MIN,
-            nullable: true,
-            any_null: false,
         }
     }
 }
 
 impl ColumnBuilder<Option<i64>> for IntColBuilder {
-    fn new(allow_null: bool) -> IntColBuilder {
-        let mut result = IntColBuilder::default();
-        result.nullable = allow_null;
-        result
-    }
+    fn new() -> IntColBuilder { IntColBuilder::default() }
 
     #[inline]
     fn push(&mut self, elem: &Option<i64>) {
-        if self.nullable && elem.is_some() {
-            self.present.set(self.data.len())
-        } else {
-            self.any_null = true;
-        }
-
         // TODO(clemens): cannot set arbitrary values for null to help compression?
         let elem = elem.unwrap_or(0);
         self.min = cmp::min(elem, self.min);
@@ -102,11 +90,10 @@ impl ColumnBuilder<Option<i64>> for IntColBuilder {
         self.data.push(elem);
     }
 
-    fn finalize(self, name: &str) -> Arc<Column> {
+    fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column> {
         // TODO(clemens): heuristic for deciding delta encoding could probably be improved
         let delta_encode = self.allow_delta_encode &&
             (self.increasing * 10 > self.data.len() as u64 * 9 && cfg!(feature = "enable_lz4"));
-        let present = if self.any_null && self.nullable { Some(self.present) } else { None };
         IntegerColumn::new_boxed(name,
                                  self.data,
                                  self.min,
@@ -117,30 +104,21 @@ impl ColumnBuilder<Option<i64>> for IntColBuilder {
 }
 
 
-pub struct UniqueValues<T> {
-    max_count: usize,
-    values: HashSet<T>,
+fn is_lowercase_hex(string: &str) -> bool {
+    string.len() & 1 == 0 && string.chars().all(|c| {
+        c == '0' || c == '1' || c == '2' || c == '3' ||
+            c == '4' || c == '5' || c == '6' || c == '7' ||
+            c == '8' || c == '9' || c == 'a' || c == 'b' ||
+            c == 'c' || c == 'd' || c == 'e' || c == 'f'
+    })
 }
 
-impl<T: cmp::Eq + Hash> UniqueValues<T> {
-    fn new(max_count: usize) -> UniqueValues<T> {
-        UniqueValues {
-            max_count,
-            values: HashSet::new(),
-        }
-    }
-
-    fn insert(&mut self, value: T) {
-        if self.values.len() < self.max_count {
-            self.values.insert(value);
-        }
-    }
-
-    pub fn get_values(self) -> Option<HashSet<T>> {
-        if self.values.len() < self.max_count {
-            Some(self.values)
-        } else {
-            None
-        }
-    }
+fn is_uppercase_hex(string: &str) -> bool {
+    string.len() & 1 == 0 && string.chars().all(|c| {
+        c == '0' || c == '1' || c == '2' || c == '3' ||
+            c == '4' || c == '5' || c == '6' || c == '7' ||
+            c == '8' || c == '9' || c == 'A' || c == 'B' ||
+            c == 'C' || c == 'D' || c == 'E' || c == 'F'
+    })
 }
+

@@ -210,6 +210,11 @@ impl TypedBufferRef {
         Ok(self.buffer.nullable_i64())
     }
 
+    pub fn nullable_str<'a>(&self) -> Result<BufferRef<Nullable<&'a str>>, QueryError> {
+        ensure!(self.tag == EncodingType::NullableStr, "{:?} != NullableStr", self.tag);
+        Ok(self.buffer.nullable_str())
+    }
+
     pub fn usize(&self) -> Result<BufferRef<usize>, QueryError> {
         ensure!(self.tag == EncodingType::USize, "{:?} != USize", self.tag);
         Ok(self.buffer.usize())
