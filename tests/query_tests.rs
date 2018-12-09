@@ -548,6 +548,19 @@ fn test_order_by_multiple() {
 }
 
 #[test]
+fn test_null_aggregators() {
+    test_query_ec(
+        "SELECT id/5, SUM(nullable_int), COUNT(nullable_int2)
+         FROM default
+         ORDER BY id/5;",
+        &[
+            vec![Int(0), Int(-31), Int(3)],
+            vec![Int(1), Int(33), Int(3)],
+        ],
+    );
+}
+
+#[test]
 fn test_null_operators() {
     test_query_ec(
         "SELECT id, nullable_int, nullable_int2

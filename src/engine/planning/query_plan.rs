@@ -183,6 +183,13 @@ pub enum QueryPlan {
         #[output]
         count: BufferRef<u32>,
     },
+    CountNonNulls {
+        nullable: BufferRef<Nullable<Any>>,
+        grouping_key: TypedBufferRef,
+        max_index: BufferRef<Scalar<i64>>,
+        #[output]
+        count: BufferRef<u32>,
+    },
     Sum {
         grouping_key: TypedBufferRef,
         plan: TypedBufferRef,
@@ -454,19 +461,24 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
 }
 
 // TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
-pub fn prepare_aggregation(plan: TypedBufferRef,
+pub fn prepare_aggregation(mut plan: TypedBufferRef,
                            plan_type: Type,
                            grouping_key: TypedBufferRef,
                            max_index: BufferRef<Scalar<i64>>,
                            aggregator: Aggregator,
                            planner: &mut QueryPlanner)
                            -> Result<(TypedBufferRef, Type), QueryError> {
-    Ok(match (aggregator, plan) {
-        (Aggregator::Count, _) => (
-            planner.count(grouping_key, max_index).into(),
-            Type::encoded(Codec::integer_cast(EncodingType::U32))
-        ),
-        (Aggregator::Sum, mut plan) => {
+    Ok(match aggregator {
+        Aggregator::Count => {
+            if plan.is_nullable() {
+                (planner.count_non_nulls(plan.nullable_any()?, grouping_key, max_index).into(),
+                 Type::encoded(Codec::integer_cast(EncodingType::U32)))
+            } else {
+                (planner.count(grouping_key, max_index).into(),
+                 Type::encoded(Codec::integer_cast(EncodingType::U32)))
+            }
+        }
+        Aggregator::Sum => {
             if !plan_type.is_summation_preserving() {
                 plan = plan_type.codec.clone().unwrap().decode(plan, planner);
             }
@@ -940,6 +952,7 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
         QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
         QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
+        QueryPlan::CountNonNulls {nullable,  grouping_key, max_index, count } => VecOperator::count_non_nulls(nullable, grouping_key, max_index, count)?,
         QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
         QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
         QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,

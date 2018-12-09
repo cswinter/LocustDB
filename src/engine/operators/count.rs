@@ -1,7 +1,7 @@
 use engine::*;
+use bitvec::BitVec;
 
 
-#[derive(Debug)]
 pub struct VecCount<T> {
     pub grouping: BufferRef<T>,
     pub output: BufferRef<u32>,
@@ -35,6 +35,47 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for VecCount<T> {
 
     fn display_op(&self, _: bool) -> String {
         format!("{}[{}] += 1", self.output, self.grouping)
+    }
+    fn display_output(&self) -> bool { false }
+}
+
+pub struct CountNonNulls<T> {
+    pub nullable: BufferRef<Nullable<Any>>,
+    pub grouping: BufferRef<T>,
+    pub output: BufferRef<u32>,
+    pub max_index: BufferRef<Scalar<i64>>,
+}
+
+impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for CountNonNulls<T> {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+        let present = scratchpad.get_null_map(self.nullable);
+        let mut result = scratchpad.get_mut(self.output);
+        let grouping = scratchpad.get(self.grouping);
+
+        let len = scratchpad.get_scalar(&self.max_index) as usize + 1;
+        if len > result.len() {
+            result.resize(len, 0);
+        }
+
+        for i in 0..grouping.len() {
+            if (&*present).is_set(i) {
+                result[grouping[i].cast_usize()] += 1;
+            }
+        }
+    }
+
+    fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.output, Vec::with_capacity(0));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.max_index.any(), self.nullable.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { false }
+    fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("{}[{}] += COALESCE({}, 0)", self.output, self.grouping, self.nullable)
     }
     fn display_output(&self) -> bool { false }
 }
