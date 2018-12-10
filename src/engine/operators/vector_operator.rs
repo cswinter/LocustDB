@@ -29,6 +29,7 @@ use super::encode_const::*;
 use super::exists::Exists;
 use super::filter::{Filter, NullableFilter};
 use super::functions::*;
+use super::fuse_nulls::*;
 use super::hashmap_grouping::HashMapGrouping;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
 use super::identity::Identity;
@@ -54,7 +55,7 @@ use super::scalar_str::ScalarStr;
 use super::select::*;
 use super::slice_pack::*;
 use super::slice_unpack::*;
-use super::sort_by::SortBy;
+use super::sort_by::*;
 use super::sort_by_slices::SortBySlices;
 use super::subpartition::SubPartition;
 use super::sum::*;
@@ -153,6 +154,14 @@ impl<'a> VecOperator<'a> {
             EncodingType::I64 => Ok(Box::new(PropagateNullability { from: nullability, to: data.i64()?, output: output.nullable_i64()? })),
             EncodingType::Str => Ok(Box::new(PropagateNullability { from: nullability, to: data.str()?, output: output.nullable_str()? })),
             _ => Err(fatal!("propagate_nullability not implemented for type {:?}", data.tag)),
+        }
+    }
+
+    pub fn fuse_nulls(input: TypedBufferRef, fused: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        if input.tag == EncodingType::NullableI64 {
+            Ok(Box::new(FuseNullsI64 { input: input.nullable_i64()?, fused: fused.i64()? }))
+        } else {
+            Ok(Box::new(FuseNullsStr { input: input.nullable_str()?, fused: fused.opt_str()? }))
         }
     }
 
@@ -485,6 +494,9 @@ impl<'a> VecOperator<'a> {
     }
 
     pub fn type_conversion(input: TypedBufferRef, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
+            return Ok(Box::new(TypeConversionOperator { input: input.str()?, output: output.opt_str()? }));
+        }
         reify_types! {
             "type_conversion";
             input: Integer, output: Integer;
@@ -604,10 +616,18 @@ impl<'a> VecOperator<'a> {
             return Ok(Box::new(
                 SortBySlices { ranking: ranking.any(), output, indices, descending, stable }));
         }
-        reify_types! {
-            "sort_indices";
-            ranking: Primitive;
-            Ok(Box::new(SortBy { ranking, output, indices, descending, stable }))
+        if ranking.is_nullable() {
+            reify_types! {
+                "sort_indices";
+                ranking: NullablePrimitive;
+                Ok(Box::new(SortByNullable { ranking, output, indices, descending, stable }))
+            }
+        } else {
+            reify_types! {
+                "sort_indices";
+                ranking: Primitive;
+                Ok(Box::new(SortBy { ranking, output, indices, descending, stable }))
+            }
         }
     }
 

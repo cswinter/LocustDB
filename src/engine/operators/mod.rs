@@ -19,6 +19,7 @@ mod encode_const;
 mod exists;
 mod filter;
 mod functions;
+mod fuse_nulls;
 mod hashmap_grouping;
 mod hashmap_grouping_byte_slices;
 mod identity;

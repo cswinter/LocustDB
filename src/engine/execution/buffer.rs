@@ -61,6 +61,7 @@ impl BufferRef<Any> {
 
     pub fn string(self) -> BufferRef<String> { self.transmute() }
     pub fn str<'a>(self) -> BufferRef<&'a str> { self.transmute() }
+    pub fn opt_str<'a>(self) -> BufferRef<Option<&'a str>> { self.transmute() }
     pub fn usize(self) -> BufferRef<usize> { self.transmute() }
     fn transmute<T>(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
 }
@@ -178,6 +179,11 @@ impl TypedBufferRef {
     pub fn str<'a>(&self) -> Result<BufferRef<&'a str>, QueryError> {
         ensure!(self.tag == EncodingType::Str, "{:?} != Str", self.tag);
         Ok(self.buffer.str())
+    }
+
+    pub fn opt_str<'a>(&self) -> Result<BufferRef<Option<&'a str>>, QueryError> {
+        ensure!(self.tag == EncodingType::OptStr, "{:?} != OptStr", self.tag);
+        Ok(self.buffer.opt_str())
     }
 
     pub fn i64(&self) -> Result<BufferRef<i64>, QueryError> {

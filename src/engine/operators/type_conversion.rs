@@ -85,3 +85,5 @@ impl Cast<u64> for u16 { fn cast(self) -> u64 { u64::from(self) } }
 impl Cast<u64> for u32 { fn cast(self) -> u64 { u64::from(self) } }
 
 impl Cast<u64> for i64 { fn cast(self) -> u64 { self as u64 } }
+
+impl<'a> Cast<Option<&'a str>> for &'a str { fn cast(self) -> Option<&'a str> { Some(self) } }

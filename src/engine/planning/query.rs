@@ -96,6 +96,9 @@ impl NormalFormQuery {
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
+            if plan.is_nullable() {
+                plan = planner.fuse_nulls(plan);
+            }
             select.push(plan.any());
         }
         let mut order_by = Vec::new();
@@ -103,6 +106,9 @@ impl NormalFormQuery {
             let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
+            }
+            if plan.is_nullable() {
+                plan = planner.fuse_nulls(plan);
             }
             order_by.push((plan.any(), *desc));
         };

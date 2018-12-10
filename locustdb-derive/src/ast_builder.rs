@@ -238,6 +238,8 @@ fn parse_type(field_ident: &Ident, type_def: String) -> Option<(Expr, Option<FnA
                 let null = null.get(1).unwrap().as_str();
                 if null == "always" {
                     parse_quote!(#base_type.nullable())
+                } else if null == "fused" {
+                    parse_quote!(#base_type.nullable_fused())
                 } else {
                     let parents = null.split(",").map(|ident| Ident::new(ident, Span::call_site())).collect::<Vec<_>>();
                     parse_quote! {

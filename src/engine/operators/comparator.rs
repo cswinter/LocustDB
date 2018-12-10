@@ -45,6 +45,12 @@ impl<'a> Comparator<&'a str> for CmpLessThan {
     fn is_less_than() -> bool { true }
 }
 
+impl<'a> Comparator<Option<&'a str>> for CmpLessThan {
+    fn cmp(left: Option<&str>, right: Option<&str>) -> bool { left < right }
+    fn cmp_eq(left: Option<&str>, right: Option<&str>) -> bool { left <= right }
+    fn is_less_than() -> bool { true }
+}
+
 
 #[derive(Debug)]
 pub struct CmpGreaterThan;
@@ -85,3 +91,8 @@ impl<'a> Comparator<&'a str> for CmpGreaterThan {
     fn is_less_than() -> bool { false }
 }
 
+impl<'a> Comparator<Option<&'a str>> for CmpGreaterThan {
+    fn cmp(left: Option<&str>, right: Option<&str>) -> bool { left > right }
+    fn cmp_eq(left: Option<&str>, right: Option<&str>) -> bool { left >= right }
+    fn is_less_than() -> bool { false }
+}
