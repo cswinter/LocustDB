@@ -59,6 +59,13 @@ pub enum QueryPlan {
         #[output(t = "base=data;null=always")]
         nullable: TypedBufferRef,
     },
+    /// Converts NullableI64 or NullableStr into a representation where nulls are encoded as part
+    /// of the data (i64 with i64::MIN representing null for NullableI64, and Option<&str> for NullableStr).
+    FuseNulls {
+        nullable: TypedBufferRef,
+        #[output(t = "base=nullable;null=fused")]
+        fused: TypedBufferRef,
+    },
     /// Resolves dictionary indices to their original string value.
     DictLookup {
         indices: TypedBufferRef,
@@ -939,6 +946,7 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::MakeNullable { data, present, nullable } => VecOperator::make_nullable(data, present, nullable)?,
         QueryPlan::PropagateNullability { nullable, data, nullable_data } => VecOperator::propagate_nullability(nullable.nullable_any()?, data, nullable_data)?,
         QueryPlan::CombineNullMaps { lhs, rhs, present } => VecOperator::combine_null_maps(lhs, rhs, present)?,
+        QueryPlan::FuseNulls { nullable, fused } => VecOperator::fuse_nulls(nullable, fused)?,
         QueryPlan::Filter { plan, select, filtered } => VecOperator::filter(plan, select, filtered)?,
         QueryPlan::NullableFilter { plan, select, filtered } => VecOperator::nullable_filter(plan, select, filtered)?,
         QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),

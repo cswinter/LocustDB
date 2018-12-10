@@ -16,7 +16,7 @@ use mem_store::value::Val;
 use engine::data_types::*;
 
 
-pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Display + Sync + Send + HeapSizeOf {
+pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Sync + Send + HeapSizeOf {
     fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [T] where T: 'a;
     fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<T> where T: 'a;
     fn wrap_one(_value: T) -> RawVal { panic!("Can't wrap scalar of type {:?}", Self::t()) }
@@ -45,7 +45,7 @@ impl VecData<u32> for u32 {
 impl VecData<i64> for i64 {
     fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [i64] where i64: 'a { vec.cast_ref_i64() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<i64> where i64: 'a { vec.cast_ref_mut_i64() }
-    fn wrap_one(value: i64) -> RawVal { RawVal::Int(value) }
+    fn wrap_one(value: i64) -> RawVal { if value == i64::MIN { RawVal::Null } else { RawVal::Int(value) } }
     fn t() -> EncodingType { EncodingType::I64 }
 }
 
@@ -80,6 +80,29 @@ impl<'c> VecData<&'c str> for &'c str {
     fn wrap_one(value: &'c str) -> RawVal { RawVal::Str(value.to_string()) }
 
     fn t() -> EncodingType { EncodingType::Str }
+}
+
+impl<'c> VecData<Option<&'c str>> for Option<&'c str> {
+    fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [Option<&'c str>] where Option<&'c str>: 'a {
+        unsafe {
+            mem::transmute::<_, &'b [Option<&'c str>]>(vec.cast_ref_opt_str())
+        }
+    }
+
+    fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<Option<&'c str>> where Option<&'c str>: 'a {
+        unsafe {
+            mem::transmute::<_, &'b mut Vec<Option<&'c str>>>(vec.cast_ref_mut_opt_str())
+        }
+    }
+
+    fn wrap_one(value: Option<&'c str>) -> RawVal {
+        match value {
+            Some(value) => RawVal::Str(value.to_string()),
+            None => RawVal::Null,
+        }
+    }
+
+    fn t() -> EncodingType { EncodingType::OptStr }
 }
 
 impl<'c> VecData<Val<'c>> for Val<'c> {
@@ -202,7 +225,7 @@ impl VecData<Premerge> for Premerge {
 }
 
 
-pub fn display_slice<T: Display>(slice: &[T], max_chars: usize) -> String {
+pub fn display_slice<T: Debug>(slice: &[T], max_chars: usize) -> String {
     let mut length = slice.len();
     loop {
         let result = _display_slice(slice, length);
@@ -223,10 +246,10 @@ pub fn display_slice<T: Display>(slice: &[T], max_chars: usize) -> String {
     "display_slice error!".to_owned()
 }
 
-fn _display_slice<T: Display>(slice: &[T], max: usize) -> String {
+fn _display_slice<T: Debug>(slice: &[T], max: usize) -> String {
     let mut result = String::new();
     write!(result, "[").unwrap();
-    write!(result, "{}", slice[..max].iter().map(|x| format!("{}", x)).join(", ")).unwrap();
+    write!(result, "{}", slice[..max].iter().map(|x| format!("{:?}", x)).join(", ")).unwrap();
     if max < slice.len() {
         write!(result, ", ...] ({} more)", slice.len() - max).unwrap();
     } else {

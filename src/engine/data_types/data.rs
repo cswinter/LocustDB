@@ -24,6 +24,7 @@ pub trait Data<'a>: Send + Sync {
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedData<'b> where 'a: 'b;
 
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
+    fn cast_ref_opt_str<'b>(&'b self) -> &'b [Option<&'a str>] { panic!(self.type_error("cast_ref_opt_str")) }
     fn cast_ref_i64(&self) -> &[i64] { panic!(self.type_error("cast_ref_i64")) }
     fn cast_ref_u32(&self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
     fn cast_ref_u16(&self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
@@ -43,6 +44,7 @@ pub trait Data<'a>: Send + Sync {
     fn cast_ref_byte_slices(&self) -> &ByteSlices<'a> { panic!(self.type_error("cast_ref_byte_slices")) }
 
     fn cast_ref_mut_str(&mut self) -> &mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
+    fn cast_ref_mut_opt_str(&mut self) -> &mut Vec<Option<&'a str>> { panic!(self.type_error("cast_ref_mut_opt_str")) }
     fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { panic!(self.type_error("cast_ref_mut_i64")) }
     fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
     fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
@@ -133,6 +135,19 @@ impl<'a> Data<'a> for Vec<&'a str> {
     fn cast_ref_mut_str<'b>(&'b mut self) -> &'b mut Vec<&'a str> { self }
     fn to_mixed(&self) -> Vec<Val<'a>> {
         self.iter().map(|s| Val::Str(*s)).collect()
+    }
+}
+
+impl<'a> Data<'a> for Vec<Option<&'a str>> {
+    fn cast_ref_opt_str<'b>(&'b self) -> &'b [Option<&'a str>] { self }
+    fn cast_ref_mut_opt_str<'b>(&'b mut self) -> &'b mut Vec<Option<&'a str>> { self }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter()
+            .map(|s| match s {
+                None => Val::Null,
+                Some(s) => Val::Str(*s),
+            })
+            .collect()
     }
 }
 

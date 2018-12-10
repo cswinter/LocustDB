@@ -3,6 +3,7 @@ use mem_store::*;
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, HeapSizeOf)]
 pub enum EncodingType {
     Str,
+    OptStr,
     I64,
     U8,
     U16,
@@ -59,6 +60,14 @@ impl EncodingType {
         }
     }
 
+    pub fn nullable_fused(&self) -> EncodingType {
+        match self {
+            EncodingType::NullableStr => EncodingType::OptStr,
+            EncodingType::NullableI64 => EncodingType::I64,
+            _ => panic!("{:?} does not have a corresponding fused nullable type", &self)
+        }
+    }
+
     pub fn is_nullable(&self) -> bool {
         match self {
             EncodingType::NullableStr | EncodingType::NullableI64 |
@@ -77,6 +86,20 @@ impl EncodingType {
             EncodingType::NullableU32 => EncodingType::U32,
             EncodingType::NullableU64 => EncodingType::U64,
             _ => *self,
+        }
+    }
+
+    pub fn least_upper_bound(&self, other: EncodingType) -> EncodingType {
+        if *self == other {
+            *self
+        } else {
+            match (self, other) {
+                (EncodingType::Val, _) => EncodingType::Val,
+                (_, EncodingType::Val) => EncodingType::Val,
+                (EncodingType::OptStr, EncodingType::Str) => EncodingType::OptStr,
+                (EncodingType::Str, EncodingType::OptStr) => EncodingType::OptStr,
+                _ => unimplemented!("lub not implemented for {:?} and {:?}", self, other),
+            }
         }
     }
 }

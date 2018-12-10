@@ -183,21 +183,23 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             let (merge_ops, merged_final_sort_col) = if batch1.order_by.len() == 1 {
                 let (index1, desc) = batch1.order_by[0];
                 let (index2, _) = batch2.order_by[0];
-                qp.merge(left[index1], right[index2], limit, desc)
+                let (left, right) = unify_types(&mut qp, left[index1], right[index2]);
+                qp.merge(left, right, limit, desc)
             } else {
                 let (first_sort_col_index1, desc) = batch1.order_by[0];
                 let (first_sort_col_index2, _) = batch2.order_by[0];
-                let mut partitioning = qp.partition(
-                    left[first_sort_col_index1], right[first_sort_col_index2], limit, desc);
+                let (l, r) = unify_types(&mut qp, left[first_sort_col_index1], right[first_sort_col_index2]);
+                let mut partitioning = qp.partition(l.clone(), r.clone(), limit, desc);
 
                 for i in 1..(left.len() - 1) {
                     let (index1, desc) = batch1.order_by[i];
                     let (index2, _) = batch1.order_by[i];
-                    partitioning = qp.subpartition(partitioning, left[index1], right[index2], desc);
+                    let (l, r) = unify_types(&mut qp, left[index1], right[index2]);
+                    partitioning = qp.subpartition(partitioning, l, r, desc);
                 }
+                let (l, r) = unify_types(&mut qp, left[final_sort_col_index1], right[final_sort_col_index2]);
                 qp.merge_partitioned(partitioning,
-                                     left[final_sort_col_index1],
-                                     right[final_sort_col_index2],
+                                     l, r,
                                      limit,
                                      batch1.order_by.last().unwrap().1)
             };
@@ -207,7 +209,8 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 if ileft == final_sort_col_index1 && iright == final_sort_col_index2 {
                     projection.push(merged_final_sort_col.any());
                 } else {
-                    let merged = qp.merge_keep(merge_ops, left[ileft], right[iright]);
+                    let (l, r) = unify_types(&mut qp, left[ileft], right[iright]);
+                    let merged = qp.merge_keep(merge_ops, l, r);
                     projection.push(merged.any());
                 }
             }
@@ -215,7 +218,8 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             for (&(ileft, desc), &(iright, _)) in
                 batch1.order_by[0..batch1.order_by.len() - 1].iter()
                     .zip(batch2.order_by.iter()) {
-                let merged = qp.merge_keep(merge_ops, left[ileft], right[iright]);
+                let (l, r) = unify_types(&mut qp, left[ileft], right[iright]);
+                let merged = qp.merge_keep(merge_ops, l, r);
                 order_by.push((merged.any(), desc));
             }
             order_by.push((merged_final_sort_col.any(), final_desc));
@@ -223,7 +227,6 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             let mut executor = qp.prepare(data)?;
             let mut results = executor.prepare_no_columns();
             executor.run(1, &mut results, batch1.show || batch2.show);
-
             let (columns, projection, _, order_by) = results.collect_aliased(&projection, &[], &order_by);
 
             Ok(BatchResult {
@@ -282,3 +285,13 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
     }
 }
 
+fn unify_types(qp: &mut QueryPlanner, mut left: TypedBufferRef, mut right: TypedBufferRef) -> (TypedBufferRef, TypedBufferRef) {
+    let lub = left.tag.least_upper_bound(right.tag);
+    if left.tag != lub {
+        left = qp.cast(left, lub);
+    }
+    if right.tag != lub {
+        right = qp.cast(right, lub);
+    }
+    (left, right)
+}

@@ -86,7 +86,7 @@ impl<'a> Data<'a> for NullableVec<&'a str> {
     fn cast_ref_str(&self) -> &[&'a str] { &self.data }
 }
 
-pub fn display_nullable_slice<T: fmt::Display>(slice: &[T], present: &[u8], max_chars: usize) -> String {
+pub fn display_nullable_slice<T: fmt::Debug>(slice: &[T], present: &[u8], max_chars: usize) -> String {
     let mut length = slice.len();
     loop {
         let result = _display_nullable_slice(slice, present, length);
@@ -107,12 +107,12 @@ pub fn display_nullable_slice<T: fmt::Display>(slice: &[T], present: &[u8], max_
     "display_slice error!".to_owned()
 }
 
-fn _display_nullable_slice<T: fmt::Display>(slice: &[T], present: &[u8], max: usize) -> String {
+fn _display_nullable_slice<T: fmt::Debug>(slice: &[T], present: &[u8], max: usize) -> String {
     let mut result = String::new();
     write!(result, "[").unwrap();
     write!(result, "{}", slice[..max].iter()
         .enumerate()
-        .map(|(i, x)| if present.is_set(i) { format!("{}", x) } else { "null".to_string() })
+        .map(|(i, x)| if present.is_set(i) { format!("{:?}", x) } else { "null".to_string() })
         .join(", ")).unwrap();
     if max < slice.len() {
         write!(result, ", ...] ({} more)", slice.len() - max).unwrap();

@@ -35,12 +35,12 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
-        format!("merge_deduplicate_partitioned({}, {}, {})", self.partitioning, self.left, self.right)
+        format!("merge_partitioned({}, {}, {})", self.partitioning, self.left, self.right)
     }
 }
 
 pub fn merge_partitioned<'a, T, C>(partitioning: &[Premerge], left: &[T], right: &[T], limit: usize)
-                                   -> (Vec<T>, Vec<u8>) where T: PartialOrd + Copy + 'a, C: Comparator<T> {
+                                   -> (Vec<T>, Vec<u8>) where T: PartialOrd + Debug + Copy + 'a, C: Comparator<T> {
     let len = cmp::min(left.len() + right.len(), limit);
     let mut result = Vec::with_capacity(len);
     let mut take_left = Vec::<u8>::with_capacity(len);
