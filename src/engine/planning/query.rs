@@ -146,10 +146,10 @@ impl NormalFormQuery {
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         trace_start!("run_aggregate");
 
-        let mut planner = QueryPlanner::default();
+        let mut qp = QueryPlanner::default();
 
         // Filter
-        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut planner)?;
+        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut qp)?;
         let filter = match filter_type.encoding_type() {
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
@@ -157,30 +157,30 @@ impl NormalFormQuery {
         };
 
         // Combine all group by columns into a single decodable grouping key
-        let ((raw_grouping_key, raw_grouping_key_type),
+        let ((raw_grouping_key, is_raw_grouping_key_order_preserving),
             max_grouping_key,
             decode_plans,
             encoded_group_by_placeholder) =
-            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_len, &mut planner)?;
+            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_len, &mut qp)?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
         // TODO(clemens): also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
         let (encoded_group_by_column,
             grouping_key,
-            grouping_key_type,
+            is_grouping_key_order_preserving,
             aggregation_cardinality) =
         // TODO(clemens): refine criterion
-            if max_grouping_key < 1 << 16 && raw_grouping_key_type.is_positive_integer() {
-                let max_grouping_key_buf = planner.scalar_i64(max_grouping_key, true);
+            if max_grouping_key < 1 << 16 {
+                let max_grouping_key_buf = qp.scalar_i64(max_grouping_key, true);
                 (None,
                  raw_grouping_key,
-                 raw_grouping_key_type.clone(),
+                 is_raw_grouping_key_order_preserving,
                  max_grouping_key_buf)
             } else {
                 query_plan::prepare_hashmap_grouping(
                     raw_grouping_key,
                     max_grouping_key as usize,
-                    &mut planner)?
+                    &mut qp)?
             };
 
         // Aggregators
@@ -188,14 +188,14 @@ impl NormalFormQuery {
         let mut selector = None;
         let mut selector_index = None;
         for (i, &(aggregator, ref expr)) in self.aggregate.iter().enumerate() {
-            let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
+            let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut qp)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
                 grouping_key,
                 aggregation_cardinality,
                 aggregator,
-                &mut planner)?;
+                &mut qp)?;
             // TODO(clemens): if summation column is strictly positive, can use sum as well
             if aggregator == Aggregator::Count {
                 selector = Some((aggregate, t.encoding_type()));
@@ -206,16 +206,16 @@ impl NormalFormQuery {
 
         // Determine selector
         let selector = match selector {
-            None => planner.exists(grouping_key, aggregation_cardinality).into(),
+            None => qp.exists(grouping_key, aggregation_cardinality).into(),
             Some(x) => x.0,
         };
 
         // Construct (encoded) group by column
         let encoded_group_by_column = match encoded_group_by_column {
-            None => planner.nonzero_indices(selector, grouping_key_type.encoding_type()),
+            None => qp.nonzero_indices(selector, grouping_key.tag),
             Some(x) => x,
         };
-        planner.connect(encoded_group_by_column, encoded_group_by_placeholder);
+        qp.connect(encoded_group_by_column, encoded_group_by_placeholder);
 
         // Compact and decode aggregation results
         let mut aggregation_cols = Vec::new();
@@ -225,11 +225,11 @@ impl NormalFormQuery {
                                       t: Type| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
-                    Aggregator::Sum => planner.compact(aggregate, selector),
-                    Aggregator::Count => planner.nonzero_compact(aggregate),
+                    Aggregator::Sum => qp.compact(aggregate, selector),
+                    Aggregator::Count => qp.nonzero_compact(aggregate),
                 };
                 if t.is_encoded() {
-                    Ok(t.codec.clone().unwrap().decode(compacted, &mut planner))
+                    Ok(t.codec.clone().unwrap().decode(compacted, &mut qp))
                 } else {
                     Ok(compacted)
                 }
@@ -259,46 +259,52 @@ impl NormalFormQuery {
 
         // If the grouping is not order preserving, we need to sort all output columns by using the ordering constructed from the decoded group by columns
         // This is necessary to make it possible to efficiently merge with other batch results
-        if !grouping_key_type.is_order_preserving() {
-            let sort_indices = if raw_grouping_key_type.is_order_preserving() {
-                let indices = planner.indices(encoded_group_by_column);
-                planner.sort_by(encoded_group_by_column,
-                                indices,
-                                false /* desc */,
-                                false /* stable */)
+        if is_grouping_key_order_preserving {
+            let sort_indices = if is_raw_grouping_key_order_preserving {
+                let indices = qp.indices(encoded_group_by_column);
+                qp.sort_by(encoded_group_by_column,
+                           indices,
+                           false /* desc */,
+                           false /* stable */)
             } else {
                 if grouping_columns.len() != 1 {
                     // TODO(clemens): debug print `planner`
                     bail!(QueryError::NotImplemented,
                         "Grouping key is not order preserving and more than 1 grouping column\nGrouping key type: {:?}\nTODO: PLANNER",
-                        &grouping_key_type )
+                        &grouping_key.tag)
                 }
-                let indices = planner.indices(grouping_columns[0]);
-                planner.sort_by(grouping_columns[0],
-                                indices,
-                                false /* desc */,
-                                false /* stable */)
+                let indices = qp.indices(grouping_columns[0]);
+                qp.sort_by(grouping_columns[0],
+                           indices,
+                           false /* desc */,
+                           false /* stable */)
             };
 
             let mut aggregations2 = Vec::new();
             for &(a, aggregator) in &aggregation_cols {
                 aggregations2.push(
-                    (planner.select(a, sort_indices),
+                    (qp.select(a, sort_indices),
                      aggregator));
             }
             aggregation_cols = aggregations2;
 
             let mut grouping_columns2 = Vec::new();
             for s in &grouping_columns {
-                grouping_columns2.push(planner.select(*s, sort_indices));
+                grouping_columns2.push(qp.select(*s, sort_indices));
             }
             grouping_columns = grouping_columns2;
+        }
+
+        for plan in &mut grouping_columns {
+            if plan.is_nullable() {
+                *plan = qp.fuse_nulls(*plan);
+            }
         }
 
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = planner.prepare(vec![])?;
+        let mut executor = qp.prepare(vec![])?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(partition_len, &mut results, show);

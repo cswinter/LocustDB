@@ -11,7 +11,6 @@ pub struct Codec {
     decoded_type: BasicType,
     is_summation_preserving: bool,
     is_order_preserving: bool,
-    is_positive_integer: bool,
     is_fixed_width: bool,
 }
 
@@ -20,7 +19,6 @@ impl Codec {
         let decoded_type = ops[ops.len() - 1].output_type();
         let is_summation_preserving = Codec::has_property(&ops, CodecOp::is_summation_preserving);
         let is_order_preserving = Codec::has_property(&ops, CodecOp::is_order_preserving);
-        let is_positive_integer = Codec::has_property(&ops, CodecOp::is_positive_integer);
         let is_fixed_width = Codec::has_property(&ops, CodecOp::is_elementwise_decodable);
         Codec {
             ops,
@@ -29,7 +27,6 @@ impl Codec {
             decoded_type,
             is_summation_preserving,
             is_order_preserving,
-            is_positive_integer,
             is_fixed_width,
         }
     }
@@ -42,7 +39,6 @@ impl Codec {
             decoded_type: t,
             is_summation_preserving: true,
             is_order_preserving: true,
-            is_positive_integer: true,
             is_fixed_width: true,
         }
     }
@@ -63,7 +59,6 @@ impl Codec {
                   decoded_type: BasicType,
                   is_summation_preserving: bool,
                   is_order_preserving: bool,
-                  is_positive_integer: bool,
                   is_fixed_width: bool) -> Codec {
         Codec {
             ops: vec![CodecOp::Unknown],
@@ -72,7 +67,6 @@ impl Codec {
             decoded_type,
             is_summation_preserving,
             is_order_preserving,
-            is_positive_integer,
             is_fixed_width,
         }
     }
@@ -181,7 +175,6 @@ impl Codec {
     pub fn decoded_type(&self) -> BasicType { self.decoded_type }
     pub fn is_summation_preserving(&self) -> bool { self.is_summation_preserving }
     pub fn is_order_preserving(&self) -> bool { self.is_order_preserving }
-    pub fn is_positive_integer(&self) -> bool { self.is_positive_integer }
     pub fn is_elementwise_decodable(&self) -> bool { self.is_fixed_width }
     pub fn is_identity(&self) -> bool { self.ops.is_empty() }
 
@@ -289,6 +282,7 @@ pub enum CodecOp {
 
 impl CodecOp {
     fn output_type(&self) -> BasicType {
+        // TODO(clemens): completely broken for nullables
         match self {
             CodecOp::Nullable => BasicType::Integer,
             CodecOp::Add(_, _) => BasicType::Integer,
@@ -330,21 +324,6 @@ impl CodecOp {
             CodecOp::UnpackStrings => false,
             CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_order_preserving()"),
-        }
-    }
-
-    fn is_positive_integer(&self) -> bool {
-        match self {
-            CodecOp::Nullable => false,
-            CodecOp::Add(_, _) => true,
-            CodecOp::Delta(_) => false,
-            CodecOp::ToI64(_) => true, // TODO(clemens): no it's not (hack to make grouping key work)
-            CodecOp::PushDataSection(_) => true,
-            CodecOp::DictLookup(_) => true,
-            CodecOp::LZ4(_, _) => false,
-            CodecOp::UnpackStrings => false,
-            CodecOp::UnhexpackStrings(_, _) => false,
-            CodecOp::Unknown => panic!("Unknown.is_positive_integer()"),
         }
     }
 

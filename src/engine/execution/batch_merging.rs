@@ -104,25 +104,25 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             data.push(Box::new(vec![MergeOp::TakeLeft, MergeOp::MergeRight]));
             (vec![], ops)
         } else if lprojection.len() == 1 {
-            // TODO(clemens): other types, val coercion
-            let (ops, merged) = qp.merge_deduplicate(left[lprojection[0]], right[rprojection[0]]);
+            let (l, r) = unify_types(&mut qp, left[lprojection[0]], right[rprojection[0]]);
+            let (ops, merged) = qp.merge_deduplicate(l, r);
             (vec![merged.any()], ops)
         } else {
-            let mut partitioning = qp.partition(left[lprojection[0]], right[rprojection[0]], limit, false);
+            let (l, r) = unify_types(&mut qp, left[lprojection[0]], right[rprojection[0]]);
+            let mut partitioning = qp.partition(l, r, limit, false);
             for i in 1..(lprojection.len() - 1) {
-                partitioning = qp.subpartition(partitioning,
-                                               left[lprojection[i]], right[rprojection[i]],
-                                               false);
+                let (l, r) = unify_types(&mut qp, left[lprojection[i]], right[rprojection[i]]);
+                partitioning = qp.subpartition(partitioning, l, r, false);
             }
 
             let last = lprojection.len() - 1;
-            let (ops, merged) = qp.merge_deduplicate_partitioned(partitioning,
-                                                                 left[lprojection[last]],
-                                                                 right[rprojection[last]]);
+            let (l, r) = unify_types(&mut qp, left[lprojection[last]], right[rprojection[last]]);
+            let (ops, merged) = qp.merge_deduplicate_partitioned(partitioning, l, r);
 
             let mut group_by_cols = Vec::with_capacity(lprojection.len());
             for i in 0..last {
-                let merged = qp.merge_drop(ops, left[lprojection[i]], right[rprojection[i]]);
+                let (l, r) = unify_types(&mut qp, left[lprojection[i]], right[rprojection[i]]);
+                let merged = qp.merge_drop(ops, l, r);
                 group_by_cols.push(merged.any());
             }
             group_by_cols.push(merged.any());

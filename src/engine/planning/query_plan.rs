@@ -34,14 +34,14 @@ pub enum QueryPlan {
     AssembleNullable {
         data: TypedBufferRef,
         present: BufferRef<u8>,
-        #[output(t = "base=data;null=always")]
+        #[output(t = "base=data;null=_always")]
         nullable: TypedBufferRef,
     },
     /// Combines a vector with the null map of another vector.
     PropagateNullability {
         nullable: TypedBufferRef,
         data: TypedBufferRef,
-        #[output(t = "base=data;null=always")]
+        #[output(t = "base=data;null=_always")]
         nullable_data: TypedBufferRef,
     },
     /// Combines the null maps of two vectors, setting the result to null if any if the inputs were null.
@@ -56,15 +56,43 @@ pub enum QueryPlan {
         data: TypedBufferRef,
         #[internal]
         present: BufferRef<u8>,
-        #[output(t = "base=data;null=always")]
+        #[output(t = "base=data;null=_always")]
         nullable: TypedBufferRef,
     },
     /// Converts NullableI64 or NullableStr into a representation where nulls are encoded as part
     /// of the data (i64 with i64::MIN representing null for NullableI64, and Option<&str> for NullableStr).
     FuseNulls {
         nullable: TypedBufferRef,
-        #[output(t = "base=nullable;null=fused")]
+        #[output(t = "base=nullable;null=_fused")]
         fused: TypedBufferRef,
+    },
+    /// Converts Nullable integer types into a representation where nulls are encoded as value `null`.
+    FuseIntNulls {
+        offset: i64,
+        nullable: TypedBufferRef,
+        #[output(t = "base=nullable;null=_never")]
+        fused: TypedBufferRef,
+    },
+    /// Inverse of `FuseNulls`.
+    UnfuseNulls {
+        fused: TypedBufferRef,
+        #[internal(t = "base=fused;null=_never")]
+        data: TypedBufferRef,
+        #[internal]
+        present: BufferRef<u8>,
+        #[output(t = "base=fused;null=_always")]
+        unfused: TypedBufferRef,
+    },
+    /// Inverse of `FuseNulls`.
+    UnfuseIntNulls {
+        offset: i64,
+        fused: TypedBufferRef,
+        #[internal(t = "base=fused;null=_never")]
+        data: TypedBufferRef,
+        #[internal]
+        present: BufferRef<u8>,
+        #[output(t = "base=fused;null=_always")]
+        unfused: TypedBufferRef,
     },
     /// Resolves dictionary indices to their original string value.
     DictLookup {
@@ -457,13 +485,13 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
                                 planner: &mut QueryPlanner)
                                 -> Result<(Option<TypedBufferRef>,
                                            TypedBufferRef,
-                                           Type,
+                                           bool,
                                            BufferRef<Scalar<i64>>), QueryError> {
     let (unique_out, grouping_key_out, cardinality_out) =
         planner.hash_map_grouping(raw_grouping_key, max_cardinality);
     Ok((Some(unique_out),
         grouping_key_out.into(),
-        Type::encoded(Codec::opaque(EncodingType::U32, BasicType::Integer, false, false, true, true)),
+        false,
         cardinality_out))
 }
 
@@ -735,34 +763,39 @@ impl QueryPlan {
     }
 }
 
-fn encoding_range(plan: &TypedBufferRef, planner: &QueryPlanner) -> Option<(i64, i64)> {
+fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)> {
     // TODO(clemens): need more principled approach - this currently doesn't work for all partially decodings
     // Example: [LZ4, Add, Delta] will have as bottom decoding range the range after indices, max_index Delta, but without the Add :/
     // This works in this case because we always have to decode the Delta, but is hard to reason about and has caused bugs
     use self::QueryPlan::*;
-    match *planner.resolve(plan) {
+    match *qp.resolve(plan) {
         ColumnSection { range, .. } => range,
-        ToYear { timestamp, .. } => encoding_range(&timestamp.into(), planner).map(|(min, max)|
+        ToYear { timestamp, .. } => encoding_range(&timestamp.into(), qp).map(|(min, max)|
             (i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
              i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
         ),
-        Filter { ref plan, .. } => encoding_range(plan, planner),
+        Filter { ref plan, .. } => encoding_range(plan, qp),
         // TODO(clemens): this is just wrong
-        Divide { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = planner.resolve(rhs) {
-            encoding_range(lhs, planner).map(|(min, max)|
+        Divide { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = qp.resolve(rhs) {
+            encoding_range(lhs, qp).map(|(min, max)|
                 if *c > 0 { (min / *c, max / *c) } else { (max / *c, min / *c) })
         } else {
             None
         },
-        Add { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = planner.resolve(rhs) {
-            encoding_range(lhs, planner).map(|(min, max)| (min + *c, max + *c))
+        Add { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = qp.resolve(rhs) {
+            encoding_range(lhs, qp).map(|(min, max)| (min + *c, max + *c))
         } else {
             None
         },
-        Cast { ref input, .. } => encoding_range(input, planner),
-        LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), planner),
-        DeltaDecode { ref plan, .. } => encoding_range(plan, planner),
-        _ => None, // TODO(clemens): many more cases where we can determine range
+        Cast { ref input, .. } => encoding_range(input, qp),
+        LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), qp),
+        DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
+        AssembleNullable { ref data, .. } => encoding_range(data, qp),
+        ref plan => {
+            // TODO(clemens): many more cases where we can determine range
+            error!("encoding_range not implement for {:?}", plan);
+            None
+        }
     }
 }
 
@@ -772,9 +805,8 @@ pub fn compile_grouping_key(
     columns: &HashMap<String, Arc<DataSource>>,
     partition_len: usize,
     planner: &mut QueryPlanner)
-    -> Result<((TypedBufferRef, Type), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef), QueryError> {
+    -> Result<((TypedBufferRef, bool), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef), QueryError> {
     if exprs.is_empty() {
-        let t = Type::new(BasicType::Integer, Some(Codec::opaque(EncodingType::U8, BasicType::Integer, true, true, true, true)));
         let mut plan = planner.constant_expand(0, partition_len, EncodingType::U8);
         plan = match filter {
             Filter::U8(filter) => planner.filter(plan, filter),
@@ -783,37 +815,58 @@ pub fn compile_grouping_key(
             Filter::None => plan,
         };
         Ok((
-            (plan, t),
+            (plan, true),
             1,
             vec![],
             planner.buffer_provider.named_buffer("empty_group_by", EncodingType::Null)
         ))
     } else if exprs.len() == 1 {
         QueryPlan::compile_expr(&exprs[0], filter, columns, partition_len, planner)
-            .map(|(gk_plan, gk_type)| {
+            .map(|(mut gk_plan, gk_type)| {
+                let original_plan = gk_plan.clone();
                 let encoding_range = encoding_range(&gk_plan, planner);
                 debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
                 let (max_cardinality, offset) = match encoding_range {
-                    Some((min, max)) => if min < 0 { (max - min, -min) } else { (max, 0) }
-                    None => (1 << 62, 0),
+                    Some((min, max)) => if min <= 0 && gk_plan.is_nullable() {
+                        (max - min + 1, Some(-min + 1))
+                    } else if gk_plan.is_nullable() {
+                        (max, Some(0))
+                    } else if min < 0 {
+                        (max - min, Some(-min))
+                    } else {
+                        (max, None)
+                    }
+                    None => (1 << 62, None),
                 };
-                let gk_plan = if offset != 0 {
+
+                if gk_plan.is_nullable() {
+                    gk_plan = match offset {
+                        Some(offset) => planner.fuse_int_nulls(offset, gk_plan),
+                        None => planner.fuse_nulls(gk_plan),
+                    }
+                } else if let Some(offset) = offset {
                     let offset = planner.scalar_i64(offset, true);
-                    planner.add(gk_plan, offset.into()).into()
-                } else { gk_plan };
+                    gk_plan = planner.add(gk_plan, offset.into()).into();
+                }
 
                 let encoded_group_by_placeholder = planner.buffer_provider.named_buffer(
-                    "encoded_group_by_placeholder", gk_type.encoding_type());
-                let decoded_group_by = gk_type.codec.clone().map_or(
-                    encoded_group_by_placeholder,
-                    |codec| codec.decode(encoded_group_by_placeholder, planner));
-                let decoded_group_by = if offset == 0 { decoded_group_by } else {
+                    "encoded_group_by_placeholder", gk_plan.tag);
+                let mut decoded_group_by = encoded_group_by_placeholder;
+                if original_plan.is_nullable() {
+                    decoded_group_by = match offset {
+                        Some(offset) => planner.unfuse_int_nulls(offset, decoded_group_by),
+                        None => planner.unfuse_nulls(decoded_group_by),
+                    }
+                } else if let Some(offset) = offset {
                     let offset = planner.scalar_i64(-offset, true);
                     let sum = planner.add(decoded_group_by, offset.into()).into();
-                    planner.cast(sum, gk_type.encoding_type())
-                };
+                    decoded_group_by = planner.cast(sum, gk_type.encoding_type());
+                }
+                if let Some(codec) = gk_type.codec.clone() {
+                    decoded_group_by = codec.decode(decoded_group_by, planner)
+                }
 
-                ((gk_plan.clone(), gk_type.clone()),
+                ((gk_plan, gk_type.is_order_preserving()),
                  max_cardinality,
                  vec![(decoded_group_by, gk_type.decoded())],
                  encoded_group_by_placeholder)
@@ -843,15 +896,7 @@ pub fn compile_grouping_key(
                 (decode_plan,
                  plan_type.decoded()));
         }
-        let t = Type::encoded(Codec::opaque(
-            EncodingType::ByteSlices(exprs.len()),
-            BasicType::Val,
-            false /* is_summation_preserving */,
-            true  /* is_order_preserving */,
-            false /* is_positive_integer */,
-            false /* is_fixed_width */,
-        ));
-        Ok(((pack[0].into(), t),
+        Ok(((pack[0].into(), true),
             i64::MAX,
             decode_plans,
             encoded_group_by_placeholder))
@@ -864,7 +909,7 @@ fn try_bitpacking(
     columns: &HashMap<String, Arc<DataSource>>,
     partition_len: usize,
     planner: &mut QueryPlanner)
-    -> Result<Option<((TypedBufferRef, Type), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef)>, QueryError> {
+    -> Result<Option<((TypedBufferRef, bool), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef)>, QueryError> {
     planner.checkpoint();
     // TODO(clemens): use u64 as grouping key type
     let mut total_width = 0;
@@ -925,9 +970,7 @@ fn try_bitpacking(
         if total_width <= 64 {
             plan.map(|plan| {
                 decode_plans.reverse();
-                let t = Type::encoded(Codec::opaque(
-                    EncodingType::I64, BasicType::Integer, false, order_preserving, true, true));
-                ((plan.into(), t), largest_key, decode_plans, encoded_group_by_placeholder.into())
+                ((plan.into(), order_preserving), largest_key, decode_plans, encoded_group_by_placeholder.into())
             })
         } else {
             planner.reset();
@@ -947,6 +990,9 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::PropagateNullability { nullable, data, nullable_data } => VecOperator::propagate_nullability(nullable.nullable_any()?, data, nullable_data)?,
         QueryPlan::CombineNullMaps { lhs, rhs, present } => VecOperator::combine_null_maps(lhs, rhs, present)?,
         QueryPlan::FuseNulls { nullable, fused } => VecOperator::fuse_nulls(nullable, fused)?,
+        QueryPlan::FuseIntNulls { offset, nullable, fused } => VecOperator::fuse_int_nulls(offset, nullable, fused)?,
+        QueryPlan::UnfuseNulls { fused, data, present, unfused } => VecOperator::unfuse_nulls(fused, data, present, unfused)?,
+        QueryPlan::UnfuseIntNulls { offset, fused, data, present, unfused } => VecOperator::unfuse_int_nulls(offset, fused, data, present, unfused)?,
         QueryPlan::Filter { plan, select, filtered } => VecOperator::filter(plan, select, filtered)?,
         QueryPlan::NullableFilter { plan, select, filtered } => VecOperator::nullable_filter(plan, select, filtered)?,
         QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),

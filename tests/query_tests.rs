@@ -34,7 +34,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
     let mut opts = Options::default();
-    if env::var("DEBUG_TESTS").is_ok() || true{
+    if env::var("DEBUG_TESTS").is_ok() || true {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
@@ -594,6 +594,34 @@ fn test_sort_by_nullable() {
             vec![Int(6), Null],
             vec![Int(9), Str("France")],
             vec![Int(14), Str("Germany")],
+        ],
+    );
+}
+
+#[test]
+fn test_group_by_nullable() {
+    // TODO(clemens): order by country
+    test_query_ec(
+        "SELECT country, COUNT(0)
+         FROM default;",
+        &[
+            vec![Null, Int(4)],
+            vec![Str("France"), Int(2)],
+            vec![Str("Germany"), Int(2)],
+            vec![Str("Turkey"), Int(1)],
+            vec![Str("USA"), Int(1)]
+        ],
+    );
+    test_query_ec(
+        "SELECT nullable_int, COUNT(0)
+         FROM default;",
+        &[
+            vec![Null, Int(5)],
+            vec![Int(-40), Int(1)],
+            vec![Int(-1), Int(1)],
+            vec![Int(10), Int(1)],
+            vec![Int(13), Int(1)],
+            vec![Int(20), Int(1)]
         ],
     );
 }
