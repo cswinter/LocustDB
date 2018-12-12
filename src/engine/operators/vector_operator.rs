@@ -165,6 +165,41 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn fuse_int_nulls(offset: i64, input: TypedBufferRef, fused: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        match fused.tag {
+            EncodingType::U8 => Ok(Box::new(FuseIntNulls { offset: offset as u8, input: input.nullable_u8()?, fused: fused.u8()? })),
+            EncodingType::U16 => Ok(Box::new(FuseIntNulls { offset: offset as u16, input: input.nullable_u16()?, fused: fused.u16()? })),
+            EncodingType::U32 => Ok(Box::new(FuseIntNulls { offset: offset as u32, input: input.nullable_u32()?, fused: fused.u32()? })),
+            EncodingType::I64 => Ok(Box::new(FuseIntNulls { offset: offset as i64, input: input.nullable_i64()?, fused: fused.i64()? })),
+            _ => Err(fatal!("fuse_int_nulls not implemented for type {:?}", fused.tag)),
+        }
+    }
+
+    pub fn unfuse_int_nulls(offset: i64,
+                            fused: TypedBufferRef,
+                            data: TypedBufferRef,
+                            present: BufferRef<u8>,
+                            unfused: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        match fused.tag {
+            EncodingType::U8 => Ok(Box::new(UnfuseIntNulls { offset: offset as u8, fused: fused.u8()?, data: data.u8()?, present, unfused: unfused.nullable_u8()? })),
+            EncodingType::U16 => Ok(Box::new(UnfuseIntNulls { offset: offset as u16, fused: fused.u16()?, data: data.u16()?, present, unfused: unfused.nullable_u16()? })),
+            EncodingType::U32 => Ok(Box::new(UnfuseIntNulls { offset: offset as u32, fused: fused.u32()?, data: data.u32()?, present, unfused: unfused.nullable_u32()? })),
+            EncodingType::I64 => Ok(Box::new(UnfuseIntNulls { offset: offset as i64, fused: fused.i64()?, data: data.i64()?, present, unfused: unfused.nullable_i64()? })),
+            _ => Err(fatal!("unfuse_int_nulls not implemented for type {:?}", fused.tag)),
+        }
+    }
+
+    pub fn unfuse_nulls(fused: TypedBufferRef,
+                        data: TypedBufferRef,
+                        present: BufferRef<u8>,
+                        unfused: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        if fused.tag == EncodingType::I64 {
+            Ok(Box::new(UnfuseNullsI64 { fused: fused.i64()?, present, unfused: unfused.nullable_i64()? }))
+        } else {
+            Ok(Box::new(UnfuseNullsStr { fused: fused.opt_str()?, data: data.str()?, present, unfused: unfused.nullable_str()? }))
+        }
+    }
+
     pub fn identity(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {
         Box::new(Identity {
             input: input.any(),

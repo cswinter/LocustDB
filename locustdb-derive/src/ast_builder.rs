@@ -236,9 +236,11 @@ fn parse_type(field_ident: &Ident, type_def: String) -> Option<(Expr, Option<FnA
         let null_adjusted_type = match NULL.captures(t) {
             Some(null) => {
                 let null = null.get(1).unwrap().as_str();
-                if null == "always" {
+                if null == "_always" {
                     parse_quote!(#base_type.nullable())
-                } else if null == "fused" {
+                } else if null == "_never" {
+                    parse_quote!(#base_type.non_nullable())
+                } else if null == "_fused" {
                     parse_quote!(#base_type.nullable_fused())
                 } else {
                     let parents = null.split(",").map(|ident| Ident::new(ident, Span::call_site())).collect::<Vec<_>>();

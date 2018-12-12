@@ -50,6 +50,7 @@ impl EncodingType {
             EncodingType::U16 => EncodingType::NullableU16,
             EncodingType::U32 => EncodingType::NullableU32,
             EncodingType::U64 => EncodingType::NullableU64,
+            EncodingType::OptStr => EncodingType::NullableStr,
             EncodingType::NullableStr => EncodingType::NullableStr,
             EncodingType::NullableI64 => EncodingType::NullableI64,
             EncodingType::NullableU8 => EncodingType::NullableU8,
@@ -128,6 +129,13 @@ impl BasicType {
             BasicType::Boolean => EncodingType::U8,
         }
     }
+
+    pub fn is_nullable(&self) -> bool {
+        match self {
+            BasicType::NullableInteger | BasicType::NullableString => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -187,10 +195,7 @@ impl Type {
         self.codec.as_ref().map_or(true, |c| c.is_order_preserving())
     }
 
-    pub fn is_positive_integer(&self) -> bool {
-        // TODO(clemens): this is wrong
-        self.codec.as_ref().map_or(self.decoded == BasicType::Integer, |c| c.is_positive_integer())
-    }
+    pub fn is_nullable(&self) -> bool { self.decoded.is_nullable() }
 
     pub fn scalar(basic: BasicType) -> Type {
         Type {

@@ -201,6 +201,11 @@ impl TypedBufferRef {
         Ok(self.buffer.u32())
     }
 
+    pub fn u16(&self) -> Result<BufferRef<u16>, QueryError> {
+        ensure!(self.tag == EncodingType::U16, "{:?} != U16", self.tag);
+        Ok(self.buffer.u16())
+    }
+
     pub fn u8(&self) -> Result<BufferRef<u8>, QueryError> {
         ensure!(self.tag == EncodingType::U8, "{:?} != U8", self.tag);
         Ok(self.buffer.u8())
@@ -209,6 +214,16 @@ impl TypedBufferRef {
     pub fn nullable_u8(&self) -> Result<BufferRef<Nullable<u8>>, QueryError> {
         ensure!(self.tag == EncodingType::NullableU8, "{:?} != NullableU8", self.tag);
         Ok(self.buffer.nullable_u8())
+    }
+
+    pub fn nullable_u16(&self) -> Result<BufferRef<Nullable<u16>>, QueryError> {
+        ensure!(self.tag == EncodingType::NullableU16, "{:?} != NullableU16", self.tag);
+        Ok(self.buffer.nullable_u16())
+    }
+
+    pub fn nullable_u32(&self) -> Result<BufferRef<Nullable<u32>>, QueryError> {
+        ensure!(self.tag == EncodingType::NullableU32, "{:?} != NullableU32", self.tag);
+        Ok(self.buffer.nullable_u32())
     }
 
     pub fn nullable_i64(&self) -> Result<BufferRef<Nullable<i64>>, QueryError> {
