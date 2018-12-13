@@ -926,12 +926,20 @@ fn try_bitpacking(
             fn bits(max: i64) -> i64 {
                 ((max + 1) as f64).log2().ceil() as i64
             }
+            let max = if query_plan.is_nullable() && min <= 0 { max + 1 } else { max };
 
             // TODO(clemens): more intelligent criterion. threshold should probably be a function of total width.
-            let subtract_offset = bits(max) - bits(max - min) > 1 || min < 0;
+            let subtract_offset = bits(max) - bits(max - min) > 1 || min < 0 || query_plan.is_nullable();
             let adjusted_max = if subtract_offset { max - min } else { max };
             order_preserving = order_preserving && plan_type.is_order_preserving();
-            let query_plan = if subtract_offset {
+            let adjusted_query_plan = if query_plan.is_nullable() {
+                let fused = planner.fuse_int_nulls(-min, query_plan);
+                if fused.tag != EncodingType::I64 {
+                    planner.cast(fused, EncodingType::I64).i64()?
+                } else {
+                    fused.i64()?
+                }
+            } else if subtract_offset {
                 let offset = planner.scalar_i64(-min, true);
                 planner.add(query_plan, offset.into()).i64()?
             } else {
@@ -939,16 +947,18 @@ fn try_bitpacking(
             };
 
             if total_width == 0 {
-                plan = Some(query_plan);
+                plan = Some(adjusted_query_plan);
             } else if adjusted_max > 0 {
-                plan = plan.map(|plan| planner.bit_pack(plan, query_plan, total_width));
+                plan = plan.map(|plan| planner.bit_pack(plan, adjusted_query_plan, total_width));
             }
 
             let mut decode_plan = planner.bit_unpack(
                 encoded_group_by_placeholder,
                 total_width as u8,
                 bits(adjusted_max) as u8).into();
-            if subtract_offset {
+            if query_plan.is_nullable() {
+                decode_plan = planner.unfuse_int_nulls(-min, decode_plan);
+            } else if subtract_offset {
                 let offset = planner.scalar_i64(min, true);
                 decode_plan = planner.add(decode_plan, offset.into()).into();
             }
