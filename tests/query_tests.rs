@@ -624,6 +624,20 @@ fn test_group_by_nullable() {
             vec![Int(20), Int(1)]
         ],
     );
+    test_query_ec(
+        "SELECT nullable_int2, country, COUNT(0)
+         FROM default;",
+        &[
+            vec![Null, Null, Int(3)],
+            vec![Null, Str("France"), Int(1)],
+            vec![Null, Str("Germany"), Int(1)],
+            vec![Null, Str("Turkey"), Int(1)],
+            vec![Null, Str("USA"), Int(1)],
+            vec![Int(1), Null, Int(1)],
+            vec![Int(6), Null, Int(1)],
+            vec![Int(9), Str("France"), Int(1)]
+        ],
+    );
 }
 
 #[test]
