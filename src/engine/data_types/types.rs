@@ -27,6 +27,7 @@ pub enum EncodingType {
     ConstVal,
 
     ByteSlices(usize),
+    ValRows,
     Premerge,
     MergeOp,
 }
@@ -57,6 +58,7 @@ impl EncodingType {
             EncodingType::NullableU16 => EncodingType::NullableU16,
             EncodingType::NullableU32 => EncodingType::NullableU32,
             EncodingType::NullableU64 => EncodingType::NullableU64,
+            EncodingType::Val => EncodingType::Val,
             _ => panic!("{:?} does not have a corresponding nullable type", &self)
         }
     }

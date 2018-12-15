@@ -1,4 +1,5 @@
 use engine::*;
+use mem_store::Val;
 
 
 #[derive(Debug)]
@@ -85,5 +86,61 @@ impl Cast<u64> for u16 { fn cast(self) -> u64 { u64::from(self) } }
 impl Cast<u64> for u32 { fn cast(self) -> u64 { u64::from(self) } }
 
 impl Cast<u64> for i64 { fn cast(self) -> u64 { self as u64 } }
+
+
+impl<'a> Cast<Val<'a>> for u8 { fn cast(self) -> Val<'a> { Val::Integer(self as i64) } }
+
+impl<'a> Cast<Val<'a>> for u16 { fn cast(self) -> Val<'a> { Val::Integer(self as i64) } }
+
+impl<'a> Cast<Val<'a>> for u32 { fn cast(self) -> Val<'a> { Val::Integer(self as i64) } }
+
+impl<'a> Cast<Val<'a>> for i64 { fn cast(self) -> Val<'a> { Val::Integer(self) } }
+
+impl<'a> Cast<Val<'a>> for &'a str { fn cast(self) -> Val<'a> { Val::Str(self) } }
+
+impl<'a> Cast<u8> for Val<'a> {
+    fn cast(self) -> u8 {
+        match self {
+            Val::Integer(i) => i as u8,
+            _ => panic!("Cast::<u8>{:?}", self)
+        }
+    }
+}
+
+impl<'a> Cast<u16> for Val<'a> {
+    fn cast(self) -> u16 {
+        match self {
+            Val::Integer(i) => i as u16,
+            _ => panic!("Cast::<u16>{:?}", self)
+        }
+    }
+}
+
+impl<'a> Cast<u32> for Val<'a> {
+    fn cast(self) -> u32 {
+        match self {
+            Val::Integer(i) => i as u32,
+            _ => panic!("Cast::<u32>{:?}", self)
+        }
+    }
+}
+
+impl<'a> Cast<i64> for Val<'a> {
+    fn cast(self) -> i64 {
+        match self {
+            Val::Integer(i) => i as i64,
+            _ => panic!("Cast::<i64>{:?}", self)
+        }
+    }
+}
+
+impl<'a> Cast<&'a str> for Val<'a> {
+    fn cast(self) -> &'a str {
+        match self {
+            Val::Str(s) => s,
+            _ => panic!("Cast::<&str>{:?}", self)
+        }
+    }
+}
 
 impl<'a> Cast<Option<&'a str>> for &'a str { fn cast(self) -> Option<&'a str> { Some(self) } }

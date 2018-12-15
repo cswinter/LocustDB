@@ -75,6 +75,10 @@ impl<'a> Scratchpad<'a> {
         })
     }
 
+    pub fn get_mut_val_rows(&self, index: BufferRef<ValRows<'a>>) -> RefMut<ValRows<'a>> {
+        RefMut::map(self.get_any_mut(index.any()), |x| x.cast_ref_mut_val_rows())
+    }
+
     pub fn get_mut_nullable<T: VecData<T> + 'a>(&self, index: BufferRef<Nullable<T>>) -> (RefMut<Vec<T>>, RefMut<Vec<u8>>) {
         (self.get_mut(index.cast_non_nullable()),
          self.get_mut(BufferRef {

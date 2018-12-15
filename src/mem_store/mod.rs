@@ -18,6 +18,7 @@ pub use self::codec::{Codec, CodecOp};
 pub use self::tree::*;
 pub use self::table::TableStats;
 pub use self::lru::LRU;
+pub use self::value::Val;
 
 
 #[cfg(not(feature = "enable_lz4"))]

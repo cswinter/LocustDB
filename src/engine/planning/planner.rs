@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::result::Result;
 
 use engine::*;
+use mem_store::*;
 use self::query_plan::prepare;
 use ::QueryError;
 use self::QueryPlan::*;
@@ -72,7 +73,7 @@ enum Rewrite {
 
 fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewrite {
     match *operation {
-        Cast { input, casted } if input.is_nullable() => {
+        Cast { input, casted } if input.is_nullable() && casted.tag != EncodingType::Val => {
             let casted_non_nullable = bp.named_buffer("casted_non_nullable", casted.tag.non_nullable());
             let cast = Cast {
                 input: input.forget_nullability(),
@@ -294,6 +295,14 @@ impl BufferProvider {
 
     pub fn buffer_u8(&mut self, name: &'static str) -> BufferRef<u8> {
         self.named_buffer(name, EncodingType::U8).u8().unwrap()
+    }
+
+    pub fn buffer_val<'a>(&mut self, name: &'static str) -> BufferRef<Val<'a>> {
+        self.named_buffer(name, EncodingType::Val).val().unwrap()
+    }
+
+    pub fn buffer_val_rows<'a>(&mut self, name: &'static str) -> BufferRef<ValRows<'a>> {
+        self.named_buffer(name, EncodingType::ValRows).val_rows().unwrap()
     }
 
     pub fn buffer_scalar_i64(&mut self, name: &'static str) -> BufferRef<Scalar<i64>> {

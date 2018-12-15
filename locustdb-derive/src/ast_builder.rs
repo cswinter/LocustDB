@@ -40,9 +40,12 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                         };
                         new_buffers.push(new_buffer);
                     } else if let Some(attr) = field.attrs.iter().find(|attr| attr.path == parse_quote!(output)) {
-                        let new_buffer: Stmt = if attr.tts.to_string().contains("shared") {
+                        let new_buffer: Stmt = if attr.tts.to_string().contains("shared_byte_slices") {
                             output = parse_quote!(Some(#field_ident.i));
                             parse_quote!(let #field_ident = self.buffer_provider.shared_buffer(#ident_str, EncodingType::ByteSlices(stride)).any();)
+                        } else if attr.tts.to_string().contains("shared_val_rows") {
+                            output = parse_quote!(Some(#field_ident.i));
+                            parse_quote!(let #field_ident = self.buffer_provider.shared_buffer(#ident_str, EncodingType::ValRows).val_rows().unwrap();)
                         } else if let Some((t, fn_input)) = parse_type(&field_ident, attr.tts.to_string()) {
                             if let Some(fn_input) = fn_input {
                                 fn_inputs.push(fn_input);
@@ -54,8 +57,10 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                             create_buffer(&field_ident, &field_type)
                         };
                         let index_lit = LitInt::new(output_index as u64, IntSuffix::Usize, Span::call_site());
-                        if attr.tts.to_string().contains("shared") {
+                        if attr.tts.to_string().contains("shared_byte_slices") {
                             cache_retrieve.push(parse_quote!(buffer[#index_lit].any()));
+                        } else if attr.tts.to_string().contains("shared_val_rows") {
+                            cache_retrieve.push(parse_quote!(buffer[#index_lit].val_rows().unwrap()));
                         } else {
                             cache_retrieve.push(convert(parse_quote!(buffer[#index_lit]), &field_type));
                         }
@@ -136,6 +141,10 @@ fn create_buffer(field_ident: &Ident, field_type: &Type) -> Stmt {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_u8(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<&'static str>) {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_str(#field_name);)
+    } else if *field_type == parse_quote!(BufferRef<Val<'static>>) {
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_val(#field_name);)
+    } else if *field_type == parse_quote!(BufferRef<ValRows<'static>>) {
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_val_rows(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<usize>) {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_usize(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<i64>) {
@@ -163,6 +172,10 @@ fn convert(expr: Expr, field_type: &Type) -> Expr {
         parse_quote!(#expr.u8().unwrap())
     } else if *field_type == parse_quote!(BufferRef<&'static str>) {
         parse_quote!(#expr.str().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<Val<'static>>) {
+        parse_quote!(#expr.val().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<ValRows<'static>>) {
+        parse_quote!(#expr.val_rows().unwrap())
     } else if *field_type == parse_quote!(BufferRef<usize>) {
         parse_quote!(#expr.usize().unwrap())
     } else if *field_type == parse_quote!(BufferRef<i64>) {

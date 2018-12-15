@@ -10,6 +10,7 @@ use ::QueryError;
 use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
+use mem_store::value::Val;
 use mem_store::column::DataSource;
 use syntax::expression::*;
 use locustdb_derive::ASTBuilder;
@@ -155,6 +156,17 @@ pub enum QueryPlan {
         #[output]
         cardinality: BufferRef<Scalar<i64>>,
     },
+    HashMapGroupingValRows {
+        raw_grouping_key: BufferRef<ValRows<'static>>,
+        columns: usize,
+        max_cardinality: usize,
+        #[output]
+        unique: BufferRef<ValRows<'static>>,
+        #[output]
+        grouping_key: BufferRef<u32>,
+        #[output]
+        cardinality: BufferRef<Scalar<i64>>,
+    },
     /// Creates a byte vector of size `max_index` and sets all entries
     /// corresponding to `indices` to 1.
     Exists {
@@ -202,7 +214,7 @@ pub enum QueryPlan {
         plan: TypedBufferRef,
         stride: usize,
         offset: usize,
-        #[output(shared)]
+        #[output(shared_byte_slices)]
         packed: BufferRef<Any>,
     },
     SliceUnpack {
@@ -211,6 +223,20 @@ pub enum QueryPlan {
         offset: usize,
         #[output(t = "base=provided")]
         unpacked: TypedBufferRef,
+    },
+    ValRowsPack {
+        plan: BufferRef<Val<'static>>,
+        stride: usize,
+        offset: usize,
+        #[output(shared_val_rows)]
+        packed: BufferRef<ValRows<'static>>,
+    },
+    ValRowsUnpack {
+        plan: BufferRef<ValRows<'static>>,
+        stride: usize,
+        offset: usize,
+        #[output]
+        unpacked: BufferRef<Val<'static>>,
     },
     Count {
         grouping_key: TypedBufferRef,
@@ -481,6 +507,7 @@ pub enum QueryPlan {
 }
 
 pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
+                                columns: usize,
                                 max_cardinality: usize,
                                 planner: &mut QueryPlanner)
                                 -> Result<(Option<TypedBufferRef>,
@@ -488,7 +515,12 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
                                            bool,
                                            BufferRef<Scalar<i64>>), QueryError> {
     let (unique_out, grouping_key_out, cardinality_out) =
-        planner.hash_map_grouping(raw_grouping_key, max_cardinality);
+        if raw_grouping_key.tag == EncodingType::ValRows {
+            let (u, g, c) = planner.hash_map_grouping_val_rows(raw_grouping_key.val_rows()?, columns, max_cardinality);
+            (u.into(), g, c)
+        } else {
+            planner.hash_map_grouping(raw_grouping_key, max_cardinality)
+        };
     Ok((Some(unique_out),
         grouping_key_out.into(),
         false,
@@ -791,6 +823,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), qp),
         DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
+        UnpackStrings { .. } => None,
         ref plan => {
             // TODO(clemens): many more cases where we can determine range
             error!("encoding_range not implement for {:?}", plan);
@@ -877,18 +910,18 @@ pub fn compile_grouping_key(
         info!("Failed to bitpack grouping key");
         let mut pack = Vec::new();
         let mut decode_plans = Vec::new();
-        let encoded_group_by_placeholder =
-            planner.buffer_provider.named_buffer("encoded_group_by_placeholder", EncodingType::ByteSlices(exprs.len()));
+        let encoded_group_by_placeholder = planner.buffer_provider.named_buffer(
+            "encoded_group_by_placeholder", EncodingType::ValRows);
         for (i, expr) in exprs.iter().enumerate() {
             let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, planner)?;
-            pack.push(planner.slice_pack(query_plan, exprs.len(), i));
+            let vals = planner.cast(query_plan, EncodingType::Val).val()?;
+            pack.push(planner.val_rows_pack(vals, exprs.len(), i));
 
-            // TODO(clemens): negative integers can throw off sort order - need to move into positive range
-            let mut decode_plan = planner.slice_unpack(
-                encoded_group_by_placeholder.any(),
+            let vals = planner.val_rows_unpack(
+                encoded_group_by_placeholder.val_rows()?,
                 exprs.len(),
-                i,
-                plan_type.encoding_type());
+                i).into();
+            let mut decode_plan = planner.cast(vals, query_plan.tag);
             if let Some(codec) = plan_type.codec.clone() {
                 decode_plan = codec.decode(decode_plan, planner);
             }
@@ -896,10 +929,39 @@ pub fn compile_grouping_key(
                 (decode_plan,
                  plan_type.decoded()));
         }
-        Ok(((pack[0].into(), true),
+        // TODO(clemens): only order preserving if inputs are (cf. try_bitpacking)
+        Ok(((pack[0].clone().into(), true),
             i64::MAX,
             decode_plans,
             encoded_group_by_placeholder))
+        // TODO(clemens): evaluate performance of ValRows vs ByteSlices grouping
+        /*} else {
+            info!("Failed to bitpack grouping key");
+            let mut pack = Vec::new();
+            let mut decode_plans = Vec::new();
+            let encoded_group_by_placeholder =
+                planner.buffer_provider.named_buffer("encoded_group_by_placeholder", EncodingType::ByteSlices(exprs.len()));
+            for (i, expr) in exprs.iter().enumerate() {
+                let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, planner)?;
+                pack.push(planner.slice_pack(query_plan, exprs.len(), i));
+
+                // TODO(clemens): negative integers can throw off sort order - need to move into positive range
+                let mut decode_plan = planner.slice_unpack(
+                    encoded_group_by_placeholder.any(),
+                    exprs.len(),
+                    i,
+                    plan_type.encoding_type());
+                if let Some(codec) = plan_type.codec.clone() {
+                    decode_plan = codec.decode(decode_plan, planner);
+                }
+                decode_plans.push(
+                    (decode_plan,
+                     plan_type.decoded()));
+            }
+            Ok(((pack[0].into(), true),
+                i64::MAX,
+                decode_plans,
+                encoded_group_by_placeholder))*/
     }
 }
 
@@ -1017,6 +1079,7 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::UnpackStrings { bytes, unpacked_strings } => VecOperator::unpack_strings(bytes, unpacked_strings),
         QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
         QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
+        QueryPlan::HashMapGroupingValRows { raw_grouping_key, max_cardinality, columns, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping_val_rows(raw_grouping_key, columns, max_cardinality, unique, grouping_key, cardinality)?,
         QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
         QueryPlan::CountNonNulls { nullable, grouping_key, max_index, count } => VecOperator::count_non_nulls(nullable, grouping_key, max_index, count)?,
         QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
@@ -1028,6 +1091,8 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::BitUnpack { plan, shift, width, unpacked } => VecOperator::bit_unpack(plan, shift, width, unpacked),
         QueryPlan::SlicePack { plan, stride, offset, packed } => VecOperator::slice_pack(plan, stride, offset, packed)?,
         QueryPlan::SliceUnpack { plan, stride, offset, unpacked } => VecOperator::slice_unpack(plan, stride, offset, unpacked)?,
+        QueryPlan::ValRowsPack { plan, stride, offset, packed } => VecOperator::val_rows_pack(plan, stride, offset, packed),
+        QueryPlan::ValRowsUnpack { plan, stride, offset, unpacked } => VecOperator::val_rows_unpack(plan, stride, offset, unpacked),
         QueryPlan::LessThan { lhs, rhs, less_than } => VecOperator::less_than(lhs, rhs, less_than.u8()?)?,
         QueryPlan::LessThanEquals { lhs, rhs, less_than_equals } => VecOperator::less_than_equals(lhs, rhs, less_than_equals.u8()?)?,
         QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals.u8()?)?,
