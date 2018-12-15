@@ -5,14 +5,17 @@ use std::result::Result;
 
 use QueryError;
 use engine::data_types::*;
+use mem_store::value::Val;
 use ingest::raw_val::RawVal;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct BufferRef<T> {
     pub i: usize,
     pub name: &'static str,
     pub t: PhantomData<T>,
 }
+
+impl<T: Clone> Copy for BufferRef<T> {}
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct TypedBufferRef {
@@ -58,6 +61,9 @@ impl BufferRef<Any> {
     pub fn scalar_i64(self) -> BufferRef<Scalar<i64>> { self.transmute() }
     pub fn scalar_str<'a>(self) -> BufferRef<Scalar<&'a str>> { self.transmute() }
     pub fn scalar_string<'a>(self) -> BufferRef<Scalar<String>> { self.transmute() }
+
+    pub fn val_rows<'a>(self) -> BufferRef<ValRows<'a>> { self.transmute() }
+    pub fn val<'a>(self) -> BufferRef<Val<'a>> { self.transmute() }
 
     pub fn string(self) -> BufferRef<String> { self.transmute() }
     pub fn str<'a>(self) -> BufferRef<&'a str> { self.transmute() }
@@ -112,6 +118,18 @@ impl From<BufferRef<Scalar<i64>>> for TypedBufferRef {
 impl From<BufferRef<usize>> for TypedBufferRef {
     fn from(buffer: BufferRef<usize>) -> TypedBufferRef {
         TypedBufferRef::new(buffer.any(), EncodingType::USize)
+    }
+}
+
+impl<'a> From<BufferRef<ValRows<'a>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<ValRows<'a>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::ValRows)
+    }
+}
+
+impl<'a> From<BufferRef<Val<'a>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Val<'a>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::Val)
     }
 }
 
@@ -255,6 +273,16 @@ impl TypedBufferRef {
     pub fn raw_val(&self) -> Result<BufferRef<RawVal>, QueryError> {
         // ensure!(self.tag == EncodingType::Str, "{:?} != Str", self.tag);
         Ok(self.buffer.raw_val())
+    }
+
+    pub fn val_rows<'a>(&self) -> Result<BufferRef<ValRows<'a>>, QueryError> {
+        ensure!(self.tag == EncodingType::ValRows, "{:?} != ValRows", self.tag);
+        Ok(self.buffer.val_rows())
+    }
+
+    pub fn val<'a>(&self) -> Result<BufferRef<Val<'a>>, QueryError> {
+        ensure!(self.tag == EncodingType::Val, "{:?} != Val", self.tag);
+        Ok(self.buffer.val())
     }
 
     pub fn string(&self) -> Result<BufferRef<String>, QueryError> {

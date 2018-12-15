@@ -9,7 +9,7 @@ use engine::data_types::*;
 use ingest::raw_val::RawVal;
 
 
-#[derive(HeapSizeOf, Debug)]
+#[derive(HeapSizeOf, Debug, Clone)]
 pub struct ByteSlices<'a> {
     pub row_len: usize,
     pub data: Vec<&'a [u8]>,

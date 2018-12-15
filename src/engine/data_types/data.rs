@@ -42,6 +42,7 @@ pub trait Data<'a>: Send + Sync {
     fn cast_scalar_i64(&self) -> i64 { panic!(self.type_error("cast_scalar_i64")) }
     fn cast_scalar_str(&self) -> &'a str { panic!(self.type_error("cast_scalar_str")) }
     fn cast_ref_byte_slices(&self) -> &ByteSlices<'a> { panic!(self.type_error("cast_ref_byte_slices")) }
+    fn cast_ref_val_rows(&self) -> &ValRows<'a> { panic!(self.type_error("cast_ref_val_rows")) }
 
     fn cast_ref_mut_str(&mut self) -> &mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
     fn cast_ref_mut_opt_str(&mut self) -> &mut Vec<Option<&'a str>> { panic!(self.type_error("cast_ref_mut_opt_str")) }
@@ -57,6 +58,7 @@ pub trait Data<'a>: Send + Sync {
     fn cast_ref_mut_merge_op(&mut self) -> &mut Vec<MergeOp> { panic!(self.type_error("cast_ref_mut_merge_op")) }
     fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { panic!(self.type_error("cast_ref_mut_premerge_op")) }
     fn cast_ref_mut_byte_slices(&mut self) -> &mut ByteSlices<'a> { panic!(self.type_error("cast_ref_mut_byte_slices")) }
+    fn cast_ref_mut_val_rows(&mut self) -> &mut ValRows<'a> { panic!(self.type_error("cast_ref_mut_val_rows")) }
 
     fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
 

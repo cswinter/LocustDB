@@ -638,6 +638,22 @@ fn test_group_by_nullable() {
             vec![Int(9), Str("France"), Int(1)]
         ],
     );
+    test_query_ec(
+        "SELECT nullable_int, string_packed, COUNT(0)
+         FROM default;",
+        &[
+            vec![Null, Str("$sss"), Int(1)],
+            vec![Null, Str("AXY"), Int(1)],
+            vec![Null, Str("asd"), Int(1)],
+            vec![Null, Str("axz"), Int(1)],
+            vec![Null, Str("t"), Int(1)],
+            vec![Null, Str("😈"), Int(1)],
+            vec![Int(-40), Str("abc"), Int(1)],
+            vec![Int(-1), Str("xyz"), Int(1)],
+            vec![Int(10), Str("azy"), Int(1)],
+            vec![Int(20), Str("_f"), Int(1)],
+        ],
+    );
 }
 
 #[test]

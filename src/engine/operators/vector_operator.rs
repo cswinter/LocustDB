@@ -19,6 +19,7 @@ use super::bool_op::*;
 use super::column_ops::*;
 use super::combine_null_maps::CombineNullMaps;
 use super::compact::Compact;
+use super::comparison_operators::*;
 use super::constant::Constant;
 use super::constant_expand::ConstantExpand;
 use super::constant_vec::ConstantVec;
@@ -31,6 +32,7 @@ use super::filter::{Filter, NullableFilter};
 use super::functions::*;
 use super::fuse_nulls::*;
 use super::hashmap_grouping::HashMapGrouping;
+use super::hashmap_grouping_val_rows::HashMapGroupingValRows;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
 use super::identity::Identity;
 use super::indices::Indices;
@@ -57,13 +59,16 @@ use super::slice_pack::*;
 use super::slice_unpack::*;
 use super::sort_by::*;
 use super::sort_by_slices::SortBySlices;
+use super::sort_by_val_rows::SortByValRows;
 use super::subpartition::SubPartition;
 use super::sum::*;
+use super::to_val::*;
 use super::top_n::TopN;
 use super::type_conversion::TypeConversionOperator;
 use super::unhexpack_strings::UnhexpackStrings;
 use super::unpack_strings::UnpackStrings;
-use super::comparison_operators::*;
+use super::val_rows_pack::*;
+use super::val_rows_unpack::*;
 
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
@@ -528,14 +533,62 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn val_rows_pack(input: BufferRef<Val<'a>>, stride: usize, offset: usize, output: BufferRef<ValRows<'a>>) -> BoxedOperator<'a> {
+        Box::new(ValRowsPack { input, stride, offset, output })
+    }
+
+    pub fn val_rows_unpack(input: BufferRef<ValRows<'a>>, stride: usize, offset: usize, output: BufferRef<Val<'a>>) -> BoxedOperator<'a> {
+        Box::new(ValRowsUnpack { input, stride, offset, output })
+    }
+
     pub fn type_conversion(input: TypedBufferRef, output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
-        if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
-            return Ok(Box::new(TypeConversionOperator { input: input.str()?, output: output.opt_str()? }));
-        }
-        reify_types! {
-            "type_conversion";
-            input: Integer, output: Integer;
-            Ok(Box::new(TypeConversionOperator { input, output }))
+        if output.tag == EncodingType::Val {
+            let output = output.val()?;
+            if input.tag.is_nullable() {
+                if input.tag == EncodingType::NullableStr {
+                    Ok(Box::new(NullableStrToVal { input: input.nullable_str()?, vals: output }) as BoxedOperator<'a>)
+                } else {
+                    reify_types! {
+                        "nullable_int_to_val";
+                        input: NullableInteger;
+                        Ok(Box::new(NullableIntToVal { input, vals: output }) as BoxedOperator<'a>)
+                    }
+                }
+            } else {
+                reify_types! {
+                    "type_conversion";
+                    input: PrimitiveNoU64;
+                    Ok(Box::new(TypeConversionOperator { input, output }) as BoxedOperator<'a>)
+                }
+            }
+        } else if input.tag == EncodingType::Val {
+            let input = input.val()?;
+            if output.tag.is_nullable() {
+                if output.tag == EncodingType::NullableStr {
+                    Ok(Box::new(ValToNullableStr { vals: input, nullable: output.nullable_str()? }) as BoxedOperator<'a>)
+                } else {
+                    reify_types! {
+                        "nullable_int_to_val";
+                        output: NullableInteger;
+                        Ok(Box::new(ValToNullableInt { vals: input, nullable: output }) as BoxedOperator<'a>)
+                    }
+                }
+            } else {
+                reify_types! {
+                    "type_conversion";
+                    output: PrimitiveNoU64;
+                    Ok(Box::new(TypeConversionOperator { input, output }) as BoxedOperator<'a>)
+                }
+            }
+        } else {
+            if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
+                return Ok(Box::new(TypeConversionOperator { input: input.str()?, output: output.opt_str()? }));
+            }
+            reify_types! {
+                "type_conversion";
+                input: Integer, output: Integer;
+                Ok(Box::new(TypeConversionOperator { input, output }))
+            }
         }
     }
 
@@ -638,6 +691,15 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn hash_map_grouping_val_rows(raw_grouping_key: BufferRef<ValRows<'a>>,
+                                      columns: usize,
+                                      _max_cardinality: usize,
+                                      unique_out: BufferRef<ValRows<'a>>,
+                                      grouping_key_out: BufferRef<u32>,
+                                      cardinality_out: BufferRef<Scalar<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+        Ok(HashMapGroupingValRows::boxed(raw_grouping_key, unique_out, grouping_key_out, cardinality_out, columns))
+    }
+
     pub fn indices(input: TypedBufferRef, indices_out: BufferRef<usize>) -> BoxedOperator<'a> {
         Box::new(Indices { input: input.buffer, indices_out })
     }
@@ -650,6 +712,10 @@ impl<'a> VecOperator<'a> {
         if let EncodingType::ByteSlices(_) = ranking.tag {
             return Ok(Box::new(
                 SortBySlices { ranking: ranking.any(), output, indices, descending, stable }));
+        }
+        if let EncodingType::ValRows = ranking.tag {
+            return Ok(Box::new(
+                SortByValRows { ranking: ranking.val_rows()?, output, indices, descending, stable }));
         }
         if ranking.is_nullable() {
             reify_types! {

@@ -179,6 +179,7 @@ impl NormalFormQuery {
             } else {
                 query_plan::prepare_hashmap_grouping(
                     raw_grouping_key,
+                    decode_plans.len(),
                     max_grouping_key as usize,
                     &mut qp)?
             };
@@ -259,7 +260,7 @@ impl NormalFormQuery {
 
         // If the grouping is not order preserving, we need to sort all output columns by using the ordering constructed from the decoded group by columns
         // This is necessary to make it possible to efficiently merge with other batch results
-        if is_grouping_key_order_preserving {
+        if !is_grouping_key_order_preserving {
             let sort_indices = if is_raw_grouping_key_order_preserving {
                 let indices = qp.indices(encoded_group_by_column);
                 qp.sort_by(encoded_group_by_column,
