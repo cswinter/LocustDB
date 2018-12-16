@@ -154,6 +154,7 @@ fn map_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
         SQLOperator::Eq => Func2Type::Equals,
         SQLOperator::NotEq => Func2Type::NotEquals,
         SQLOperator::Or => Func2Type::Or,
+        SQLOperator::Like=> Func2Type::Like,
     })
 }
 

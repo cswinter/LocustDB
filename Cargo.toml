@@ -62,7 +62,8 @@ optional = true
 version = "0.10.1"
 
 [dependencies.sqlparser]
-git = "https://github.com/andygrove/sqlparser-rs.git"
+git = "https://github.com/cswinter/sqlparser-rs.git"
+branch = "like"
 
 [features]
 default = []
