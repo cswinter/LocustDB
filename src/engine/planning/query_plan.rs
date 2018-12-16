@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use chrono::{Datelike, NaiveDateTime};
 use regex::Regex;
+use regex;
 
 use ::QueryError;
 use engine::*;
@@ -692,6 +693,35 @@ impl QueryPlan {
                     bail!(QueryError::TypeError, "Found {} AND {}, expected bool AND bool")
                 }
                 (planner.and(plan_lhs, plan_rhs), Type::bit_vec())
+            }
+            Func2(Like, ref expr, ref pattern) => {
+                match pattern {
+                    box Const(RawVal::Str(pattern)) => {
+                        let mut pattern = pattern.to_string();
+                        pattern = regex::escape(&pattern);
+                        pattern = Regex::new(r"([^\\])_").unwrap().replace_all(&pattern, "$1.").to_owned().to_string();
+                        pattern = Regex::new(r"\\_").unwrap().replace_all(&pattern, "_").to_owned().to_string();
+                        while pattern.contains("%%%%") {
+                            pattern = pattern.replace("%%%%", "%%");
+                        }
+                        pattern = pattern.replace("%%%", "(%.*)|(.*%)").to_owned().to_string();
+                        pattern = Regex::new(r"([^%])%([^%])").unwrap().replace_all(&pattern, "$1.*$2").to_owned().to_string();
+                        pattern = Regex::new(r"^%([^%])").unwrap().replace_all(&pattern, ".*$1").to_owned().to_string();
+                        pattern = Regex::new(r"([^%])%$").unwrap().replace_all(&pattern, "$1.*").to_owned().to_string();
+                        pattern = Regex::new(r"%%").unwrap().replace_all(&pattern, "%").to_owned().to_string();
+                        let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns, column_len, planner)?;
+                        if t.decoded != BasicType::String {
+                            bail!(QueryError::TypeError,
+                                  "Expected expression of type `String` as first argument to LIKE. Actual: {:?}", t)
+                        }
+                        if let Some(codec) = t.codec.clone() {
+                            plan = codec.decode(plan, planner);
+                        }
+                        (planner.regex(plan.str()?, &pattern).into(), t)
+                    }
+                    _ => bail!(QueryError::TypeError,
+                               "Expected string constant as second argument to `LIKE`, actual: {:?}", pattern),
+                }
             }
             Func2(RegexMatch, ref expr, ref regex) => {
                 match regex {

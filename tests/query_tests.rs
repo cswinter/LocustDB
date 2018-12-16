@@ -301,6 +301,14 @@ fn test_regex() {
 }
 
 #[test]
+fn test_like() {
+    test_query(
+        "SELECT first_name FROM default WHERE first_name LIKE 'C%h_a';",
+        &[vec![Str("Cynthia")]],
+    );
+}
+
+#[test]
 fn test_not_equals() {
     use Value::*;
     test_query(
