@@ -239,25 +239,13 @@ pub enum QueryPlan {
         #[output]
         unpacked: BufferRef<Val<'static>>,
     },
-    Count {
-        grouping_key: TypedBufferRef,
-        max_index: BufferRef<Scalar<i64>>,
-        #[output]
-        count: BufferRef<u32>,
-    },
-    CountNonNulls {
-        nullable: BufferRef<Nullable<Any>>,
-        grouping_key: TypedBufferRef,
-        max_index: BufferRef<Scalar<i64>>,
-        #[output]
-        count: BufferRef<u32>,
-    },
-    Sum {
-        grouping_key: TypedBufferRef,
+    Aggregate {
         plan: TypedBufferRef,
+        grouping_key: TypedBufferRef,
         max_index: BufferRef<Scalar<i64>>,
-        #[output]
-        count: BufferRef<i64>,
+        aggregator: Aggregator,
+        #[output(t = "base=provided")]
+        aggregate: TypedBufferRef,
     },
     LessThan {
         lhs: TypedBufferRef,
@@ -538,20 +526,22 @@ pub fn prepare_aggregation(mut plan: TypedBufferRef,
                            -> Result<(TypedBufferRef, Type), QueryError> {
     Ok(match aggregator {
         Aggregator::Count => {
-            if plan.is_nullable() {
-                (planner.count_non_nulls(plan.nullable_any()?, grouping_key, max_index).into(),
-                 Type::encoded(Codec::integer_cast(EncodingType::U32)))
-            } else {
-                (planner.count(grouping_key, max_index).into(),
-                 Type::encoded(Codec::integer_cast(EncodingType::U32)))
-            }
+            let plan = if plan.tag == EncodingType::ScalarI64 { grouping_key.clone() } else { plan };
+            (planner.aggregate(plan, grouping_key, max_index, Aggregator::Count, EncodingType::U32),
+             Type::encoded(Codec::integer_cast(EncodingType::U32)))
         }
         Aggregator::Sum => {
             if !plan_type.is_summation_preserving() {
                 plan = plan_type.codec.clone().unwrap().decode(plan, planner);
             }
             // TODO(clemens): determine dense groupings
-            (planner.sum(grouping_key, plan, max_index).into(),
+            (planner.aggregate(plan, grouping_key, max_index, Aggregator::Sum, EncodingType::I64),
+             Type::unencoded(BasicType::Integer))
+        }
+        Aggregator::Max | Aggregator::Min => {
+            // TODO(clemens): don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
+            plan = plan_type.codec.clone().unwrap().decode(plan, planner);
+            (planner.aggregate(plan, grouping_key, max_index, aggregator, EncodingType::I64),
              Type::unencoded(BasicType::Integer))
         }
     })
@@ -1110,9 +1100,7 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::UnhexpackStrings { bytes, uppercase, total_bytes, string_store, unpacked_strings } => VecOperator::unhexpack_strings(bytes, uppercase, total_bytes, string_store, unpacked_strings),
         QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
         QueryPlan::HashMapGroupingValRows { raw_grouping_key, max_cardinality, columns, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping_val_rows(raw_grouping_key, columns, max_cardinality, unique, grouping_key, cardinality)?,
-        QueryPlan::Count { grouping_key, max_index, count } => VecOperator::count(grouping_key, max_index, count)?,
-        QueryPlan::CountNonNulls { nullable, grouping_key, max_index, count } => VecOperator::count_non_nulls(nullable, grouping_key, max_index, count)?,
-        QueryPlan::Sum { plan, grouping_key, max_index, count } => VecOperator::summation(plan, grouping_key, max_index, count)?,
+        QueryPlan::Aggregate { plan, grouping_key, max_index, aggregator, aggregate } => VecOperator::aggregate(plan, grouping_key, max_index, aggregator, aggregate)?,
         QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
         QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,
         QueryPlan::NonzeroIndices { plan, nonzero_indices } => VecOperator::nonzero_indices(plan, nonzero_indices)?,

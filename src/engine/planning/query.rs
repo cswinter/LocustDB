@@ -226,7 +226,7 @@ impl NormalFormQuery {
                                       t: Type| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
-                    Aggregator::Sum => qp.compact(aggregate, selector),
+                    Aggregator::Sum | Aggregator::Max | Aggregator::Min => qp.compact(aggregate, selector),
                     Aggregator::Count => qp.nonzero_compact(aggregate),
                 };
                 if t.is_encoded() {
@@ -362,6 +362,8 @@ impl NormalFormQuery {
                 match agg {
                     Aggregator::Count => format!("count_{}", anon_aggregates),
                     Aggregator::Sum => format!("sum_{}", anon_aggregates),
+                    Aggregator::Min => format!("min_{}", anon_aggregates),
+                    Aggregator::Max => format!("max_{}", anon_aggregates),
                 }
             });
 

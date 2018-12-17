@@ -7,11 +7,13 @@ use itertools::Itertools;
 use regex::Regex;
 
 use engine::*;
+use engine::Aggregator;
 use ingest::raw_val::RawVal;
 use mem_store::*;
 use locustdb_derive::reify_types;
 use QueryError;
 
+use super::aggregate::*;
 use super::assemble_nullable::AssembleNullable;
 use super::binary_operator::*;
 use super::bit_unpack::BitUnpackOperator;
@@ -23,7 +25,6 @@ use super::comparison_operators::*;
 use super::constant::Constant;
 use super::constant_expand::ConstantExpand;
 use super::constant_vec::ConstantVec;
-use super::count::*;
 use super::delta_decode::*;
 use super::dict_lookup::*;
 use super::encode_const::*;
@@ -61,7 +62,6 @@ use super::sort_by::*;
 use super::sort_by_slices::SortBySlices;
 use super::sort_by_val_rows::SortByValRows;
 use super::subpartition::SubPartition;
-use super::sum::*;
 use super::to_val::*;
 use super::top_n::TopN;
 use super::type_conversion::TypeConversionOperator;
@@ -605,41 +605,23 @@ impl<'a> VecOperator<'a> {
         Box::new(MapOperator { input, output, map: RegexMatch { r: regex::Regex::new(r).unwrap() } })
     }
 
-    pub fn summation(input: TypedBufferRef,
+    pub fn aggregate(input: TypedBufferRef,
                      grouping: TypedBufferRef,
                      max_index: BufferRef<Scalar<i64>>,
-                     output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+                     aggregator: Aggregator,
+                     output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         if input.is_nullable() {
             reify_types! {
-                "nullable_summation";
-                input: NullableInteger, grouping: Integer;
-                Ok(Box::new(VecSumNullable { input, grouping, output, max_index }))
+                "nullable_aggregation";
+                input: NullableInteger, grouping: Integer, aggregator: Aggregator;
+                Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
             }
         } else {
             reify_types! {
-                "summation";
-                input: IntegerNoU64, grouping: Integer;
-                Ok(Box::new(VecSum { input, grouping, output, max_index }))
+                "aggregation";
+                input: IntegerNoU64, grouping: Integer, aggregator: Aggregator;
+                Ok(Box::new(Aggregate { input, grouping, output: output.into(), max_index, a: aggregator }))
             }
-        }
-    }
-
-    pub fn count(grouping: TypedBufferRef, max_index: BufferRef<Scalar<i64>>, output: BufferRef<u32>) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "count";
-            grouping: Integer;
-            Ok(Box::new(VecCount { grouping, output, max_index }))
-        }
-    }
-
-    pub fn count_non_nulls(nullable: BufferRef<Nullable<Any>>,
-                           grouping: TypedBufferRef,
-                           max_index: BufferRef<Scalar<i64>>,
-                           output: BufferRef<u32>) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "count_non_nulls";
-            grouping: Integer;
-            Ok(Box::new(CountNonNulls { nullable, grouping, output, max_index }))
         }
     }
 

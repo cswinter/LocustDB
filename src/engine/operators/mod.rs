@@ -1,6 +1,7 @@
 pub mod vector_operator;
 pub mod comparator;
 
+mod aggregate;
 mod assemble_nullable;
 mod binary_operator;
 mod bit_unpack;
@@ -12,7 +13,6 @@ mod comparison_operators;
 mod constant;
 mod constant_expand;
 mod constant_vec;
-mod count;
 mod delta_decode;
 mod dict_lookup;
 mod encode_const;
@@ -45,7 +45,6 @@ mod select;
 mod sort_by;
 mod sort_by_slices;
 mod sort_by_val_rows;
-mod sum;
 mod to_val;
 mod top_n;
 mod type_conversion;

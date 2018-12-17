@@ -72,6 +72,14 @@ impl BufferRef<Any> {
     fn transmute<T>(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
 }
 
+impl From<TypedBufferRef> for BufferRef<u32> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<u32> { buffer.u32().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<i64> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<i64> { buffer.i64().unwrap() }
+}
+
 // TODO(clemens): remove this, temporary hack because ther is no buffer type for ByteSlices
 impl From<BufferRef<Any>> for TypedBufferRef {
     fn from(buffer: BufferRef<Any>) -> TypedBufferRef {
