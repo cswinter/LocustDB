@@ -133,6 +133,20 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 }
                 Expr::Aggregate(Aggregator::Sum, expr(&args[0])?)
             }
+            "MAX" => {
+                if args.len() != 1 {
+                    return Err(QueryError::ParseError(
+                        "Expected one argument in MAX function".to_string()));
+                }
+                Expr::Aggregate(Aggregator::Max, expr(&args[0])?)
+            }
+            "MIN" => {
+                if args.len() != 1 {
+                    return Err(QueryError::ParseError(
+                        "Expected one argument in MIN function".to_string()));
+                }
+                Expr::Aggregate(Aggregator::Min, expr(&args[0])?)
+            }
             _ => return Err(QueryError::NotImplemented(format!("Function {:?}", id))),
         }
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
@@ -154,7 +168,7 @@ fn map_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
         SQLOperator::Eq => Func2Type::Equals,
         SQLOperator::NotEq => Func2Type::NotEquals,
         SQLOperator::Or => Func2Type::Or,
-        SQLOperator::Like=> Func2Type::Like,
+        SQLOperator::Like => Func2Type::Like,
     })
 }
 

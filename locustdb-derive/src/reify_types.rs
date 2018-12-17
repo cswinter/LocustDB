@@ -168,10 +168,14 @@ pub fn reify_types(input: TokenStream) -> TokenStream {
     }
 
     let variable = unified_variable_groups[0][0].clone();
-    let mut match_expr: Expr = parse_quote!(#variable.tag);
+    let mut match_expr: Expr = if variable == "aggregator" { parse_quote!(#variable) } else { parse_quote!(#variable.tag) };
     for vg in &unified_variable_groups[1..] {
         let variable = vg[0].clone();
-        match_expr = parse_quote!((#match_expr, #variable.tag))
+        match_expr = if variable == "aggregator" {
+            parse_quote!((#match_expr, #variable))
+        } else {
+            parse_quote!((#match_expr, #variable.tag))
+        };
     }
 
     all_match_arms.push(parse_quote! {
@@ -205,6 +209,7 @@ fn types(t: &Ident) -> Option<Vec<Type>> {
         "Const" => Some(vec![Type::ScalarI64, Type::ScalarStr]),
         "ScalarI64" => Some(vec![Type::ScalarI64]),
         "ScalarStr" => Some(vec![Type::ScalarStr]),
+        "Aggregator" => Some(vec![Type::AggregatorCount, Type::AggregatorSum, Type::AggregatorMax, Type::AggregatorMin]),
         _ => None,
     }
 }
@@ -228,6 +233,11 @@ enum Type {
     ScalarI64,
     ScalarStr,
     USize,
+
+    AggregatorSum,
+    AggregatorCount,
+    AggregatorMax,
+    AggregatorMin,
 }
 
 impl Type {
@@ -248,6 +258,10 @@ impl Type {
             Type::USize => parse_quote!(EncodingType::USize),
             Type::ScalarI64 => parse_quote!(EncodingType::ScalarI64),
             Type::ScalarStr => parse_quote!(EncodingType::ScalarStr),
+            Type::AggregatorCount => parse_quote!(Aggregator::Count),
+            Type::AggregatorSum => parse_quote!(Aggregator::Sum),
+            Type::AggregatorMax => parse_quote!(Aggregator::Max),
+            Type::AggregatorMin => parse_quote!(Aggregator::Min),
         }
     }
 
@@ -268,6 +282,10 @@ impl Type {
             Type::USize => parse_quote!( let #variable = #variable.buffer.usize(); ),
             Type::ScalarI64 => parse_quote!( let #variable = #variable.buffer.scalar_i64(); ),
             Type::ScalarStr => parse_quote!( let #variable = #variable.buffer.scalar_str(); ),
+            Type::AggregatorCount => parse_quote!( let #variable = PhantomData::<Count>; ),
+            Type::AggregatorSum => parse_quote!( let #variable = PhantomData::<Sum>; ),
+            Type::AggregatorMax => parse_quote!( let #variable = PhantomData::<Max>; ),
+            Type::AggregatorMin => parse_quote!( let #variable = PhantomData::<Min>; ),
         }
     }
 }

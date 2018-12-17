@@ -404,6 +404,20 @@ fn test_count_by_passenger_count_pickup_year_trip_distance() {
 }
 
 #[test]
+fn test_min_max() {
+    test_query_nyc(
+        "SELECT passenger_count, max(total_amount), min(total_amount) FROM default;",
+        &[
+            vec![Int(0), Int(5200), Int(150)],
+            vec![Int(1), Int(326000), Int(0)],
+            vec![Int(2), Int(357050), Int(0)],
+            vec![Int(3), Int(52750), Int(150)],
+            vec![Int(4), Int(44550), Int(200)]
+        ],
+    )
+}
+
+#[test]
 fn test_top_n() {
     test_query_nyc(
         "SELECT passenger_count, trip_distance, total_amount FROM default ORDER BY total_amount DESC LIMIT 100;",
@@ -558,12 +572,12 @@ fn test_order_by_multiple() {
 #[test]
 fn test_null_aggregators() {
     test_query_ec(
-        "SELECT id/5, SUM(nullable_int), COUNT(nullable_int2)
+        "SELECT id/5, SUM(nullable_int), COUNT(nullable_int2), MIN(nullable_int), MAX(nullable_int2)
          FROM default
          ORDER BY id/5;",
         &[
-            vec![Int(0), Int(-31), Int(3)],
-            vec![Int(1), Int(33), Int(3)],
+            vec![Int(0), Int(-31), Int(3), Int(-40), Int(9)],
+            vec![Int(1), Int(33), Int(3), Int(13), Int(14)],
         ],
     );
 }
