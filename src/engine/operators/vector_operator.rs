@@ -33,10 +33,11 @@ use super::filter::{Filter, NullableFilter};
 use super::functions::*;
 use super::fuse_nulls::*;
 use super::hashmap_grouping::HashMapGrouping;
-use super::hashmap_grouping_val_rows::HashMapGroupingValRows;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
+use super::hashmap_grouping_val_rows::HashMapGroupingValRows;
 use super::identity::Identity;
 use super::indices::Indices;
+use super::is_null::*;
 use super::make_nullable::MakeNullable;
 use super::map_operator::MapOperator;
 use super::merge::Merge;
@@ -203,6 +204,14 @@ impl<'a> VecOperator<'a> {
         } else {
             Ok(Box::new(UnfuseNullsStr { fused: fused.opt_str()?, data: data.str()?, present, unfused: unfused.nullable_str()? }))
         }
+    }
+
+    pub fn is_null(input: BufferRef<Nullable<Any>>, is_null: BufferRef<u8>) -> BoxedOperator<'a> {
+        Box::new(IsNull { input, is_null })
+    }
+
+    pub fn is_not_null(input: BufferRef<Nullable<Any>>, is_not_null: BufferRef<u8>) -> BoxedOperator<'a> {
+        Box::new(IsNotNull { input, is_not_null })
     }
 
     pub fn identity(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {

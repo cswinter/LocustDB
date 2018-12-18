@@ -36,6 +36,8 @@ pub enum Func1Type {
     Negate,
     ToYear,
     Not,
+    IsNull,
+    IsNotNull,
 }
 
 impl Expr {
