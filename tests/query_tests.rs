@@ -750,6 +750,30 @@ fn test_null_operators() {
 }
 
 #[test]
+fn test_is_null() {
+    test_query_ec(
+        "SELECT id FROM default WHERE nullable_int IS NULL ORDER BY id;",
+        &[
+            vec![Int(2)],
+            vec![Int(3)],
+            vec![Int(5)],
+            vec![Int(6)],
+            vec![Int(8)],
+        ],
+    );
+    test_query_ec(
+        "SELECT id FROM default WHERE nullable_int IS NOT NULL ORDER BY id;",
+        &[
+            vec![Int(0)],
+            vec![Int(1)],
+            vec![Int(4)],
+            vec![Int(7)],
+            vec![Int(9)],
+        ],
+    );
+}
+
+#[test]
 fn test_gen_table() {
     use Value::*;
     let _ = env_logger::try_init();

@@ -96,6 +96,16 @@ pub enum QueryPlan {
         #[output(t = "base=fused;null=_always")]
         unfused: TypedBufferRef,
     },
+    IsNull {
+        plan: BufferRef<Nullable<Any>>,
+        #[output]
+        is_null: BufferRef<u8>,
+    },
+    IsNotNull {
+        plan: BufferRef<Nullable<Any>>,
+        #[output]
+        is_not_null: BufferRef<u8>,
+    },
     /// Resolves dictionary indices to their original string value.
     DictLookup {
         indices: TypedBufferRef,
@@ -785,22 +795,36 @@ impl QueryPlan {
             }
             Func1(ftype, ref inner) => {
                 let (plan, t) = QueryPlan::compile_expr(inner, filter, columns, column_len, planner)?;
-                let decoded = match t.codec.clone() {
-                    Some(codec) => codec.decode(plan, planner),
-                    None => plan,
-                };
                 let plan = match ftype {
                     Func1Type::ToYear => {
+                        let decoded = match t.codec.clone() {
+                            Some(codec) => codec.decode(plan, planner),
+                            None => plan,
+                        };
                         if t.decoded != BasicType::Integer {
                             bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                         }
                         planner.to_year(decoded).into()
                     }
                     Func1Type::Not => {
+                        let decoded = match t.codec.clone() {
+                            Some(codec) => codec.decode(plan, planner),
+                            None => plan,
+                        };
                         if t.decoded != BasicType::Boolean {
                             bail!(QueryError::TypeError, "Found NOT({:?}), expected NOT(boolean)", &t)
                         }
                         planner.not(decoded.u8()?).into()
+                    }
+                    Func1Type::IsNull => if plan.is_nullable() {
+                        planner.is_null(plan.nullable_any()?).into()
+                    } else {
+                        planner.constant_expand((false as u8) as i64, column_len, EncodingType::U8)
+                    }
+                    Func1Type::IsNotNull => if plan.is_nullable() {
+                        planner.is_not_null(plan.nullable_any()?).into()
+                    } else {
+                        planner.constant_expand((true as u8) as i64, column_len, EncodingType::U8)
                     }
                     Func1Type::Negate => {
                         bail!(QueryError::TypeError, "Found negate({:?}), expected negate(integer)", &t)
@@ -1087,6 +1111,8 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::UnfuseIntNulls { offset, fused, data, present, unfused } => VecOperator::unfuse_int_nulls(offset, fused, data, present, unfused)?,
         QueryPlan::Filter { plan, select, filtered } => VecOperator::filter(plan, select, filtered)?,
         QueryPlan::NullableFilter { plan, select, filtered } => VecOperator::nullable_filter(plan, select, filtered)?,
+        QueryPlan::IsNull { plan, is_null } => VecOperator::is_null(plan, is_null),
+        QueryPlan::IsNotNull { plan, is_not_null } => VecOperator::is_not_null(plan, is_not_null),
         QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),
         QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value.to_string(), pinned_string, scalar_str),
         QueryPlan::NullVec { len, nulls } => VecOperator::null_vec(len, nulls.any()),

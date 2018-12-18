@@ -149,6 +149,8 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
             }
             _ => return Err(QueryError::NotImplemented(format!("Function {:?}", id))),
         }
+        ASTNode::SQLIsNull(ref node) => Expr::Func1(Func1Type::IsNull, expr(node)?),
+        ASTNode::SQLIsNotNull(ref node) => Expr::Func1(Func1Type::IsNotNull, expr(node)?),
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
     }))
 }

@@ -25,6 +25,7 @@ mod hashmap_grouping_byte_slices;
 mod hashmap_grouping_val_rows;
 mod identity;
 mod indices;
+mod is_null;
 mod make_nullable;
 mod map_operator;
 mod merge;
