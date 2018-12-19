@@ -70,12 +70,19 @@ impl LocustDB {
             let _ = self.inner_locustdb.schedule(read_data);
         }
 
-        let task = QueryTask::new(
+        match QueryTask::new(
             query, explain, show, data,
             self.inner_locustdb.disk_read_scheduler().clone(),
-            SharedSender::new(sender));
-        let trace_receiver = self.schedule(task);
-        Box::new(receiver.join(trace_receiver))
+            SharedSender::new(sender)) {
+                Ok(task) => {
+                    let trace_receiver = self.schedule(task);
+                    Box::new(receiver.join(trace_receiver))
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    Box::new(future::err::<_, _>(oneshot::Canceled))
+                }
+            }
     }
 
     pub fn load_csv(&self, options: LoadOptions) -> impl Future<Item=Result<(), String>, Error=oneshot::Canceled> {

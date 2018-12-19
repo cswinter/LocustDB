@@ -377,14 +377,14 @@ impl NormalFormQuery {
 }
 
 impl Query {
-    pub fn normalize(&self) -> (NormalFormQuery, Option<NormalFormQuery>) {
+    pub fn normalize(&self) -> Result<(NormalFormQuery, Option<NormalFormQuery>), QueryError> {
         let mut final_projection = Vec::new();
         let mut select = Vec::new();
         let mut aggregate = Vec::new();
         let mut aggregate_colnames = Vec::new();
         let mut select_colnames = Vec::new();
         for expr in &self.select {
-            let (full_expr, aggregates) = Query::extract_aggregators(expr, &mut aggregate_colnames);
+            let (full_expr, aggregates) = Query::extract_aggregators(expr, &mut aggregate_colnames)?;
             if aggregates.is_empty() {
                 let column_name = format!("_cs{}", select_colnames.len());
                 select_colnames.push(column_name.clone());
@@ -403,10 +403,10 @@ impl Query {
                 _ => true,
             });
 
-        if require_final_pass {
+        Ok(if require_final_pass {
             let mut final_order_by = Vec::new();
             for (expr, desc) in &self.order_by {
-                let (full_expr, aggregates) = Query::extract_aggregators(expr, &mut aggregate_colnames);
+                let (full_expr, aggregates) = Query::extract_aggregators(expr, &mut aggregate_colnames)?;
                 if aggregates.is_empty() {
                     let column_name = format!("_cs{}", select_colnames.len());
                     select_colnames.push(column_name.clone());
@@ -444,29 +444,47 @@ impl Query {
                 },
                 None,
             )
-        }
+        })
     }
 
-    pub fn extract_aggregators(expr: &Expr, column_names: &mut Vec<String>) -> (Expr, Vec<(Aggregator, Expr)>) {
-        match expr {
+    pub fn extract_aggregators(expr: &Expr, column_names: &mut Vec<String>) -> Result<(Expr, Vec<(Aggregator, Expr)>), QueryError> {
+        Ok(match expr {
             Expr::Aggregate(aggregator, expr) => {
                 let column_name = format!("_ca{}", column_names.len());
                 column_names.push(column_name.clone());
                 // TODO(clemens): ensure no nested aggregates
+                Query::ensure_no_aggregates(expr)?;
                 (Expr::ColName(column_name), vec![(*aggregator, *expr.clone())])
             }
             Expr::Func1(t, expr) => {
-                let (expr, aggregates) = Query::extract_aggregators(expr, column_names);
+                let (expr, aggregates) = Query::extract_aggregators(expr, column_names)?;
                 (Expr::Func1(*t, Box::new(expr)), aggregates)
             }
             Expr::Func2(t, expr1, expr2) => {
-                let (expr1, mut aggregates1) = Query::extract_aggregators(expr1, column_names);
-                let (expr2, aggregates2) = Query::extract_aggregators(expr2, column_names);
+                let (expr1, mut aggregates1) = Query::extract_aggregators(expr1, column_names)?;
+                let (expr2, aggregates2) = Query::extract_aggregators(expr2, column_names)?;
                 aggregates1.extend(aggregates2);
                 (Expr::Func2(*t, Box::new(expr1), Box::new(expr2)), aggregates1)
             }
             Expr::Const(_) | Expr::ColName(_) => (expr.clone(), vec![]),
-        }
+        })
+    }
+
+    pub fn ensure_no_aggregates(expr: &Expr) -> Result<(), QueryError> {
+        match expr {
+            Expr::Aggregate(_, _) => {
+                bail!(QueryError::TypeError, "Nested aggregates found.")
+            }
+            Expr::Func1(_, expr) => {
+                Query::ensure_no_aggregates(expr)?;
+            }
+            Expr::Func2(_, expr1, expr2) => {
+                Query::ensure_no_aggregates(expr1)?;
+                Query::ensure_no_aggregates(expr2)?;
+            }
+            Expr::Const(_) | Expr::ColName(_) => (),
+        };
+        Ok(())
     }
 
     pub fn is_select_star(&self) -> bool {

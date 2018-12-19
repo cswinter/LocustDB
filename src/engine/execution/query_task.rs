@@ -77,7 +77,7 @@ impl QueryTask {
     pub fn new(mut query: Query, explain: bool, show: Vec<usize>,
                source: Vec<Arc<Partition>>,
                db: Arc<DiskReadScheduler>,
-               sender: SharedSender<QueryResult>) -> QueryTask {
+               sender: SharedSender<QueryResult>) -> Result<QueryTask, QueryError> {
         let start_time_ns = precise_time_ns();
         if query.is_select_star() {
             query.select = find_all_cols(&source).into_iter().map(Expr::ColName).collect();
@@ -85,13 +85,13 @@ impl QueryTask {
 
         let referenced_cols = query.find_referenced_cols();
 
-        let (main_phase, final_pass) = query.normalize();
+        let (main_phase, final_pass) = query.normalize()?;
         let output_colnames = match &final_pass {
             Some(final_pass) => final_pass.result_column_names(),
             None => main_phase.result_column_names(),
         };
 
-        QueryTask {
+        Ok(QueryTask {
             main_phase,
             final_pass,
             explain,
@@ -113,7 +113,7 @@ impl QueryTask {
             batch_index: AtomicUsize::new(0),
             completed: AtomicBool::new(false),
             sender,
-        }
+        })
     }
 
     pub fn run(&self) {
