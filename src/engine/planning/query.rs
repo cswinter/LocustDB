@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::sync::Arc;
+use std::u64;
 
 use ::QueryError;
 use engine::*;
@@ -423,7 +424,7 @@ impl Query {
                     filter: self.filter.clone(),
                     aggregate,
                     order_by: vec![],
-                    limit: self.limit.clone(),
+                    limit: LimitClause { limit: u64::MAX, offset: 0 },
                 },
                 Some(NormalFormQuery {
                     projection: final_projection,
