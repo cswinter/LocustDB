@@ -119,6 +119,13 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 }
                 Expr::Func2(Func2Type::RegexMatch, expr(&args[0])?, expr(&args[1])?)
             }
+            "LENGTH" => {
+                if args.len() != 1 {
+                    return Err(QueryError::ParseError(
+                        "Expected one arguments in length function".to_string()));
+                }
+                Expr::Func1(Func1Type::Length, expr(&args[0])?)
+            }
             "COUNT" => {
                 if args.len() != 1 {
                     return Err(QueryError::ParseError(

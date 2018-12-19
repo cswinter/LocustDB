@@ -339,6 +339,11 @@ pub enum QueryPlan {
         #[output]
         matches: BufferRef<u8>,
     },
+    Length {
+        string: BufferRef<&'static str>,
+        #[output]
+        length: BufferRef<i64>,
+    },
     /// Outputs a vector of indices from `0..plan.len()`
     Indices {
         plan: TypedBufferRef,
@@ -806,6 +811,16 @@ impl QueryPlan {
                         }
                         planner.to_year(decoded).into()
                     }
+                    Func1Type::Length => {
+                        let decoded = match t.codec.clone() {
+                            Some(codec) => codec.decode(plan, planner),
+                            None => plan,
+                        };
+                        if t.decoded != BasicType::String {
+                            bail!(QueryError::TypeError, "Found length({:?}), expected length(string)", &t)
+                        }
+                        planner.length(decoded.str()?).into()
+                    }
                     Func1Type::Not => {
                         let decoded = match t.codec.clone() {
                             Some(codec) => codec.decode(plan, planner),
@@ -867,7 +882,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), qp),
         DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
-        UnpackStrings { .. } | UnhexpackStrings { .. } => None,
+        UnpackStrings { .. } | UnhexpackStrings { .. } | Length { ..  } => None,
         ref plan => {
             // TODO(clemens): many more cases where we can determine range
             error!("encoding_range not implement for {:?}", plan);
@@ -1151,6 +1166,7 @@ pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, resu
         QueryPlan::Not { input, not } => VecOperator::not(input, not),
         QueryPlan::ToYear { timestamp, year } => VecOperator::to_year(timestamp.i64()?, year.i64()?),
         QueryPlan::Regex { plan, regex, matches } => VecOperator::regex(plan, &regex, matches),
+        QueryPlan::Length { string, length } => VecOperator::length(string, length),
         QueryPlan::Indices { plan, indices } => VecOperator::indices(plan, indices),
         QueryPlan::SortBy { ranking, indices, desc, stable, permutation } => VecOperator::sort_by(ranking, indices, desc, stable, permutation)?,
         QueryPlan::TopN { ranking, n, desc, tmp_keys, top_n } => VecOperator::top_n(ranking, tmp_keys, n, desc, top_n)?,

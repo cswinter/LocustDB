@@ -614,6 +614,10 @@ impl<'a> VecOperator<'a> {
         Box::new(MapOperator { input, output, map: RegexMatch { r: regex::Regex::new(r).unwrap() } })
     }
 
+    pub fn length(input: BufferRef<&'a str>, output: BufferRef<i64>) -> BoxedOperator<'a> {
+        Box::new(MapOperator { input, output, map: Length })
+    }
+
     pub fn aggregate(input: TypedBufferRef,
                      grouping: TypedBufferRef,
                      max_index: BufferRef<Scalar<i64>>,

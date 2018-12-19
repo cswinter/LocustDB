@@ -35,3 +35,11 @@ impl<'a> MapOp<&'a str, u8> for RegexMatch {
     }
     fn name() -> &'static str { "not" }
 }
+
+
+pub struct Length;
+
+impl<'a> MapOp<&'a str, i64> for Length {
+    fn apply(&self, s: &'a str) -> i64 { s.len() as i64 }
+    fn name() -> &'static str { "length" }
+}
