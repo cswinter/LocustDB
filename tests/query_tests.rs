@@ -390,6 +390,16 @@ fn test_composite_aggregate() {
 }
 
 #[test]
+fn test_average() {
+    test_query_ec(
+        "select avg(nullable_int * nullable_int2) from default;",
+        &[
+            vec![Int(624)]
+        ],
+    )
+}
+
+#[test]
 fn test_count_by_passenger_count_pickup_year_trip_distance() {
     test_query_nyc(
         "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default limit 10000;",
@@ -839,8 +849,7 @@ fn test_column_with_null_partitions() {
     assert_eq!(result.rows.iter().filter(|&x| x == &[Str("B".to_string())]).count(), 2);
 }
 
-// TODO(clemens): enable once unused query plans get eliminated
-// #[test]
+#[test]
 fn test_group_by_string() {
     use value_syntax::*;
     let _ = env_logger::try_init();

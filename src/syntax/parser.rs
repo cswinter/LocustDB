@@ -133,6 +133,15 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 }
                 Expr::Aggregate(Aggregator::Sum, expr(&args[0])?)
             }
+            "AVG" => {
+                if args.len() != 1 {
+                    return Err(QueryError::ParseError(
+                        "Expected one argument in AVG function".to_string()));
+                }
+                Expr::Func2(Func2Type::Divide,
+                            Box::new(Expr::Aggregate(Aggregator::Sum, expr(&args[0])?)),
+                            Box::new(Expr::Aggregate(Aggregator::Count, expr(&args[0])?)))
+            }
             "MAX" => {
                 if args.len() != 1 {
                     return Err(QueryError::ParseError(
