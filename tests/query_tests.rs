@@ -528,6 +528,21 @@ fn test_group_by_trip_id() {
 }
 
 #[test]
+fn test_string_length() {
+    test_query_nyc(
+        "SELECT length(pickup_ntaname), pickup_ntaname, COUNT(0)
+         FROM default
+         ORDER BY length(pickup_ntaname) DESC
+         LIMIT 3;",
+        &[
+            vec![Int(56), Str("Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill"), Int(1)],
+            vec![Int(50), Str("Mariner\'s Harbor-Arlington-Port Ivory-Graniteville"), Int(3)],
+            vec![Int(48), Str("DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill"), Int(245)],
+        ],
+    )
+}
+
+#[test]
 fn test_group_by_negative_expression() {
     test_query_ec(
         "SELECT negative/100, count(1) FROM default;",
