@@ -198,11 +198,11 @@ impl NormalFormQuery {
                 aggregator,
                 &mut qp)?;
             // TODO(clemens): if summation column is strictly positive, can use sum as well
-            if aggregator == Aggregator::Count {
+            if aggregator == Aggregator::Count && !plan.is_nullable() {
                 selector = Some((aggregate, t.encoding_type()));
                 selector_index = Some(i)
             }
-            aggregation_results.push((aggregator, aggregate, t))
+            aggregation_results.push((aggregator, aggregate, t, plan.is_nullable()))
         }
 
         // Determine selector
@@ -223,11 +223,16 @@ impl NormalFormQuery {
         {
             let mut decode_compact = |aggregator: Aggregator,
                                       aggregate: TypedBufferRef,
-                                      t: Type| {
+                                      t: Type,
+                                      input_nullable: bool| {
                 let compacted = match aggregator {
                     // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
                     Aggregator::Sum | Aggregator::Max | Aggregator::Min => qp.compact(aggregate, selector),
-                    Aggregator::Count => qp.nonzero_compact(aggregate),
+                    Aggregator::Count => if input_nullable {
+                        qp.compact(aggregate, selector)
+                    } else {
+                        qp.nonzero_compact(aggregate)
+                    },
                 };
                 if t.is_encoded() {
                     Ok(t.codec.clone().unwrap().decode(compacted, &mut qp))
@@ -236,17 +241,17 @@ impl NormalFormQuery {
                 }
             };
 
-            for (i, &(aggregator, aggregate, ref t)) in aggregation_results.iter().enumerate() {
+            for (i, &(aggregator, aggregate, ref t, input_nullable)) in aggregation_results.iter().enumerate() {
                 if selector_index != Some(i) {
-                    let decode_compacted = decode_compact(aggregator, aggregate, t.clone())?;
+                    let decode_compacted = decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
                     aggregation_cols.push((decode_compacted, aggregator))
                 }
             }
 
             // TODO(clemens): is there a simpler way to do this?
             if let Some(i) = selector_index {
-                let (aggregator, aggregate, ref t) = aggregation_results[i];
-                let selector = decode_compact(aggregator, aggregate, t.clone())?;
+                let (aggregator, aggregate, ref t, input_nullable) = aggregation_results[i];
+                let selector = decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
                 aggregation_cols.insert(i, (selector, aggregator));
             }
         }

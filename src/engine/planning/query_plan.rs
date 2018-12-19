@@ -867,7 +867,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), qp),
         DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
-        UnpackStrings { .. } => None,
+        UnpackStrings { .. } | UnhexpackStrings { .. } => None,
         ref plan => {
             // TODO(clemens): many more cases where we can determine range
             error!("encoding_range not implement for {:?}", plan);
