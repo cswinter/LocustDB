@@ -452,7 +452,6 @@ impl Query {
             Expr::Aggregate(aggregator, expr) => {
                 let column_name = format!("_ca{}", column_names.len());
                 column_names.push(column_name.clone());
-                // TODO(clemens): ensure no nested aggregates
                 Query::ensure_no_aggregates(expr)?;
                 (Expr::ColName(column_name), vec![(*aggregator, *expr.clone())])
             }

@@ -79,8 +79,7 @@ impl LocustDB {
                     Box::new(receiver.join(trace_receiver))
                 }
                 Err(err) => {
-                    println!("{}", err);
-                    Box::new(future::err::<_, _>(oneshot::Canceled))
+                    Box::new(future::ok((Err(err), TraceBuilder::new("empty".to_owned()).finalize())))
                 }
             }
     }
