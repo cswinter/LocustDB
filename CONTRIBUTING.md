@@ -10,6 +10,8 @@ If you're looking for somewhere to start, check out the [good first issue tag][g
 Feel free to ask for guidelines on how to tackle a problem on [gitter][gitter] or open a new [new issue][new-issue].
 This is especially important if you want to add new features to LocustDB or make large changes to the already existing code base. LocustDB's core developers will do their best to provide help.
 
+Various issues have a corresponding TODO(#ISSUE\_NUMBER) in the relevant section of the code.
+
 If you start working on an already-filed issue, post a comment on this issue to let people know that somebody is working it. Feel free to ask for comments if you are unsure about the solution you would like to submit.
 
 We use the "fork and pull" model [described here][development-models], where contributors push changes to their personal fork and create pull requests to bring those changes into the source repository.

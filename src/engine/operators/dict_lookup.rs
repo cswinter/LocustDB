@@ -22,7 +22,6 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DictLookup<'a, T> {
             let offset_len = dict_indices[i.cast_usize()];
             let offset = (offset_len >> 24) as usize;
             let len = (offset_len & 0x00ff_ffff) as usize;
-            // TODO(clemens): eliminate transmute?
             let string = unsafe {
                 str::from_utf8_unchecked(&dict_data[offset..(offset + len)])
             };

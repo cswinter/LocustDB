@@ -244,7 +244,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 },
             })
         } else { // Select query
-            // TODO(clemens): make this work for differently aliased columns (need to send through query planner)
+            // TODO(#97): make this work for differently aliased columns (need to send through query planner)
             ensure!(batch1.projection  == batch2.projection,
                     "Different projections in select batches ({:?}, {:?})",
                     &batch1.projection, &batch2.projection);

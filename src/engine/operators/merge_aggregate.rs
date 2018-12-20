@@ -53,7 +53,6 @@ fn merge_aggregate(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator: Agg
                 j += 1;
             }
             MergeOp::MergeRight => {
-                // TODO(clemens): make inlining of aggregator operation possible
                 let last = result.len() - 1;
                 result[last] = aggregator.combine_i64(result[last], right[j]);
                 j += 1;

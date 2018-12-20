@@ -531,7 +531,6 @@ pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
         cardinality_out))
 }
 
-// TODO(clemens): add QueryPlan::Aggregation and merge with prepare function
 pub fn prepare_aggregation(mut plan: TypedBufferRef,
                            plan_type: Type,
                            grouping_key: TypedBufferRef,
@@ -549,12 +548,12 @@ pub fn prepare_aggregation(mut plan: TypedBufferRef,
             if !plan_type.is_summation_preserving() {
                 plan = plan_type.codec.clone().unwrap().decode(plan, planner);
             }
-            // TODO(clemens): determine dense groupings
+            // PERF: determine dense groupings
             (planner.aggregate(plan, grouping_key, max_index, Aggregator::Sum, EncodingType::I64),
              Type::unencoded(BasicType::Integer))
         }
         Aggregator::Max | Aggregator::Min => {
-            // TODO(clemens): don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
+            // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
             plan = plan_type.codec.clone().unwrap().decode(plan, planner);
             (planner.aggregate(plan, grouping_key, max_index, aggregator, EncodingType::I64),
              Type::unencoded(BasicType::Integer))
@@ -855,7 +854,7 @@ impl QueryPlan {
 }
 
 fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)> {
-    // TODO(clemens): need more principled approach - this currently doesn't work for all partially decodings
+    // This would benefit from more principled approach - it currently doesn't work for all partially decodings
     // Example: [LZ4, Add, Delta] will have as bottom decoding range the range after indices, max_index Delta, but without the Add :/
     // This works in this case because we always have to decode the Delta, but is hard to reason about and has caused bugs
     use self::QueryPlan::*;
@@ -866,7 +865,6 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
              i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
         ),
         Filter { ref plan, .. } => encoding_range(plan, qp),
-        // TODO(clemens): this is just wrong
         Divide { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = qp.resolve(rhs) {
             encoding_range(lhs, qp).map(|(min, max)|
                 if *c > 0 { (min / *c, max / *c) } else { (max / *c, min / *c) })
@@ -882,9 +880,8 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), qp),
         DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
-        UnpackStrings { .. } | UnhexpackStrings { .. } | Length { ..  } => None,
+        UnpackStrings { .. } | UnhexpackStrings { .. } | Length { .. } => None,
         ref plan => {
-            // TODO(clemens): many more cases where we can determine range
             error!("encoding_range not implement for {:?}", plan);
             None
         }
@@ -971,8 +968,10 @@ pub fn compile_grouping_key(
         let mut decode_plans = Vec::new();
         let encoded_group_by_placeholder = planner.buffer_provider.named_buffer(
             "encoded_group_by_placeholder", EncodingType::ValRows);
+        let mut order_preserving = true;
         for (i, expr) in exprs.iter().enumerate() {
             let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, planner)?;
+            order_preserving = order_preserving && plan_type.is_order_preserving();
             let vals = planner.cast(query_plan, EncodingType::Val).val()?;
             pack.push(planner.val_rows_pack(vals, exprs.len(), i));
 
@@ -988,12 +987,11 @@ pub fn compile_grouping_key(
                 (decode_plan,
                  plan_type.decoded()));
         }
-        // TODO(clemens): only order preserving if inputs are (cf. try_bitpacking)
-        Ok(((pack[0].clone().into(), true),
+        Ok(((pack[0].clone().into(), order_preserving),
             i64::MAX,
             decode_plans,
             encoded_group_by_placeholder))
-        // TODO(clemens): evaluate performance of ValRows vs ByteSlices grouping
+        // PERF: evaluate performance of ValRows vs ByteSlices grouping
         /*} else {
             info!("Failed to bitpack grouping key");
             let mut pack = Vec::new();
@@ -1004,7 +1002,7 @@ pub fn compile_grouping_key(
                 let (query_plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, planner)?;
                 pack.push(planner.slice_pack(query_plan, exprs.len(), i));
 
-                // TODO(clemens): negative integers can throw off sort order - need to move into positive range
+                // Before reactivating: negative integers can throw off sort order - need to move into positive range
                 let mut decode_plan = planner.slice_unpack(
                     encoded_group_by_placeholder.any(),
                     exprs.len(),
@@ -1032,7 +1030,7 @@ fn try_bitpacking(
     planner: &mut QueryPlanner)
     -> Result<Option<((TypedBufferRef, bool), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef)>, QueryError> {
     planner.checkpoint();
-    // TODO(clemens): use u64 as grouping key type
+    // PERF: use u64 as grouping key type
     let mut total_width = 0;
     let mut largest_key = 0;
     let mut plan: Option<BufferRef<i64>> = None;
@@ -1049,7 +1047,7 @@ fn try_bitpacking(
             }
             let max = if query_plan.is_nullable() && min <= 0 { max + 1 } else { max };
 
-            // TODO(clemens): more intelligent criterion. threshold should probably be a function of total width.
+            // PERF: more intelligent criterion. threshold should probably be a function of total width.
             let subtract_offset = bits(max) - bits(max - min) > 1 || min < 0 || query_plan.is_nullable();
             let adjusted_max = if subtract_offset { max - min } else { max };
             order_preserving = order_preserving && plan_type.is_order_preserving();
@@ -1098,7 +1096,7 @@ fn try_bitpacking(
     }
 
     Ok(
-        if total_width <= 64 {
+        if total_width <= 63 {
             plan.map(|plan| {
                 decode_plans.reverse();
                 ((plan.into(), order_preserving), largest_key, decode_plans, encoded_group_by_placeholder.into())
@@ -1110,8 +1108,7 @@ fn try_bitpacking(
     )
 }
 
-// TODO(clemens): make method private?
-pub fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, result: &mut QueryExecutor<'a>) -> Result<TypedBufferRef, QueryError> {
+pub(super) fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, result: &mut QueryExecutor<'a>) -> Result<TypedBufferRef, QueryError> {
     trace!("{:?}", &plan);
     let operation: Box<VecOperator> = match plan {
         QueryPlan::Select { plan, indices, selection } => VecOperator::select(plan, indices, selection)?,

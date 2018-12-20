@@ -42,7 +42,7 @@ impl LocustDB {
     pub fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Box<Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
         let (sender, receiver) = oneshot::channel();
 
-        // TODO(clemens): perform compilation and table snapshot in asynchronous task?
+        // PERF: perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query) {
             Ok(query) => query,
             Err(err) => {
@@ -54,7 +54,6 @@ impl LocustDB {
 
         let mut data = match self.inner_locustdb.snapshot(&query.table) {
             Some(data) => data,
-            // TODO(clemens): A table may not exist on all nodes, so querying empty table is valid and should return empty result.
             None => return Box::new(future::ok((
                 Err(QueryError::NotImplemented(format!("Table {} does not exist!", &query.table))),
                 TraceBuilder::new("empty".to_owned()).finalize()))),

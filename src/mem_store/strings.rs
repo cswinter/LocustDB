@@ -29,9 +29,9 @@ pub fn fast_build_string_column<'a, T>(name: &str,
     let mut unique_values = HashSetSea::default();
     for s in strings.clone() {
         unique_values.insert(s);
-        // TODO(clemens): is 2 the right constant? and should probably also depend on the length of the strings
-        // TODO(clemens): len > 1000 || name == "string_packed" is a hack to make tests use dictionary encoding. Remove once we are able to group by string packed columns.
-        if unique_values.len() == len / DICTIONARY_RATIO && (len > 1000 || name == "string_packed") {
+        // PERF: is 2 the right constant? and should probably also depend on the length of the strings
+        // TODO(#103): len > 1000 || name == "string_packed" is a hack to make tests use dictionary encoding. Remove once we are able to group by string packed columns.
+        if unique_values.len() == len / DICTIONARY_RATIO && (len > 1000 || name == "string_packed")  {
             let (mut codec, data) = if (lhex || uhex) && total_bytes / len > 5 {
                 let packed = PackedBytes::from_iterator(strings.map(|s| hex::decode(s).unwrap()));
                 (vec![CodecOp::UnhexpackStrings(uhex, total_bytes)], DataSection::U8(packed.into_vec()))

@@ -50,7 +50,6 @@ impl<'a, T: VecData<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        // TODO(clemens): Estimate capacities for unique + map?
         scratchpad.set(self.unique_out, Vec::new());
         scratchpad.set(self.grouping_key_out, Vec::with_capacity(batch_size));
     }

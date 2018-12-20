@@ -32,7 +32,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDrop<T> {
 }
 
 fn merge_drop<'a, T: VecData<T> + 'a>(ops: &[MergeOp], left: &[T], right: &[T]) -> Vec<T> {
-    // TODO(clemens): this is an overestimate
+    // This is an overestimate
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;

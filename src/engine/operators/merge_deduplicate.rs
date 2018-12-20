@@ -34,7 +34,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
 }
 
 fn merge_deduplicate<'a, T: VecData<T> + 'a>(left: &[T], right: &[T]) -> (Vec<T>, Vec<MergeOp>) {
-    // TODO(clemens): figure out maths for precise estimate + variance derived from how much grouping reduced cardinality
+    // Could figure out maths for more precise estimate + variance derived from how much grouping reduced cardinality
     let output_len_estimate = max(left.len(), right.len()) + min(left.len(), right.len()) / 2;
     let mut result = Vec::with_capacity(output_len_estimate);
     let mut ops = Vec::<MergeOp>::with_capacity(output_len_estimate);

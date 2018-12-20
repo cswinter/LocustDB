@@ -62,7 +62,7 @@ impl ScalarData<i64> for i64 {
 
 impl<'a> ScalarData<&'a str> for &'a str {
     fn unwrap(vec: &Data) -> &'a str {
-        // TODO(clemens): fix. wait for associated type constructors?
+        // TODO(#96): fix. wait for associated type constructors?
         unsafe {
             mem::transmute::<&str, &'a str>(vec.cast_scalar_str())
         }

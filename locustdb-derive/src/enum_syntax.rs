@@ -44,7 +44,6 @@ pub fn enum_syntax(input: TokenStream) -> TokenStream {
             }
         }
         let expanded = quote! {
-            // TODO(clemens): inherit visibility modifier from definition
             pub mod syntax {
                 use super::*;
 
@@ -55,8 +54,8 @@ pub fn enum_syntax(input: TokenStream) -> TokenStream {
         // Hand the output tokens back to the compiler
         TokenStream::from(expanded)
     } else {
-        // TODO(clemens): emit error
-        panic!("")
+        Span::call_site().unstable().error(format!("EnumSyntax must be applied to an enum"));
+        TokenStream::from(quote!())
     }
 }
 

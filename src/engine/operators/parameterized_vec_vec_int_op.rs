@@ -45,7 +45,6 @@ pub trait ParameterizedIntegerOperation {
     fn display(lhs: BufferRef<i64>, rhs: BufferRef<i64>, param: i64, alternate: bool) -> String;
 }
 
-// TODO(clemens): reuse/mutate left buffer?
 #[derive(Debug)]
 pub struct BitShiftLeftAdd;
 

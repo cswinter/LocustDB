@@ -42,7 +42,7 @@ impl DataSource for Column {
     fn codec(&self) -> Codec { self.codec.clone() }
     fn len(&self) -> usize { self.len }
     fn data_sections(&self) -> Vec<&Data> {
-        // TODO(clemens): fix unsafety
+        // TODO(#96): fix unsafety
         unsafe {
             mem::transmute::<Vec<&Data>, Vec<&Data>>(
                 self.data.iter().map(|d| d.to_any_vec()).collect())

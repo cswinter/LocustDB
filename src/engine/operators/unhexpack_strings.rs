@@ -14,7 +14,7 @@ pub struct UnhexpackStrings<'a> {
     pub stringstore: BufferRef<u8>,
     pub iterator: Option<PackedBytesIterator<'a>>,
     pub total_bytes: usize,
-    // TODO(clemens): initializing this properly is required for safety
+    // Initializing this properly is required for safety
     pub uppercase: bool,
     pub has_more: bool,
 }

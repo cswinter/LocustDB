@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::mem;
 use std::ops::DerefMut;
 use std::str;
 use std::sync::Arc;
@@ -96,21 +95,21 @@ impl Table {
         self.batch(buffer);
     }
 
-    fn batch(&self, buffer: &mut Buffer) {
-        let buffer = mem::replace(buffer, Buffer::default());
+    fn batch(&self, _buffer: &mut Buffer) {
+        // Before reenabling: need to get unique partition ID
+        /*let buffer = mem::replace(buffer, Buffer::default());
         self.persist_batch(&buffer);
-        // TODO(clemens): get unique partition ID
         let (new_partition, keys) = Partition::from_buffer(0, buffer, self.lru.clone());
         let mut partitions = self.partitions.write().unwrap();
         partitions.insert(new_partition.id(), Arc::new(new_partition));
-        for key in keys { self.lru.put(key); }
+        for key in keys { self.lru.put(key); }*/
     }
 
     /*fn load_buffer(&self, buffer: Buffer) {
         self.load_batch(buffer.into());
     }*/
 
-    fn persist_batch(&self, _batch: &Buffer) {}
+    // fn persist_batch(&self, _batch: &Buffer) {}
 
     pub fn mem_tree(&self, depth: usize) -> MemTreeTable {
         assert!(depth > 0);

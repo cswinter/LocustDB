@@ -33,7 +33,7 @@ pub struct QueryTask {
     // Lifetime is not actually static, but tied to the lifetime of this struct.
     // There is currently no good way to express this constraint in Rust.
     // Accessing pointers derived from unsafe_state after it has been dropped violates memory safety.
-    // TODO(clemens): better encapsulate unsafety using some abstraction such as the refstruct crate.
+    // TODO(#96): better encapsulate unsafety using some abstraction such as the refstruct crate.
     unsafe_state: Mutex<QueryState<'static>>,
     batch_index: AtomicUsize,
     completed: AtomicBool,
@@ -208,7 +208,6 @@ impl QueryTask {
         if state.completed_batches == self.partitions.len() || self.sufficient_rows(state.rows_collected) {
             let mut owned_results = Vec::with_capacity(0);
             mem::swap(&mut owned_results, &mut state.partial_results);
-            // TODO(clemens): Handle empty table
             let full_result = match QueryTask::combine_results(owned_results, self.combined_limit()) {
                 Ok(result) => result.unwrap(),
                 Err(error) => {
@@ -273,7 +272,7 @@ impl QueryTask {
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {
             let mut record = Vec::with_capacity(self.output_colnames.len());
-            // TODO(clemens): use column order of original query
+            // TODO(#99): use column order of original query
             for &j in &full_result.projection {
                 record.push(full_result.columns[j].get_raw(i));
             }

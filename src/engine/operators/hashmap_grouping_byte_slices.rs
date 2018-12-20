@@ -31,7 +31,7 @@ impl<'a> HashMapGroupingByteSlices {
 
 impl<'a> VecOperator<'a> for HashMapGroupingByteSlices {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
-        // TODO(clemens): Fnv is suboptimal for larger inputs (http://cglab.ca/~abeinges/blah/hash-rs/). use xx hash?
+        // TODO(#100): Fnv is suboptimal for larger inputs (http://cglab.ca/~abeinges/blah/hash-rs/). use xx hash?
         let count = {
             let raw_grouping_key_any = scratchpad.get_any(self.input);
             let raw_grouping_key = raw_grouping_key_any.cast_ref_byte_slices();
@@ -54,7 +54,6 @@ impl<'a> VecOperator<'a> for HashMapGroupingByteSlices {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        // TODO(clemens): Estimate capacities for unique + map?
         scratchpad.set_any(self.unique_out, Box::new(ByteSlices::new(self.columns)));
         scratchpad.set(self.grouping_key_out, Vec::with_capacity(batch_size));
     }

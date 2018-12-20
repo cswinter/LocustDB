@@ -39,7 +39,7 @@ fn subpartition<'a, T: VecData<T> + 'a, C: Comparator<T>>(
     partitioning: &[Premerge],
     left: &[T],
     right: &[T]) -> Vec<Premerge> {
-    // TODO(clemens): better estimate?
+    // Could probably derive better estimate
     let mut result = Vec::with_capacity(2 * partitioning.len());
     let mut i = 0;
     let mut j = 0;

@@ -56,12 +56,12 @@ impl NormalFormQuery {
             let (ranking, _) = query_plan::order_preserving(
                 QueryPlan::compile_expr(&plan, filter, columns, partition_len, &mut planner)?, &mut planner);
 
-            // TODO(clemens): better criterion for using top_n
-            // TODO(clemens): top_n for multiple columns?
+            // PERF: better criterion for using top_n
+            // PERF: top_n for multiple columns?
             sort_indices = Some(if limit < partition_len / 2 && self.order_by.len() == 1 {
                 planner.top_n(ranking, limit, *desc)
             } else {
-                // TODO(clemens): Optimization: sort directly if only single column selected
+                // PERF: sort directly if only single column selected
                 match sort_indices {
                     None => {
                         let indices = planner.indices(ranking);
@@ -165,12 +165,12 @@ impl NormalFormQuery {
             query_plan::compile_grouping_key(&self.projection, filter, columns, partition_len, &mut qp)?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
-        // TODO(clemens): also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
+        // PERF: also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
         let (encoded_group_by_column,
             grouping_key,
             is_grouping_key_order_preserving,
             aggregation_cardinality) =
-        // TODO(clemens): refine criterion
+        // PERF: refine criterion
             if max_grouping_key < 1 << 16 {
                 let max_grouping_key_buf = qp.scalar_i64(max_grouping_key, true);
                 (None,
@@ -198,7 +198,7 @@ impl NormalFormQuery {
                 aggregation_cardinality,
                 aggregator,
                 &mut qp)?;
-            // TODO(clemens): if summation column is strictly positive, can use sum as well
+            // PERF: if summation column is strictly positive, can use sum as well
             if aggregator == Aggregator::Count && !plan.is_nullable() {
                 selector = Some((aggregate, t.encoding_type()));
                 selector_index = Some(i)
@@ -227,7 +227,7 @@ impl NormalFormQuery {
                                       t: Type,
                                       input_nullable: bool| {
                 let compacted = match aggregator {
-                    // TODO(clemens): if summation column is strictly positive, can use NonzeroCompact
+                    // PERF: if summation column is strictly positive, can use NonzeroCompact
                     Aggregator::Sum | Aggregator::Max | Aggregator::Min => qp.compact(aggregate, selector),
                     Aggregator::Count => if input_nullable {
                         qp.compact(aggregate, selector)
@@ -249,7 +249,7 @@ impl NormalFormQuery {
                 }
             }
 
-            // TODO(clemens): is there a simpler way to do this?
+            // There is probably a simpler way to do this
             if let Some(i) = selector_index {
                 let (aggregator, aggregate, ref t, input_nullable) = aggregation_results[i];
                 let selector = decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
@@ -275,7 +275,6 @@ impl NormalFormQuery {
                            false /* stable */)
             } else {
                 if grouping_columns.len() != 1 {
-                    // TODO(clemens): debug print `planner`
                     bail!(QueryError::NotImplemented,
                         "Grouping key is not order preserving and more than 1 grouping column\nGrouping key type: {:?}\nTODO: PLANNER",
                         &grouping_key.tag)
@@ -356,7 +355,7 @@ impl NormalFormQuery {
                 Expr::ColName(ref name) => name.clone(),
                 _ => {
                     anon_columns += 1;
-                    // TODO(clemens): collision with existing columns
+                    // TODO(#101): collision with existing columns
                     format!("col_{}", anon_columns)
                 }
             });

@@ -64,7 +64,7 @@ impl VecData<usize> for usize {
 
 impl<'c> VecData<&'c str> for &'c str {
     fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [&'c str] where &'c str: 'a {
-        // TODO(clemens): Probably wrong, but after many hours I haven't found any other way of making all of this work :(
+        // TODO(#96): Probably wrong, but after many hours I haven't found any other way of making all of this work :(
         // Might require associated type constructors to solve easily...
         unsafe {
             mem::transmute::<_, &'b [&'c str]>(vec.cast_ref_str())

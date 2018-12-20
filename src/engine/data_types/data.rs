@@ -19,7 +19,6 @@ pub trait Data<'a>: Send + Sync {
     fn get_raw(&self, i: usize) -> RawVal;
     fn get_type(&self) -> EncodingType;
     fn type_error(&self, func_name: &str) -> String;
-    // TODO(clemens): move this into an operator
     fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>>;
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedData<'b> where 'a: 'b;
 

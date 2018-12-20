@@ -91,7 +91,7 @@ pub trait VecOperator<'a> {
 
     fn display(&self, full: bool) -> String {
         let mut s = String::new();
-        // TODO(clemens): spacing is off if ansi color codes are used
+        // Spacing is off if ansi color codes are used
         if self.display_output() {
             write!(s, "{:<12} = ", self.outputs().iter().map(|o| format!("{}", o)).join(", ")).unwrap();
         }

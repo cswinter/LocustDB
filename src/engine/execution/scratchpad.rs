@@ -221,7 +221,7 @@ impl<'a> Scratchpad<'a> {
     }
 
     pub fn alias<T>(&mut self, original: BufferRef<T>, alias: BufferRef<T>) {
-        // TODO(clemens): cycle check
+        // should probably do cycle check
         self.aliases[alias.i] = Some(original.i);
         self.null_maps[alias.i] = self.null_maps[original.i];
     }
@@ -230,7 +230,7 @@ impl<'a> Scratchpad<'a> {
                                 original: BufferRef<T>,
                                 null_map: BufferRef<u8>,
                                 nullable: BufferRef<Nullable<T>>) {
-        // TODO(clemens): cycle check
+        // should probably do cycle check
         self.aliases[nullable.i] = Some(original.i);
         self.null_maps[nullable.i] = Some(null_map.i);
     }

@@ -353,7 +353,7 @@ fn test_groupless_aggregate() {
     );
     test_query_nyc(
         "SELECT count(0) FROM default WHERE passenger_count = 1;",
-        // TODO(clemens): Use this once parser bug is fixed
+        // TODO(sqlparser-rs#30): Use this once parser bug is fixed
         // "SELECT count(0) FROM default WHERE NOT passenger_count <> 1;",
         &[vec![Int(6016)]],
     );
@@ -455,7 +455,7 @@ fn test_addition() {
         "SELECT u8_offset_encoded + negative FROM default ORDER BY id LIMIT 5;",
         &[vec![Int(57)], vec![Int(297)], vec![Int(159)], vec![Int(291)], vec![Int(4306)]],
     );
-    // TODO(clemens): s/2/-2/ once supported parser
+    // TODO(sqlparser-rs#29): s/2/-2/ once supported parser
     test_query_ec(
         "SELECT 2 + non_dense_ints FROM default ORDER BY id LIMIT 5;",
         &[vec![Int(2)], vec![Int(4)], vec![Int(5)], vec![Int(3)], vec![Int(6)]],
@@ -647,7 +647,6 @@ fn test_sort_by_nullable() {
 
 #[test]
 fn test_group_by_nullable() {
-    // TODO(clemens): order by country
     test_query_ec(
         "SELECT country, COUNT(0)
          FROM default;",
@@ -948,7 +947,6 @@ fn test_restore_from_disk() {
     }
     // Dropping the LocustDB object will cause all threads to be stopped
     // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
-    // TODO(clemens): make drop better?
     thread::sleep(time::Duration::from_millis(2000));
     let locustdb = LocustDB::new(&opts);
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
