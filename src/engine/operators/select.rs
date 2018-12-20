@@ -26,7 +26,7 @@ impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: VecData<T> {
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any(), self.indices.any()] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
-    // TODO(clemens): need to add functionality to read from block input (sort indices) in streaming fashion
+    // TODO(#98): need to add functionality to read from block input (sort indices) in streaming fashion
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
@@ -65,7 +65,7 @@ impl<'a, T: 'a> VecOperator<'a> for SelectNullable<T> where T: VecData<T> {
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any(), self.indices.any()] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
-    // TODO(clemens): need to add functionality to read from block input (sort indices) in streaming fashion
+    // TODO(#98): need to add functionality to read from block input (sort indices) in streaming fashion
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }

@@ -282,7 +282,7 @@ pub enum CodecOp {
 
 impl CodecOp {
     fn output_type(&self) -> BasicType {
-        // TODO(clemens): completely broken for nullables
+        // Completely broken for nullables
         match self {
             CodecOp::Nullable => BasicType::Integer,
             CodecOp::Add(_, _) => BasicType::Integer,

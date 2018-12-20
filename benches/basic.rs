@@ -117,7 +117,7 @@ fn avg_total_amount_by_passenger_count(b: &mut test::Bencher) {
     bench_query(b, "select passenger_count, count(0), sum(total_amount) from trips_e8;");
 }
 
-// TODO(clemens): 50% performance regression after query planner refactor. not elimination to_year anymore?
+// TODO(#102): 50% performance regression after query planner refactor. not elimination to_year anymore?
 #[bench]
 fn count_by_passenger_count_pickup_year_trip_distance(b: &mut test::Bencher) {
     bench_query(b, "select passenger_count, to_year(pickup_datetime), total_amount / 1000, count(0) from trips_e7;");

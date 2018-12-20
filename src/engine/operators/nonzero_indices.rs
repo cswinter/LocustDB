@@ -19,7 +19,6 @@ impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> f
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        // TODO(clemens): output size estimate?
         scratchpad.set(self.output, Vec::new());
     }
 

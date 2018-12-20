@@ -80,7 +80,7 @@ impl From<TypedBufferRef> for BufferRef<i64> {
     fn from(buffer: TypedBufferRef) -> BufferRef<i64> { buffer.i64().unwrap() }
 }
 
-// TODO(clemens): remove this, temporary hack because ther is no buffer type for ByteSlices
+// this is a temporary hack because there is no buffer type for ByteSlices and can be removed once there is
 impl From<BufferRef<Any>> for TypedBufferRef {
     fn from(buffer: BufferRef<Any>) -> TypedBufferRef {
         TypedBufferRef::new(buffer, EncodingType::Null)
@@ -277,7 +277,6 @@ impl TypedBufferRef {
         Ok(self.buffer.premerge())
     }
 
-    // TODO(clemens): better typing for Constants
     pub fn raw_val(&self) -> Result<BufferRef<RawVal>, QueryError> {
         // ensure!(self.tag == EncodingType::Str, "{:?} != Str", self.tag);
         Ok(self.buffer.raw_val())

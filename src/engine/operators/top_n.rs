@@ -35,7 +35,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
                 keys.push(*input);
             }
             if indices.capacity() == indices.len() {
-                // TODO(clemens): Optimize? (linear time heapify)
+                // Could replace O(n log n) sort with O(n) heapify
                 if C::is_less_than() {
                     indices.sort_unstable_by(|i, j| keys[*i].cmp(&keys[*j]).reverse());
                     keys.sort_unstable_by(|i, j| i.cmp(j).reverse());

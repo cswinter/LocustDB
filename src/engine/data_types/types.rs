@@ -143,7 +143,7 @@ impl BasicType {
 #[derive(Debug, Clone)]
 pub struct Type {
     pub decoded: BasicType,
-    // TODO(clemens): make this required, can use identity codec
+    // this could just be of type `Codec`, using the identity codec instead of None
     pub codec: Option<Codec>,
     pub is_scalar: bool,
     pub is_borrowed: bool,

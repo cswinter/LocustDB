@@ -77,7 +77,7 @@ impl ColumnBuilder<Option<i64>> for IntColBuilder {
 
     #[inline]
     fn push(&mut self, elem: &Option<i64>) {
-        // TODO(clemens): cannot set arbitrary values for null to help compression?
+        // PERF: can set arbitrary values for null to help compression (extend from last/previous value)
         let elem = elem.unwrap_or(0);
         self.min = cmp::min(elem, self.min);
         self.max = cmp::max(elem, self.max);
@@ -91,7 +91,7 @@ impl ColumnBuilder<Option<i64>> for IntColBuilder {
     }
 
     fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column> {
-        // TODO(clemens): heuristic for deciding delta encoding could probably be improved
+        // PERF: heuristic for deciding delta encoding could probably be improved
         let delta_encode = self.allow_delta_encode &&
             (self.increasing * 10 > self.data.len() as u64 * 9 && cfg!(feature = "enable_lz4"));
         IntegerColumn::new_boxed(name,

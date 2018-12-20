@@ -9,7 +9,7 @@ pub struct IndexedPackedStrings {
 impl IndexedPackedStrings {
     pub fn push(&mut self, elem: &str) {
         let bytes = elem.as_bytes();
-        // TODO(clemens): overflow
+        // TODO(34): overflow
         self.data.push(((self.backing_store.len() << 24) + bytes.len()) as u64);
         self.backing_store.extend_from_slice(bytes);
     }
@@ -40,7 +40,7 @@ pub struct PackedStrings {
     data: Vec<u8>,
 }
 
-// TODO(clemens): encode using variable size length
+// PERF: encode using variable size length
 impl PackedStrings {
     pub fn from_iterator<'a>(strings: impl Iterator<Item=&'a str>) -> PackedStrings {
         let mut sp = PackedStrings { data: Vec::new() };
@@ -97,7 +97,7 @@ impl<'a> Iterator for StringPackerIterator<'a> {
     }
 }
 
-// TODO(clemens): Unify with PackedStrings
+// Could unify with PackedStrings
 pub struct PackedBytes {
     data: Vec<u8>,
 }

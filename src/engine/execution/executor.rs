@@ -113,7 +113,6 @@ impl<'a> QueryExecutor<'a> {
         }
     }
 
-    // TODO(clemens): Make this nicer?
     #[allow(clippy::cyclomatic_complexity)]
     fn partition(&self) -> Vec<ExecutorStage> {
         // Construct execution graph
@@ -327,7 +326,7 @@ impl<'a> QueryExecutor<'a> {
                 (op, streaming_consumers && !block_consumers)
             }).collect::<Vec<_>>();
 
-            // TODO(clemens): Make streaming possible for stages reading from temp results
+            // TODO(#98): Make streaming possible for stages reading from temp results
             stages.push(ExecutorStage {
                 ops,
                 stream: stream && has_streaming_producer,
@@ -415,7 +414,7 @@ impl<'a> QueryExecutor<'a> {
                 trace!("{}: {}", input.i, scratchpad.get_any(input).len());
             }
         }
-        // TODO(clemens): once we can stream from intermediary results this will be overestimate
+        // TODO(#98): once we can stream from intermediary results this will be overestimate
         if has_streaming_producer {
             max_input_length = column_length;
         }

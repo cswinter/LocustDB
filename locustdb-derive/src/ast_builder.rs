@@ -9,7 +9,6 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
     let input = parse_macro_input!(input as DeriveInput);
 
-
     if let Data::Enum(DataEnum { variants, .. }) = input.data {
         let enum_ident = input.ident;
         let mut productions = Vec::<Item>::new();
@@ -130,8 +129,8 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
         // Hand the output tokens back to the compiler
         TokenStream::from(expanded)
     } else {
-        // TODO(clemens): emit error
-        panic!("")
+        Span::call_site().unstable().error(format!("ASTBuilder must be applied to an enum"));
+        TokenStream::from(quote!())
     }
 }
 
