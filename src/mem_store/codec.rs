@@ -2,7 +2,6 @@ use engine::*;
 use engine::data_types::*;
 use engine::planning::QueryPlanner;
 
-
 #[derive(Debug, Clone, HeapSizeOf)]
 pub struct Codec {
     ops: Vec<CodecOp>,
@@ -16,7 +15,7 @@ pub struct Codec {
 
 impl Codec {
     pub fn new(ops: Vec<CodecOp>, section_types: Vec<EncodingType>) -> Codec {
-        let decoded_type = ops[ops.len() - 1].output_type();
+        let decoded_type = CodecOp::output_type(&ops, &section_types);
         let is_summation_preserving = Codec::has_property(&ops, CodecOp::is_summation_preserving);
         let is_order_preserving = Codec::has_property(&ops, CodecOp::is_order_preserving);
         let is_fixed_width = Codec::has_property(&ops, CodecOp::is_elementwise_decodable);
@@ -281,20 +280,38 @@ pub enum CodecOp {
 }
 
 impl CodecOp {
-    fn output_type(&self) -> BasicType {
-        // Completely broken for nullables
-        match self {
-            CodecOp::Nullable => BasicType::Integer,
-            CodecOp::Add(_, _) => BasicType::Integer,
-            CodecOp::Delta(_) => BasicType::Integer,
-            CodecOp::ToI64(_) => BasicType::Integer,
-            CodecOp::DictLookup(_) => BasicType::String,
-            CodecOp::LZ4(_, _) => BasicType::Integer,
-            CodecOp::UnpackStrings => BasicType::String,
-            CodecOp::UnhexpackStrings(_, _) => BasicType::String,
-            CodecOp::PushDataSection(_) => panic!("PushDataSection.input_type()"),
-            CodecOp::Unknown => panic!("Unknown.output_type()"),
+    fn output_type(codec: &[CodecOp], section_types: &[EncodingType]) -> BasicType {
+        let mut type_stack = vec![section_types[0]];
+        for op in codec {
+            let t = match op {
+                CodecOp::Nullable => {
+                    type_stack.pop();
+                    type_stack.pop().unwrap().nullable()
+                }
+                CodecOp::Add(_, _) | CodecOp::Delta(_) | CodecOp::ToI64(_) =>
+                    if type_stack.pop().unwrap().is_nullable() {
+                        EncodingType::NullableI64
+                    } else {
+                        EncodingType::I64
+                    },
+                CodecOp::DictLookup(_) => {
+                    type_stack.pop();
+                    type_stack.pop();
+                    if type_stack.pop().unwrap().is_nullable() {
+                        EncodingType::NullableStr
+                    } else {
+                        EncodingType::Str
+                    }
+                }
+                CodecOp::LZ4(t, _) => *t,
+                CodecOp::UnpackStrings => EncodingType::Str,
+                CodecOp::UnhexpackStrings(_, _) => EncodingType::Str,
+                CodecOp::PushDataSection(i) => section_types[*i],
+                CodecOp::Unknown => panic!("Unknown.output_type()"),
+            };
+            type_stack.push(t);
         }
+        type_stack.pop().unwrap().cast_to_basic()
     }
 
     fn is_summation_preserving(&self) -> bool {

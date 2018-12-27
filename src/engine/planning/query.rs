@@ -1,13 +1,12 @@
+use ::QueryError;
+use engine::*;
+use ingest::raw_val::RawVal;
+use mem_store::column::DataSource;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::sync::Arc;
 use std::u64;
-
-use ::QueryError;
-use engine::*;
-use ingest::raw_val::RawVal;
-use mem_store::column::DataSource;
 use syntax::expression::*;
 use syntax::limit::*;
 

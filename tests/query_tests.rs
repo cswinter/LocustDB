@@ -4,13 +4,14 @@ extern crate locustdb;
 extern crate log;
 extern crate tempdir;
 
-use std::env;
 use futures_executor::block_on;
+
 use locustdb::*;
-use value_syntax::*;
-use locustdb::Value;
 use locustdb::nyc_taxi_data;
+use locustdb::Value;
 use std::cmp::min;
+use std::env;
+use value_syntax::*;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
@@ -674,14 +675,16 @@ fn test_group_by_nullable() {
         "SELECT nullable_int2, country, COUNT(0)
          FROM default;",
         &[
-            vec![Null, Null, Int(3)],
+            vec![Null, Null, Int(1)],
             vec![Null, Str("France"), Int(1)],
             vec![Null, Str("Germany"), Int(1)],
             vec![Null, Str("Turkey"), Int(1)],
-            vec![Null, Str("USA"), Int(1)],
+            vec![Int(-40), Str("USA"), Int(1)],
+            vec![Int(0), Null, Int(1)],
             vec![Int(1), Null, Int(1)],
             vec![Int(6), Null, Int(1)],
-            vec![Int(9), Str("France"), Int(1)]
+            vec![Int(9), Str("France"), Int(1)],
+            vec![Int(14), Str("Germany"), Int(1)],
         ],
     );
     test_query_ec(
@@ -693,10 +696,10 @@ fn test_group_by_nullable() {
             vec![Null, Str("asd"), Int(1)],
             vec![Null, Str("axz"), Int(1)],
             vec![Null, Str("t"), Int(1)],
-            vec![Null, Str("😈"), Int(1)],
             vec![Int(-40), Str("abc"), Int(1)],
             vec![Int(-1), Str("xyz"), Int(1)],
             vec![Int(10), Str("azy"), Int(1)],
+            vec![Int(13), Str("😈"), Int(1)],
             vec![Int(20), Str("_f"), Int(1)],
         ],
     );

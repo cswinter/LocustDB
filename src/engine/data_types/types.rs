@@ -37,6 +37,8 @@ impl EncodingType {
         match self {
             EncodingType::Str => BasicType::String,
             EncodingType::I64 => BasicType::Integer,
+            EncodingType::NullableStr => BasicType::NullableString,
+            EncodingType::NullableI64 => BasicType::NullableInteger,
             EncodingType::Val => BasicType::Val,
             EncodingType::Null => BasicType::Null,
             _ => panic!("{:?} does not have a corresponding BasicType", &self)
@@ -88,6 +90,7 @@ impl EncodingType {
             EncodingType::NullableU16 => EncodingType::U16,
             EncodingType::NullableU32 => EncodingType::U32,
             EncodingType::NullableU64 => EncodingType::U64,
+            EncodingType::OptStr => EncodingType::Str,
             _ => *self,
         }
     }
@@ -136,6 +139,14 @@ impl BasicType {
         match self {
             BasicType::NullableInteger | BasicType::NullableString => true,
             _ => false,
+        }
+    }
+
+    pub fn non_nullable(&self) -> BasicType {
+        match self {
+            BasicType::NullableInteger => BasicType::Integer,
+            BasicType::NullableString => BasicType::String,
+            _ => *self,
         }
     }
 }
