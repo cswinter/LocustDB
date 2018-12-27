@@ -1,17 +1,15 @@
-use std::collections::HashMap;
+use hex;
+use seahash::SeaHasher;
+
+use engine::data_types::*;
+use mem_store::*;
+use std::{u16, u32, u8};
 use std::collections::hash_set::HashSet;
+use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::str;
 use std::sync::Arc;
-use std::{u8, u16, u32};
-
-use seahash::SeaHasher;
-use hex;
-
 use stringpack::*;
-use engine::data_types::*;
-use mem_store::*;
-
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 type HashSetSea<K> = HashSet<K, BuildHasherDefault<SeaHasher>>;
@@ -31,7 +29,7 @@ pub fn fast_build_string_column<'a, T>(name: &str,
         unique_values.insert(s);
         // PERF: is 2 the right constant? and should probably also depend on the length of the strings
         // TODO(#103): len > 1000 || name == "string_packed" is a hack to make tests use dictionary encoding. Remove once we are able to group by string packed columns.
-        if unique_values.len() == len / DICTIONARY_RATIO && (len > 1000 || name == "string_packed")  {
+        if unique_values.len() == len / DICTIONARY_RATIO {
             let (mut codec, data) = if (lhex || uhex) && total_bytes / len > 5 {
                 let packed = PackedBytes::from_iterator(strings.map(|s| hex::decode(s).unwrap()));
                 (vec![CodecOp::UnhexpackStrings(uhex, total_bytes)], DataSection::U8(packed.into_vec()))

@@ -1,21 +1,19 @@
-use std::collections::HashMap;
-use std::i64;
-use std::result::Result;
-use std::sync::Arc;
-
 use chrono::{Datelike, NaiveDateTime};
-use regex::Regex;
+use locustdb_derive::ASTBuilder;
 use regex;
+use regex::Regex;
 
 use ::QueryError;
 use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::*;
-use mem_store::value::Val;
 use mem_store::column::DataSource;
+use mem_store::value::Val;
+use std::collections::HashMap;
+use std::i64;
+use std::result::Result;
+use std::sync::Arc;
 use syntax::expression::*;
-use locustdb_derive::ASTBuilder;
-
 
 #[derive(Debug, Clone, ASTBuilder)]
 pub enum QueryPlan {
@@ -753,7 +751,8 @@ impl QueryPlan {
                     None => bail!(QueryError::NotImplemented, "function {:?}", function),
                 };
                 let declaration = match declarations.iter().find(
-                    |p| p.type_lhs == type_lhs.decoded && p.type_rhs == type_rhs.decoded) {
+                    |p| p.type_lhs == type_lhs.decoded.non_nullable() &&
+                        p.type_rhs == type_rhs.decoded.non_nullable()) {
                     Some(declaration) => declaration,
                     None => bail!(
                         QueryError::TypeError,
@@ -1049,10 +1048,10 @@ fn try_bitpacking(
 
             // PERF: more intelligent criterion. threshold should probably be a function of total width.
             let subtract_offset = bits(max) - bits(max - min) > 1 || min < 0 || query_plan.is_nullable();
-            let adjusted_max = if subtract_offset { max - min } else { max };
+            let adjusted_max = if query_plan.is_nullable() { max - min + 1 } else if subtract_offset { max - min } else { max };
             order_preserving = order_preserving && plan_type.is_order_preserving();
             let adjusted_query_plan = if query_plan.is_nullable() {
-                let fused = planner.fuse_int_nulls(-min, query_plan);
+                let fused = planner.fuse_int_nulls(-min + 1, query_plan);
                 if fused.tag != EncodingType::I64 {
                     planner.cast(fused, EncodingType::I64).i64()?
                 } else {
@@ -1067,7 +1066,7 @@ fn try_bitpacking(
 
             if total_width == 0 {
                 plan = Some(adjusted_query_plan);
-            } else if adjusted_max > 0 {
+            } else if adjusted_max > 0 || query_plan.is_nullable() {
                 plan = plan.map(|plan| planner.bit_pack(plan, adjusted_query_plan, total_width));
             }
 
@@ -1076,7 +1075,7 @@ fn try_bitpacking(
                 total_width as u8,
                 bits(adjusted_max) as u8).into();
             if query_plan.is_nullable() {
-                decode_plan = planner.unfuse_int_nulls(-min, decode_plan);
+                decode_plan = planner.unfuse_int_nulls(-min + 1, decode_plan);
             } else if subtract_offset {
                 let offset = planner.scalar_i64(min, true);
                 decode_plan = planner.add(decode_plan, offset.into()).into();

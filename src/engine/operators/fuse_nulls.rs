@@ -1,8 +1,6 @@
-use std::i64;
-
-use engine::*;
 use bitvec::*;
-
+use engine::*;
+use std::i64;
 
 pub struct FuseNullsI64 {
     pub input: BufferRef<Nullable<i64>>,
@@ -179,8 +177,12 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for FuseIntNulls<T> {
     fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { true }
 
-    fn display_op(&self, _: bool) -> String {
-        format!("FuseNulls<{:?}>({})", T::t(), self.fused)
+    fn display_op(&self, full: bool) -> String {
+        if full {
+            format!("FuseIntNulls<{:?}>({}, {:?})", T::t(), self.input, self.offset)
+        } else {
+            format!("FuseIntNulls<{:?}>({})", T::t(), self.input)
+        }
     }
 }
 

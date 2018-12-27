@@ -1,17 +1,16 @@
-use std::fmt::Write;
-use std::intrinsics::type_name;
-use std::marker::PhantomData;
-use std::result::Result;
-
 use itertools::Itertools;
+use locustdb_derive::reify_types;
 use regex::Regex;
 
 use engine::*;
 use engine::Aggregator;
 use ingest::raw_val::RawVal;
 use mem_store::*;
-use locustdb_derive::reify_types;
 use QueryError;
+use std::fmt::Write;
+use std::intrinsics::type_name;
+use std::marker::PhantomData;
+use std::result::Result;
 
 use super::aggregate::*;
 use super::assemble_nullable::AssembleNullable;
@@ -70,7 +69,6 @@ use super::unhexpack_strings::UnhexpackStrings;
 use super::unpack_strings::UnpackStrings;
 use super::val_rows_pack::*;
 use super::val_rows_unpack::*;
-
 
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
@@ -131,6 +129,7 @@ impl<'a> VecOperator<'a> {
         match data.tag {
             EncodingType::U8 => Ok(Box::new(AssembleNullable { data: data.u8()?, present, nullable_data: nullable_data.nullable_u8()? })),
             EncodingType::I64 => Ok(Box::new(AssembleNullable { data: data.i64()?, present, nullable_data: nullable_data.nullable_i64()? })),
+            EncodingType::Str => Ok(Box::new(AssembleNullable { data: data.str()?, present, nullable_data: nullable_data.nullable_str()? })),
             _ => Err(fatal!("nullable not implemented for type {:?}", data.tag)),
         }
     }
