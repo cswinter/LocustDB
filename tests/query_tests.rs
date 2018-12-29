@@ -42,7 +42,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = block_on(locustdb.load_csv(
         LoadOptions::new("test_data/edge_cases.csv", "default")
             .with_partition_size(3)
-            .allow_nulls()));
+            .allow_nulls_all_columns()));
     let result = if env::var("DEBUG_TESTS").is_ok() {
         block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
     } else {
@@ -60,7 +60,8 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     }
     let locustdb = LocustDB::new(&opts);
     let load = block_on(locustdb.load_csv(
-        nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
+        LoadOptions::new("test_data/nyc-taxi.csv.gz", "default")
+            .with_schema(&nyc_taxi_data::reduced_nyc_schema())
             .with_partition_size(999)));
     load.unwrap().ok();
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();

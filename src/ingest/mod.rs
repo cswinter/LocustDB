@@ -5,4 +5,5 @@ pub mod buffer;
 pub mod extractor;
 pub mod nyc_taxi_data;
 pub mod colgen;
+pub mod schema;
 mod alias_method_fork;
