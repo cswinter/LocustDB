@@ -1,22 +1,24 @@
 extern crate csv;
 extern crate flate2;
 
+use bitvec::*;
+use ingest::schema::*;
+use mem_store::column::*;
+use mem_store::column_builder::*;
+use mem_store::strings::fast_build_string_column;
+use scheduler::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::ops::BitOr;
 use std::str;
 use std::sync::Arc;
-
-use bitvec::*;
-use mem_store::column::*;
-use mem_store::column_builder::*;
-use mem_store::strings::fast_build_string_column;
-use scheduler::*;
-use self::flate2::read::GzDecoder;
 use stringpack::*;
+
 use super::extractor;
 
-type IngestionTransform = HashMap<String, extractor::Extractor>;
+use self::flate2::read::GzDecoder;
+
+type IngestionTransform = HashMap<usize, extractor::Extractor>;
 
 pub struct Options {
     filename: String,
@@ -24,9 +26,10 @@ pub struct Options {
     partition_size: usize,
     colnames: Option<Vec<String>>,
     extractors: IngestionTransform,
-    ignore_cols: HashSet<String>,
-    always_string: HashSet<String>,
-    allow_nulls: bool,
+    ignore_cols: HashSet<usize>,
+    always_string: HashSet<usize>,
+    allow_nulls: HashSet<usize>,
+    allow_nulls_all_columns: bool,
     unzip: bool,
 }
 
@@ -40,9 +43,46 @@ impl Options {
             extractors: HashMap::new(),
             ignore_cols: HashSet::new(),
             always_string: HashSet::new(),
-            allow_nulls: false,
+            allow_nulls: HashSet::new(),
+            allow_nulls_all_columns: false,
             unzip: filename.ends_with(".gz"),
         }
+    }
+
+    pub fn with_schema(mut self, schema: &str) -> Options {
+        let schema = Schema::parse(schema).unwrap();
+        self.colnames = schema.column_names;
+        let mut extractors = HashMap::new();
+        let mut always_string = HashSet::new();
+        let mut allow_nulls = HashSet::new();
+        let mut ignore_cols = HashSet::new();
+        for (i, colschema) in schema.column_schemas.iter().enumerate() {
+            if let Some(ref x) = colschema.transformation {
+                let transform = match x {
+                    ColumnTransformation::Multiply100 => extractor::multiply_by_100,
+                    ColumnTransformation::Multiply1000 => extractor::multiply_by_1000,
+                    ColumnTransformation::Date => extractor::date_time,
+                };
+                extractors.insert(i, transform);
+            } else if colschema.types == ColumnType::Integer || colschema.types == ColumnType::NullableInteger {
+                extractors.insert(i, extractor::int);
+            }
+            if colschema.types == ColumnType::String || colschema.types == ColumnType::NullableString {
+                always_string.insert(i);
+            }
+            if colschema.types == ColumnType::NullableInteger || colschema.types == ColumnType::NullableString {
+                println!("{}", i);
+                allow_nulls.insert(i);
+            }
+            if colschema.types == ColumnType::Drop {
+                ignore_cols.insert(i);
+            }
+        }
+        self.extractors = extractors;
+        self.always_string = always_string;
+        self.allow_nulls = allow_nulls;
+        self.ignore_cols = ignore_cols;
+        self
     }
 
     pub fn with_partition_size(mut self, chunk_size: usize) -> Options {
@@ -55,23 +95,28 @@ impl Options {
         self
     }
 
-    pub fn with_extractors(mut self, extractors: &[(&str, extractor::Extractor)]) -> Options {
-        self.extractors = extractors.iter().map(|&(col, extractor)| (col.to_owned(), extractor)).collect();
+    pub fn with_extractors(mut self, extractors: &[(usize, extractor::Extractor)]) -> Options {
+        self.extractors = extractors.iter().cloned().collect();
         self
     }
 
-    pub fn with_ignore_cols(mut self, ignore: &[String]) -> Options {
-        self.ignore_cols = ignore.into_iter().map(|x| x.to_owned()).collect();
+    pub fn with_ignore_cols(mut self, ignore: &[usize]) -> Options {
+        self.ignore_cols = ignore.into_iter().cloned().collect();
         self
     }
 
-    pub fn with_always_string(mut self, always_string: &[&str]) -> Options {
-        self.always_string = always_string.into_iter().map(|&x| x.to_owned()).collect();
+    pub fn with_always_string(mut self, always_string: &[usize]) -> Options {
+        self.always_string = always_string.into_iter().cloned().collect();
         self
     }
 
-    pub fn allow_nulls(mut self) -> Options {
-        self.allow_nulls = true;
+    pub fn allow_nulls(mut self, allow_nulls: &[usize]) -> Options {
+        self.allow_nulls = allow_nulls.into_iter().cloned().collect();
+        self
+    }
+
+    pub fn allow_nulls_all_columns(mut self) -> Options {
+        self.allow_nulls_all_columns = true;
         self
     }
 }
@@ -104,9 +149,10 @@ pub fn ingest_file(ldb: &InnerLocustDB, opts: &Options) -> Result<(), String> {
 
 fn auto_ingest<T>(ldb: &InnerLocustDB, records: T, colnames: &[String], opts: &Options) -> Result<(), String>
     where T: Iterator<Item=csv::StringRecord> {
-    let ignore = colnames.iter().map(|x| opts.ignore_cols.contains(x)).collect::<Vec<_>>();
-    let string = colnames.iter().map(|x| opts.always_string.contains(x)).collect::<Vec<_>>();
-    let mut raw_cols = (0..colnames.len()).map(|_| RawCol::new(opts.allow_nulls)).collect::<Vec<_>>();
+    let ignore = (0..colnames.len()).map(|x| opts.ignore_cols.contains(&x)).collect::<Vec<_>>();
+    let string = (0..colnames.len()).map(|x| opts.always_string.contains(&x)).collect::<Vec<_>>();
+    let mut raw_cols = (0..colnames.len()).map(|x|
+        RawCol::new(opts.allow_nulls_all_columns || opts.allow_nulls.contains(&x))).collect::<Vec<_>>();
     let mut row_num = 0usize;
     for row in records {
         for (i, val) in row.iter().enumerate() {
@@ -133,7 +179,7 @@ fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &Ingestion
     let mut mem_store = Vec::new();
     for (i, col) in cols.iter_mut().enumerate() {
         if !ignore[i] {
-            let new_column = match extractors.get(&colnames[i]) {
+            let new_column = match extractors.get(&i) {
                 Some(extractor) => col.extract(&colnames[i], *extractor),
                 None => col.finalize(&colnames[i], string[i]),
             };
@@ -242,7 +288,16 @@ impl RawCol {
     fn extract(&mut self, name: &str, extractor: extractor::Extractor) -> Arc<Column> {
         let mut builder = IntColBuilder::default();
         for s in self.values.iter() {
-            builder.push(&Some(extractor(s)));
+            if self.allow_null {
+                if s.is_empty() {
+                    self.any_null = true;
+                    builder.push(&None);
+                } else {
+                    self.present.set(self.values.len());
+                }
+            } else {
+                builder.push(&Some(extractor(s)));
+            }
         }
         self.clear();
         builder.finalize(name, None)

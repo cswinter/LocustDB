@@ -1,22 +1,23 @@
 #[macro_use]
 extern crate clap;
+extern crate env_logger;
 extern crate failure;
 extern crate futures_executor;
 extern crate heapsize;
 extern crate locustdb;
+extern crate log;
 extern crate nom;
 extern crate rustyline;
-extern crate time;
-extern crate env_logger;
-extern crate log;
 extern crate sqlparser;
+extern crate time;
 
+use clap::{App, Arg};
 use failure::Fail;
 use futures_executor::block_on;
-use locustdb::unit_fmt::*;
-use locustdb::LocustDB;
 use time::precise_time_ns;
-use clap::{Arg, App};
+
+use locustdb::LocustDB;
+use locustdb::unit_fmt::*;
 
 mod print_results;
 mod fmt_table;
@@ -40,8 +41,7 @@ fn main() {
         .arg(Arg::with_name("load")
             .help("Load .csv or .csv.gz files into the database")
             .long("load")
-            .value_name("CSV_FILE")
-            .multiple(true)
+            .value_name("FILES")
             .takes_value(true))
         .arg(Arg::with_name("table")
             .help("Name for the table populated with --load")
@@ -79,15 +79,24 @@ fn main() {
         .arg(Arg::with_name("reduced-trips")
             .help("Set ingestion schema for select set of columns from nyc taxi ride dataset")
             .long("reduced-trips")
-            .conflicts_with("trips"))
+            .conflicts_with_all(&["trips", "schema"]))
         .arg(Arg::with_name("trips")
             .help("Set ingestion schema for nyc taxi ride dataset")
             .long("trips")
-            .conflicts_with("reduced-trips"))
+            .conflicts_with_all(&["reduced-trips", "schema"]))
+        .arg(Arg::with_name("schema")
+            .help("Comma separated list specifying the types and (optionally) names of all columns in files specified by `--load` option.\n\
+                        Valid types: `s`, `string`, `i`, `integer`, `ns` (nullable string), `ni` (nullable integer)\n\
+                        Example schema without column names: `int,string,string,string,int`\n\
+                        Example schema with column names: `name:s,age:i,country:s`")
+            .long("schema")
+            .value_name("SCHEMA")
+            .conflicts_with_all(&["trips", "reduced-trips"]))
         .get_matches();
 
     let files = matches.values_of("load").unwrap_or_default();
     let tablename = matches.value_of("table").unwrap();
+    let schema = matches.value_of("schema");
     let partition_size = value_t!(matches, "partition-size", u32).unwrap() as usize;
     let reduced_nyc = matches.is_present("reduced-trips");
     let full_nyc = matches.is_present("trips");
@@ -132,6 +141,9 @@ fn main() {
             locustdb::nyc_taxi_data::ingest_reduced_file(&file, tablename)
         } else if full_nyc {
             locustdb::nyc_taxi_data::ingest_file(&file, tablename)
+        } else if let Some(schema) = schema {
+            locustdb::LoadOptions::new(&file, &tablename)
+                .with_schema(schema)
         } else {
             locustdb::LoadOptions::new(&file, &tablename)
         };
