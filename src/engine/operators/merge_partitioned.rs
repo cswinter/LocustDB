@@ -1,9 +1,7 @@
-use std::marker::PhantomData;
-use std::fmt::Debug;
-use std::cmp;
-
 use engine::*;
-
+use std::cmp;
+use std::fmt::Debug;
+use std::marker::PhantomData;
 
 #[derive(Debug)]
 pub struct MergePartitioned<T, C> {
@@ -17,7 +15,7 @@ pub struct MergePartitioned<T, C> {
 }
 
 impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for MergePartitioned<T, C> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (merged, merge_ops) = {
             let partitioning = scratchpad.get(self.partitioning);
             let left = scratchpad.get(self.left);
@@ -26,6 +24,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge
         };
         scratchpad.set(self.merged, merged);
         scratchpad.set(self.take_left, merge_ops);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.partitioning.any(), self.left.any(), self.right.any()] }

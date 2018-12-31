@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct SortBySlices {
     pub ranking: BufferRef<Any>,
@@ -11,7 +10,7 @@ pub struct SortBySlices {
 }
 
 impl<'a> VecOperator<'a> for SortBySlices {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         scratchpad.alias(self.indices, self.output);
         let ranking_any = scratchpad.get_any(self.ranking);
         let ranking = ranking_any.cast_ref_byte_slices();
@@ -29,6 +28,7 @@ impl<'a> VecOperator<'a> for SortBySlices {
                 result.sort_unstable_by_key(|i| ranking.row(*i));
             }
         }
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any(), self.indices.any()] }

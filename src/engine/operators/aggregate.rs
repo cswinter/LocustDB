@@ -64,7 +64,7 @@ pub struct Aggregate<T, U, V, A> {
 
 impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for Aggregate<T, U, V, A> where
     T: GenericIntVec<T> + Into<i64>, U: GenericIntVec<U>, V: GenericIntVec<V> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let nums = scratchpad.get(self.input);
         let grouping = scratchpad.get(self.grouping);
         let mut accumulators = scratchpad.get_mut(self.output);
@@ -78,6 +78,8 @@ impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for Aggregate<T, U, V, A> wh
             let i = i.cast_usize();
             accumulators[i] = A::accumulate(accumulators[i], (*n).into());
         }
+
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -106,7 +108,7 @@ pub struct AggregateNullable<T, U, V, A> {
 
 impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for AggregateNullable<T, U, V, A> where
     T: GenericIntVec<T> + Into<i64>, U: GenericIntVec<U>, V: GenericIntVec<V> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let (nums, present) = scratchpad.get_nullable(self.input);
         let grouping = scratchpad.get(self.grouping);
         let mut accumulators = scratchpad.get_mut(self.output);
@@ -122,6 +124,7 @@ impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for AggregateNullable<T, U, 
                 accumulators[g] = A::accumulate(accumulators[g], nums[i].into());
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {

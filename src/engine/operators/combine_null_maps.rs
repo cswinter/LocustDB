@@ -8,13 +8,14 @@ pub struct CombineNullMaps {
 }
 
 impl<'a> VecOperator<'a> for CombineNullMaps {
-    fn execute(&mut self, _streaming: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let lhs = scratchpad.get_null_map(self.lhs);
         let rhs = scratchpad.get_null_map(self.rhs);
         let mut output = scratchpad.get_mut(self.output);
         for (out, (l, r)) in output.iter_mut().zip(lhs.iter().zip(rhs.iter())) {
             *out = l & r;
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

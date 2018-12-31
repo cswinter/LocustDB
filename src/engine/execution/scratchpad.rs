@@ -1,10 +1,9 @@
+use engine::*;
 use std::borrow::BorrowMut;
 use std::cell::*;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem;
-
-use engine::*;
 
 pub struct Scratchpad<'a> {
     buffers: Vec<RefCell<BoxedData<'a>>>,
@@ -113,6 +112,13 @@ impl<'a> Scratchpad<'a> {
                 self.get(present_index)
             }
             None => Ref::map(self.get_any(index.any()), |x| x.cast_ref_null_map()),
+        }
+    }
+
+    pub fn alias_null_map(&mut self, index: BufferRef<Nullable<Any>>, target: BufferRef<u8>) {
+        match self.null_maps[index.i] {
+            Some(null_map_index) => self.aliases[target.i] = Some(null_map_index),
+            None => panic!("No null map"),
         }
     }
 
@@ -239,6 +245,12 @@ impl<'a> Scratchpad<'a> {
                                     from: BufferRef<Nullable<T>>,
                                     to: BufferRef<Nullable<U>>) {
         self.null_maps[to.i] = self.null_maps[from.i];
+    }
+
+    pub fn set_null_map<T>(&mut self,
+                           nullable: BufferRef<Nullable<T>>,
+                           null_map: BufferRef<u8>) {
+        self.null_maps[nullable.i] = Some(null_map.i);
     }
 
     pub fn reassemble_nullable<T>(&mut self,

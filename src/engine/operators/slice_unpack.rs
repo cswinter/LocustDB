@@ -1,7 +1,5 @@
-use std::str;
-
 use engine::*;
-
+use std::str;
 
 #[derive(Debug)]
 pub struct SliceUnpackInt<T> {
@@ -12,13 +10,14 @@ pub struct SliceUnpackInt<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for SliceUnpackInt<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let packed_any = scratchpad.get_any(self.input);
         let packed = packed_any.cast_ref_byte_slices();
         let mut unpacked = scratchpad.get_mut(self.output);
         for datum in packed.data.iter().skip(self.offset).step_by(self.stride) {
             unpacked.push(T::from_bytes(datum));
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -46,13 +45,14 @@ pub struct SliceUnpackString<'a> {
 }
 
 impl<'a> VecOperator<'a> for SliceUnpackString<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let packed_any = scratchpad.get_any(self.input);
         let packed = packed_any.cast_ref_byte_slices();
         let mut unpacked = scratchpad.get_mut(self.output);
         for datum in packed.data.iter().skip(self.offset).step_by(self.stride) {
             unpacked.push(unsafe { str::from_utf8_unchecked(datum) });
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

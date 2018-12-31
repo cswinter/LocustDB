@@ -9,7 +9,7 @@ pub struct Exists<T> {
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let data = scratchpad.get(self.input);
         let mut exists = scratchpad.get_mut(self.output);
 
@@ -22,6 +22,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
             let index = i.cast_usize();
             exists[index] = 1;
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {

@@ -1,7 +1,6 @@
 use bitvec::*;
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct Select<T> {
     pub input: BufferRef<T>,
@@ -10,7 +9,7 @@ pub struct Select<T> {
 }
 
 impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: VecData<T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let data = scratchpad.get(self.input);
         let indices = scratchpad.get(self.indices);
         let mut output = scratchpad.get_mut(self.output);
@@ -18,6 +17,7 @@ impl<'a, T: 'a> VecOperator<'a> for Select<T> where T: VecData<T> {
         for i in indices.iter() {
             output.push(data[*i]);
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -45,7 +45,7 @@ pub struct SelectNullable<T> {
 }
 
 impl<'a, T: 'a> VecOperator<'a> for SelectNullable<T> where T: VecData<T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (data, present) = scratchpad.get_nullable(self.input);
         let indices = scratchpad.get(self.indices);
         let (mut data_out, mut present_out) = scratchpad.get_mut_nullable(self.output);
@@ -57,6 +57,7 @@ impl<'a, T: 'a> VecOperator<'a> for SelectNullable<T> where T: VecData<T> {
             data_out.push(data[index]);
             if (&*present).is_set(index) { present_out.set(i) }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

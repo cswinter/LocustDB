@@ -4,7 +4,6 @@ use engine::*;
 use ingest::raw_val::RawVal;
 use mem_store::Val;
 
-
 #[derive(Debug)]
 pub struct HashMapGroupingValRows<'a> {
     input: BufferRef<ValRows<'a>>,
@@ -31,7 +30,7 @@ impl<'a> HashMapGroupingValRows<'a> {
 }
 
 impl<'a> VecOperator<'a> for HashMapGroupingValRows<'a> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         // TODO(#100): Fnv is suboptimal for larger inputs (http://cglab.ca/~abeinges/blah/hash-rs/). use xx hash?
         let count = {
             let raw_grouping_key = scratchpad.get_mut_val_rows(self.input);
@@ -50,6 +49,7 @@ impl<'a> VecOperator<'a> for HashMapGroupingValRows<'a> {
             RawVal::Int(unique.len() as i64)
         };
         scratchpad.set_any(self.cardinality_out.any(), Data::constant(count));
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

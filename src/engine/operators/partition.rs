@@ -1,10 +1,8 @@
+use engine::*;
 use std::cmp;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::u32;
-
-use engine::*;
-
 
 #[derive(Debug)]
 pub struct Partition<T, C> {
@@ -17,13 +15,14 @@ pub struct Partition<T, C> {
 
 impl<'a, T, C> VecOperator<'a> for Partition<T, C>
     where T: VecData<T> + 'a, C: Comparator<T> + Debug {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let premerge = {
             let left = scratchpad.get(self.left);
             let right = scratchpad.get(self.right);
             partition::<_, C>(&left, &right, self.limit)
         };
         scratchpad.set(self.partitioning, premerge);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.left.any(), self.right.any()] }

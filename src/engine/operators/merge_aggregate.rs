@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct MergeAggregate {
     pub merge_ops: BufferRef<MergeOp>,
@@ -11,7 +10,7 @@ pub struct MergeAggregate {
 }
 
 impl<'a> VecOperator<'a> for MergeAggregate {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let aggregated = {
             let ops = scratchpad.get(self.merge_ops);
             let left = scratchpad.get(self.left);
@@ -19,6 +18,7 @@ impl<'a> VecOperator<'a> for MergeAggregate {
             merge_aggregate(&ops, &left, &right, self.aggregator)
         };
         scratchpad.set(self.aggregated, aggregated);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.left.any(), self.right.any(), self.merge_ops.any()] }

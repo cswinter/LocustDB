@@ -1,7 +1,5 @@
-use std::cmp::{max, min};
-
 use engine::*;
-
+use std::cmp::{max, min};
 
 #[derive(Debug)]
 pub struct MergeDeduplicate<T> {
@@ -12,7 +10,7 @@ pub struct MergeDeduplicate<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (deduplicated, merge_ops) = {
             let left = scratchpad.get(self.left);
             let right = scratchpad.get(self.right);
@@ -20,6 +18,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
         };
         scratchpad.set(self.deduplicated, deduplicated);
         scratchpad.set(self.merge_ops, merge_ops);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.left.any(), self.right.any()] }

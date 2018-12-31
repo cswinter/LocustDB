@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct ScalarStr<'a> {
     pub val: String,
@@ -9,7 +8,7 @@ pub struct ScalarStr<'a> {
 }
 
 impl<'a> VecOperator<'a> for ScalarStr<'a> {
-    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set_const(self.pinned.clone(), self.val.clone());

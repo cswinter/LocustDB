@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct MergeDrop<T> {
     pub merge_ops: BufferRef<MergeOp>,
@@ -10,7 +9,7 @@ pub struct MergeDrop<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDrop<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let deduplicated = {
             let ops = scratchpad.get(self.merge_ops);
             let left = scratchpad.get(self.left);
@@ -18,6 +17,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDrop<T> {
             merge_drop(&ops, &left, &right)
         };
         scratchpad.set(self.deduplicated, deduplicated);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.merge_ops.any(), self.left.any(), self.right.any()] }

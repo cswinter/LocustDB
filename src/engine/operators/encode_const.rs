@@ -9,7 +9,7 @@ pub struct EncodeIntConstant {
 }
 
 impl<'a> VecOperator<'a> for EncodeIntConstant {
-    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         let constant = scratchpad.get_scalar(&self.constant);

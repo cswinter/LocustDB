@@ -1,7 +1,6 @@
 use engine::*;
 use ingest::raw_val::RawVal;
 
-
 #[derive(Debug)]
 pub struct Constant {
     pub val: RawVal,
@@ -10,7 +9,7 @@ pub struct Constant {
 }
 
 impl<'a> VecOperator<'a> for Constant {
-    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         let result = Data::constant(self.val.clone());

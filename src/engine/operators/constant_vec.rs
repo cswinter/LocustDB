@@ -1,8 +1,6 @@
+use engine::*;
 use std::fmt;
 use std::mem;
-
-use engine::*;
-
 
 pub struct ConstantVec<'a> {
     pub val: BoxedData<'a>,
@@ -10,7 +8,7 @@ pub struct ConstantVec<'a> {
 }
 
 impl<'a> VecOperator<'a> for ConstantVec<'a> {
-    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         let owned = mem::replace(&mut self.val, Data::empty(0));

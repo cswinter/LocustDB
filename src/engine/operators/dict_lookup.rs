@@ -1,7 +1,5 @@
-use std::str;
-
 use engine::*;
-
+use std::str;
 
 #[derive(Debug)]
 pub struct DictLookup<'a, T> {
@@ -12,7 +10,7 @@ pub struct DictLookup<'a, T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DictLookup<'a, T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let dict_data = scratchpad.get_pinned(self.dict_data);
         let indices = scratchpad.get(self.indices);
         let dict_indices = scratchpad.get(self.dict_indices);
@@ -27,6 +25,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DictLookup<'a, T> {
             };
             output.push(string);
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -53,7 +52,7 @@ pub struct InverseDictLookup<'a> {
 }
 
 impl<'a> VecOperator<'a> for InverseDictLookup<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let result = {
             let mut result = -1;
             let constant = scratchpad.get_scalar(&self.constant);
@@ -71,6 +70,7 @@ impl<'a> VecOperator<'a> for InverseDictLookup<'a> {
             result
         };
         scratchpad.set_const(self.output, result);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.constant.any(), self.dict_indices.any(), self.dict_data.any()] }

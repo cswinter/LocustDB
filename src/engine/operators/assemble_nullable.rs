@@ -8,7 +8,8 @@ pub struct AssembleNullable<T> {
 }
 
 impl<'a, T: VecData<T>> VecOperator<'a> for AssembleNullable<T> {
-    fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>)
+        -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.assemble_nullable(self.data, self.present, self.nullable_data);

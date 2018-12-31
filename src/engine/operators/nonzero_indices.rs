@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct NonzeroIndices<T, U> {
     pub input: BufferRef<T>,
@@ -8,7 +7,7 @@ pub struct NonzeroIndices<T, U> {
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> for NonzeroIndices<T, U> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let exists = scratchpad.get(self.input);
         let mut unique = scratchpad.get_mut(self.output);
         for (index, &n) in exists.iter().enumerate() {
@@ -16,6 +15,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> f
                 unique.push(U::from(index).unwrap());
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {

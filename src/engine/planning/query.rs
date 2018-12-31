@@ -119,7 +119,7 @@ impl NormalFormQuery {
         let mut executor = planner.prepare(vec![])?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
-        executor.run(partition_len, &mut results, show);
+        executor.run(partition_len, &mut results, show)?;
         let (columns, projection, _, order_by) = results.collect_aliased(&select, &[], &order_by);
 
         Ok(
@@ -312,7 +312,7 @@ impl NormalFormQuery {
         let mut executor = qp.prepare(vec![])?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
-        executor.run(partition_len, &mut results, show);
+        executor.run(partition_len, &mut results, show)?;
         let (columns, projection, aggregations, _) = results.collect_aliased(
             &grouping_columns.iter().map(|s| s.any()).collect::<Vec<_>>(),
             &aggregation_cols.iter().map(|&(s, aggregator)| (s.any(), aggregator)).collect::<Vec<_>>(),

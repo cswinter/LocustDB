@@ -14,7 +14,7 @@ pub struct ParameterizedVecVecIntegerOperator<Op> {
 }
 
 impl<'a, Op: ParameterizedIntegerOperation + fmt::Debug> VecOperator<'a> for ParameterizedVecVecIntegerOperator<Op> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let mut output = scratchpad.get_mut(self.output);
         let lhs = scratchpad.get(self.lhs);
         let rhs = scratchpad.get(self.rhs);
@@ -22,6 +22,7 @@ impl<'a, Op: ParameterizedIntegerOperation + fmt::Debug> VecOperator<'a> for Par
         for (l, r) in lhs.iter().zip(rhs.iter()) {
             output.push(Op::perform(*l, *r, self.parameter));
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

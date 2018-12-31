@@ -1,12 +1,10 @@
-use std::mem;
-use std::fmt;
-use std::str;
-
 use hex;
 
-use stringpack::*;
 use engine::*;
-
+use std::fmt;
+use std::mem;
+use std::str;
+use stringpack::*;
 
 pub struct UnhexpackStrings<'a> {
     pub packed: BufferRef<u8>,
@@ -20,7 +18,7 @@ pub struct UnhexpackStrings<'a> {
 }
 
 impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
-    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         unsafe { scratchpad.unpin(self.stringstore.any()) };
         {
             let mut decoded = scratchpad.get_mut(self.unpacked);
@@ -46,6 +44,7 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
         }
         scratchpad.pin(&self.stringstore.any());
         self.has_more = self.iterator.as_ref().unwrap().has_more();
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

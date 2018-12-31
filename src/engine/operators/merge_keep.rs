@@ -11,7 +11,7 @@ pub struct MergeKeep<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeKeep<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let merged = {
             let ops = scratchpad.get(self.merge_ops);
             let left = scratchpad.get(self.left);
@@ -19,6 +19,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeKeep<T> {
             merge_keep(&ops, &left, &right)
         };
         scratchpad.set(self.merged, merged);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.merge_ops.any(), self.left.any(), self.right.any()] }
@@ -57,7 +58,7 @@ pub struct MergeKeepNullable<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeKeepNullable<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let (merged, merged_present) = {
             let ops = scratchpad.get(self.merge_ops);
             let (left, left_present) = scratchpad.get_nullable(self.left);
@@ -65,6 +66,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeKeepNullable<T> {
             merge_keep_nullable(&ops, &left, &right, &left_present, &right_present)
         };
         scratchpad.set_nullable(self.merged, merged, merged_present);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.merge_ops.any(), self.left.any(), self.right.any()] }

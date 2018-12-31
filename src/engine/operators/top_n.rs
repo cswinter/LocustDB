@@ -1,10 +1,8 @@
+use engine::*;
 use std::cell::Ref;
 use std::cmp;
 use std::fmt;
 use std::marker::PhantomData;
-
-use engine::*;
-
 
 #[derive(Debug)]
 pub struct TopN<T, C> {
@@ -22,7 +20,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
         scratchpad.set(self.keys, Vec::with_capacity(self.n));
     }
 
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let mut input = scratchpad.get(self.input);
         let mut indices = scratchpad.get_mut(self.indices);
         let mut keys = scratchpad.get_mut(self.keys);
@@ -55,6 +53,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
             }
         }
         self.last_index += input.len();
+        Ok(())
     }
 
     fn finalize(&mut self, scratchpad: &mut Scratchpad<'a>) {

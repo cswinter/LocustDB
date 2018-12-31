@@ -51,6 +51,26 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     assert_eq!(result.0.unwrap().rows, expected_rows);
 }
 
+fn test_query_ec_err(query: &str, _expected_err: QueryError) {
+    let _ = env_logger::try_init();
+    #[allow(unused_mut)]
+    let mut opts = Options::default();
+    if env::var("DEBUG_TESTS").is_ok() || true {
+        opts.threads = 1;
+    }
+    let locustdb = LocustDB::new(&opts);
+    let _ = block_on(locustdb.load_csv(
+        LoadOptions::new("test_data/edge_cases.csv", "default")
+            .with_partition_size(3)
+            .allow_nulls_all_columns()));
+    let result = if env::var("DEBUG_TESTS").is_ok() {
+        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+    } else {
+        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+    };
+    assert!(result.0.is_err());
+}
+
 fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
@@ -797,6 +817,33 @@ fn test_is_null() {
             vec![Int(4)],
             vec![Int(7)],
             vec![Int(9)],
+        ],
+    );
+}
+
+#[test]
+fn test_overflow() {
+    test_query_ec_err(
+        "SELECT largenum + non_dense_ints FROM default;",
+        QueryError::Overflow,
+    );
+    test_query_ec_err(
+        "SELECT largenum + nullable_int FROM default;",
+        QueryError::Overflow,
+    );
+    test_query_ec(
+        "SELECT largenum / nullable_int FROM default ORDER BY id;",
+        &[
+            vec![Int(9223372036854775807)],
+            vec![Int(-230584300921369395)],
+            vec![Null],
+            vec![Null],
+            vec![Int(-922337203685477580)],
+            vec![Null],
+            vec![Null],
+            vec![Int(461168601842738790)],
+            vec![Null],
+            vec![Int(709490156681136600)],
         ],
     );
 }

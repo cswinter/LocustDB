@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct Compact<T, U> {
     pub data: BufferRef<T>,
@@ -9,7 +8,7 @@ pub struct Compact<T, U> {
 }
 
 impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact<T, U> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let mut data = scratchpad.get_mut(self.data);
         let select = scratchpad.get(self.select);
         // Remove all unmodified entries
@@ -21,6 +20,7 @@ impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for Compact<T,
             }
         }
         data.truncate(j);
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {

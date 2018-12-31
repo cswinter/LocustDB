@@ -51,6 +51,11 @@ pub enum QueryPlan {
         #[output]
         present: BufferRef<u8>,
     },
+    GetNullMap {
+        nullable: TypedBufferRef,
+        #[output]
+        present: BufferRef<u8>,
+    },
     /// Combines a vector with a null map where none of the elements are null.
     MakeNullable {
         data: TypedBufferRef,
@@ -285,11 +290,37 @@ pub enum QueryPlan {
         #[output(t = "base=i64;null=lhs,rhs")]
         sum: TypedBufferRef,
     },
+    CheckedAdd {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        sum: TypedBufferRef,
+    },
+    NullableCheckedAdd {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        present: BufferRef<u8>,
+        #[output]
+        sum: BufferRef<Nullable<i64>>,
+    },
     Subtract {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
         #[output(t = "base=i64;null=lhs,rhs")]
         difference: TypedBufferRef,
+    },
+    CheckedSubtract {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        difference: TypedBufferRef,
+    },
+    NullableCheckedSubtract {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        present: BufferRef<u8>,
+        #[output]
+        difference: BufferRef<Nullable<i64>>,
     },
     Multiply {
         lhs: TypedBufferRef,
@@ -297,17 +328,56 @@ pub enum QueryPlan {
         #[output(t = "base=i64;null=lhs,rhs")]
         product: TypedBufferRef,
     },
+    CheckedMultiply {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        product: TypedBufferRef,
+    },
+    NullableCheckedMultiply {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        present: BufferRef<u8>,
+        #[output]
+        product: BufferRef<Nullable<i64>>,
+    },
     Divide {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
         #[output(t = "base=i64;null=lhs,rhs")]
         division: TypedBufferRef,
     },
+    CheckedDivide {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        division: TypedBufferRef,
+    },
+    NullableCheckedDivide {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        present: BufferRef<u8>,
+        #[output]
+        division: BufferRef<Nullable<i64>>,
+    },
     Modulo {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
         #[output(t = "base=i64;null=lhs,rhs")]
         modulo: TypedBufferRef,
+    },
+    CheckedModulo {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        #[output(t = "base=i64;null=lhs,rhs")]
+        modulo: TypedBufferRef,
+    },
+    NullableCheckedModulo {
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
+        present: BufferRef<u8>,
+        #[output]
+        modulo: BufferRef<Nullable<i64>>,
     },
     And {
         lhs: TypedBufferRef,
@@ -609,15 +679,15 @@ lazy_static! {
 fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
     vec![
         (Func2Type::Add,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.add(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_add(lhs, rhs).into()))]),
         (Func2Type::Subtract,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.subtract(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_subtract(lhs, rhs).into()))]),
         (Func2Type::Multiply,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_multiply(lhs, rhs).into()))]),
         (Func2Type::Divide,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.divide(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_divide(lhs, rhs).into()))]),
         (Func2Type::Modulo,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.modulo(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_modulo(lhs, rhs).into()))]),
         (Func2Type::LT,
          vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs).into()),
                                        BasicType::Integer),
@@ -870,6 +940,12 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         } else {
             None
         },
+        CheckedDivide { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = qp.resolve(rhs) {
+            encoding_range(lhs, qp).map(|(min, max)|
+                if *c > 0 { (min / *c, max / *c) } else { (max / *c, min / *c) })
+        } else {
+            None
+        },
         Add { ref lhs, ref rhs, .. } => if let ScalarI64 { value: c, .. } = qp.resolve(rhs) {
             encoding_range(lhs, qp).map(|(min, max)| (min + *c, max + *c))
         } else {
@@ -1116,6 +1192,7 @@ pub(super) fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>
         QueryPlan::MakeNullable { data, present, nullable } => VecOperator::make_nullable(data, present, nullable)?,
         QueryPlan::PropagateNullability { nullable, data, nullable_data } => VecOperator::propagate_nullability(nullable.nullable_any()?, data, nullable_data)?,
         QueryPlan::CombineNullMaps { lhs, rhs, present } => VecOperator::combine_null_maps(lhs, rhs, present)?,
+        QueryPlan::GetNullMap { nullable, present } => VecOperator::get_null_map(nullable.nullable_any()?, present),
         QueryPlan::FuseNulls { nullable, fused } => VecOperator::fuse_nulls(nullable, fused)?,
         QueryPlan::FuseIntNulls { offset, nullable, fused } => VecOperator::fuse_int_nulls(offset, nullable, fused)?,
         QueryPlan::UnfuseNulls { fused, data, present, unfused } => VecOperator::unfuse_nulls(fused, data, present, unfused)?,
@@ -1153,10 +1230,20 @@ pub(super) fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>
         QueryPlan::Equals { lhs, rhs, equals } => VecOperator::equals(lhs, rhs, equals.u8()?)?,
         QueryPlan::NotEquals { lhs, rhs, not_equals } => VecOperator::not_equals(lhs, rhs, not_equals.u8()?)?,
         QueryPlan::Add { lhs, rhs, sum } => VecOperator::addition(lhs, rhs, sum.i64()?)?,
+        QueryPlan::CheckedAdd { lhs, rhs, sum } => VecOperator::checked_addition(lhs, rhs, sum.i64()?)?,
+        QueryPlan::NullableCheckedAdd { lhs, rhs, present, sum } => VecOperator::nullable_checked_addition(lhs, rhs, present, sum)?,
         QueryPlan::Subtract { lhs, rhs, difference } => VecOperator::subtraction(lhs, rhs, difference.i64()?)?,
+        QueryPlan::CheckedSubtract { lhs, rhs, difference } => VecOperator::checked_subtraction(lhs, rhs, difference.i64()?)?,
+        QueryPlan::NullableCheckedSubtract { lhs, rhs, present, difference } => VecOperator::nullable_checked_subtraction(lhs, rhs, present, difference)?,
         QueryPlan::Multiply { lhs, rhs, product } => VecOperator::multiplication(lhs, rhs, product.i64()?)?,
+        QueryPlan::CheckedMultiply { lhs, rhs, product } => VecOperator::checked_multiplication(lhs, rhs, product.i64()?)?,
+        QueryPlan::NullableCheckedMultiply { lhs, rhs, present, product } => VecOperator::nullable_checked_multiplication(lhs, rhs, present, product)?,
         QueryPlan::Divide { lhs, rhs, division } => VecOperator::division(lhs, rhs, division.i64()?)?,
+        QueryPlan::CheckedDivide { lhs, rhs, division } => VecOperator::checked_division(lhs, rhs, division.i64()?)?,
+        QueryPlan::NullableCheckedDivide { lhs, rhs, present, division } => VecOperator::nullable_checked_division(lhs, rhs, present, division)?,
         QueryPlan::Modulo { lhs, rhs, modulo } => VecOperator::modulo(lhs, rhs, modulo.i64()?)?,
+        QueryPlan::CheckedModulo { lhs, rhs, modulo } => VecOperator::checked_modulo(lhs, rhs, modulo.i64()?)?,
+        QueryPlan::NullableCheckedModulo { lhs, rhs, present, modulo } => VecOperator::nullable_checked_modulo(lhs, rhs, present, modulo)?,
         QueryPlan::Or { lhs, rhs, or } => VecOperator::or(lhs.u8()?, rhs.u8()?, or.u8()?),
         QueryPlan::And { lhs, rhs, and } => VecOperator::and(lhs.u8()?, rhs.u8()?, and.u8()?),
         QueryPlan::Not { input, not } => VecOperator::not(input, not),

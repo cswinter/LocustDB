@@ -1,9 +1,7 @@
-use std::io::Read;
-use std::fmt;
-
 use engine::*;
 use mem_store::lz4;
-
+use std::fmt;
+use std::io::Read;
 
 pub struct LZ4Decode<'a, T> {
     pub encoded: BufferRef<u8>,
@@ -14,13 +12,14 @@ pub struct LZ4Decode<'a, T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for LZ4Decode<'a, T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let mut decoded = scratchpad.get_mut(self.decoded);
         let len = lz4::decode(&mut self.reader, &mut decoded);
         if len < decoded.len() {
             decoded.truncate(len);
             self.has_more = false;
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

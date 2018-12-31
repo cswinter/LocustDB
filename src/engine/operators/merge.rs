@@ -1,9 +1,7 @@
+use engine::*;
 use std::cmp;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-
-use engine::*;
-
 
 #[derive(Debug)]
 pub struct Merge<T, C: Debug> {
@@ -16,7 +14,7 @@ pub struct Merge<T, C: Debug> {
 }
 
 impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge<T, C> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (merged, ops) = {
             let left = scratchpad.get(self.left);
             let right = scratchpad.get(self.right);
@@ -24,6 +22,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge
         };
         scratchpad.set(self.merged, merged);
         scratchpad.set(self.merge_ops, ops);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.left.any(), self.right.any()] }

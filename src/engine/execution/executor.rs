@@ -1,13 +1,10 @@
+use bitvec::BitVec;
+use engine::*;
+use ingest::raw_val::RawVal;
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::marker::PhantomData;
-
-use bitvec::BitVec;
-use engine::*;
-use super::*;
-use ingest::raw_val::RawVal;
-
 
 pub struct QueryExecutor<'a> {
     ops: Vec<Box<VecOperator<'a> + 'a>>,
@@ -107,10 +104,11 @@ impl<'a> QueryExecutor<'a> {
         Scratchpad::new(self.count, HashMap::default())
     }
 
-    pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
+    pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>, show: bool) -> Result<(), QueryError> {
         for stage in 0..self.stages.len() {
-            self.run_stage(len, stage, scratchpad, show);
+            self.run_stage(len, stage, scratchpad, show)?;
         }
+        Ok(())
     }
 
     #[allow(clippy::cyclomatic_complexity)]
@@ -434,7 +432,8 @@ impl<'a> QueryExecutor<'a> {
         (max_input_length, batch_size)
     }
 
-    fn run_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>, show: bool) {
+    fn run_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>, show: bool)
+                 -> Result<(), QueryError> {
         let (max_length, batch_size) = self.init_stage(column_length, stage, scratchpad);
         let stream = self.stages[stage].stream;
         if show {
@@ -446,7 +445,7 @@ impl<'a> QueryExecutor<'a> {
         while has_more {
             has_more = false;
             for &(op, streamable) in &self.stages[stage].ops {
-                self.ops[op].execute(stream && streamable, scratchpad);
+                self.ops[op].execute(stream && streamable, scratchpad)?;
                 if show && iters == 0 {
                     println!("{}", self.ops[op].display(true));
                     for output in self.ops[op].outputs() {
@@ -471,6 +470,7 @@ impl<'a> QueryExecutor<'a> {
         if show && iters > 1 {
             println!("\n[{} more iterations]", iters - 1);
         }
+        Ok(())
     }
 }
 

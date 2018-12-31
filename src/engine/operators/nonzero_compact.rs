@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct NonzeroCompact<T> {
     pub data: BufferRef<T>,
@@ -8,7 +7,7 @@ pub struct NonzeroCompact<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let mut data = scratchpad.get_mut(self.data);
         // Remove all unmodified entries
         let mut j = 0;
@@ -19,6 +18,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NonzeroCompact<T> {
             }
         }
         data.truncate(j);
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {

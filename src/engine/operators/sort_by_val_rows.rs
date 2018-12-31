@@ -1,6 +1,5 @@
 use engine::*;
 
-
 pub struct SortByValRows<'a> {
     pub ranking: BufferRef<ValRows<'a>>,
     pub indices: BufferRef<usize>,
@@ -10,7 +9,7 @@ pub struct SortByValRows<'a> {
 }
 
 impl<'a> VecOperator<'a> for SortByValRows<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         scratchpad.alias(self.indices, self.output);
         let ranking = scratchpad.get_mut_val_rows(self.ranking);
         let mut result = scratchpad.get_mut(self.indices);
@@ -27,6 +26,7 @@ impl<'a> VecOperator<'a> for SortByValRows<'a> {
                 result.sort_unstable_by_key(|i| ranking.row(*i));
             }
         }
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any(), self.indices.any()] }

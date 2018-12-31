@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct NullVec {
     pub len: usize,
@@ -8,7 +7,7 @@ pub struct NullVec {
 }
 
 impl<'a> VecOperator<'a> for NullVec {
-    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set_any(self.output, Data::empty(self.len));
