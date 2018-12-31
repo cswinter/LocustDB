@@ -846,6 +846,10 @@ fn test_overflow() {
             vec![Int(709490156681136600)],
         ],
     );
+    test_query_ec_err(
+        "SELECT sum(largenum) FROM default;",
+        QueryError::Overflow,
+    );
 }
 
 #[test]
