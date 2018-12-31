@@ -197,10 +197,19 @@ fn repl(locustdb: &LocustDB) {
         if s == "exit" {
             break;
         }
-        rl.add_history_entry(&s);
-        if !s.ends_with(';') {
-            s.push(';');
+        if s == "help" || s == "?" {
+            println!("Special commands:
+                      help - Display this message
+                      :load <TABLE> <SCHEMA> <FILES>... - Load FILES into TABLE according to SCHEMA.
+                      :memtree(<N>) - Display breakdown of memory usage up to a depth of N (at most 4).
+                      :explain <QUERY> - Run and display the query plan for QUERY.
+                      :show(<N>) <QUERY> - Run QUERY and show all intermediary results in partition N.:w
+
+                      :ast <QUERY> - Show the abstract syntax tree for QUERY.
+                      ");
+            continue;
         }
+        rl.add_history_entry(&s);
 
         let mut print_trace = false;
         let mut explain = false;
@@ -233,6 +242,26 @@ fn repl(locustdb: &LocustDB) {
             }
             continue;
         }
+        if s.starts_with(":load") {
+            let args = &s[6..].split(" ").collect::<Vec<_>>();
+            if args.len() < 3 {
+                println!("Expected at least 3 arguments to :load");
+                continue;
+            }
+            let tablename = args[0];
+            let schema = args[1];
+            for file in &args[2..] {
+                let opts = locustdb::LoadOptions::new(&file, tablename)
+                    .with_schema(schema);
+                let load = locustdb.load_csv(opts);
+                println!("Loading {} into table {}.", file, tablename);
+                block_on(load)
+                    .expect("Ingestion crashed!")
+                    .expect("Failed to load file!");
+            }
+            continue;
+        }
+
         if s.starts_with(":explain") {
             explain = true;
             s = &s[9..];

@@ -71,7 +71,6 @@ impl Options {
                 always_string.insert(i);
             }
             if colschema.types == ColumnType::NullableInteger || colschema.types == ColumnType::NullableString {
-                println!("{}", i);
                 allow_nulls.insert(i);
             }
             if colschema.types == ColumnType::Drop {
@@ -294,6 +293,7 @@ impl RawCol {
                     builder.push(&None);
                 } else {
                     self.present.set(self.values.len());
+                    builder.push(&Some(extractor(s)));
                 }
             } else {
                 builder.push(&Some(extractor(s)));
