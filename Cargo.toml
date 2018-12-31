@@ -41,6 +41,7 @@ seahash = "3.0.5"
 std-semaphore = "0.1.0"
 tempdir = "0.3.7"
 time = "0.1.36"
+sqlparser = "0.1.9"
 
 [dependencies.capnp]
 optional = true
@@ -60,10 +61,6 @@ version = "1.22.0"
 [dependencies.rocksdb]
 optional = true
 version = "0.10.1"
-
-[dependencies.sqlparser]
-git = "https://github.com/cswinter/sqlparser-rs.git"
-branch = "like"
 
 [features]
 default = []
