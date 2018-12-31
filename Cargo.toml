@@ -1,7 +1,9 @@
 [package]
-authors = ["Clemens Winter <clemenswinter1@gmail.com>", "David Fisher"]
+authors = ["Clemens Winter <clemenswinter1@gmail.com>"]
 name = "locustdb"
-version = "0.2.0-dev"
+version = "0.2.0"
+license-file = "LICENSE"
+description = "Embeddable high-performance analytics database."
 [build-dependencies]
 [build-dependencies.capnpc]
 optional = true
@@ -49,6 +51,7 @@ version = "0.8.17"
 
 [dependencies.locustdb-derive]
 path = "./locustdb-derive"
+version = "0.1.0"
 
 [dependencies.log]
 features = ["max_level_trace", "release_max_level_debug"]

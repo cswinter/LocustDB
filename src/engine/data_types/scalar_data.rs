@@ -2,6 +2,7 @@ use std::fmt;
 use std::mem;
 
 use ingest::raw_val::RawVal;
+
 use super::*;
 
 #[derive(Debug)]
@@ -14,11 +15,11 @@ impl<'a> Data<'a> for ScalarVal<i64> {
 }
 
 impl<'a> Data<'a> for ScalarVal<&'a str> {
-    fn len(&self) -> usize { 1 }
+    default fn len(&self) -> usize { 1 }
     fn get_raw(&self, _: usize) -> RawVal { RawVal::Str(self.val.to_string()) }
-    fn get_type(&self) -> EncodingType { EncodingType::ScalarStr }
-    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b { panic!(self.type_error("slice_box")) }
-    fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", self.get_type(), func_name) }
+    default fn get_type(&self) -> EncodingType { EncodingType::ScalarStr }
+    default fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b { panic!(self.type_error("slice_box")) }
+    default fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", self.get_type(), func_name) }
 
     fn append_all(&mut self, _: &Data<'a>, _: usize) -> Option<BoxedData<'a>> {
         panic!(self.type_error("slice_box"))
@@ -30,17 +31,17 @@ impl<'a> Data<'a> for ScalarVal<&'a str> {
 }
 
 impl<'a, T: ScalarData<T>> Data<'a> for ScalarVal<T> {
-    fn len(&self) -> usize { 1 }
-    fn get_raw(&self, _: usize) -> RawVal { T::raw_val(&self.val) }
-    fn get_type(&self) -> EncodingType { T::t() }
-    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b { panic!(self.type_error("slice_box")) }
-    fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
+    default fn len(&self) -> usize { 1 }
+    default fn get_raw(&self, _: usize) -> RawVal { T::raw_val(&self.val) }
+    default fn get_type(&self) -> EncodingType { T::t() }
+    default fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b { panic!(self.type_error("slice_box")) }
+    default fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
 
-    fn append_all(&mut self, _: &Data<'a>, _: usize) -> Option<BoxedData<'a>> {
+    default fn append_all(&mut self, _: &Data<'a>, _: usize) -> Option<BoxedData<'a>> {
         panic!(self.type_error("slice_box"))
     }
 
-    fn display(&self) -> String { format!("Scalar<{:?}>{:?}", T::t(), &self) }
+    default fn display(&self) -> String { format!("Scalar<{:?}>{:?}", T::t(), &self) }
 }
 
 impl<'a> Data<'a> for ScalarVal<String> {

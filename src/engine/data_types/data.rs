@@ -6,11 +6,11 @@ use std::string;
 
 use engine::data_types::*;
 use ingest::raw_val::RawVal;
-use mem_store::value::Val;
-use mem_store::column::DataSource;
 use mem_store::codec::Codec;
-use super::NullableVec;
+use mem_store::column::DataSource;
+use mem_store::value::Val;
 
+use super::NullableVec;
 
 pub type BoxedData<'a> = Box<Data<'a> + 'a>;
 

@@ -3,10 +3,12 @@ authors = ["Clemens Winter <clemenswinter1@gmail.com>"]
 edition = "2018"
 name = "locustdb-derive"
 version = "0.1.0"
+license = "Apache-2.0"
+description = "Macros used internally by locustdb crate."
 [dependencies]
-lazy_static = "*"
+lazy_static = "1.2"
 quote = "0.6"
-regex = "*"
+regex = "1.1"
 
 [dependencies.proc-macro2]
 features = ["nightly"]
