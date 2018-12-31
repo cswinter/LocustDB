@@ -260,6 +260,14 @@ pub enum QueryPlan {
         #[output(t = "base=provided")]
         aggregate: TypedBufferRef,
     },
+    CheckedAggregate {
+        plan: TypedBufferRef,
+        grouping_key: TypedBufferRef,
+        max_index: BufferRef<Scalar<i64>>,
+        aggregator: Aggregator,
+        #[output(t = "base=provided")]
+        aggregate: TypedBufferRef,
+    },
     LessThan {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
@@ -617,7 +625,7 @@ pub fn prepare_aggregation(mut plan: TypedBufferRef,
                 plan = plan_type.codec.clone().unwrap().decode(plan, planner);
             }
             // PERF: determine dense groupings
-            (planner.aggregate(plan, grouping_key, max_index, Aggregator::Sum, EncodingType::I64),
+            (planner.checked_aggregate(plan, grouping_key, max_index, Aggregator::Sum, EncodingType::I64),
              Type::unencoded(BasicType::Integer))
         }
         Aggregator::Max | Aggregator::Min => {
@@ -1215,6 +1223,7 @@ pub(super) fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>
         QueryPlan::HashMapGrouping { raw_grouping_key, max_cardinality, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping(raw_grouping_key, max_cardinality, unique, grouping_key, cardinality)?,
         QueryPlan::HashMapGroupingValRows { raw_grouping_key, max_cardinality, columns, unique, grouping_key, cardinality } => VecOperator::hash_map_grouping_val_rows(raw_grouping_key, columns, max_cardinality, unique, grouping_key, cardinality)?,
         QueryPlan::Aggregate { plan, grouping_key, max_index, aggregator, aggregate } => VecOperator::aggregate(plan, grouping_key, max_index, aggregator, aggregate)?,
+        QueryPlan::CheckedAggregate { plan, grouping_key, max_index, aggregator, aggregate } => VecOperator::checked_aggregate(plan, grouping_key, max_index, aggregator, aggregate)?,
         QueryPlan::Exists { indices, max_index, exists } => VecOperator::exists(indices, max_index, exists)?,
         QueryPlan::Compact { plan, select, compacted } => VecOperator::compact(plan, select, compacted)?,
         QueryPlan::NonzeroIndices { plan, nonzero_indices } => VecOperator::nonzero_indices(plan, nonzero_indices)?,

@@ -17,7 +17,7 @@ impl<'a> VecOperator<'a> for MergeAggregate {
             let right = scratchpad.get(self.right);
             merge_aggregate(&ops, &left, &right, self.aggregator)
         };
-        scratchpad.set(self.aggregated, aggregated);
+        scratchpad.set(self.aggregated, aggregated?);
         Ok(())
     }
 
@@ -32,7 +32,7 @@ impl<'a> VecOperator<'a> for MergeAggregate {
     }
 }
 
-fn merge_aggregate(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator: Aggregator) -> Vec<i64> {
+fn merge_aggregate(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator: Aggregator) -> Result<Vec<i64>, QueryError> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;
@@ -54,11 +54,11 @@ fn merge_aggregate(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator: Agg
             }
             MergeOp::MergeRight => {
                 let last = result.len() - 1;
-                result[last] = aggregator.combine_i64(result[last], right[j]);
+                result[last] = aggregator.combine_i64(result[last], right[j])?;
                 j += 1;
             }
         }
     }
-    result
+    Ok(result)
 }
 

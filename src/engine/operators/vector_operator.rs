@@ -788,6 +788,27 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn checked_aggregate(input: TypedBufferRef,
+                             grouping: TypedBufferRef,
+                             max_index: BufferRef<Scalar<i64>>,
+                             aggregator: Aggregator,
+                             output: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        assert!(aggregator == Aggregator::Sum);
+        if input.is_nullable() {
+            reify_types! {
+                "checked_nullable_aggregation";
+                input: NullableInteger, grouping: Integer;
+                Ok(Box::new(CheckedAggregateNullable { input, grouping, output: output.into(), max_index, a: PhantomData::<Sum> }))
+            }
+        } else {
+            reify_types! {
+                "checked_aggregation";
+                input: IntegerNoU64, grouping: Integer;
+                Ok(Box::new(CheckedAggregate { input, grouping, output: output.into(), max_index, a: PhantomData::<Sum> }))
+            }
+        }
+    }
+
     pub fn exists(input: TypedBufferRef, max_index: BufferRef<Scalar<i64>>, output: BufferRef<u8>) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "exists";

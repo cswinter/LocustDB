@@ -1,3 +1,5 @@
+use engine::*;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Aggregator {
     Sum = 0,
@@ -7,11 +9,12 @@ pub enum Aggregator {
 }
 
 impl Aggregator {
-    pub fn combine_i64(self, accumulator: i64, elem: i64) -> i64 {
+    pub fn combine_i64(self, accumulator: i64, elem: i64) -> Result<i64, QueryError> {
         match self {
-            Aggregator::Sum | Aggregator::Count => accumulator + elem,
-            Aggregator::Max => std::cmp::max(accumulator, elem),
-            Aggregator::Min => std::cmp::min(accumulator, elem),
+            Aggregator::Sum => accumulator.checked_add(elem).ok_or(QueryError::Overflow),
+            Aggregator::Count => Ok(accumulator + elem),
+            Aggregator::Max => Ok(std::cmp::max(accumulator, elem)),
+            Aggregator::Min => Ok(std::cmp::min(accumulator, elem)),
         }
     }
 }
