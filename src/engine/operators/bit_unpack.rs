@@ -10,7 +10,7 @@ pub struct BitUnpackOperator {
 }
 
 impl<'a> VecOperator<'a> for BitUnpackOperator {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let data = scratchpad.get(self.input);
         let mut unpacked = scratchpad.get_mut(self.output);
         if stream { unpacked.clear(); }
@@ -18,6 +18,7 @@ impl<'a> VecOperator<'a> for BitUnpackOperator {
         for d in data.iter() {
             unpacked.push((d >> self.shift) & mask);
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

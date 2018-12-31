@@ -1,3 +1,7 @@
+pub use self::aggregator::*;
+pub use self::comparator::*;
+pub use self::vector_operator::*;
+
 pub mod vector_operator;
 pub mod comparator;
 
@@ -20,6 +24,7 @@ mod exists;
 mod filter;
 mod functions;
 mod fuse_nulls;
+mod get_null_map;
 mod hashmap_grouping;
 mod hashmap_grouping_byte_slices;
 mod hashmap_grouping_val_rows;
@@ -63,6 +68,3 @@ mod slice_unpack;
 
 mod aggregator;
 
-pub use self::vector_operator::*;
-pub use self::aggregator::*;
-pub use self::comparator::*;

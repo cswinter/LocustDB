@@ -1,10 +1,8 @@
-use std::hash::Hash;
-
 use fnv::FnvHashMap;
 
 use engine::*;
 use ingest::raw_val::RawVal;
-
+use std::hash::Hash;
 
 #[derive(Debug)]
 pub struct HashMapGrouping<T: VecData<T> + Hash> {
@@ -32,7 +30,7 @@ impl<'a, T: VecData<T> + Hash + 'a> HashMapGrouping<T> {
 }
 
 impl<'a, T: VecData<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let count = {
             let raw_grouping_key = scratchpad.get(self.input);
             let mut grouping = scratchpad.get_mut(self.grouping_key_out);
@@ -47,6 +45,7 @@ impl<'a, T: VecData<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
             RawVal::Int(unique.len() as i64)
         };
         scratchpad.set_any(self.cardinality_out.any(), Data::constant(count));
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

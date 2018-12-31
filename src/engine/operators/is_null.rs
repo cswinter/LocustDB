@@ -8,7 +8,7 @@ pub struct IsNull {
 }
 
 impl<'a> VecOperator<'a> for IsNull {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let len = scratchpad.get_any(self.input.any()).len();
         let present = scratchpad.get_null_map(self.input);
         let mut is_null = scratchpad.get_mut(self.is_null);
@@ -20,6 +20,7 @@ impl<'a> VecOperator<'a> for IsNull {
                 is_null.push(true as u8);
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -43,7 +44,7 @@ pub struct IsNotNull {
 }
 
 impl<'a> VecOperator<'a> for IsNotNull {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let len = scratchpad.get_any(self.input.any()).len();
         let present = scratchpad.get_null_map(self.input);
         let mut is_not_null = scratchpad.get_mut(self.is_not_null);
@@ -55,6 +56,7 @@ impl<'a> VecOperator<'a> for IsNotNull {
                 is_not_null.push(false as u8);
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

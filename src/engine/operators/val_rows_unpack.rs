@@ -10,12 +10,13 @@ pub struct ValRowsUnpack<'a> {
 }
 
 impl<'a> VecOperator<'a> for ValRowsUnpack<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let packed = scratchpad.get_mut_val_rows(self.input);
         let mut unpacked = scratchpad.get_mut(self.output);
         for &datum in packed.data.iter().skip(self.offset).step_by(self.stride) {
             unpacked.push(datum);
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

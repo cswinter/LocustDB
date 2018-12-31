@@ -1,8 +1,6 @@
-use std::slice;
-use std::mem;
-
 use engine::*;
-
+use std::mem;
+use std::slice;
 
 #[derive(Debug)]
 pub struct SlicePackInt<T> {
@@ -13,13 +11,14 @@ pub struct SlicePackInt<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for SlicePackInt<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let data = scratchpad.get_pinned(self.input);
         let mut packed_any = scratchpad.get_any_mut(self.output);
         let packed = packed_any.cast_ref_mut_byte_slices();
         for (i, datum) in data.iter().enumerate() {
             packed.data[i * self.stride + self.offset] = bytes(datum);
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -51,13 +50,14 @@ pub struct SlicePackString<'a> {
 }
 
 impl<'a> VecOperator<'a> for SlicePackString<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let data = scratchpad.get(self.input);
         let mut packed_any = scratchpad.get_any_mut(self.output);
         let packed = packed_any.cast_ref_mut_byte_slices();
         for (i, datum) in data.iter().enumerate() {
             packed.data[i * self.stride + self.offset] = datum.as_bytes();
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

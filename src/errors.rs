@@ -1,6 +1,5 @@
 use failure::Backtrace;
 
-
 #[derive(Fail, Debug)]
 pub enum QueryError {
     #[fail(display = "Failed to parser query. Chars remaining: {}", _0)]
@@ -15,6 +14,8 @@ pub enum QueryError {
     NotImplemented(String),
     #[fail(display = "Type error: {}", _0)]
     TypeError(String),
+    #[fail(display = "Overflow or division by zero")]
+    Overflow,
 }
 
 #[macro_export]

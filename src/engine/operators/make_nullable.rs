@@ -8,7 +8,7 @@ pub struct MakeNullable<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MakeNullable<T> {
-    fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
         let present = vec![255u8; batch_size / 8 + 1];

@@ -31,6 +31,7 @@ use super::exists::Exists;
 use super::filter::{Filter, NullableFilter};
 use super::functions::*;
 use super::fuse_nulls::*;
+use super::get_null_map::GetNullMap;
 use super::hashmap_grouping::HashMapGrouping;
 use super::hashmap_grouping_byte_slices::HashMapGroupingByteSlices;
 use super::hashmap_grouping_val_rows::HashMapGroupingValRows;
@@ -73,7 +74,7 @@ use super::val_rows_unpack::*;
 pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
 
 pub trait VecOperator<'a> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>);
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>;
     fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
     fn init(&mut self, _total_count: usize, _batch_size: usize, _scratchpad: &mut Scratchpad<'a>) {}
 
@@ -160,6 +161,11 @@ impl<'a> VecOperator<'a> {
             EncodingType::Str => Ok(Box::new(PropagateNullability { from: nullability, to: data.str()?, output: output.nullable_str()? })),
             _ => Err(fatal!("propagate_nullability not implemented for type {:?}", data.tag)),
         }
+    }
+
+    pub fn get_null_map(nullability: BufferRef<Nullable<Any>>,
+                        present: BufferRef<u8>) -> BoxedOperator<'a> {
+        Box::new(GetNullMap { from: nullability, present })
     }
 
     pub fn fuse_nulls(input: TypedBufferRef, fused: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
@@ -444,6 +450,35 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn checked_addition(lhs: TypedBufferRef,
+                            rhs: TypedBufferRef,
+                            output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "check_addition";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Addition<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }))
+        }
+    }
+
+    pub fn nullable_checked_addition(lhs: TypedBufferRef,
+                                     rhs: TypedBufferRef,
+                                     present: BufferRef<u8>,
+                                     output: BufferRef<Nullable<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "nullable_check_addition";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs: rhs, rhs: lhs, present, output, op: PhantomData::<Addition<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Addition<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Addition<_, _>> }))
+        }
+    }
+
     pub fn subtraction(lhs: TypedBufferRef,
                        rhs: TypedBufferRef,
                        output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
@@ -455,6 +490,35 @@ impl<'a> VecOperator<'a> {
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }))
+        }
+    }
+
+    pub fn checked_subtraction(lhs: TypedBufferRef,
+                               rhs: TypedBufferRef,
+                               output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "checked_subtraction";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinarySVOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }))
+        }
+    }
+
+    pub fn nullable_checked_subtraction(lhs: TypedBufferRef,
+                                        rhs: TypedBufferRef,
+                                        present: BufferRef<u8>,
+                                        output: BufferRef<Nullable<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "nullable_checked_subtraction";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinarySVOperator { lhs, rhs, output, present, op: PhantomData::<Subtraction<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Subtraction<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Subtraction<_, _>> }))
         }
     }
 
@@ -472,6 +536,35 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn checked_multiplication(lhs: TypedBufferRef,
+                                  rhs: TypedBufferRef,
+                                  output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "checked_multiplication";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }))
+        }
+    }
+
+    pub fn nullable_checked_multiplication(lhs: TypedBufferRef,
+                                           rhs: TypedBufferRef,
+                                           present: BufferRef<u8>,
+                                           output: BufferRef<Nullable<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "nullable_checked_multiplication";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, present, op: PhantomData::<Multiplication<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Multiplication<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Multiplication<_, _>> }))
+        }
+    }
+
     pub fn division(lhs: TypedBufferRef,
                     rhs: TypedBufferRef,
                     output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
@@ -486,6 +579,35 @@ impl<'a> VecOperator<'a> {
         }
     }
 
+    pub fn checked_division(lhs: TypedBufferRef,
+                            rhs: TypedBufferRef,
+                            output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "checked_division";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinarySVOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }))
+        }
+    }
+
+    pub fn nullable_checked_division(lhs: TypedBufferRef,
+                                     rhs: TypedBufferRef,
+                                     present: BufferRef<u8>,
+                                     output: BufferRef<Nullable<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "nullable_checked_division";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinarySVOperator { lhs, rhs, output, present, op: PhantomData::<Division<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Division<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Division<_, _>> }))
+        }
+    }
+
     pub fn modulo(lhs: TypedBufferRef,
                   rhs: TypedBufferRef,
                   output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
@@ -497,6 +619,35 @@ impl<'a> VecOperator<'a> {
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }))
+        }
+    }
+
+    pub fn checked_modulo(lhs: TypedBufferRef,
+                          rhs: TypedBufferRef,
+                          output: BufferRef<i64>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "checked_modulo";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinarySVOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }))
+        }
+    }
+
+    pub fn nullable_checked_modulo(lhs: TypedBufferRef,
+                                   rhs: TypedBufferRef,
+                                   present: BufferRef<u8>,
+                                   output: BufferRef<Nullable<i64>>) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "nullable_checked_modulo";
+            lhs: ScalarI64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinarySVOperator { lhs, rhs, output, present, op: PhantomData::<Modulo<_, _>> }));
+            lhs: IntegerNoU64, rhs: ScalarI64;
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Modulo<_, _>> }));
+            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Modulo<_, _>> }))
         }
     }
 

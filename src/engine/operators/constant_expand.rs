@@ -11,12 +11,13 @@ pub struct ConstantExpand<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for ConstantExpand<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         if self.current_index + self.batch_size > self.len {
             let mut output = scratchpad.get_mut(self.output);
             output.truncate(self.len - self.current_index);
         }
         self.current_index += self.batch_size;
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

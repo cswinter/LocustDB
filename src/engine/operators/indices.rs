@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct Indices {
     pub input: BufferRef<Any>,
@@ -8,10 +7,11 @@ pub struct Indices {
 }
 
 impl<'a> VecOperator<'a> for Indices {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let len = scratchpad.get_any(self.input).len();
         let indices = (0..len).collect::<Vec<usize>>();
         scratchpad.set(self.indices_out, indices);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }

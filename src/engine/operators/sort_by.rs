@@ -1,8 +1,6 @@
-use std::cmp::Ordering;
-
-use engine::*;
 use bitvec::*;
-
+use engine::*;
+use std::cmp::Ordering;
 
 pub struct SortBy<T> {
     pub ranking: BufferRef<T>,
@@ -13,7 +11,7 @@ pub struct SortBy<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortBy<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         scratchpad.alias(self.indices, self.output);
         let ranking = scratchpad.get(self.ranking);
         let mut indices = scratchpad.get_mut(self.indices);
@@ -30,6 +28,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortBy<T> {
                 indices.sort_unstable_by_key(|i| ranking[*i]);
             }
         }
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any(), self.indices.any()] }
@@ -52,7 +51,7 @@ pub struct SortByNullable<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortByNullable<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         scratchpad.alias(self.indices, self.output);
         let (ranking, ranking_present) = scratchpad.get_nullable(self.ranking);
         let present = &*ranking_present;
@@ -90,6 +89,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortByNullable<T> {
                 })
             }
         }
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any(), self.indices.any()] }

@@ -1,8 +1,6 @@
-use std::fmt;
-
 use engine::*;
+use std::fmt;
 use stringpack::StringPackerIterator;
-
 
 pub struct UnpackStrings<'a> {
     pub packed: BufferRef<u8>,
@@ -12,14 +10,15 @@ pub struct UnpackStrings<'a> {
 }
 
 impl<'a> VecOperator<'a> for UnpackStrings<'a> {
-    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let mut decoded = scratchpad.get_mut(self.unpacked);
         if streaming { panic!("Not supported") }
         for elem in self.iterator.as_mut().unwrap() {
             decoded.push(elem);
-            if decoded.capacity() == decoded.len() { return; }
+            if decoded.capacity() == decoded.len() { return Ok(()); }
         }
         self.has_more = false;
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

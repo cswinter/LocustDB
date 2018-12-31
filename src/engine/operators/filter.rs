@@ -9,7 +9,7 @@ pub struct Filter<T> {
 }
 
 impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: VecData<T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let data = scratchpad.get(self.input);
         let filter = scratchpad.get(self.filter);
         let mut filtered = scratchpad.get_mut(self.output);
@@ -19,6 +19,7 @@ impl<'a, T: 'a> VecOperator<'a> for Filter<T> where T: VecData<T> {
                 filtered.push(d.clone());
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -43,7 +44,7 @@ pub struct NullableFilter<T> {
 }
 
 impl<'a, T: 'a> VecOperator<'a> for NullableFilter<T> where T: VecData<T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let data = scratchpad.get(self.input);
         let (filter, present) = scratchpad.get_nullable(self.filter);
         let mut filtered = scratchpad.get_mut(self.output);
@@ -53,6 +54,7 @@ impl<'a, T: 'a> VecOperator<'a> for NullableFilter<T> where T: VecData<T> {
                 filtered.push(data[i].clone());
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

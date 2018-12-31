@@ -1,13 +1,12 @@
+use ::QueryError;
+use engine::*;
+use mem_store::*;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::result::Result;
 
-use engine::*;
-use mem_store::*;
 use self::query_plan::prepare;
-use ::QueryError;
 use self::QueryPlan::*;
-
 
 #[derive(Default)]
 pub struct QueryPlanner {
@@ -96,6 +95,19 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
             ops.extend(combine_nulls(bp, lhs, rhs, sum_non_null, sum));
             Rewrite::ReplaceWith(ops)
         }
+        CheckedAdd { lhs, rhs, sum } if sum.is_nullable() => {
+            let (present, plan) = combine_nulls2(bp, lhs, rhs);
+            let mut ops = vec![
+                plan,
+                NullableCheckedAdd {
+                    lhs: lhs.forget_nullability(),
+                    rhs: rhs.forget_nullability(),
+                    present,
+                    sum: sum.nullable_i64().unwrap(),
+                }
+            ];
+            Rewrite::ReplaceWith(ops)
+        }
         Subtract { lhs, rhs, difference } if difference.is_nullable() => {
             let difference_non_null = bp.named_buffer("difference_non_null", difference.tag.non_nullable());
             let mut ops = vec![Subtract {
@@ -104,6 +116,19 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
                 difference: difference_non_null,
             }];
             ops.extend(combine_nulls(bp, lhs, rhs, difference_non_null, difference));
+            Rewrite::ReplaceWith(ops)
+        }
+        CheckedSubtract { lhs, rhs, difference } if difference.is_nullable() => {
+            let (present, plan) = combine_nulls2(bp, lhs, rhs);
+            let mut ops = vec![
+                plan,
+                NullableCheckedSubtract {
+                    lhs: lhs.forget_nullability(),
+                    rhs: rhs.forget_nullability(),
+                    present,
+                    difference: difference.nullable_i64().unwrap(),
+                }
+            ];
             Rewrite::ReplaceWith(ops)
         }
         Multiply { lhs, rhs, product } if product.is_nullable() => {
@@ -116,6 +141,19 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
             ops.extend(combine_nulls(bp, lhs, rhs, product_non_null, product));
             Rewrite::ReplaceWith(ops)
         }
+        CheckedMultiply { lhs, rhs, product } if product.is_nullable() => {
+            let (present, plan) = combine_nulls2(bp, lhs, rhs);
+            let mut ops = vec![
+                plan,
+                NullableCheckedMultiply {
+                    lhs: lhs.forget_nullability(),
+                    rhs: rhs.forget_nullability(),
+                    present,
+                    product: product.nullable_i64().unwrap(),
+                }
+            ];
+            Rewrite::ReplaceWith(ops)
+        }
         Divide { lhs, rhs, division } if division.is_nullable() => {
             let division_non_null = bp.named_buffer("division_non_null", division.tag.non_nullable());
             let mut ops = vec![Divide {
@@ -126,6 +164,19 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
             ops.extend(combine_nulls(bp, lhs, rhs, division_non_null, division));
             Rewrite::ReplaceWith(ops)
         }
+        CheckedDivide { lhs, rhs, division } if division.is_nullable() => {
+            let (present, plan) = combine_nulls2(bp, lhs, rhs);
+            let mut ops = vec![
+                plan,
+                NullableCheckedDivide {
+                    lhs: lhs.forget_nullability(),
+                    rhs: rhs.forget_nullability(),
+                    present,
+                    division: division.nullable_i64().unwrap(),
+                }
+            ];
+            Rewrite::ReplaceWith(ops)
+        }
         Modulo { lhs, rhs, modulo } if modulo.is_nullable() => {
             let modulo_non_null = bp.named_buffer("modulo_non_null", modulo.tag.non_nullable());
             let mut ops = vec![Modulo {
@@ -134,6 +185,19 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
                 modulo: modulo_non_null,
             }];
             ops.extend(combine_nulls(bp, lhs, rhs, modulo_non_null, modulo));
+            Rewrite::ReplaceWith(ops)
+        }
+        CheckedModulo { lhs, rhs, modulo } if modulo.is_nullable() => {
+            let (present, plan) = combine_nulls2(bp, lhs, rhs);
+            let mut ops = vec![
+                plan,
+                NullableCheckedModulo {
+                    lhs: lhs.forget_nullability(),
+                    rhs: rhs.forget_nullability(),
+                    present,
+                    modulo: modulo.nullable_i64().unwrap(),
+                }
+            ];
             Rewrite::ReplaceWith(ops)
         }
         And { lhs, rhs, and } if and.is_nullable() => {
@@ -264,6 +328,25 @@ fn combine_nulls(bp: &mut BufferProvider,
     }
 }
 
+fn combine_nulls2(bp: &mut BufferProvider,
+                  lhs: TypedBufferRef,
+                  rhs: TypedBufferRef) -> (BufferRef<u8>, QueryPlan) {
+    let combined_null_map = bp.buffer_u8("combined_null_map");
+    let plan = if lhs.is_nullable() && rhs.is_nullable() {
+        CombineNullMaps {
+            lhs,
+            rhs,
+            present: combined_null_map,
+        }
+    } else {
+        GetNullMap {
+            nullable: if lhs.is_nullable() { lhs } else { rhs },
+            present: combined_null_map,
+        }
+    };
+    (combined_null_map, plan)
+}
+
 #[derive(Default)]
 pub struct BufferProvider {
     buffer_count: usize,
@@ -295,6 +378,10 @@ impl BufferProvider {
 
     pub fn buffer_u8(&mut self, name: &'static str) -> BufferRef<u8> {
         self.named_buffer(name, EncodingType::U8).u8().unwrap()
+    }
+
+    pub fn nullable_buffer_i64(&mut self, name: &'static str) -> BufferRef<Nullable<i64>> {
+        self.named_buffer(name, EncodingType::NullableI64).nullable_i64().unwrap()
     }
 
     pub fn buffer_val<'a>(&mut self, name: &'static str) -> BufferRef<Val<'a>> {

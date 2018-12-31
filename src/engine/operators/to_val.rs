@@ -1,5 +1,5 @@
-use engine::*;
 use bitvec::*;
+use engine::*;
 use mem_store::Val;
 
 pub struct NullableStrToVal<'a> {
@@ -8,7 +8,7 @@ pub struct NullableStrToVal<'a> {
 }
 
 impl<'a> VecOperator<'a> for NullableStrToVal<'a> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (input, present) = scratchpad.get_nullable(self.input);
         let mut vals = scratchpad.get_mut(self.vals);
         if stream { vals.clear(); }
@@ -19,6 +19,7 @@ impl<'a> VecOperator<'a> for NullableStrToVal<'a> {
                 vals.push(Val::Null);
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -42,7 +43,7 @@ pub struct ValToNullableStr<'a> {
 }
 
 impl<'a> VecOperator<'a> for ValToNullableStr<'a> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let vals = scratchpad.get(self.vals);
         let (mut data, mut present) = scratchpad.get_mut_nullable(self.nullable);
         if stream {
@@ -59,6 +60,7 @@ impl<'a> VecOperator<'a> for ValToNullableStr<'a> {
                 _ => panic!("Trying to cast {:?} to NullableStr!", val),
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -82,7 +84,7 @@ pub struct NullableIntToVal<'a, T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NullableIntToVal<'a, T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (input, present) = scratchpad.get_nullable(self.input);
         let mut vals = scratchpad.get_mut(self.vals);
         if stream { vals.clear(); }
@@ -93,6 +95,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NullableIntToVal<'a, T> {
                 vals.push(Val::Null);
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -116,7 +119,7 @@ pub struct ValToNullableInt<'a, T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for ValToNullableInt<'a, T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let vals = scratchpad.get(self.vals);
         let (mut data, mut present) = scratchpad.get_mut_nullable(self.nullable);
         if stream {
@@ -135,6 +138,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for ValToNullableInt<'a, T> {
                 _ => panic!("Trying to convert {:?} to {:?}!", val, T::t()),
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

@@ -1,12 +1,11 @@
+use engine::data_types::*;
+use ingest::raw_val::RawVal;
+use mem_store::value::Val;
+use QueryError;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
 use std::result::Result;
-
-use QueryError;
-use engine::data_types::*;
-use mem_store::value::Val;
-use ingest::raw_val::RawVal;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct BufferRef<T> {
@@ -96,6 +95,12 @@ impl From<BufferRef<u32>> for TypedBufferRef {
 impl From<BufferRef<u8>> for TypedBufferRef {
     fn from(buffer: BufferRef<u8>) -> TypedBufferRef {
         TypedBufferRef::new(buffer.any(), EncodingType::U8)
+    }
+}
+
+impl From<BufferRef<Nullable<i64>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Nullable<i64>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::NullableI64)
     }
 }
 

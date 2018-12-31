@@ -7,7 +7,7 @@ pub struct Identity {
 
 
 impl<'a> VecOperator<'a> for Identity {
-    fn execute(&mut self, _: bool, _scratchpad: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _: bool, _scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.alias(self.input, self.output);

@@ -1,8 +1,6 @@
+use engine::*;
 use std::fmt;
 use std::marker::PhantomData;
-
-use engine::*;
-
 
 #[derive(Debug)]
 pub struct BooleanOperator<T> {
@@ -24,10 +22,11 @@ impl<'a, T: BooleanOp + fmt::Debug + 'a> BooleanOperator<T> {
 }
 
 impl<'a, T: BooleanOp + fmt::Debug> VecOperator<'a> for BooleanOperator<T> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let mut result = scratchpad.get_mut(self.lhs);
         let rhs = scratchpad.get(self.rhs);
         T::evaluate(&mut result, &rhs);
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {

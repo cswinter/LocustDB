@@ -8,7 +8,7 @@ pub struct FuseNullsI64 {
 }
 
 impl<'a> VecOperator<'a> for FuseNullsI64 {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (input, present) = scratchpad.get_nullable(self.input);
         let mut fused = scratchpad.get_mut(self.fused);
         if stream { fused.clear(); }
@@ -19,6 +19,7 @@ impl<'a> VecOperator<'a> for FuseNullsI64 {
                 fused.push(i64::MIN);
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -43,7 +44,7 @@ pub struct UnfuseNullsI64 {
 }
 
 impl<'a> VecOperator<'a> for UnfuseNullsI64 {
-    fn execute(&mut self, _stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let present = {
             let fused = scratchpad.get(self.fused);
             let mut present = vec![0u8; fused.len() / 8 + 1];
@@ -55,6 +56,7 @@ impl<'a> VecOperator<'a> for UnfuseNullsI64 {
             present
         };
         scratchpad.set(self.present, present);
+        Ok(())
     }
 
     fn init(&mut self, _: usize, _batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -78,7 +80,7 @@ pub struct FuseNullsStr<'a> {
 }
 
 impl<'a> VecOperator<'a> for FuseNullsStr<'a> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (input, present) = scratchpad.get_nullable(self.input);
         let mut fused = scratchpad.get_mut(self.fused);
         if stream { fused.clear(); }
@@ -89,6 +91,7 @@ impl<'a> VecOperator<'a> for FuseNullsStr<'a> {
                 fused.push(None);
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -114,7 +117,7 @@ pub struct UnfuseNullsStr<'a> {
 }
 
 impl<'a> VecOperator<'a> for UnfuseNullsStr<'a> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let present = {
             let fused = scratchpad.get(self.fused);
             let mut data = scratchpad.get_mut(self.data);
@@ -129,6 +132,7 @@ impl<'a> VecOperator<'a> for UnfuseNullsStr<'a> {
             present
         };
         scratchpad.set(self.present, present);
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -154,7 +158,7 @@ pub struct FuseIntNulls<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for FuseIntNulls<T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (input, present) = scratchpad.get_nullable(self.input);
         let mut fused = scratchpad.get_mut(self.fused);
         if stream { fused.clear(); }
@@ -165,6 +169,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for FuseIntNulls<T> {
                 fused.push(T::zero());
             }
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
@@ -195,7 +200,7 @@ pub struct UnfuseIntNulls<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for UnfuseIntNulls<T> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let present = {
             let fused = scratchpad.get(self.fused);
             let mut data = scratchpad.get_mut(self.data);
@@ -212,6 +217,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for UnfuseIntNulls<T> {
             present
         };
         scratchpad.set(self.present, present);
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

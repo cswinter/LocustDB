@@ -11,12 +11,13 @@ pub struct ValRowsPack<'a> {
 }
 
 impl<'a> VecOperator<'a> for ValRowsPack<'a> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let data = scratchpad.get(self.input);
         let mut val_rows = scratchpad.get_mut_val_rows(self.output.clone());
         for (i, datum) in data.iter().enumerate() {
             val_rows.data[i * self.stride + self.offset] = *datum;
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

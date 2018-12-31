@@ -8,7 +8,7 @@ pub struct DeltaDecode<T> {
 }
 
 impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DeltaDecode<T> {
-    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let encoded = scratchpad.get(self.encoded);
         let mut decoded = scratchpad.get_mut(self.decoded);
         if streaming { decoded.clear(); }
@@ -19,6 +19,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DeltaDecode<T> {
             previous = current;
         }
         self.previous = previous;
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

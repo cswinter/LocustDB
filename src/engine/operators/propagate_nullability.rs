@@ -8,7 +8,7 @@ pub struct PropagateNullability<T> {
 }
 
 impl<'a, T: VecData<T>> VecOperator<'a> for PropagateNullability<T> {
-    fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _streaming: bool, _scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.reassemble_nullable(self.from, self.to, self.output);

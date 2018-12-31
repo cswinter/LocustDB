@@ -1,8 +1,6 @@
+use engine::*;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-
-use engine::*;
-
 
 #[derive(Debug)]
 pub struct SubPartition<T, C> {
@@ -14,7 +12,7 @@ pub struct SubPartition<T, C> {
 }
 
 impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for SubPartition<T, C> {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let sub_partitioning = {
             let partitioning = scratchpad.get(self.partitioning);
             let left = scratchpad.get(self.left);
@@ -22,6 +20,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for SubPa
             subpartition::<_, C>(&partitioning, &left, &right)
         };
         scratchpad.set(self.sub_partitioning, sub_partitioning);
+        Ok(())
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.partitioning.any(), self.left.any(), self.right.any()] }
@@ -72,10 +71,11 @@ fn subpartition<'a, T: VecData<T> + 'a, C: Comparator<T>>(
 #[cfg(test)]
 mod tests {
     use engine::*;
-    use self::MergeOp::*;
+    use engine::operators::merge_deduplicate_partitioned::merge_deduplicate_partitioned;
     use engine::operators::partition::partition;
     use engine::operators::subpartition::subpartition;
-    use engine::operators::merge_deduplicate_partitioned::merge_deduplicate_partitioned;
+
+    use self::MergeOp::*;
 
     #[test]
     fn test_multipass_grouping() {

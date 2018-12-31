@@ -12,13 +12,14 @@ pub struct ReadColumnData {
 }
 
 impl<'a> VecOperator<'a> for ReadColumnData {
-    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let data_section = scratchpad.get_column_data(&self.colname, self.section_index);
         let end = if streaming { self.current_index + self.batch_size } else { data_section.len() };
         let result = data_section.slice_box(self.current_index, end);
         self.current_index += self.batch_size;
         scratchpad.set_any(self.output, result);
         self.has_more = end < data_section.len();
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, _: &mut Scratchpad<'a>) {

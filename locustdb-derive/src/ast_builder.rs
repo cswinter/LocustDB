@@ -1,9 +1,8 @@
-use super::proc_macro::TokenStream;
-use syn::*;
 use proc_macro2::Span;
-
 use regex::Regex;
+use syn::*;
 
+use super::proc_macro::TokenStream;
 
 pub fn ast_builder(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
@@ -150,6 +149,8 @@ fn create_buffer(field_ident: &Ident, field_type: &Type) -> Stmt {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_i64(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<u32>) {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_u32(#field_name);)
+    } else if *field_type == parse_quote!(BufferRef<Nullable<i64>>) {
+        parse_quote!(let #field_ident = self.buffer_provider.nullable_buffer_i64(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<MergeOp>) {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_merge_op(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<Premerge>) {
@@ -181,6 +182,8 @@ fn convert(expr: Expr, field_type: &Type) -> Expr {
         parse_quote!(#expr.i64().unwrap())
     } else if *field_type == parse_quote!(BufferRef<u32>) {
         parse_quote!(#expr.u32().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<Nullable<i64>>) {
+        parse_quote!(#expr.nullable_i64().unwrap())
     } else if *field_type == parse_quote!(BufferRef<MergeOp>) {
         parse_quote!(#expr.merge_op().unwrap())
     } else if *field_type == parse_quote!(BufferRef<Premerge>) {

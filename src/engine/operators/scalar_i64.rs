@@ -1,6 +1,5 @@
 use engine::*;
 
-
 #[derive(Debug)]
 pub struct ScalarI64 {
     pub val: i64,
@@ -9,7 +8,7 @@ pub struct ScalarI64 {
 }
 
 impl<'a> VecOperator<'a> for ScalarI64 {
-    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) {}
+    fn execute(&mut self, _: bool, _: &mut Scratchpad<'a>) -> Result<(), QueryError> { Ok(()) }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
         scratchpad.set_const(self.output, self.val);

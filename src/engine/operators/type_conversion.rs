@@ -10,7 +10,7 @@ pub struct TypeConversionOperator<T, U> {
 
 impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
     T: VecData<T> + Copy, U: VecData<U>, T: Cast<U> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>{
         let data = scratchpad.get(self.input);
         let mut output = scratchpad.get_mut(self.output);
         if stream { output.clear() }
@@ -18,6 +18,7 @@ impl<'a, T: 'a, U: 'a> VecOperator<'a> for TypeConversionOperator<T, U> where
             let casted = Cast::<U>::cast(*d);
             output.push(casted);
         }
+        Ok(())
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {

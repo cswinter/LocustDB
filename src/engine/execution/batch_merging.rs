@@ -1,12 +1,11 @@
-use std::cmp::min;
-use std::sync::Arc;
-use std::collections::HashMap;
-use std::usize;
-use std::result::Result;
-
-use mem_store::column::DataSource;
 use engine::*;
 use errors::QueryError;
+use mem_store::column::DataSource;
+use std::cmp::min;
+use std::collections::HashMap;
+use std::result::Result;
+use std::sync::Arc;
+use std::usize;
 
 #[derive(Debug)]
 pub struct BatchResult<'a> {
@@ -140,7 +139,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
         let mut executor = qp.prepare(data)?;
         let mut results = executor.prepare_no_columns();
-        executor.run(1, &mut results, batch1.show || batch2.show);
+        executor.run(1, &mut results, batch1.show || batch2.show)?;
 
         let (columns, projection, aggregations, _) = results.collect_aliased(&group_by_cols, &aggregates, &[]);
         let result = BatchResult {
@@ -226,7 +225,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
             let mut executor = qp.prepare(data)?;
             let mut results = executor.prepare_no_columns();
-            executor.run(1, &mut results, batch1.show || batch2.show);
+            executor.run(1, &mut results, batch1.show || batch2.show)?;
             let (columns, projection, _, order_by) = results.collect_aliased(&projection, &[], &order_by);
 
             Ok(BatchResult {
