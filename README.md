@@ -1,4 +1,15 @@
-# LocustDB [![Build Status](https://travis-ci.org/cswinter/LocustDB.svg?branch=master)](https://travis-ci.org/cswinter/LocustDB) [![Join the chat at https://gitter.im/LocustDB/Lobby](https://badges.gitter.im/LocustDB/Lobby.svg)](https://gitter.im/LocustDB/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+# LocustDB
+
+[![Build Status][bi]][bl] [![Crates.io][ci]][cl] [![Gitter][gi]][gl]
+
+[bi]: https://travis-ci.org/cswinter/LocustDB.svg?branch=master
+[bl]: https://travis-ci.org/cswinter/LocustDB
+
+[ci]: https://img.shields.io/crates/v/locustdb.svg
+[cl]: https://crates.io/crates/locustdb/
+
+[gi]: https://badges.gitter.im/LocustDB/Lobby.svg
+[gl]: https://gitter.im/LocustDB/Lobby
 
 An experimental analytics database aiming to set a new standard for query performance and storage efficiency on commodity hardware.
 See [How to Analyze Billions of Records per Second on a Single Desktop PC][blogpost] and [How to Read 100s of Millions of Records per Second from a Single Disk][blogpost-2] for an overview of current capabilities.
