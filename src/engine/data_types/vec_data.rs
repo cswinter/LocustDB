@@ -8,7 +8,6 @@ use std::io::Cursor;
 
 use num::PrimInt;
 use byteorder::{NativeEndian, ReadBytesExt};
-use heapsize::HeapSizeOf;
 use ingest::raw_val::RawVal;
 use itertools::Itertools;
 
@@ -16,7 +15,7 @@ use mem_store::value::Val;
 use engine::data_types::*;
 
 
-pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Sync + Send + HeapSizeOf {
+pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Sync + Send {
     fn unwrap<'a, 'b>(vec: &'b Data<'a>) -> &'b [T] where T: 'a;
     fn unwrap_mut<'a, 'b>(vec: &'b mut Data<'a>) -> &'b mut Vec<T> where T: 'a;
     fn wrap_one(_value: T) -> RawVal { panic!("Can't wrap scalar of type {:?}", Self::t()) }
@@ -186,7 +185,7 @@ impl CastUsize for u64 {
     fn cast_usize(&self) -> usize { *self as usize }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, HeapSizeOf)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
 pub enum MergeOp {
     TakeLeft,
     TakeRight,
@@ -206,7 +205,7 @@ impl VecData<MergeOp> for MergeOp {
 }
 
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, HeapSizeOf)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
 pub struct Premerge {
     pub left: u32,
     pub right: u32,

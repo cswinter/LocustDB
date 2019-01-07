@@ -3,7 +3,6 @@ extern crate clap;
 extern crate env_logger;
 extern crate failure;
 extern crate futures_executor;
-extern crate heapsize;
 extern crate locustdb;
 extern crate log;
 extern crate nom;

@@ -2,7 +2,7 @@ use engine::*;
 use engine::data_types::*;
 use engine::planning::QueryPlanner;
 
-#[derive(Debug, Clone, HeapSizeOf)]
+#[derive(Debug, Clone)]
 pub struct Codec {
     ops: Vec<CodecOp>,
     column_name: String,
@@ -265,7 +265,7 @@ impl Codec {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, HeapSizeOf)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CodecOp {
     Nullable,
     Add(EncodingType, i64),

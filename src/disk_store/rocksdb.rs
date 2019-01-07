@@ -6,7 +6,6 @@ use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
 use capnp::{serialize, Word, message};
-use heapsize::HeapSizeOf;
 use self::rocksdb::*;
 use storage_format_capnp::*;
 

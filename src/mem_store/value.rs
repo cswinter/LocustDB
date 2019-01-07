@@ -1,5 +1,4 @@
 use std::fmt;
-use heapsize::HeapSizeOf;
 use std::convert::From;
 use ingest::raw_val::RawVal;
 
@@ -19,16 +18,6 @@ impl<'a> fmt::Display for Val<'a> {
             Val::Bool(b) => write!(f, "{}", b),
             Val::Integer(i) => write!(f, "{}", i),
             Val::Str(s) => write!(f, "\"{}\"", s),
-        }
-    }
-}
-
-impl<'a> HeapSizeOf for Val<'a> {
-    fn heap_size_of_children(&self) -> usize {
-        use self::Val::*;
-        match *self {
-            Null | Bool(_) | Integer(_) => 0,
-            Str(r) => r.heap_size_of_children(),
         }
     }
 }

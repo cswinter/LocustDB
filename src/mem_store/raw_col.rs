@@ -7,7 +7,7 @@ use mem_store::*;
 use mem_store::column_builder::*;
 
 // Can eliminate this? Used by in-memory buffer.
-#[derive(PartialEq, Debug, HeapSizeOf)]
+#[derive(PartialEq, Debug)]
 pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
@@ -80,7 +80,7 @@ impl Default for MixedCol {
     }
 }
 
-#[derive(PartialEq, Debug, Copy, Clone, HeapSizeOf)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,

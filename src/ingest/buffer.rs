@@ -3,9 +3,10 @@ use mem_store::raw_col::MixedCol;
 use ingest::raw_val::RawVal;
 use ingest::input_column::InputColumn;
 use std::cmp;
+use std::mem;
 
 
-#[derive(PartialEq, Debug, HeapSizeOf)]
+#[derive(PartialEq, Debug)]
 pub struct Buffer {
     pub buffer: HashMap<String, MixedCol>,
     pub length: usize,
@@ -76,6 +77,10 @@ impl Buffer {
 
     pub fn len(&self) -> usize {
         self.length
+    }
+
+    pub fn heap_size_of_children(&self) -> usize {
+        mem::size_of::<Buffer>()
     }
 }
 

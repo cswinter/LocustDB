@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
 use disk_store::interface::*;
-use heapsize::HeapSizeOf;
 use ingest::buffer::Buffer;
 use ingest::input_column::InputColumn;
 use ingest::raw_val::RawVal;
@@ -140,11 +139,23 @@ impl Table {
             name: self.name().to_string(),
             rows: partitions.iter().map(|p| p.len()).sum(),
             batches: partitions.len(),
-            batches_bytes: partitions.heap_size_of_children(),
+            batches_bytes: partitions.iter().map(|partition| partition.heap_size_of_children()).sum(),
             buffer_length: buffer.len(),
             buffer_bytes: buffer.heap_size_of_children(),
             size_per_column,
         }
+    }
+
+    pub fn heap_size_of_children(&self) -> usize {
+        let batches_size: usize = {
+            let batches = self.partitions.read().unwrap();
+            batches.iter().map(|(_, partition)| partition.heap_size_of_children()).sum()
+        };
+        let buffer_size = {
+            let buffer = self.buffer.lock().unwrap();
+            buffer.heap_size_of_children()
+        };
+        batches_size + buffer_size
     }
 
     pub fn max_partition_id(&self) -> u64 {
@@ -165,20 +176,6 @@ impl Table {
 
 fn batch_size_override(batch_size: usize, tablename: &str) -> usize {
     if tablename == "_meta_tables" { 1 } else if tablename == "_meta_queries" { 10 } else { batch_size }
-}
-
-impl HeapSizeOf for Table {
-    fn heap_size_of_children(&self) -> usize {
-        let batches_size = {
-            let batches = self.partitions.read().unwrap();
-            batches.heap_size_of_children()
-        };
-        let buffer_size = {
-            let buffer = self.buffer.lock().unwrap();
-            buffer.heap_size_of_children()
-        };
-        batches_size + buffer_size
-    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
