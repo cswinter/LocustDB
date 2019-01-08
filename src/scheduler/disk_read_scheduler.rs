@@ -6,9 +6,6 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::collections::VecDeque;
 use std_semaphore::Semaphore;
 
-#[allow(unused_imports)]
-use heapsize::HeapSizeOf;
-
 use disk_store::interface::DiskStore;
 use disk_store::interface::PartitionID;
 use mem_store::*;

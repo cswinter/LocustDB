@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use disk_store::interface::*;
-use heapsize::HeapSizeOf;
 use ingest::buffer::Buffer;
 use mem_store::*;
 use scheduler::disk_read_scheduler::DiskReadScheduler;
@@ -165,18 +164,26 @@ impl Partition {
         self.cols.iter()
             .map(|handle| {
                 let c = handle.col.lock().unwrap();
-                (handle.name().to_string(), c.heap_size_of_children())
+                (handle.name().to_string(), match *c {
+                    Some(ref x) => x.heap_size_of_children(),
+                    None => 0
+                })
             })
             .collect()
     }
-}
 
-impl HeapSizeOf for Partition {
-    fn heap_size_of_children(&self) -> usize {
-        self.cols.iter().map(|handle| handle.col.lock().unwrap().heap_size_of_children()).sum()
+    pub fn heap_size_of_children(&self) -> usize {
+        self.cols.iter()
+            .map(|handle| {
+                let c = handle.col.lock().unwrap();
+                match *c {
+                    Some(ref x) => x.heap_size_of_children(),
+                    None => 0
+                }
+            })
+            .sum()
     }
 }
-
 
 pub struct ColumnHandle {
     key: (PartitionID, String),
@@ -242,11 +249,12 @@ impl ColumnHandle {
     pub fn update_size_bytes(&self, size_bytes: usize) {
         self.size_bytes.store(size_bytes, Ordering::SeqCst)
     }
-}
 
-impl HeapSizeOf for ColumnHandle {
-    fn heap_size_of_children(&self) -> usize {
-        if self.is_resident() { self.size_bytes() } else { 0 }
+    pub fn heap_size_of_children(&self) -> usize {
+        if self.is_resident() { 
+            self.size_bytes() 
+        } else { 
+            0 
+        }
     }
 }
-

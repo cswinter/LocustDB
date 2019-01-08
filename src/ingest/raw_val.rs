@@ -1,8 +1,9 @@
 use std::fmt;
+use std::mem;
 use engine::data_types::BasicType;
 
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, HeapSizeOf)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub enum RawVal {
     Int(i64),
     Str(String),
@@ -17,6 +18,15 @@ impl RawVal {
             RawVal::Null => BasicType::Null,
         }
     }
+
+    pub fn heap_size_of_children(&self) -> usize {
+        match *self {
+            RawVal::Int(_) => 0,
+            RawVal::Str(ref s) => s.capacity() * mem::size_of::<u8>(),
+            RawVal::Null => 0,
+        }
+    }
+
 }
 
 impl fmt::Display for RawVal {

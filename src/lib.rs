@@ -13,9 +13,6 @@ extern crate futures_channel;
 extern crate futures_core;
 extern crate futures_executor;
 extern crate futures_util;
-extern crate heapsize;
-#[macro_use]
-extern crate heapsize_derive;
 extern crate hex;
 extern crate itertools;
 #[macro_use]

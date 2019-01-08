@@ -9,7 +9,7 @@ use ingest::raw_val::RawVal;
 use mem_store::value::Val;
 
 
-#[derive(HeapSizeOf, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ValRows<'a> {
     pub row_len: usize,
     pub data: Vec<Val<'a>>,

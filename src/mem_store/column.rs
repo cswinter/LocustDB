@@ -6,10 +6,6 @@ use mem_store::*;
 use engine::data_types::*;
 use mem_store::lz4;
 
-use heapsize::HeapSizeOf;
-
-
-#[derive(HeapSizeOf)]
 pub struct Column {
     name: String,
     len: usize,
@@ -106,6 +102,11 @@ impl Column {
     pub fn data(&self) -> &[DataSection] { &self.data }
     pub fn basic_type(&self) -> BasicType { self.codec.decoded_type() }
     pub fn section_encoding_type(&self, section: usize) -> EncodingType { self.data[section].encoding_type() }
+
+
+    pub fn heap_size_of_children(&self) -> usize {
+        self.data.iter().map(|section| section.heap_size_of_children()).sum()
+    }
 
     pub fn mem_tree(&self, tree: &mut MemTreeColumn, depth: usize) {
         if depth == 0 { return; }
@@ -292,16 +293,14 @@ impl DataSection {
             }
         }
     }
-}
 
-impl HeapSizeOf for DataSection {
-    fn heap_size_of_children(&self) -> usize {
+    pub fn heap_size_of_children(&self) -> usize {
         match self {
-            DataSection::U8(ref x) => x.heap_size_of_children(),
-            DataSection::U16(ref x) => x.heap_size_of_children(),
-            DataSection::U32(ref x) => x.heap_size_of_children(),
-            DataSection::U64(ref x) => x.heap_size_of_children(),
-            DataSection::I64(ref x) => x.heap_size_of_children(),
+            DataSection::U8(ref x) => x.capacity() * mem::size_of::<u8>(),
+            DataSection::U16(ref x) => x.capacity() * mem::size_of::<u16>(),
+            DataSection::U32(ref x) => x.capacity() * mem::size_of::<u32>(),
+            DataSection::U64(ref x) => x.capacity() * mem::size_of::<u64>(),
+            DataSection::I64(ref x) => x.capacity() * mem::size_of::<i64>(),
             DataSection::Null(_) => 0,
         }
     }

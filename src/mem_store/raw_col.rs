@@ -1,13 +1,14 @@
 use std::iter::repeat;
 use std::ops::BitOr;
 use std::sync::Arc;
+use std::mem;
 
 use ingest::raw_val::RawVal;
 use mem_store::*;
 use mem_store::column_builder::*;
 
 // Can eliminate this? Used by in-memory buffer.
-#[derive(PartialEq, Debug, HeapSizeOf)]
+#[derive(PartialEq, Debug)]
 pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
@@ -69,6 +70,14 @@ impl MixedCol {
             Arc::new(Column::null(name, self.data.len()))
         }
     }
+
+    pub fn heap_size_of_children(&self) -> usize {
+        let data_size = self.data.iter().map(|v| v.heap_size_of_children()).sum::<usize>()
+            + self.data.capacity() * mem::size_of::<RawVal>();
+        let type_size = mem::size_of::<ColType>();
+
+        data_size + type_size
+    }
 }
 
 impl Default for MixedCol {
@@ -80,7 +89,7 @@ impl Default for MixedCol {
     }
 }
 
-#[derive(PartialEq, Debug, Copy, Clone, HeapSizeOf)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,

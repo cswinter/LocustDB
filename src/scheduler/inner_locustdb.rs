@@ -8,7 +8,6 @@ use std::time::Duration;
 
 use futures_core::*;
 use futures_channel::oneshot;
-use heapsize::HeapSizeOf;
 use time;
 
 use disk_store::interface::*;

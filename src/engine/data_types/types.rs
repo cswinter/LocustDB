@@ -1,6 +1,6 @@
 use mem_store::*;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, HeapSizeOf)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum EncodingType {
     Str,
     OptStr,
@@ -110,7 +110,7 @@ impl EncodingType {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, HeapSizeOf)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BasicType {
     String,
     Integer,
