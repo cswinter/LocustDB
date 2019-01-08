@@ -1,4 +1,5 @@
 use std::fmt;
+use std::mem;
 use engine::data_types::BasicType;
 
 
@@ -17,6 +18,15 @@ impl RawVal {
             RawVal::Null => BasicType::Null,
         }
     }
+
+    pub fn heap_size_of_children(&self) -> usize {
+        match *self {
+            RawVal::Int(_) => mem::size_of::<i64>(),
+            RawVal::Str(ref s) => s.capacity() * mem::size_of::<u8>(),
+            RawVal::Null => mem::size_of::<RawVal>()
+        }
+    }
+
 }
 
 impl fmt::Display for RawVal {

@@ -72,7 +72,10 @@ impl MixedCol {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        mem::size_of::<ColType>() + self.data.capacity() * mem::size_of::<RawVal>()
+        let data_size = self.data.iter().map(|v| v.heap_size_of_children()).sum::<usize>();
+        let type_size = mem::size_of::<ColType>();
+
+        data_size + type_size
     }
 }
 
