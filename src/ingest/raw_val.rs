@@ -21,7 +21,7 @@ impl RawVal {
 
     pub fn heap_size_of_children(&self) -> usize {
         match *self {
-            RawVal::Int(_) => mem::size_of::<i64>(),
+            RawVal::Int(_) => 0,
             RawVal::Str(ref s) => s.capacity() * mem::size_of::<u8>(),
             RawVal::Null => 0,
         }
