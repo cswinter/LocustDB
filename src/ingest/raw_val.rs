@@ -23,7 +23,7 @@ impl RawVal {
         match *self {
             RawVal::Int(_) => mem::size_of::<i64>(),
             RawVal::Str(ref s) => s.capacity() * mem::size_of::<u8>(),
-            RawVal::Null => mem::size_of::<RawVal>()
+            RawVal::Null => 0,
         }
     }
 
