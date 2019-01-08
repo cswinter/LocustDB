@@ -1,6 +1,7 @@
 use std::iter::repeat;
 use std::ops::BitOr;
 use std::sync::Arc;
+use std::mem;
 
 use ingest::raw_val::RawVal;
 use mem_store::*;
@@ -68,6 +69,10 @@ impl MixedCol {
         } else {
             Arc::new(Column::null(name, self.data.len()))
         }
+    }
+
+    pub fn heap_size_of_children(&self) -> usize {
+        mem::size_of::<ColType>() + self.data.capacity() * mem::size_of::<RawVal>()
     }
 }
 

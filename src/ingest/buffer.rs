@@ -3,8 +3,6 @@ use mem_store::raw_col::MixedCol;
 use ingest::raw_val::RawVal;
 use ingest::input_column::InputColumn;
 use std::cmp;
-use std::mem;
-
 
 #[derive(PartialEq, Debug)]
 pub struct Buffer {
@@ -80,7 +78,10 @@ impl Buffer {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        mem::size_of::<Buffer>()
+        self.buffer.iter().map(|(_, v)| {
+            // Currently does not take into account the memory of String.
+            v.heap_size_of_children()
+        }).sum()
     }
 }
 

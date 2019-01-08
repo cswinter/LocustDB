@@ -22,3 +22,6 @@ rusty-tags.vi
 
 # default rocksdb data dir
 rocksdb
+
+# OS X
+.DS_Store
