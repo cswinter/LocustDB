@@ -789,6 +789,7 @@ impl QueryPlan {
                         pattern = Regex::new(r"^%([^%])").unwrap().replace_all(&pattern, ".*$1").to_owned().to_string();
                         pattern = Regex::new(r"([^%])%$").unwrap().replace_all(&pattern, "$1.*").to_owned().to_string();
                         pattern = Regex::new(r"%%").unwrap().replace_all(&pattern, "%").to_owned().to_string();
+                        pattern = format!("^{}$", pattern);
                         let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns, column_len, planner)?;
                         if t.decoded != BasicType::String {
                             bail!(QueryError::TypeError,

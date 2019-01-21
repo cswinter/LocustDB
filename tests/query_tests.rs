@@ -331,6 +331,15 @@ fn test_like() {
 }
 
 #[test]
+fn test_like_mismatch() {
+    test_query(
+        // shouldn't match Joshua etc.
+        "SELECT first_name FROM default WHERE first_name LIKE '%hu';",
+        &[],
+    );
+}
+
+#[test]
 fn test_not_equals() {
     use Value::*;
     test_query(
