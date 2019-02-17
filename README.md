@@ -34,7 +34,7 @@ For additional usage info, invoke with `--help`:
 
 ```Bash
 $ ./locustdb --help
-LocustDB 0.1.0-alpha
+LocustDB 0.2.1
 Clemens Winter <clemenswinter1@gmail.com>
 Massively parallel, high performance analytics database that will rapidly devour all of your data.
 
@@ -51,11 +51,17 @@ FLAGS:
 
 OPTIONS:
         --db-path <PATH>           Path to data directory
-        --load <CSV_FILE>...       Load .csv or .csv.gz files into the database
+        --load <FILES>             Load .csv or .csv.gz files into the database
         --mem-limit-tables <GB>    Limit for in-memory size of tables in GiB [default: 8]
         --partition-size <ROWS>    Number of rows per partition when loading new data [default: 65536]
         --readahead <MB>           How much data to load at a time when reading from disk during queries in MiB
                                    [default: 256]
+        --schema <SCHEMA>          Comma separated list specifying the types and (optionally) names of all columns in
+                                   files specified by `--load` option.
+                                   Valid types: `s`, `string`, `i`, `integer`, `ns` (nullable string), `ni` (nullable
+                                   integer)
+                                   Example schema without column names: `int,string,string,string,int`
+                                   Example schema with column names: `name:s,age:i,country:s`
         --table <NAME>             Name for the table populated with --load [default: default]
         --threads <INTEGER>        Number of worker threads. [default: number of cores (12)]
 ```
