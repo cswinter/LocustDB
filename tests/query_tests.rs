@@ -325,8 +325,8 @@ fn test_regex() {
 #[test]
 fn test_not_regex() {
     test_query(
-        "SELECT first_name FROM default WHERE not(regex(first_name, '^C.+h.a')) LIMIT 1;",
-        &[vec![Str("Victor")]],
+        "SELECT first_name FROM default WHERE not(regex(first_name, '^C.*h.a')) ORDER BY ts LIMIT 1;",
+        &[vec![Str("Charles")]],
     );
 }
 
@@ -341,8 +341,8 @@ fn test_like() {
 #[test]
 fn test_not_like() {
     test_query(
-        "SELECT first_name FROM default WHERE first_name NOT LIKE 'C%h_a' LIMIT 1;",
-        &[vec![Str("Kathryn")]],
+        "SELECT first_name FROM default WHERE first_name NOT LIKE 'C%h_a' ORDER BY ts LIMIT 1;",
+        &[vec![Str("Charles")]],
     );
 }
 
