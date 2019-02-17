@@ -29,6 +29,7 @@ pub enum Func2Type {
     Modulo,
     RegexMatch,
     Like,
+    NotLike,
 }
 
 #[derive(Debug, Copy, Clone)]
