@@ -798,11 +798,19 @@ impl QueryPlan {
                         if let Some(codec) = t.codec.clone() {
                             plan = codec.decode(plan, planner);
                         }
-                        (planner.regex(plan.str()?, &pattern).into(), t)
+                        let type_out = Type::unencoded(BasicType::Boolean).mutable();
+                        (planner.regex(plan.str()?, &pattern).into(), type_out)
                     }
                     _ => bail!(QueryError::TypeError,
                                "Expected string constant as second argument to `LIKE`, actual: {:?}", pattern),
                 }
+            }
+            Func2(NotLike, ref expr, ref pattern) => {
+                QueryPlan::compile_expr(
+                    &Expr::Func1(
+                        Func1Type::Not,
+                        Box::new(Expr::Func2(Func2Type::Like, expr.clone(), pattern.clone()))
+                    ), filter, columns, column_len, planner)?
             }
             Func2(RegexMatch, ref expr, ref regex) => {
                 match regex {
@@ -816,7 +824,8 @@ impl QueryPlan {
                         if let Some(codec) = t.codec.clone() {
                             plan = codec.decode(plan, planner);
                         }
-                        (planner.regex(plan.str()?, regex).into(), t)
+                        let type_out = Type::unencoded(BasicType::Boolean).mutable();
+                        (planner.regex(plan.str()?, regex).into(), type_out)
                     }
                     _ => bail!(QueryError::TypeError, "Expected string constant as second argument to `regex`, actual: {:?}", regex),
                 }

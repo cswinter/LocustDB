@@ -323,10 +323,26 @@ fn test_regex() {
 }
 
 #[test]
+fn test_not_regex() {
+    test_query(
+        "SELECT first_name FROM default WHERE not(regex(first_name, '^C.+h.a')) LIMIT 1;",
+        &[vec![Str("Victor")]],
+    );
+}
+
+#[test]
 fn test_like() {
     test_query(
         "SELECT first_name FROM default WHERE first_name LIKE 'C%h_a';",
         &[vec![Str("Cynthia")]],
+    );
+}
+
+#[test]
+fn test_not_like() {
+    test_query(
+        "SELECT first_name FROM default WHERE first_name NOT LIKE 'C%h_a' LIMIT 1;",
+        &[vec![Str("Kathryn")]],
     );
 }
 
@@ -344,6 +360,22 @@ fn test_not_equals() {
     use Value::*;
     test_query(
         "select num, count(1) from default where num <> 0;",
+        &[
+            vec![Int(1), Int(49)],
+            vec![Int(2), Int(24)],
+            vec![Int(3), Int(11)],
+            vec![Int(4), Int(5)],
+            vec![Int(5), Int(2)],
+            vec![Int(8), Int(1)]
+        ],
+    )
+}
+
+#[test]
+fn test_not_equals_2() {
+    use Value::*;
+    test_query(
+        "select num, count(1) from default where not(num = 0);",
         &[
             vec![Int(1), Int(49)],
             vec![Int(2), Int(24)],
@@ -383,9 +415,7 @@ fn test_groupless_aggregate() {
         &[vec![Int(16197630), Int(10000)]],
     );
     test_query_nyc(
-        "SELECT count(0) FROM default WHERE passenger_count = 1;",
-        // TODO(sqlparser-rs#30): Use this once parser bug is fixed
-        // "SELECT count(0) FROM default WHERE NOT passenger_count <> 1;",
+         "SELECT count(0) FROM default WHERE NOT passenger_count <> 1;",
         &[vec![Int(6016)]],
     );
 }

@@ -47,11 +47,13 @@ fn get_query_components(ast: ASTNode)
                             QueryError>
 {
     match ast {
-        ASTNode::SQLSelect { projection, relation, selection, order_by, group_by, having, limit } => {
+        ASTNode::SQLSelect { projection, relation, joins, selection, order_by, group_by, having, limit } => {
             if group_by.is_some() {
                 Err(QueryError::NotImplemented(format!("Group By")))
             } else if having.is_some() {
                 Err(QueryError::NotImplemented(format!("Having")))
+            } else if !joins.is_empty() {
+                Err(QueryError::NotImplemented(format!("Join")))
             } else {
                 Ok((projection, relation, selection, order_by, limit))
             }
@@ -101,7 +103,9 @@ fn get_limit(limit: Option<Box<ASTNode>>) -> Result<u64, QueryError> {
 fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
     Ok(Box::new(match node {
         ASTNode::SQLBinaryExpr { ref left, ref op, ref right } =>
-            Expr::Func2(map_operator(op)?, expr(left)?, expr(right)?),
+            Expr::Func2(map_binary_operator(op)?, expr(left)?, expr(right)?),
+        ASTNode::SQLUnary { ref operator, expr: ref expression } =>
+            Expr::Func1(map_unary_operator(operator)?, expr(expression)?),
         ASTNode::SQLValue(ref literal) => Expr::Const(get_raw_val(literal)?),
         ASTNode::SQLIdentifier(ref identifier) => Expr::ColName(identifier.to_string()),
         ASTNode::SQLFunction { id, args } => match id.to_uppercase().as_ref() {
@@ -171,7 +175,14 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
     }))
 }
 
-fn map_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
+fn map_unary_operator(op: &SQLOperator) -> Result<Func1Type, QueryError> {
+    Ok(match op {
+        SQLOperator::Not => Func1Type::Not,
+        _ => return Err(fatal!("Unexpected unary operator"))
+    })
+}
+
+fn map_binary_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
     Ok(match o {
         SQLOperator::And => Func2Type::And,
         SQLOperator::Plus => Func2Type::Add,
@@ -187,6 +198,8 @@ fn map_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
         SQLOperator::NotEq => Func2Type::NotEquals,
         SQLOperator::Or => Func2Type::Or,
         SQLOperator::Like => Func2Type::Like,
+        SQLOperator::NotLike => Func2Type::NotLike,
+        _ => return Err(fatal!("Unexpected binary operator"))
     })
 }
 
