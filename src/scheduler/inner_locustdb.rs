@@ -26,7 +26,7 @@ use trace::*;
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
     lru: LRU,
-    pub storage: Arc<DiskStore>,
+    pub storage: Arc<dyn DiskStore>,
     disk_read_scheduler: Arc<DiskReadScheduler>,
 
     opts: Options,
@@ -40,7 +40,7 @@ pub struct InnerLocustDB {
 struct TaskState {
     trace_builder: RwLock<Option<TraceBuilder>>,
     trace_sender: SharedSender<Trace>,
-    task: Box<Task>,
+    task: Box<dyn Task>,
 }
 
 impl Drop for TaskState {
@@ -51,7 +51,7 @@ impl Drop for TaskState {
 }
 
 impl InnerLocustDB {
-    pub fn new(storage: Arc<DiskStore>, opts: &Options) -> InnerLocustDB {
+    pub fn new(storage: Arc<dyn DiskStore>, opts: &Options) -> InnerLocustDB {
         let lru = LRU::default();
         let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref(), &lru);
         let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);

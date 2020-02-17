@@ -21,7 +21,7 @@ impl<'a> Data<'a> for ScalarVal<&'a str> {
     default fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b { panic!(self.type_error("slice_box")) }
     default fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", self.get_type(), func_name) }
 
-    fn append_all(&mut self, _: &Data<'a>, _: usize) -> Option<BoxedData<'a>> {
+    fn append_all(&mut self, _: &dyn Data<'a>, _: usize) -> Option<BoxedData<'a>> {
         panic!(self.type_error("slice_box"))
     }
 
@@ -37,11 +37,16 @@ impl<'a, T: ScalarData<T>> Data<'a> for ScalarVal<T> {
     default fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b { panic!(self.type_error("slice_box")) }
     default fn type_error(&self, func_name: &str) -> String { format!("Vec<{:?}>.{}", T::t(), func_name) }
 
-    default fn append_all(&mut self, _: &Data<'a>, _: usize) -> Option<BoxedData<'a>> {
+    default fn append_all(&mut self, _: &dyn Data<'a>, _: usize) -> Option<BoxedData<'a>> {
         panic!(self.type_error("slice_box"))
     }
 
     default fn display(&self) -> String { format!("Scalar<{:?}>{:?}", T::t(), &self) }
+
+    // Copied from Data and marked default because specialization demands it
+    default fn cast_scalar_str(&self) -> &'a str { panic!(self.type_error("cast_scalar_str")) }
+    default fn cast_ref_scalar_string(&self) -> &String { panic!(self.type_error("cast_ref_scalar_string")) }
+    default fn cast_scalar_i64(&self) -> i64 { panic!(self.type_error("cast_scalar_i64")) }
 }
 
 impl<'a> Data<'a> for ScalarVal<String> {
@@ -50,19 +55,19 @@ impl<'a> Data<'a> for ScalarVal<String> {
 
 
 pub trait ScalarData<T>: Clone + Sync + Send + fmt::Debug {
-    fn unwrap(vec: &Data) -> T;
+    fn unwrap(vec: &dyn Data) -> T;
     fn raw_val(val: &T) -> RawVal;
     fn t() -> EncodingType;
 }
 
 impl ScalarData<i64> for i64 {
-    fn unwrap(vec: &Data) -> i64 { vec.cast_scalar_i64() }
+    fn unwrap(vec: &dyn Data) -> i64 { vec.cast_scalar_i64() }
     fn raw_val(val: &i64) -> RawVal { RawVal::Int(*val) }
     fn t() -> EncodingType { EncodingType::ScalarI64 }
 }
 
 impl<'a> ScalarData<&'a str> for &'a str {
-    fn unwrap(vec: &Data) -> &'a str {
+    fn unwrap(vec: &dyn Data) -> &'a str {
         // TODO(#96): fix. wait for associated type constructors?
         unsafe {
             mem::transmute::<&str, &'a str>(vec.cast_scalar_str())
@@ -74,7 +79,7 @@ impl<'a> ScalarData<&'a str> for &'a str {
 }
 
 impl ScalarData<String> for String {
-    fn unwrap(vec: &Data) -> String { vec.cast_ref_scalar_string().to_string() }
+    fn unwrap(vec: &dyn Data) -> String { vec.cast_ref_scalar_string().to_string() }
     fn raw_val(val: &String) -> RawVal { RawVal::Str(val.clone()) }
     fn t() -> EncodingType { EncodingType::ScalarStr }
 }

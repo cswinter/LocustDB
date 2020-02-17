@@ -38,7 +38,7 @@ impl<'a> VecOperator<'a> for HashMapGroupingByteSlices {
             let mut map: FnvHashMap<&[&'a [u8]], u32> = FnvHashMap::default();
             let mut grouping = scratchpad.get_mut(self.grouping_key_out);
             let mut unique_any = scratchpad.get_any_mut(self.unique_out);
-            let mut unique = unique_any.cast_ref_mut_byte_slices();
+            let unique = unique_any.cast_ref_mut_byte_slices();
             if stream { grouping.clear() }
             for row in raw_grouping_key.data.chunks(raw_grouping_key.row_len) {
                 grouping.push(*map.entry(row).or_insert_with(|| {

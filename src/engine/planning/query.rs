@@ -34,7 +34,7 @@ pub struct Query {
 impl NormalFormQuery {
     #[inline(never)] // produces more useful profiles
     pub fn run<'a>(&self,
-                   columns: &'a HashMap<String, Arc<DataSource>>,
+                   columns: &'a HashMap<String, Arc<dyn DataSource>>,
                    explain: bool,
                    show: bool,
                    partition: usize,
@@ -138,7 +138,7 @@ impl NormalFormQuery {
 
     #[inline(never)] // produces more useful profiles
     pub fn run_aggregate<'a>(&self,
-                             columns: &'a HashMap<String, Arc<DataSource>>,
+                             columns: &'a HashMap<String, Arc<dyn DataSource>>,
                              explain: bool,
                              show: bool,
                              partition: usize,
@@ -340,7 +340,7 @@ impl NormalFormQuery {
         }
     }
 
-    fn column_data(columns: &HashMap<String, Arc<DataSource>>) -> HashMap<String, Vec<&Data>> {
+    fn column_data(columns: &HashMap<String, Arc<dyn DataSource>>) -> HashMap<String, Vec<&dyn Data>> {
         columns.iter()
             .map(|(name, column)| (name.to_string(), column.data_sections()))
             .collect()

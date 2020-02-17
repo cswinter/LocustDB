@@ -20,7 +20,7 @@ pub trait ColumnGenerator: Sync + Send {
 
 pub fn int_markov_chain(
     elements: Vec<i64>,
-    transition_probabilities: Vec<Vec<f64>>) -> Box<ColumnGenerator> {
+    transition_probabilities: Vec<Vec<f64>>) -> Box<dyn ColumnGenerator> {
     Box::new(MarkovChain {
         elem: elements.into_iter().map(Some).collect(),
         p_transition: transition_probabilities,
@@ -28,15 +28,15 @@ pub fn int_markov_chain(
     })
 }
 
-pub fn int_uniform(low: i64, high: i64) -> Box<ColumnGenerator> {
+pub fn int_uniform(low: i64, high: i64) -> Box<dyn ColumnGenerator> {
     Box::new(UniformInteger { low, high })
 }
 
-pub fn splayed(offset: i64, coefficient: i64) -> Box<ColumnGenerator> {
+pub fn splayed(offset: i64, coefficient: i64) -> Box<dyn ColumnGenerator> {
     Box::new(Splayed { offset, coefficient })
 }
 
-pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<ColumnGenerator> {
+pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<dyn ColumnGenerator> {
     Box::new(Weighted {
         elem: values.into_iter().map(Some).collect(),
         weights,
@@ -44,13 +44,13 @@ pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<ColumnGenerator>
     })
 }
 
-pub fn incrementing_int() -> Box<ColumnGenerator> {
+pub fn incrementing_int() -> Box<dyn ColumnGenerator> {
     Box::new(IncrementingInteger)
 }
 
 pub fn string_markov_chain(
     elements: Vec<String>,
-    transition_probabilities: Vec<Vec<f64>>) -> Box<ColumnGenerator> {
+    transition_probabilities: Vec<Vec<f64>>) -> Box<dyn ColumnGenerator> {
     Box::new(MarkovChain {
         elem: elements,
         p_transition: transition_probabilities,
@@ -58,7 +58,7 @@ pub fn string_markov_chain(
     })
 }
 
-pub fn string_weighted(values: Vec<String>, weights: Vec<f64>) -> Box<ColumnGenerator> {
+pub fn string_weighted(values: Vec<String>, weights: Vec<f64>) -> Box<dyn ColumnGenerator> {
     Box::new(Weighted {
         elem: values,
         weights,
@@ -66,11 +66,11 @@ pub fn string_weighted(values: Vec<String>, weights: Vec<f64>) -> Box<ColumnGene
     })
 }
 
-pub fn random_hex_string(length: usize) -> Box<ColumnGenerator> {
+pub fn random_hex_string(length: usize) -> Box<dyn ColumnGenerator> {
     Box::new(HexString { length })
 }
 
-pub fn random_string(min_length: usize, max_length: usize) -> Box<ColumnGenerator> {
+pub fn random_string(min_length: usize, max_length: usize) -> Box<dyn ColumnGenerator> {
     Box::new(RandomString {
         min_length,
         max_length,
@@ -79,7 +79,7 @@ pub fn random_string(min_length: usize, max_length: usize) -> Box<ColumnGenerato
 
 pub fn partition_sparse(
     null_probability: f64,
-    generator: Box<ColumnGenerator>) -> Box<ColumnGenerator> {
+    generator: Box<dyn ColumnGenerator>) -> Box<dyn ColumnGenerator> {
     Box::new(PartitionSparse {
         null_probability,
         generator,
@@ -178,7 +178,7 @@ impl ColumnGenerator for Splayed {
 
 struct PartitionSparse {
     null_probability: f64,
-    generator: Box<ColumnGenerator>,
+    generator: Box<dyn ColumnGenerator>,
 }
 
 impl ColumnGenerator for PartitionSparse {
@@ -242,7 +242,7 @@ pub struct GenTable {
     pub name: String,
     pub partitions: usize,
     pub partition_size: usize,
-    pub columns: Vec<(String, Box<ColumnGenerator>)>,
+    pub columns: Vec<(String, Box<dyn ColumnGenerator>)>,
 }
 
 impl GenTable {

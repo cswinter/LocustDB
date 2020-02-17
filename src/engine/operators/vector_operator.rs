@@ -71,7 +71,7 @@ use super::unpack_strings::UnpackStrings;
 use super::val_rows_pack::*;
 use super::val_rows_unpack::*;
 
-pub type BoxedOperator<'a> = Box<VecOperator<'a> + 'a>;
+pub type BoxedOperator<'a> = Box<dyn VecOperator<'a> + 'a>;
 
 pub trait VecOperator<'a> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>;
@@ -104,13 +104,13 @@ pub trait VecOperator<'a> {
 
 
 fn short_type_name<T: ?Sized>() -> String {
-    let full_name = unsafe { type_name::<T>() };
+    let full_name = type_name::<T>();
     let re = Regex::new(r"\w+::").unwrap();
     re.replace_all(full_name, "").into_owned()
 }
 
 
-impl<'a> VecOperator<'a> {
+impl<'a> dyn VecOperator<'a> {
     pub fn read_column_data(colname: String,
                             section_index: usize,
                             output: BufferRef<Any>) -> BoxedOperator<'a> {

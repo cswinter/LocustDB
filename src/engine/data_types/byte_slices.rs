@@ -34,7 +34,7 @@ impl<'a> Data<'a> for ByteSlices<'a> {
     fn get_raw(&self, _i: usize) -> RawVal { panic!(self.type_error("get_raw")) }
     fn get_type(&self) -> EncodingType { EncodingType::ByteSlices(self.row_len) }
 
-    fn append_all(&mut self, _other: &Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
+    fn append_all(&mut self, _other: &dyn Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
         panic!(self.type_error("append_all"))
     }
 

@@ -8,7 +8,7 @@ pub trait Task: Sync + Send {
 }
 
 
-impl Task for Fn() -> () + Send + Sync + 'static {
+impl Task for dyn Fn() -> () + Send + Sync + 'static {
     fn execute(&self) {
         self.call(());
     }
@@ -36,7 +36,7 @@ impl<F, T> Task for FnTask<F, T> where
     fn multithreaded(&self) -> bool { false }
 }
 
-impl Task {
+impl dyn Task {
     pub fn from_fn<F, T>(fun: F) -> (impl Task, oneshot::Receiver<T>) where
         F: Fn() -> T + Sync + Send + 'static,
         T: Send {

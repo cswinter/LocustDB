@@ -1,4 +1,4 @@
-#![feature(fn_traits, integer_atomics, refcell_replace_swap, specialization, trait_alias, core_intrinsics, box_patterns, proc_macro_hygiene)]
+#![feature(fn_traits, integer_atomics, specialization, trait_alias, core_intrinsics, box_patterns, proc_macro_hygiene)]
 extern crate aliasmethod;
 extern crate byteorder;
 #[cfg(feature = "enable_rocksdb")]

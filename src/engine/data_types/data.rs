@@ -12,14 +12,14 @@ use mem_store::value::Val;
 
 use super::NullableVec;
 
-pub type BoxedData<'a> = Box<Data<'a> + 'a>;
+pub type BoxedData<'a> = Box<dyn Data<'a> + 'a>;
 
 pub trait Data<'a>: Send + Sync {
     fn len(&self) -> usize;
     fn get_raw(&self, i: usize) -> RawVal;
     fn get_type(&self) -> EncodingType;
     fn type_error(&self, func_name: &str) -> String;
-    fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>>;
+    fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>>;
     fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedData<'b> where 'a: 'b;
 
     fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
@@ -71,8 +71,8 @@ impl<'a> DataSource for BoxedData<'a> {
     fn range(&self) -> Option<(i64, i64)> { None }
     fn codec(&self) -> Codec { Codec::identity(self.get_type().cast_to_basic()) }
     fn len(&self) -> usize { (**self).len() }
-    fn data_sections(&self) -> Vec<&Data> {
-        vec![unsafe { mem::transmute::<&Data, &Data>(&**self) }]
+    fn data_sections(&self) -> Vec<&dyn Data> {
+        vec![unsafe { mem::transmute::<&dyn Data, &dyn Data>(&**self) }]
     }
     fn full_type(&self) -> Type { Type::new(self.encoding_type().cast_to_basic(), Some(self.codec())) }
 }
@@ -83,7 +83,7 @@ impl<'a> fmt::Debug for BoxedData<'a> {
     }
 }
 
-impl<'a> Data<'a> {
+impl<'a> dyn Data<'a> {
     pub fn owned<T: VecData<T> + 'a>(data: Vec<T>) -> BoxedData<'a> { Box::new(data) }
     pub fn constant(value: RawVal) -> BoxedData<'a> { Box::new(value) }
     pub fn scalar_i64(value: i64) -> BoxedData<'a> { Box::new(RawVal::Int(value)) }
@@ -104,7 +104,7 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
         Box::new(&self[from..to])
     }
 
-    default fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>> {
+    default fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>> {
         if other.get_type() != self.get_type() {
             let mut mixed = self.to_mixed();
             if other.get_type() == EncodingType::Val {
@@ -129,6 +129,31 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
     }
 
     fn display(&self) -> String { format!("Vec<{:?}>{}", T::t(), display_slice(&self, 120)) }
+
+    // Copied from Data and marked default because specialization demands it
+    default fn cast_ref_u64(&self) -> &[u64] { panic!(self.type_error("cast_ref_u64")) }
+    default fn cast_ref_usize(&self) -> &[usize] { panic!(self.type_error("cast_ref_usize")) }
+    default fn cast_ref_i64(&self) -> &[i64] { panic!(self.type_error("cast_ref_i64")) }
+    default fn cast_ref_u32(&self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
+    default fn cast_ref_u16(&self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
+    default fn cast_ref_u8(&self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
+    default fn cast_ref_mut_premerge(&mut self) -> &mut Vec<Premerge> { panic!(self.type_error("cast_ref_mut_premerge_op")) }
+    default fn cast_ref_premerge(&self) -> &[Premerge] { panic!(self.type_error("cast_ref_merge_op")) }
+    default fn cast_ref_mut_merge_op(&mut self) -> &mut Vec<MergeOp> { panic!(self.type_error("cast_ref_mut_merge_op")) }
+    default fn cast_ref_merge_op(&self) -> &[MergeOp] { panic!(self.type_error("cast_ref_merge_op")) }
+    default fn cast_ref_mut_str(&mut self) -> &mut Vec<&'a str> { panic!(self.type_error("cast_ref_mut_str")) }
+    default fn cast_ref_mut_opt_str(&mut self) -> &mut Vec<Option<&'a str>> { panic!(self.type_error("cast_ref_mut_opt_str")) }
+    default fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> { panic!(self.type_error("cast_ref_mut_u64")) }
+    default fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> { panic!(self.type_error("cast_ref_mut_usize")) }
+    default fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { panic!(self.type_error("cast_ref_mut_i64")) }
+    default fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { panic!(self.type_error("cast_ref_mut_u32")) }
+    default fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { panic!(self.type_error("cast_ref_mut_u16")) }
+    default fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { panic!(self.type_error("cast_ref_mut_u8")) }
+    default fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
+    default fn cast_ref_mixed(&self) -> &[Val<'a>] { panic!(self.type_error("cast_ref_mixed")) }
+    default fn cast_ref_mut_mixed(&mut self) -> &mut Vec<Val<'a>> { panic!(self.type_error("cast_ref_mut_mixed")) }
+    default fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
+    default fn cast_ref_opt_str<'b>(&'b self) -> &'b [Option<&'a str>] { panic!(self.type_error("cast_ref_opt_str")) }
 }
 
 impl<'a> Data<'a> for Vec<&'a str> {
@@ -156,7 +181,7 @@ impl<'a> Data<'a> for Vec<Val<'a>> {
     fn cast_ref_mixed<'b>(&'b self) -> &'b [Val<'a>] { self }
     fn cast_ref_mut_mixed<'b>(&'b mut self) -> &'b mut Vec<Val<'a>> { self }
 
-    fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>> {
+    fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>> {
         if other.get_type() == EncodingType::Val {
             self.extend(other.cast_ref_mixed().iter().take(count));
         } else {
@@ -218,13 +243,25 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for &'a [T] {
         Box::new(&self[from..to])
     }
 
-    fn append_all(&mut self, _other: &Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
+    fn append_all(&mut self, _other: &dyn Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
         panic!("append_all on borrow")
     }
 
     fn type_error(&self, func_name: &str) -> String { format!("[{:?}].{}", T::t(), func_name) }
 
     fn display(&self) -> String { format!("&{:?}{}", T::t(), display_slice(&self, 120)) }
+
+    // Copied from Data and marked default because specialization demands it
+    default fn cast_ref_merge_op(&self) -> &[MergeOp] { panic!(self.type_error("cast_ref_merge_op")) }
+    default fn cast_ref_premerge(&self) -> &[Premerge] { panic!(self.type_error("cast_ref_merge_op")) }
+    default fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
+    default fn cast_ref_i64(&self) -> &[i64] { panic!(self.type_error("cast_ref_i64")) }
+    default fn cast_ref_u64(&self) -> &[u64] { panic!(self.type_error("cast_ref_u64")) }
+    default fn cast_ref_u32(&self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
+    default fn cast_ref_u16(&self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
+    default fn cast_ref_u8(&self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
+    default fn cast_ref_usize(&self) -> &[usize] { panic!(self.type_error("cast_ref_usize")) }
+    default fn cast_ref_mixed(&self) -> &[Val<'a>] { panic!(self.type_error("cast_ref_mixed")) }
 }
 
 impl<'a> Data<'a> for &'a [&'a str] {
@@ -277,7 +314,7 @@ impl<'a> Data<'a> for usize {
     fn get_type(&self) -> EncodingType { EncodingType::Null }
     fn type_error(&self, func_name: &str) -> String { format!("EmptyVector.{}", func_name) }
 
-    fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>> {
+    fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>> {
         if other.get_type() == EncodingType::Null {
             *self += count;
             None
@@ -301,7 +338,7 @@ impl<'a> Data<'a> for RawVal {
     fn get_raw(&self, _i: usize) -> RawVal { self.clone() }
     fn get_type(&self) -> EncodingType { EncodingType::ConstVal }
     fn type_error(&self, func_name: &str) -> String { format!("Constant.{}", func_name) }
-    fn append_all(&mut self, _other: &Data<'a>, _count: usize) -> Option<BoxedData<'a>> { panic!("Constant.extend") }
+    fn append_all(&mut self, _other: &dyn Data<'a>, _count: usize) -> Option<BoxedData<'a>> { panic!("Constant.extend") }
     fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b { Box::new(self.clone()) }
     fn cast_ref_scalar_string(&self) -> &string::String {
         match self {

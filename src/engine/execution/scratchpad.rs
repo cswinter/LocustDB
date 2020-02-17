@@ -9,12 +9,12 @@ pub struct Scratchpad<'a> {
     buffers: Vec<RefCell<BoxedData<'a>>>,
     aliases: Vec<Option<usize>>,
     null_maps: Vec<Option<usize>>,
-    columns: HashMap<String, Vec<&'a Data<'a>>>,
+    columns: HashMap<String, Vec<&'a dyn Data<'a>>>,
     pinned: Vec<bool>,
 }
 
 impl<'a> Scratchpad<'a> {
-    pub fn new(count: usize, columns: HashMap<String, Vec<&'a Data<'a>>>) -> Scratchpad<'a> {
+    pub fn new(count: usize, columns: HashMap<String, Vec<&'a dyn Data<'a>>>) -> Scratchpad<'a> {
         let mut buffers = Vec::with_capacity(count);
         for _ in 0..count {
             buffers.push(RefCell::new(Data::empty(0)));
@@ -28,16 +28,16 @@ impl<'a> Scratchpad<'a> {
         }
     }
 
-    pub fn get_any(&self, index: BufferRef<Any>) -> Ref<Data<'a>> {
+    pub fn get_any(&self, index: BufferRef<Any>) -> Ref<dyn Data<'a>> {
         Ref::map(self.buffer(index).borrow(), |x| x.as_ref())
     }
 
-    pub fn get_any_mut(&self, index: BufferRef<Any>) -> RefMut<Data<'a> + 'a> {
+    pub fn get_any_mut(&self, index: BufferRef<Any>) -> RefMut<dyn Data<'a> + 'a> {
         assert!(!self.pinned[self.resolve(&index)], "Trying to mutably borrow pinned buffer {}", index);
         RefMut::map(self.buffer(index).borrow_mut(), |x| x.borrow_mut())
     }
 
-    pub fn get_column_data(&self, name: &str, section_index: usize) -> &'a Data<'a> {
+    pub fn get_column_data(&self, name: &str, section_index: usize) -> &'a dyn Data<'a> {
         match self.columns.get(name) {
             Some(ref col) => col[section_index],
             None => panic!("No column of name {} ({:?})", name, self.columns.keys()),
@@ -69,7 +69,7 @@ impl<'a> Scratchpad<'a> {
     pub fn get_mut<T: VecData<T> + 'a>(&self, index: BufferRef<T>) -> RefMut<Vec<T>> {
         assert!(!self.pinned[self.resolve(&index)], "Trying to mutably borrow pinned buffer {}", index);
         RefMut::map(self.buffers[self.resolve(&index)].borrow_mut(), |x| {
-            let a: &mut Data<'a> = x.borrow_mut();
+            let a: &mut dyn Data<'a> = x.borrow_mut();
             T::unwrap_mut(a)
         })
     }

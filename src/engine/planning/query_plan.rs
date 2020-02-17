@@ -647,7 +647,7 @@ pub fn order_preserving((plan, t): (TypedBufferRef, Type),
     }
 }
 
-type Factory = Box<Fn(&mut QueryPlanner, TypedBufferRef, TypedBufferRef) -> TypedBufferRef + Sync>;
+type Factory = Box<dyn Fn(&mut QueryPlanner, TypedBufferRef, TypedBufferRef) -> TypedBufferRef + Sync>;
 
 struct Function2 {
     pub factory: Factory,
@@ -733,7 +733,7 @@ impl QueryPlan {
     pub fn compile_expr(
         expr: &Expr,
         filter: Filter,
-        columns: &HashMap<String, Arc<DataSource>>,
+        columns: &HashMap<String, Arc<dyn DataSource>>,
         column_len: usize,
         planner: &mut QueryPlanner) -> Result<(TypedBufferRef, Type), QueryError> {
         use self::Expr::*;
@@ -831,8 +831,8 @@ impl QueryPlan {
                 }
             }
             Func2(function, ref lhs, ref rhs) => {
-                let (mut plan_lhs, mut type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, column_len, planner)?;
-                let (mut plan_rhs, mut type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
+                let (mut plan_lhs, type_lhs) = QueryPlan::compile_expr(lhs, filter, columns, column_len, planner)?;
+                let (mut plan_rhs, type_rhs) = QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
 
                 let declarations = match FUNCTION2_REGISTRY.get(&function) {
                     Some(patterns) => patterns,
@@ -984,7 +984,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
 pub fn compile_grouping_key(
     exprs: &[Expr],
     filter: Filter,
-    columns: &HashMap<String, Arc<DataSource>>,
+    columns: &HashMap<String, Arc<dyn DataSource>>,
     partition_len: usize,
     planner: &mut QueryPlanner)
     -> Result<((TypedBufferRef, bool), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef), QueryError> {
@@ -1118,7 +1118,7 @@ pub fn compile_grouping_key(
 fn try_bitpacking(
     exprs: &[Expr],
     filter: Filter,
-    columns: &HashMap<String, Arc<DataSource>>,
+    columns: &HashMap<String, Arc<dyn DataSource>>,
     partition_len: usize,
     planner: &mut QueryPlanner)
     -> Result<Option<((TypedBufferRef, bool), i64, Vec<(TypedBufferRef, Type)>, TypedBufferRef)>, QueryError> {
@@ -1203,7 +1203,7 @@ fn try_bitpacking(
 
 pub(super) fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>>, result: &mut QueryExecutor<'a>) -> Result<TypedBufferRef, QueryError> {
     trace!("{:?}", &plan);
-    let operation: Box<VecOperator> = match plan {
+    let operation: Box<dyn VecOperator> = match plan {
         QueryPlan::Select { plan, indices, selection } => VecOperator::select(plan, indices, selection)?,
         QueryPlan::ColumnSection { name, section, column_section, .. } => VecOperator::read_column_data(name, section, column_section.any()),
         QueryPlan::AssembleNullable { data, present, nullable } => VecOperator::nullable(data, present, nullable)?,

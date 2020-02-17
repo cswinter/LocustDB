@@ -46,7 +46,7 @@ pub struct QueryState<'a> {
     explains: Vec<String>,
     rows_scanned: usize,
     rows_collected: usize,
-    colstacks: Vec<Vec<HashMap<String, Arc<DataSource>>>>,
+    colstacks: Vec<Vec<HashMap<String, Arc<dyn DataSource>>>>,
 }
 
 pub struct QueryOutput {
@@ -128,8 +128,8 @@ impl QueryTask {
             let cols = partition.get_cols(&self.referenced_cols, &self.db);
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
             let unsafe_cols = unsafe {
-                mem::transmute::<&HashMap<String, Arc<DataSource>>,
-                    &'static HashMap<String, Arc<DataSource>>>(&cols)
+                mem::transmute::<&HashMap<String, Arc<dyn DataSource>>,
+                    &'static HashMap<String, Arc<dyn DataSource>>>(&cols)
             };
             let (mut batch_result, explain) = match if self.main_phase.aggregate.is_empty() {
                 self.main_phase.run(unsafe_cols, self.explain, show, id, partition.len())
@@ -218,8 +218,8 @@ impl QueryTask {
             let final_result = if let Some(final_pass) = &self.final_pass {
                 let data_sources = full_result.into_columns();
                 let cols = unsafe {
-                    mem::transmute::<&HashMap<String, Arc<DataSource>>,
-                        &'static HashMap<String, Arc<DataSource>>>(&data_sources)
+                    mem::transmute::<&HashMap<String, Arc<dyn DataSource>>,
+                        &'static HashMap<String, Arc<dyn DataSource>>>(&data_sources)
                 };
                 let full_result = final_pass.run(cols,
                                                  self.explain,
@@ -235,7 +235,7 @@ impl QueryTask {
         }
     }
 
-    fn push_colstack(&self, colstack: Vec<HashMap<String, Arc<DataSource>>>) {
+    fn push_colstack(&self, colstack: Vec<HashMap<String, Arc<dyn DataSource>>>) {
         let mut state = self.unsafe_state.lock().unwrap();
         state.colstacks.push(unsafe { mem::transmute(colstack) });
     }

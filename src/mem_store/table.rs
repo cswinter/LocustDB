@@ -40,7 +40,7 @@ impl Table {
         partitions.values().cloned().collect()
     }
 
-    pub fn load_table_metadata(batch_size: usize, storage: &DiskStore, lru: &LRU) -> HashMap<String, Table> {
+    pub fn load_table_metadata(batch_size: usize, storage: &dyn DiskStore, lru: &LRU) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
         for md in storage.load_metadata() {
             let table = tables
