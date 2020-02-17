@@ -180,6 +180,7 @@ fn table_stats(locustdb: &LocustDB) {
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn repl(locustdb: &LocustDB) {
     let mut rl = rustyline::Editor::<()>::new();
     rl.load_history(".locustdb_history").ok();
@@ -242,7 +243,7 @@ fn repl(locustdb: &LocustDB) {
             continue;
         }
         if s.starts_with(":load") {
-            let args = &s[6..].split(" ").collect::<Vec<_>>();
+            let args = &s[6..].split(' ').collect::<Vec<_>>();
             if args.len() < 3 {
                 println!("Expected at least 3 arguments to :load");
                 continue;

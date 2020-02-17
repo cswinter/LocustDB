@@ -21,12 +21,10 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortBy<T> {
             } else {
                 indices.sort_unstable_by(|j, i| ranking[*i].cmp(&ranking[*j]));
             }
+        } else if self.stable {
+            indices.sort_by_key(|i| ranking[*i]);
         } else {
-            if self.stable {
-                indices.sort_by_key(|i| ranking[*i]);
-            } else {
-                indices.sort_unstable_by_key(|i| ranking[*i]);
-            }
+            indices.sort_unstable_by_key(|i| ranking[*i]);
         }
         Ok(())
     }
@@ -72,22 +70,20 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortByNullable<T> {
                     (false, false) => Ordering::Equal,
                 })
             }
-        } else {
-            if self.stable {
+        } else if self.stable {
                 indices.sort_by(|&i, &j| match (present.is_set(i), present.is_set(j)) {
                     (true, true) => ranking[i].cmp(&ranking[j]),
                     (false, true) => Ordering::Less,
                     (true, false) => Ordering::Greater,
                     (false, false) => Ordering::Equal,
                 })
-            } else {
-                indices.sort_unstable_by(|&i, &j| match (present.is_set(i), present.is_set(j)) {
-                    (true, true) => ranking[i].cmp(&ranking[j]),
-                    (false, true) => Ordering::Less,
-                    (true, false) => Ordering::Greater,
-                    (false, false) => Ordering::Equal,
-                })
-            }
+        } else {
+            indices.sort_unstable_by(|&i, &j| match (present.is_set(i), present.is_set(j)) {
+                (true, true) => ranking[i].cmp(&ranking[j]),
+                (false, true) => Ordering::Less,
+                (true, false) => Ordering::Greater,
+                (false, false) => Ordering::Equal,
+            })
         }
         Ok(())
     }

@@ -21,12 +21,10 @@ impl<'a> VecOperator<'a> for SortBySlices {
             } else {
                 result.sort_unstable_by(|i, j| ranking.row(*i).cmp(&ranking.row(*j)).reverse());
             }
+        } else if self.stable {
+            result.sort_by_key(|i| ranking.row(*i));
         } else {
-            if self.stable {
-                result.sort_by_key(|i| ranking.row(*i));
-            } else {
-                result.sort_unstable_by_key(|i| ranking.row(*i));
-            }
+            result.sort_unstable_by_key(|i| ranking.row(*i));
         }
         Ok(())
     }

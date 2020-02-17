@@ -58,7 +58,7 @@ fn gen_table(db: &LocustDB, name: &str, partitions: usize, partition_size: usize
                  )),
                 ("vendor_id".to_string(),
                  locustdb::colgen::string_weighted(
-                     ["1", "2", "3", "CMT", "DDS", "VTS"].iter().map(|s| s.to_string()).collect(),
+                     ["1", "2", "3", "CMT", "DDS", "VTS"].iter().map(|s| (*s).to_string()).collect(),
                      vec![195.0, 260.0, 0.006, 493.0, 142.0, 503.0],
                  )),
                 ("reducible1".to_string(),

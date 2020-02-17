@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
-use capnp::{serialize, Word, message};
+use capnp::{serialize, message};
 use self::rocksdb::*;
 use storage_format_capnp::*;
 
@@ -105,7 +105,7 @@ impl DiskStore for RocksDB {
             let elapsed = now - t;
             if elapsed > 1_000_000_000 {
                 debug!("restoring {}.{} {}", name, id, byte(size as f64));
-                debug!("{}/s", byte((1000000000 * size_total as u64 / elapsed) as f64));
+                debug!("{}/s", byte((1_000_000_000 * size_total as u64 / elapsed) as f64));
                 t = now;
                 size_total = 0;
             }

@@ -126,7 +126,7 @@ impl Codec {
                 CodecOp::Add(_, x) => {
                     let lhs = stack.pop().unwrap();
                     let rhs = planner.scalar_i64(x, true).into();
-                    planner.add(lhs, rhs).into()
+                    planner.add(lhs, rhs)
                 }
                 CodecOp::Delta(_) => planner.delta_decode(stack.pop().unwrap()).into(),
                 CodecOp::ToI64(_) => planner.cast(stack.pop().unwrap(), EncodingType::I64),
@@ -140,7 +140,7 @@ impl Codec {
                     let dict_data = stack.pop().unwrap();
                     let dict_indices = stack.pop().unwrap();
                     let indices = stack.pop().unwrap();
-                    planner.dict_lookup(indices, dict_indices.u64().unwrap(), dict_data.u8().unwrap()).into()
+                    planner.dict_lookup(indices, dict_indices.u64().unwrap(), dict_data.u8().unwrap())
                 }
                 CodecOp::LZ4(t, decoded_length) =>
                     planner.lz4_decode(stack.pop().unwrap().u8().unwrap(), decoded_length, t),
@@ -376,7 +376,7 @@ impl CodecOp {
 
     fn signature(&self, alternate: bool) -> String {
         match self {
-            CodecOp::Nullable => format!("Nullable"),
+            CodecOp::Nullable => "Nullable".to_string(),
             CodecOp::Add(t, amount) => if alternate {
                 format!("Add({:?}, {})", t, amount)
             } else {

@@ -18,5 +18,5 @@ impl<'a> VecOperator<'a> for NullVec {
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { true }
     fn allocates(&self) -> bool { false }
-    fn display_op(&self, _: bool) -> String { format!("NullVec") }
+    fn display_op(&self, _: bool) -> String { "NullVec".to_string() }
 }

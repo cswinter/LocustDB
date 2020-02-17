@@ -224,7 +224,7 @@ impl QueryTask {
                 let full_result = final_pass.run(cols,
                                                  self.explain,
                                                  !self.show.is_empty(),
-                                                 0xdeadbeef,
+                                                 0xdead_beef,
                                                  cols.iter().next().map(|(_, c)| c.len()).unwrap_or(0)).unwrap().0;
                 self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains)
             } else {
@@ -237,7 +237,7 @@ impl QueryTask {
 
     fn push_colstack(&self, colstack: Vec<HashMap<String, Arc<dyn DataSource>>>) {
         let mut state = self.unsafe_state.lock().unwrap();
-        state.colstacks.push(unsafe { mem::transmute(colstack) });
+        state.colstacks.push(colstack);
     }
 
     fn fail_with(&self, error: QueryError) {

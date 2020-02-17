@@ -123,7 +123,7 @@ pub enum BasicType {
 }
 
 impl BasicType {
-    pub fn to_encoded(&self) -> EncodingType {
+    pub fn to_encoded(self) -> EncodingType {
         match self {
             BasicType::String => EncodingType::Str,
             BasicType::Integer => EncodingType::I64,
@@ -135,18 +135,18 @@ impl BasicType {
         }
     }
 
-    pub fn is_nullable(&self) -> bool {
+    pub fn is_nullable(self) -> bool {
         match self {
             BasicType::NullableInteger | BasicType::NullableString => true,
             _ => false,
         }
     }
 
-    pub fn non_nullable(&self) -> BasicType {
+    pub fn non_nullable(self) -> BasicType {
         match self {
             BasicType::NullableInteger => BasicType::Integer,
             BasicType::NullableString => BasicType::String,
-            _ => *self,
+            _ => self,
         }
     }
 }

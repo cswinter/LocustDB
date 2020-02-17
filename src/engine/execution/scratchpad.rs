@@ -62,6 +62,7 @@ impl<'a> Scratchpad<'a> {
         self.pinned[i] = true;
         let any = self.get_any(index.any());
         unsafe {
+            #[allow(clippy::transmute_ptr_to_ptr)]
             mem::transmute::<&str, &'a str>(any.cast_ref_scalar_string())
         }
     }
@@ -136,6 +137,8 @@ impl<'a> Scratchpad<'a> {
         }
     }
 
+    // TODO: return struct
+    #[allow(clippy::type_complexity, clippy::map_entry)]
     pub fn collect_aliased(&mut self,
                            projections: &[BufferRef<Any>],
                            aggregations: &[(BufferRef<Any>, Aggregator)],

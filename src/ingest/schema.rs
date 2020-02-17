@@ -33,10 +33,10 @@ impl Schema {
     pub fn parse(s: &str) -> Result<Schema, String> {
         let mut column_names = Vec::new();
         let mut column_schemas = Vec::new();
-        let columns = s.split(",");
+        let columns = s.split(',');
         for column in columns {
-            let segments = column.split(":").collect::<Vec<_>>();
-            if segments.len() == 0 {
+            let segments = column.split(':').collect::<Vec<_>>();
+            if segments.is_empty() {
                 column_schemas.push(ColumnSchema::drop_column());
             } else if segments.len() == 1 {
                 column_schemas.push(ColumnSchema::parse(segments[0])?);
@@ -48,7 +48,7 @@ impl Schema {
             }
         }
         if !column_names.is_empty() && column_names.len() != column_schemas.len() {
-            return Err(format!("Must specify names for all columns, or for none."));
+            return Err("Must specify names for all columns, or for none.".to_string());
         }
         Ok(Schema {
             column_names: if column_names.is_empty() { None } else { Some(column_names) },
@@ -59,7 +59,7 @@ impl Schema {
 
 impl ColumnSchema {
     fn parse(s: &str) -> Result<ColumnSchema, String> {
-        let segments = s.split(".").collect::<Vec<_>>();
+        let segments = s.split('.').collect::<Vec<_>>();
         let (stype, stransform) = if segments.len() == 1 {
             (segments[0].to_string(), "".to_string())
         } else if segments.len() == 2 {

@@ -42,7 +42,7 @@ impl QueryPlanner {
 
     pub fn resolve(&self, buffer: &TypedBufferRef) -> &QueryPlan {
         let op_index = self.buffer_to_operation[buffer.buffer.i]
-            .expect(&format!("Not entry found for {:?}", buffer));
+            .unwrap_or_else(|| panic!("No entry found for {:?}", buffer));
         &self.operations[op_index]
     }
 

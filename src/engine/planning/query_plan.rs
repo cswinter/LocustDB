@@ -586,6 +586,8 @@ pub enum QueryPlan {
     },
 }
 
+// TODO: return struct
+#[allow(clippy::type_complexity)]
 pub fn prepare_hashmap_grouping(raw_grouping_key: TypedBufferRef,
                                 columns: usize,
                                 max_cardinality: usize,
@@ -616,13 +618,13 @@ pub fn prepare_aggregation(mut plan: TypedBufferRef,
                            -> Result<(TypedBufferRef, Type), QueryError> {
     Ok(match aggregator {
         Aggregator::Count => {
-            let plan = if plan.tag == EncodingType::ScalarI64 { grouping_key.clone() } else { plan };
+            let plan = if plan.tag == EncodingType::ScalarI64 { grouping_key } else { plan };
             (planner.aggregate(plan, grouping_key, max_index, Aggregator::Count, EncodingType::U32),
              Type::encoded(Codec::integer_cast(EncodingType::U32)))
         }
         Aggregator::Sum => {
             if !plan_type.is_summation_preserving() {
-                plan = plan_type.codec.clone().unwrap().decode(plan, planner);
+                plan = plan_type.codec.unwrap().decode(plan, planner);
             }
             // PERF: determine dense groupings
             (planner.checked_aggregate(plan, grouping_key, max_index, Aggregator::Sum, EncodingType::I64),
@@ -630,7 +632,7 @@ pub fn prepare_aggregation(mut plan: TypedBufferRef,
         }
         Aggregator::Max | Aggregator::Min => {
             // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
-            plan = plan_type.codec.clone().unwrap().decode(plan, planner);
+            plan = plan_type.codec.unwrap().decode(plan, planner);
             (planner.aggregate(plan, grouping_key, max_index, aggregator, EncodingType::I64),
              Type::unencoded(BasicType::Integer))
         }
@@ -687,49 +689,50 @@ lazy_static! {
 fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
     vec![
         (Func2Type::Add,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_add(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_add(lhs, rhs)))]),
         (Func2Type::Subtract,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_subtract(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_subtract(lhs, rhs)))]),
         (Func2Type::Multiply,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_multiply(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_multiply(lhs, rhs)))]),
         (Func2Type::Divide,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_divide(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_divide(lhs, rhs)))]),
         (Func2Type::Modulo,
-         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_modulo(lhs, rhs).into()))]),
+         vec![Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_modulo(lhs, rhs)))]),
         (Func2Type::LT,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs).into()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs)),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs).into()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs)),
                                        BasicType::String)]),
         (Func2Type::LTE,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs).into()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs)),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs).into()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs)),
                                        BasicType::String)]),
         (Func2Type::GT,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs).into()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs)),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs).into()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs)),
                                        BasicType::String)]),
         (Func2Type::GTE,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs).into()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs)),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs).into()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs)),
                                        BasicType::String)]),
         (Func2Type::Equals,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs).into()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs)),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs).into()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs)),
                                        BasicType::String)]),
         (Func2Type::NotEquals,
-         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs).into()),
+         vec![Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs)),
                                        BasicType::Integer),
-              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs).into()),
+              Function2::comparison_op(Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs)),
                                        BasicType::String)]),
     ].into_iter().collect()
 }
 
 impl QueryPlan {
+    #[allow(clippy::trivial_regex)]
     pub fn compile_expr(
         expr: &Expr,
         filter: Filter,
@@ -779,23 +782,23 @@ impl QueryPlan {
                     box Const(RawVal::Str(pattern)) => {
                         let mut pattern = pattern.to_string();
                         pattern = regex::escape(&pattern);
-                        pattern = Regex::new(r"([^\\])_").unwrap().replace_all(&pattern, "$1.").to_owned().to_string();
-                        pattern = Regex::new(r"\\_").unwrap().replace_all(&pattern, "_").to_owned().to_string();
+                        pattern = Regex::new(r"([^\\])_").unwrap().replace_all(&pattern, "$1.").to_string();
+                        pattern = Regex::new(r"\\_").unwrap().replace_all(&pattern, "_").to_string();
                         while pattern.contains("%%%%") {
                             pattern = pattern.replace("%%%%", "%%");
                         }
-                        pattern = pattern.replace("%%%", "(%.*)|(.*%)").to_owned().to_string();
-                        pattern = Regex::new(r"([^%])%([^%])").unwrap().replace_all(&pattern, "$1.*$2").to_owned().to_string();
-                        pattern = Regex::new(r"^%([^%])").unwrap().replace_all(&pattern, ".*$1").to_owned().to_string();
-                        pattern = Regex::new(r"([^%])%$").unwrap().replace_all(&pattern, "$1.*").to_owned().to_string();
-                        pattern = Regex::new(r"%%").unwrap().replace_all(&pattern, "%").to_owned().to_string();
+                        pattern = pattern.replace("%%%", "(%.*)|(.*%)");
+                        pattern = Regex::new(r"([^%])%([^%])").unwrap().replace_all(&pattern, "$1.*$2").to_string();
+                        pattern = Regex::new(r"^%([^%])").unwrap().replace_all(&pattern, ".*$1").to_string();
+                        pattern = Regex::new(r"([^%])%$").unwrap().replace_all(&pattern, "$1.*").to_string();
+                        pattern = Regex::new(r"%%").unwrap().replace_all(&pattern, "%").to_string();
                         pattern = format!("^{}$", pattern);
                         let (mut plan, t) = QueryPlan::compile_expr(expr, filter, columns, column_len, planner)?;
                         if t.decoded != BasicType::String {
                             bail!(QueryError::TypeError,
                                   "Expected expression of type `String` as first argument to LIKE. Actual: {:?}", t)
                         }
-                        if let Some(codec) = t.codec.clone() {
+                        if let Some(codec) = t.codec {
                             plan = codec.decode(plan, planner);
                         }
                         let type_out = Type::unencoded(BasicType::Boolean).mutable();
@@ -821,7 +824,7 @@ impl QueryPlan {
                         if t.decoded != BasicType::String {
                             bail!(QueryError::TypeError, "Expected expression of type `String` as first argument to regex. Actual: {:?}", t)
                         }
-                        if let Some(codec) = t.codec.clone() {
+                        if let Some(codec) = t.codec {
                             plan = codec.decode(plan, planner);
                         }
                         let type_out = Type::unencoded(BasicType::Boolean).mutable();
@@ -895,7 +898,7 @@ impl QueryPlan {
                         if t.decoded != BasicType::Integer {
                             bail!(QueryError::TypeError, "Found to_year({:?}), expected to_year(integer)", &t)
                         }
-                        planner.to_year(decoded).into()
+                        planner.to_year(decoded)
                     }
                     Func1Type::Length => {
                         let decoded = match t.codec.clone() {
@@ -947,7 +950,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
     use self::QueryPlan::*;
     match *qp.resolve(plan) {
         ColumnSection { range, .. } => range,
-        ToYear { timestamp, .. } => encoding_range(&timestamp.into(), qp).map(|(min, max)|
+        ToYear { timestamp, .. } => encoding_range(&timestamp, qp).map(|(min, max)|
             (i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
              i64::from(NaiveDateTime::from_timestamp(max, 0).year()))
         ),
@@ -981,6 +984,8 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
     }
 }
 
+// TODO: return struct
+#[allow(clippy::type_complexity)]
 pub fn compile_grouping_key(
     exprs: &[Expr],
     filter: Filter,
@@ -1005,7 +1010,7 @@ pub fn compile_grouping_key(
     } else if exprs.len() == 1 {
         QueryPlan::compile_expr(&exprs[0], filter, columns, partition_len, planner)
             .map(|(mut gk_plan, gk_type)| {
-                let original_plan = gk_plan.clone();
+                let original_plan = gk_plan;
                 let encoding_range = encoding_range(&gk_plan, planner);
                 debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
                 let (max_cardinality, offset) = match encoding_range {
@@ -1028,7 +1033,7 @@ pub fn compile_grouping_key(
                     }
                 } else if let Some(offset) = offset {
                     let offset = planner.scalar_i64(offset, true);
-                    gk_plan = planner.add(gk_plan, offset.into()).into();
+                    gk_plan = planner.add(gk_plan, offset.into());
                 }
 
                 let encoded_group_by_placeholder = planner.buffer_provider.named_buffer(
@@ -1041,7 +1046,7 @@ pub fn compile_grouping_key(
                     }
                 } else if let Some(offset) = offset {
                     let offset = planner.scalar_i64(-offset, true);
-                    let sum = planner.add(decoded_group_by, offset.into()).into();
+                    let sum = planner.add(decoded_group_by, offset.into());
                     decoded_group_by = planner.cast(sum, gk_type.encoding_type());
                 }
                 if let Some(codec) = gk_type.codec.clone() {
@@ -1115,6 +1120,8 @@ pub fn compile_grouping_key(
     }
 }
 
+// TODO: return struct
+#[allow(clippy::type_complexity)]
 fn try_bitpacking(
     exprs: &[Expr],
     filter: Filter,
@@ -1172,7 +1179,7 @@ fn try_bitpacking(
                 decode_plan = planner.unfuse_int_nulls(-min + 1, decode_plan);
             } else if subtract_offset {
                 let offset = planner.scalar_i64(min, true);
-                decode_plan = planner.add(decode_plan, offset.into()).into();
+                decode_plan = planner.add(decode_plan, offset.into());
             }
             decode_plan = planner.cast(decode_plan, plan_type.encoding_type());
             if let Some(codec) = plan_type.codec.clone() {
@@ -1220,7 +1227,7 @@ pub(super) fn prepare<'a>(plan: QueryPlan, constant_vecs: &mut Vec<BoxedData<'a>
         QueryPlan::IsNull { plan, is_null } => VecOperator::is_null(plan, is_null),
         QueryPlan::IsNotNull { plan, is_not_null } => VecOperator::is_not_null(plan, is_not_null),
         QueryPlan::ScalarI64 { value, hide_value, scalar_i64 } => VecOperator::scalar_i64(value, hide_value, scalar_i64),
-        QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value.to_string(), pinned_string, scalar_str),
+        QueryPlan::ScalarStr { value, pinned_string, scalar_str } => VecOperator::scalar_str(value, pinned_string, scalar_str),
         QueryPlan::NullVec { len, nulls } => VecOperator::null_vec(len, nulls.any()),
         QueryPlan::ConstantExpand { value, len, expanded } => VecOperator::constant_expand(value, len, expanded)?,
         QueryPlan::DictLookup { indices, offset_len, backing_store, decoded } => VecOperator::dict_lookup(indices, offset_len, backing_store, decoded.str()?)?,

@@ -47,7 +47,7 @@ impl<'a> BatchResult<'a> {
 
     pub fn into_columns(self) -> HashMap<String, Arc<dyn DataSource + 'a>> {
         let mut cols = HashMap::<String, Arc<dyn DataSource>>::default();
-        let columns = self.columns.into_iter().map(|c| Arc::new(c)).collect::<Vec<_>>();
+        let columns = self.columns.into_iter().map(Arc::new).collect::<Vec<_>>();
         for projection in self.projection {
             cols.insert(format!("_cs{}", projection), columns[projection].clone());
         }
@@ -98,7 +98,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
         let lprojection = batch1.projection;
         let rprojection = batch2.projection;
-        let (group_by_cols, ops) = if lprojection.len() == 0 {
+        let (group_by_cols, ops) = if lprojection.is_empty() {
             let ops = qp.constant_vec(data.len(), EncodingType::MergeOp).merge_op()?;
             data.push(Box::new(vec![MergeOp::TakeLeft, MergeOp::MergeRight]));
             (vec![], ops)

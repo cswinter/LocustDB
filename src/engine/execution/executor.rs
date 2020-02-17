@@ -299,11 +299,9 @@ impl<'a> QueryExecutor<'a> {
                             }
                         }
                     }
-                } else {
-                    if !topo_pushed[op] {
-                        topo_pushed[op] = true;
-                        total_order.push(op);
-                    }
+                } else if !topo_pushed[op] {
+                    topo_pushed[op] = true;
+                    total_order.push(op);
                 }
             }
 

@@ -52,7 +52,7 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
         // Initializing with sufficient capacity is required for safety - this vector must never get reallocated
         scratchpad.set(self.stringstore, Vec::with_capacity(self.total_bytes));
         let encoded = scratchpad.get_pinned(self.packed);
-        self.iterator = Some(PackedBytesIterator::from_slice(encoded.as_ref()));
+        self.iterator = Some(PackedBytesIterator::from_slice(encoded));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.packed.any()] }
