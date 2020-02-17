@@ -516,11 +516,9 @@ fn test_addition() {
         "SELECT u8_offset_encoded + negative FROM default ORDER BY id LIMIT 5;",
         &[vec![Int(57)], vec![Int(297)], vec![Int(159)], vec![Int(291)], vec![Int(4306)]],
     );
-    // TODO(sqlparser-rs#29): s/2/-2/ once supported parser
     test_query_ec(
-        "SELECT 2 + non_dense_ints FROM default ORDER BY id LIMIT 5;",
-        &[vec![Int(2)], vec![Int(4)], vec![Int(5)], vec![Int(3)], vec![Int(6)]],
-        // &[vec![Int(-2)], vec![Int(0)], vec![Int(1)], vec![Int(-1)], vec![Int(2)]],
+        "SELECT -2 + non_dense_ints FROM default ORDER BY id LIMIT 5;",
+        &[vec![Int(-2)], vec![Int(0)], vec![Int(1)], vec![Int(-1)], vec![Int(2)]],
     );
 }
 

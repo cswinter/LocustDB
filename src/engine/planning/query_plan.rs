@@ -887,6 +887,9 @@ impl QueryPlan {
                 let plan = (declaration.factory)(planner, plan_lhs, plan_rhs);
                 (plan, declaration.type_out.clone())
             }
+            Func1(Func1Type::Negate, box Const(RawVal::Int(i))) => {
+                QueryPlan::compile_expr(&Const(RawVal::Int(-i)), filter, columns, column_len, planner)?
+            }
             Func1(ftype, ref inner) => {
                 let (plan, t) = QueryPlan::compile_expr(inner, filter, columns, column_len, planner)?;
                 let plan = match ftype {
@@ -931,7 +934,7 @@ impl QueryPlan {
                         planner.constant_expand((true as u8) as i64, column_len, EncodingType::U8)
                     }
                     Func1Type::Negate => {
-                        bail!(QueryError::TypeError, "Found negate({:?}), expected negate(integer)", &t)
+                        bail!(QueryError::TypeError, "Unary minus not implemented for arbitrary expressions.")
                     }
                 };
                 (plan, t.decoded())
