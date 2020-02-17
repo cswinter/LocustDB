@@ -7,7 +7,7 @@ description = "Embeddable high-performance analytics database."
 [build-dependencies]
 [build-dependencies.capnpc]
 optional = true
-version = "0.8.9"
+version = "0.12"
 
 [dependencies]
 aliasmethod = "0.1.0"
@@ -45,7 +45,7 @@ sqlparser = "0.2.1"
 
 [dependencies.capnp]
 optional = true
-version = "0.8.17"
+version = "0.12"
 
 [dependencies.locustdb-derive]
 path = "./locustdb-derive"

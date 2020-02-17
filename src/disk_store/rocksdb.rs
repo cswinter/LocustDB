@@ -144,8 +144,8 @@ fn deserialize_column_key(key: &[u8]) -> (PartitionID, String) {
 }
 
 fn deserialize_column(data: &[u8]) -> Column {
-    let message_reader = serialize::read_message_from_words(
-        Word::bytes_to_words(&data),
+    let message_reader = serialize::read_message(
+        data,
         message::ReaderOptions::new()).unwrap();
     let column = message_reader.get_root::<column::Reader>().unwrap();
 
@@ -236,8 +236,8 @@ fn deserialize_type(t: EncodingType) -> Type {
 }
 
 fn deserialize_meta_data(data: &[u8], partition_id: PartitionID) -> PartitionMetadata {
-    let message_reader = serialize::read_message_from_words(
-        Word::bytes_to_words(data),
+    let message_reader = serialize::read_message(
+        data,
         message::ReaderOptions::new()).unwrap();
     let meta_data = message_reader.get_root::<meta_data::Reader>().unwrap();
     PartitionMetadata {
