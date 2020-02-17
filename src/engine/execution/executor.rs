@@ -111,7 +111,7 @@ impl<'a> QueryExecutor<'a> {
         Ok(())
     }
 
-    #[allow(clippy::cyclomatic_complexity)]
+    #[allow(clippy::cognitive_complexity)]
     fn partition(&self) -> Vec<ExecutorStage> {
         // Construct execution graph
         let mut consumers = vec![vec![]; self.count];

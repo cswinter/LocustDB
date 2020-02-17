@@ -208,9 +208,7 @@ fn map_binary_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
 fn get_raw_val(constant: &Value) -> Result<RawVal, QueryError> {
     match constant {
         Value::Long(int) => Ok(RawVal::Int(*int)),
-        Value::String(string)
-        | Value::SingleQuotedString(string)
-        | Value::DoubleQuotedString(string) => Ok(RawVal::Str(string.to_string())),
+        Value::SingleQuotedString(string) => Ok(RawVal::Str(string.to_string())),
         Value::Null => Ok(RawVal::Null),
         _ => {
             return Err(QueryError::NotImplemented(format!("{:?}", constant)));
