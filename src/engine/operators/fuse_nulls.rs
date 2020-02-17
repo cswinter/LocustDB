@@ -164,7 +164,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for FuseIntNulls<T> {
         if stream { fused.clear(); }
         for i in 0..input.len() {
             if (&*present).is_set(i) {
-                fused.push(input[i] + self.offset);
+                fused.push(T::wrapping_add(&input[i], &self.offset));
             } else {
                 fused.push(T::zero());
             }
@@ -210,7 +210,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for UnfuseIntNulls<T> {
                 if fused[i] == T::zero() {
                     data.push(T::zero());
                 } else {
-                    data.push(fused[i] - self.offset);
+                    data.push(T::wrapping_sub(&fused[i], &self.offset));
                     present.set(i);
                 }
             }

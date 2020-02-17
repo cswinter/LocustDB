@@ -7,6 +7,7 @@ use std::mem;
 use std::io::Cursor;
 
 use num::PrimInt;
+use num::traits::{WrappingSub, WrappingAdd};
 use byteorder::{NativeEndian, ReadBytesExt};
 use ingest::raw_val::RawVal;
 use itertools::Itertools;
@@ -122,9 +123,9 @@ impl<'c> VecData<Val<'c>> for Val<'c> {
     fn t() -> EncodingType { EncodingType::Val }
 }
 
-pub trait GenericIntVec<T>: VecData<T> + CastUsize + FromBytes<T> + PrimInt + Hash + 'static {}
+pub trait GenericIntVec<T>: VecData<T> + CastUsize + FromBytes<T> + PrimInt + WrappingAdd + WrappingSub + Hash + 'static {}
 
-impl<T> GenericIntVec<T> for T where T: VecData<T> + CastUsize + FromBytes<T> + PrimInt + Copy + Hash + 'static {}
+impl<T> GenericIntVec<T> for T where T: VecData<T> + CastUsize + FromBytes<T> + PrimInt + WrappingAdd + WrappingSub + Copy + Hash + 'static {}
 
 
 pub trait FromBytes<T> {

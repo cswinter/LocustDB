@@ -71,7 +71,7 @@ pub enum QueryPlan {
         #[output(t = "base=nullable;null=_fused")]
         fused: TypedBufferRef,
     },
-    /// Converts Nullable integer types into a representation where nulls are encoded as value `null`.
+    /// Converts Nullable integer types into a representation where nulls are encoded as value 0.
     FuseIntNulls {
         offset: i64,
         nullable: TypedBufferRef,
