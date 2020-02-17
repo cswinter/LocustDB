@@ -1,24 +1,34 @@
 extern crate sqlparser;
 
-use sqlparser::sqlparser::*;
-use sqlparser::sqlast::*;
+use sqlparser::parser::{Parser, ParserError};
+use sqlparser::ast::{Expr as ASTNode, *};
 use engine::*;
+use engine::Query;
 use syntax::expression::*;
+use syntax::expression::Expr;
 use ingest::raw_val::RawVal;
 use syntax::limit::*;
-use sqlparser::dialect::GenericSqlDialect;
+use sqlparser::dialect::GenericDialect;
 use QueryError;
 
 // Convert sqlparser-rs `ASTNode` to LocustDB's `Query`
 pub fn parse_query(query: &str) -> Result<Query, QueryError> {
-    let dialect = GenericSqlDialect {};
-    let ast = Parser::parse_sql(&dialect, query.to_string())
+    let dialect = GenericDialect { };
+    let mut ast = Parser::parse_sql(&dialect, query.to_string())
         .map_err(|e| match e {
             ParserError::ParserError(e_str) => QueryError::ParseError(e_str),
             _ => fatal!("{:?}", e),
         })?;
+    if ast.len() > 1 {
+        return Err(QueryError::ParseError(format!("Expected a single query statement, but there are {}", ast.len())));
+    }
 
-    let (projection, relation, selection, order_by, limit) = get_query_components(ast)?;
+    let query = match ast.pop().unwrap() {
+        Statement::Query(query) => query,
+        _ => return Err(QueryError::ParseError("Only SELECT queries are supported.".to_string())),
+    };
+
+    let (projection, relation, selection, order_by, limit) = get_query_components(query)?;
     let projection = get_projection(projection)?;
     let table = get_table_name(relation)?;
     let filter = match selection {
@@ -39,64 +49,79 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
 
 // TODO: use struct
 #[allow(clippy::type_complexity)]
-fn get_query_components(ast: ASTNode)
+fn get_query_components(query: Box<sqlparser::ast::Query>)
                         -> Result<(
-                            Vec<ASTNode>,
-                            Option<Box<ASTNode>>,
-                            Option<Box<ASTNode>>,
-                            Option<Vec<SQLOrderByExpr>>,
-                            Option<Box<ASTNode>>),
+                            Vec<SelectItem>,
+                            Option<TableFactor>,
+                            Option<ASTNode>,
+                            Option<Vec<OrderByExpr>>,
+                            Option<ASTNode>),
                             QueryError>
 {
-    match ast {
-        ASTNode::SQLSelect { projection, relation, joins, selection, order_by, group_by, having, limit } => {
-            if group_by.is_some() {
-                Err(QueryError::NotImplemented("Group By".to_string()))
+    // TODO: return error if any unsupported query parts are present
+    let sqlparser::ast::Query { body, order_by, limit, .. }  = *query;
+    match body {
+        SetExpr::Select(box Select { distinct, projection, mut from, selection, group_by, having }) => {
+            if !group_by.is_empty() {
+                Err(QueryError::NotImplemented("Group By  (Hint: If your SELECT clause contains any aggregation expressions, results will implicitly grouped by all other expresssions.)".to_string()))
             } else if having.is_some() {
                 Err(QueryError::NotImplemented("Having".to_string()))
-            } else if !joins.is_empty() {
-                Err(QueryError::NotImplemented("Join".to_string()))
+            } else if distinct {
+                Err(QueryError::NotImplemented("DISTINCT".to_string()))
+            } else if from.len() > 1 {
+                Err(QueryError::NotImplemented("Selecting from multiple tables.".to_string()))
+            } else if !from.is_empty() && !from[0].joins.is_empty() {
+                Err(QueryError::NotImplemented("JOIN".to_string()))
             } else {
-                Ok((projection, relation, selection, order_by, limit))
+                Ok((
+                    projection,
+                    from.pop().map(|t| t.relation),
+                    selection,
+                    if order_by.is_empty() { None } else { Some(order_by) },
+                    limit
+                ))
             }
         }
-        _ => Err(QueryError::NotImplemented(format!("{:?}", ast))),
+        // TODO: more specific error messages
+        _ => Err(QueryError::NotImplemented("Only SELECT queries are supported.".to_string())),
     }
 }
 
-fn get_projection(projection: Vec<ASTNode>) -> Result<Vec<Expr>, QueryError> {
+fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<Expr>, QueryError> {
     let mut result = Vec::<Expr>::new();
     for elem in &projection {
         match elem {
-            ASTNode::SQLWildcard => result.push(Expr::ColName('*'.to_string())),
-            _ => result.push(*expr(elem)?),
+            SelectItem::UnnamedExpr(e) => result.push(*expr(&e)?),
+            SelectItem::Wildcard => result.push(Expr::ColName('*'.to_string())),
+            _ => return Err(QueryError::NotImplemented(format!("Unsupported projection in SELECT: {}", elem))),
         }
     }
 
     Ok(result)
 }
 
-fn get_table_name(relation: Option<Box<ASTNode>>) -> Result<String, QueryError> {
+fn get_table_name(relation: Option<TableFactor>) -> Result<String, QueryError> {
     match relation {
-        Some(box ASTNode::SQLIdentifier(table_name)) => Ok(table_name),
+        // TODO: error message if any unused fields are set
+        Some(TableFactor::Table { name, .. }) => Ok(format!("{}", name)),
         Some(s) => Err(QueryError::ParseError(format!("Invalid expression for table name: {:?}", s))),
         None => Err(QueryError::ParseError("Table name missing.".to_string())),
     }
 }
 
-fn get_order_by(order_by: Option<Vec<SQLOrderByExpr>>) -> Result<Vec<(Expr, bool)>, QueryError> {
+fn get_order_by(order_by: Option<Vec<OrderByExpr>>) -> Result<Vec<(Expr, bool)>, QueryError> {
     let mut order = Vec::new();
     if let Some(sql_order_by_exprs) = order_by {
         for e in sql_order_by_exprs {
-            order.push((*(expr(&e.expr))?, !e.asc));
+            order.push((*(expr(&e.expr))?, !e.asc.unwrap_or(true)));
         }
     }
     Ok(order)
 }
 
-fn get_limit(limit: Option<Box<ASTNode>>) -> Result<u64, QueryError> {
+fn get_limit(limit: Option<ASTNode>) -> Result<u64, QueryError> {
     match limit {
-        Some(box ASTNode::SQLValue(Value::Long(int))) => Ok(int as u64),
+        Some(ASTNode::Value(Value::Number(int))) => Ok(int.parse::<u64>().unwrap()),
         None => Ok(100),
         _ => Err(QueryError::NotImplemented(format!("Invalid expression in limit clause: {:?}", limit))),
     }
@@ -104,104 +129,105 @@ fn get_limit(limit: Option<Box<ASTNode>>) -> Result<u64, QueryError> {
 
 fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
     Ok(Box::new(match node {
-        ASTNode::SQLBinaryExpr { ref left, ref op, ref right } =>
+        ASTNode::BinaryOp { ref left, ref op, ref right } =>
             Expr::Func2(map_binary_operator(op)?, expr(left)?, expr(right)?),
-        ASTNode::SQLUnary { ref operator, expr: ref expression } =>
-            Expr::Func1(map_unary_operator(operator)?, expr(expression)?),
-        ASTNode::SQLValue(ref literal) => Expr::Const(get_raw_val(literal)?),
-        ASTNode::SQLIdentifier(ref identifier) => Expr::ColName(identifier.to_string()),
-        ASTNode::SQLFunction { id, args } => match id.to_uppercase().as_ref() {
+        ASTNode::UnaryOp { ref op, expr: ref expression } =>
+            Expr::Func1(map_unary_operator(op)?, expr(expression)?),
+        ASTNode::Value(ref literal) => Expr::Const(get_raw_val(literal)?),
+        ASTNode::Identifier(ref identifier) => Expr::ColName(identifier.to_string()),
+        ASTNode::Nested(inner) => *expr(inner)?,
+        ASTNode::Function(f) => match format!("{}", f.name).to_uppercase().as_ref() {
             "TO_YEAR" => {
-                if args.len() != 1 {
+                if f.args.len() != 1 {
                     return Err(QueryError::ParseError(
                         "Expected one argument in TO_YEAR function".to_string()));
                 }
-                Expr::Func1(Func1Type::ToYear, expr(&args[0])?)
+                Expr::Func1(Func1Type::ToYear, expr(&f.args[0])?)
             }
             "REGEX" => {
-                if args.len() != 2 {
+                if f.args.len() != 2 {
                     return Err(QueryError::ParseError(
                         "Expected two arguments in regex function".to_string()));
                 }
-                Expr::Func2(Func2Type::RegexMatch, expr(&args[0])?, expr(&args[1])?)
+                Expr::Func2(Func2Type::RegexMatch, expr(&f.args[0])?, expr(&f.args[1])?)
             }
             "LENGTH" => {
-                if args.len() != 1 {
+                if f.args.len() != 1 {
                     return Err(QueryError::ParseError(
                         "Expected one arguments in length function".to_string()));
                 }
-                Expr::Func1(Func1Type::Length, expr(&args[0])?)
+                Expr::Func1(Func1Type::Length, expr(&f.args[0])?)
             }
             "COUNT" => {
-                if args.len() != 1 {
+                if f.args.len() != 1 {
                     return Err(QueryError::ParseError(
                         "Expected one argument in COUNT function".to_string()));
                 }
-                Expr::Aggregate(Aggregator::Count, expr(&args[0])?)
+                Expr::Aggregate(Aggregator::Count, expr(&f.args[0])?)
             }
             "SUM" => {
-                if args.len() != 1 {
+                if f.args.len() != 1 {
                     return Err(QueryError::ParseError(
                         "Expected one argument in SUM function".to_string()));
                 }
-                Expr::Aggregate(Aggregator::Sum, expr(&args[0])?)
+                Expr::Aggregate(Aggregator::Sum, expr(&f.args[0])?)
             }
             "AVG" => {
-                if args.len() != 1 {
+                if f.args.len() != 1 {
                     return Err(QueryError::ParseError(
                         "Expected one argument in AVG function".to_string()));
                 }
                 Expr::Func2(Func2Type::Divide,
-                            Box::new(Expr::Aggregate(Aggregator::Sum, expr(&args[0])?)),
-                            Box::new(Expr::Aggregate(Aggregator::Count, expr(&args[0])?)))
+                            Box::new(Expr::Aggregate(Aggregator::Sum, expr(&f.args[0])?)),
+                            Box::new(Expr::Aggregate(Aggregator::Count, expr(&f.args[0])?)))
             }
             "MAX" => {
-                if args.len() != 1 {
+                if f.args.len() != 1 {
                     return Err(QueryError::ParseError(
                         "Expected one argument in MAX function".to_string()));
                 }
-                Expr::Aggregate(Aggregator::Max, expr(&args[0])?)
+                Expr::Aggregate(Aggregator::Max, expr(&f.args[0])?)
             }
             "MIN" => {
-                if args.len() != 1 {
+                if f.args.len() != 1 {
                     return Err(QueryError::ParseError(
                         "Expected one argument in MIN function".to_string()));
                 }
-                Expr::Aggregate(Aggregator::Min, expr(&args[0])?)
+                Expr::Aggregate(Aggregator::Min, expr(&f.args[0])?)
             }
-            _ => return Err(QueryError::NotImplemented(format!("Function {:?}", id))),
+            _ => return Err(QueryError::NotImplemented(format!("Function {:?}", f.name))),
         }
-        ASTNode::SQLIsNull(ref node) => Expr::Func1(Func1Type::IsNull, expr(node)?),
-        ASTNode::SQLIsNotNull(ref node) => Expr::Func1(Func1Type::IsNotNull, expr(node)?),
+        ASTNode::IsNull(ref node) => Expr::Func1(Func1Type::IsNull, expr(node)?),
+        ASTNode::IsNotNull(ref node) => Expr::Func1(Func1Type::IsNotNull, expr(node)?),
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
     }))
 }
 
-fn map_unary_operator(op: &SQLOperator) -> Result<Func1Type, QueryError> {
+fn map_unary_operator(op: &UnaryOperator) -> Result<Func1Type, QueryError> {
     Ok(match op {
-        SQLOperator::Not => Func1Type::Not,
-        _ => return Err(fatal!("Unexpected unary operator"))
+        UnaryOperator::Not => Func1Type::Not,
+        UnaryOperator::Minus => Func1Type::Negate,
+        _ => return Err(fatal!("Unexpected unary operator: {}", op))
     })
 }
 
-fn map_binary_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
+fn map_binary_operator(o: &BinaryOperator) -> Result<Func2Type, QueryError> {
     Ok(match o {
-        SQLOperator::And => Func2Type::And,
-        SQLOperator::Plus => Func2Type::Add,
-        SQLOperator::Minus => Func2Type::Subtract,
-        SQLOperator::Multiply => Func2Type::Multiply,
-        SQLOperator::Divide => Func2Type::Divide,
-        SQLOperator::Modulus => Func2Type::Modulo,
-        SQLOperator::Gt => Func2Type::GT,
-        SQLOperator::GtEq => Func2Type::GTE,
-        SQLOperator::Lt => Func2Type::LT,
-        SQLOperator::LtEq => Func2Type::LTE,
-        SQLOperator::Eq => Func2Type::Equals,
-        SQLOperator::NotEq => Func2Type::NotEquals,
-        SQLOperator::Or => Func2Type::Or,
-        SQLOperator::Like => Func2Type::Like,
-        SQLOperator::NotLike => Func2Type::NotLike,
-        _ => return Err(fatal!("Unexpected binary operator"))
+        BinaryOperator::And => Func2Type::And,
+        BinaryOperator::Plus => Func2Type::Add,
+        BinaryOperator::Minus => Func2Type::Subtract,
+        BinaryOperator::Multiply => Func2Type::Multiply,
+        BinaryOperator::Divide => Func2Type::Divide,
+        BinaryOperator::Modulus => Func2Type::Modulo,
+        BinaryOperator::Gt => Func2Type::GT,
+        BinaryOperator::GtEq => Func2Type::GTE,
+        BinaryOperator::Lt => Func2Type::LT,
+        BinaryOperator::LtEq => Func2Type::LTE,
+        BinaryOperator::Eq => Func2Type::Equals,
+        BinaryOperator::NotEq => Func2Type::NotEquals,
+        BinaryOperator::Or => Func2Type::Or,
+        BinaryOperator::Like => Func2Type::Like,
+        BinaryOperator::NotLike => Func2Type::NotLike,
     })
 }
 
@@ -209,7 +235,7 @@ fn map_binary_operator(o: &SQLOperator) -> Result<Func2Type, QueryError> {
 // Fn to map sqlparser-rs `Value` to LocustDB's `RawVal`.
 fn get_raw_val(constant: &Value) -> Result<RawVal, QueryError> {
     match constant {
-        Value::Long(int) => Ok(RawVal::Int(*int)),
+        Value::Number(int) => Ok(RawVal::Int(int.parse::<i64>().unwrap())),
         Value::SingleQuotedString(string) => Ok(RawVal::Str(string.to_string())),
         Value::Null => Ok(RawVal::Null),
         _ => Err(QueryError::NotImplemented(format!("{:?}", constant))),
