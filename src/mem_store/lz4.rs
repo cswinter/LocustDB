@@ -14,7 +14,7 @@ pub fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
     let ptr_t = data.as_ptr();
     // Endianness? Never heard of it...
     let data_u8: &[u8] = unsafe {
-        let ptr_u8 = mem::transmute::<_, *const u8>(ptr_t);
+        let ptr_u8 = ptr_t as *const u8;
         from_raw_parts(ptr_u8, data.len() * mem::size_of::<T>())
     };
 
@@ -27,10 +27,10 @@ pub fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
     result
 }
 
-pub fn decode<T>(src: &mut Read, dst: &mut [T]) -> usize {
+pub fn decode<T>(src: &mut dyn Read, dst: &mut [T]) -> usize {
     let ptr_t = dst.as_ptr();
     let dst_u8: &mut [u8] = unsafe {
-        let ptr_u8 = mem::transmute::<_, *mut u8>(ptr_t);
+        let ptr_u8 = ptr_t as *mut u8;
         from_raw_parts_mut(ptr_u8, dst.len() * mem::size_of::<T>())
     };
 

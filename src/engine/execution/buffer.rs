@@ -59,7 +59,7 @@ impl BufferRef<Any> {
 
     pub fn scalar_i64(self) -> BufferRef<Scalar<i64>> { self.transmute() }
     pub fn scalar_str<'a>(self) -> BufferRef<Scalar<&'a str>> { self.transmute() }
-    pub fn scalar_string<'a>(self) -> BufferRef<Scalar<String>> { self.transmute() }
+    pub fn scalar_string(self) -> BufferRef<Scalar<String>> { self.transmute() }
 
     pub fn val_rows<'a>(self) -> BufferRef<ValRows<'a>> { self.transmute() }
     pub fn val<'a>(self) -> BufferRef<Val<'a>> { self.transmute() }
@@ -164,6 +164,7 @@ impl<T> BufferRef<Nullable<T>> {
 }
 
 impl<T: Clone> BufferRef<T> {
+    #[allow(clippy::clone_on_copy)]
     pub fn any(&self) -> BufferRef<Any> { unsafe { mem::transmute(self.clone()) } }
 }
 
@@ -202,7 +203,7 @@ impl TypedBufferRef {
 
     pub fn is_nullable(&self) -> bool { self.tag.is_nullable() }
 
-    pub fn nullable_any<'a>(&self) -> Result<BufferRef<Nullable<Any>>, QueryError> {
+    pub fn nullable_any(&self) -> Result<BufferRef<Nullable<Any>>, QueryError> {
         ensure!(self.tag.is_nullable(), "{:?} is not nullable", self.tag);
         Ok(self.buffer.cast_nullable_any())
     }

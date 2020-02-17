@@ -37,6 +37,8 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
     })
 }
 
+// TODO: use struct
+#[allow(clippy::type_complexity)]
 fn get_query_components(ast: ASTNode)
                         -> Result<(
                             Vec<ASTNode>,
@@ -49,11 +51,11 @@ fn get_query_components(ast: ASTNode)
     match ast {
         ASTNode::SQLSelect { projection, relation, joins, selection, order_by, group_by, having, limit } => {
             if group_by.is_some() {
-                Err(QueryError::NotImplemented(format!("Group By")))
+                Err(QueryError::NotImplemented("Group By".to_string()))
             } else if having.is_some() {
-                Err(QueryError::NotImplemented(format!("Having")))
+                Err(QueryError::NotImplemented("Having".to_string()))
             } else if !joins.is_empty() {
-                Err(QueryError::NotImplemented(format!("Join")))
+                Err(QueryError::NotImplemented("Join".to_string()))
             } else {
                 Ok((projection, relation, selection, order_by, limit))
             }
@@ -210,9 +212,7 @@ fn get_raw_val(constant: &Value) -> Result<RawVal, QueryError> {
         Value::Long(int) => Ok(RawVal::Int(*int)),
         Value::SingleQuotedString(string) => Ok(RawVal::Str(string.to_string())),
         Value::Null => Ok(RawVal::Null),
-        _ => {
-            return Err(QueryError::NotImplemented(format!("{:?}", constant)));
-        }
+        _ => Err(QueryError::NotImplemented(format!("{:?}", constant))),
     }
 }
 

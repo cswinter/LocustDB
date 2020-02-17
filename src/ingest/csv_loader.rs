@@ -100,17 +100,17 @@ impl Options {
     }
 
     pub fn with_ignore_cols(mut self, ignore: &[usize]) -> Options {
-        self.ignore_cols = ignore.into_iter().cloned().collect();
+        self.ignore_cols = ignore.iter().cloned().collect();
         self
     }
 
     pub fn with_always_string(mut self, always_string: &[usize]) -> Options {
-        self.always_string = always_string.into_iter().cloned().collect();
+        self.always_string = always_string.iter().cloned().collect();
         self
     }
 
     pub fn allow_nulls(mut self, allow_nulls: &[usize]) -> Options {
-        self.allow_nulls = allow_nulls.into_iter().cloned().collect();
+        self.allow_nulls = allow_nulls.iter().cloned().collect();
         self
     }
 

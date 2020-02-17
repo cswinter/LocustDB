@@ -7,7 +7,7 @@ pub struct LZ4Decode<'a, T> {
     pub encoded: BufferRef<u8>,
     pub decoded: BufferRef<T>,
     pub decoded_len: usize,
-    pub reader: Box<Read + 'a>,
+    pub reader: Box<dyn Read + 'a>,
     pub has_more: bool,
 }
 

@@ -74,7 +74,7 @@ impl<'a> ScalarData<&'a str> for &'a str {
         }
     }
 
-    fn raw_val(val: &&'a str) -> RawVal { RawVal::Str(val.to_string()) }
+    fn raw_val(val: &&'a str) -> RawVal { RawVal::Str((*val).to_string()) }
     fn t() -> EncodingType { EncodingType::ScalarStr }
 }
 

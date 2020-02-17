@@ -243,7 +243,7 @@ impl<'a> dyn VecOperator<'a> {
                       decoded: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
         use super::lz4_decode::LZ4Decode;
         use std::io::Read;
-        let reader: Box<Read> = Box::new(&[] as &[u8]);
+        let reader: Box<dyn Read> = Box::new(&[] as &[u8]);
         reify_types! {
             "lz4_decode";
             decoded: Integer;

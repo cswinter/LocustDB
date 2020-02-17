@@ -235,7 +235,7 @@ impl NormalFormQuery {
                     },
                 };
                 if t.is_encoded() {
-                    Ok(t.codec.clone().unwrap().decode(compacted, &mut qp))
+                    Ok(t.codec.unwrap().decode(compacted, &mut qp))
                 } else {
                     Ok(compacted)
                 }
@@ -259,8 +259,7 @@ impl NormalFormQuery {
         //  Reconstruct all group by columns from grouping
         let mut grouping_columns = Vec::with_capacity(decode_plans.len());
         for (decode_plan, _t) in decode_plans {
-            let decoded = decode_plan.clone();
-            grouping_columns.push(decoded);
+            grouping_columns.push(decode_plan);
         }
 
         // If the grouping is not order preserving, we need to sort all output columns by using the ordering constructed from the decoded group by columns

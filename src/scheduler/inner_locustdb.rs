@@ -98,7 +98,7 @@ impl InnerLocustDB {
     pub fn stop(&self) {
         // Acquire task_queue_guard to make sure that there are no threads that have checked self.running but not waited on idle_queue yet.
         info!("Stopping database...");
-        let _ = self.task_queue.lock();
+        let _guard = self.task_queue.lock();
         self.running.store(false, Ordering::SeqCst);
         self.idle_queue.notify_all();
     }

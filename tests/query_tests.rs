@@ -35,7 +35,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
     let mut opts = Options::default();
-    if env::var("DEBUG_TESTS").is_ok() || true {
+    if env::var("DEBUG_TESTS").is_ok() {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
@@ -55,7 +55,7 @@ fn test_query_ec_err(query: &str, _expected_err: QueryError) {
     let _ = env_logger::try_init();
     #[allow(unused_mut)]
     let mut opts = Options::default();
-    if env::var("DEBUG_TESTS").is_ok() || true {
+    if env::var("DEBUG_TESTS").is_ok() {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
@@ -408,11 +408,11 @@ fn test_order_by_aggregate() {
 fn test_groupless_aggregate() {
     test_query_nyc(
         "SELECT count(0) FROM default",
-        &[vec![Int(10000)]],
+        &[vec![Int(10_000)]],
     );
     test_query_nyc(
         "SELECT sum(total_amount), count(0) FROM default",
-        &[vec![Int(16197630), Int(10000)]],
+        &[vec![Int(16_197_630), Int(10_000)]],
     );
     test_query_nyc(
          "SELECT count(0) FROM default WHERE NOT passenger_count <> 1;",
@@ -480,10 +480,10 @@ fn test_min_max() {
         "SELECT passenger_count, max(total_amount), min(total_amount) FROM default;",
         &[
             vec![Int(0), Int(5200), Int(150)],
-            vec![Int(1), Int(326000), Int(0)],
-            vec![Int(2), Int(357050), Int(0)],
-            vec![Int(3), Int(52750), Int(150)],
-            vec![Int(4), Int(44550), Int(200)]
+            vec![Int(1), Int(326_000), Int(0)],
+            vec![Int(2), Int(357_050), Int(0)],
+            vec![Int(3), Int(52_750), Int(150)],
+            vec![Int(4), Int(44_550), Int(200)]
         ],
     )
 }
@@ -493,11 +493,11 @@ fn test_top_n() {
     test_query_nyc(
         "SELECT passenger_count, trip_distance, total_amount FROM default ORDER BY total_amount DESC LIMIT 100;",
         &[
-            vec![Int(2), Int(0), Int(357050)],
-            vec![Int(1), Int(0), Int(326000)],
-            vec![Int(1), Int(0), Int(68010)],
-            vec![Int(1), Int(0), Int(66858)],
-            vec![Int(1), Int(0), Int(61950)],
+            vec![Int(2), Int(0), Int(357_050)],
+            vec![Int(1), Int(0), Int(326_000)],
+            vec![Int(1), Int(0), Int(68_010)],
+            vec![Int(1), Int(0), Int(66_858)],
+            vec![Int(1), Int(0), Int(61_950)],
         ],
     )
 }
@@ -579,11 +579,11 @@ fn test_group_by_trip_id() {
     test_query_nyc(
         "SELECT trip_id / 5, sum(total_amount) FROM default;",
         &[
-            vec![Int(0), Int(10160)],
+            vec![Int(0), Int(10_160)],
             vec![Int(1), Int(3694)],
             vec![Int(2), Int(1758)],
             vec![Int(3), Int(2740)],
-            vec![Int(4), Int(377955)]
+            vec![Int(4), Int(377_955)]
         ],
     )
 }
@@ -873,16 +873,16 @@ fn test_overflow() {
     test_query_ec(
         "SELECT largenum / nullable_int FROM default ORDER BY id;",
         &[
-            vec![Int(9223372036854775807)],
-            vec![Int(-230584300921369395)],
+            vec![Int(9_223_372_036_854_775_807)],
+            vec![Int(-230_584_300_921_369_395)],
             vec![Null],
             vec![Null],
-            vec![Int(-922337203685477580)],
+            vec![Int(-922_337_203_685_477_580)],
             vec![Null],
             vec![Null],
-            vec![Int(461168601842738790)],
+            vec![Int(461_168_601_842_738_790)],
             vec![Null],
-            vec![Int(709490156681136600)],
+            vec![Int(709_490_156_681_136_600)],
         ],
     );
     test_query_ec_err(
@@ -915,9 +915,9 @@ fn test_gen_table() {
     ));
     let query = "SELECT yum, count(1) FROM test;";
     let expected_rows = vec![
-        [Str("Cashew".to_string()), Int(162035)],
-        [Str("Hazelnut".to_string()), Int(76401)],
-        [Str("Walnut".to_string()), Int(23708)]
+        [Str("Cashew".to_string()), Int(162_035)],
+        [Str("Hazelnut".to_string()), Int(76_401)],
+        [Str("Walnut".to_string()), Int(23_708)]
     ];
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
     assert_eq!(result.0.unwrap().rows, expected_rows);

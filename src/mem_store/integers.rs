@@ -88,6 +88,7 @@ impl IntegerColumn {
         Arc::new(column)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_col<T>(name: &str,
                          values: Vec<i64>,
                          offset: i64,

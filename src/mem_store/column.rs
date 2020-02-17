@@ -90,7 +90,7 @@ impl Column {
 
     #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(&mut self) {
-        if let Some(CodecOp::LZ4(decoded_type, _)) = self.codec.ops().get(0).map(|c| *c) {
+        if let Some(CodecOp::LZ4(decoded_type, _)) = self.codec.ops().get(0).copied() {
             trace!("lz4_decode before: {:?}", self);
             self.codec = self.codec.without_lz4();
             self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);
@@ -114,7 +114,7 @@ impl Column {
         tree.size_bytes += size_bytes;
         tree.rows += self.len;
         if depth > 1 {
-            let signature = self.codec().signature(false).to_string();
+            let signature = self.codec().signature(false);
             let codec_tree = tree.encodings
                 .entry(signature.clone())
                 .or_insert_with(MemTreeEncoding::default);

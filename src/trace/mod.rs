@@ -17,7 +17,7 @@ thread_local!(
 #[cfg(feature = "trace")]
 macro_rules! trace_start {
     ( $( $x:expr),* ) => (
-        #[allow(clippy::seless_format)]
+        #[allow(clippy::useless_format)]
         let _guard = $crate::_start(format!( $( $x ),* ).to_owned());
     )
 }

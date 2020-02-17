@@ -22,7 +22,7 @@ impl<'a> VecOperator<'a> for ScalarI64 {
 
     fn display_op(&self, alternate: bool) -> String {
         if self.hide_value && !alternate {
-            format!("ScalarI64")
+            "ScalarI64".to_string()
         } else {
             format!("{}", &self.val)
         }

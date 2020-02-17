@@ -124,7 +124,7 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
         let data = mem::replace(self, Vec::new());
         Box::new(NullableVec {
             data,
-            present: present.iter().map(|i| *i).collect(),
+            present: present.iter().copied().collect(),
         })
     }
 

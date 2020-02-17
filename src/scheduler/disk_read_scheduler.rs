@@ -118,7 +118,7 @@ impl DiskReadScheduler {
                 if let Some(ref mut column) = *maybe_column {
                     #[cfg(feature = "enable_lz4")] {
                         if self.lz4_decode {
-                            Arc::get_mut(column).map(|c| c.lz4_decode());
+                            if let Some(c) = Arc::get_mut(column) { c.lz4_decode() };
                             handle.update_size_bytes(column.heap_size_of_children());
                         }
                     }
