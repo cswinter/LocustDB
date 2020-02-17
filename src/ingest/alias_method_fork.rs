@@ -133,7 +133,7 @@ pub fn new_alias_table(weights: &[f64]) -> Result<AliasTable, AliasMethodError> 
 #[test]
 fn test_new_alias_table() {
     let params = [vec![1.0, 1.0], vec![1.0, 1.0, 8.0]];
-    for sample_weights in params.into_iter() {
+    for sample_weights in params.iter() {
         let alias_table = new_alias_table(&sample_weights);
         match alias_table {
             Ok(AliasTable { prob, .. }) => {

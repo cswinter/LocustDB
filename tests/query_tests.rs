@@ -220,7 +220,7 @@ fn test_group_by_limit() {
 #[test]
 fn group_by_string_filter_string_eq() {
     test_query(
-        "select first_name, count(1) from default where first_name = \"Adam\";",
+        "select first_name, count(1) from default where first_name = 'Adam';",
         &[vec!["Adam".into(), 2.into()]],
     )
 }
@@ -241,7 +241,7 @@ fn group_by_col_and_aliasing_const_cols() {
 #[test]
 fn test_string_packed_column() {
     test_query_ec(
-        "select string_packed from default where string_packed = \"xyz\";",
+        "select string_packed from default where string_packed = 'xyz';",
         &[vec!["xyz".into()]],
     )
 }
@@ -249,7 +249,7 @@ fn test_string_packed_column() {
 #[test]
 fn test_and_or() {
     test_query(
-        "select first_name, last_name from default where ((first_name = \"Adam\") OR (first_name = \"Catherine\")) AND (num = 3);",
+        "select first_name, last_name from default where ((first_name = 'Adam') OR (first_name = 'Catherine')) AND (num = 3);",
         &[vec!["Adam".into(), "Crawford".into()]],
     )
 }
@@ -257,7 +257,7 @@ fn test_and_or() {
 #[test]
 fn test_sum() {
     test_query(
-        "select tld, sum(num) from default where (tld = \"name\");",
+        "select tld, sum(num) from default where (tld = 'name');",
         &[vec!["name".into(), 26.into()]],
     )
 }
@@ -505,7 +505,7 @@ fn test_top_n() {
 #[test]
 fn test_sparse_filter() {
     test_query_nyc(
-        "select trip_id from default where (passenger_count = 5) AND (vendor_id = \"CMT\") AND (total_amount < 500) AND (store_and_fwd_flag = \"1\") limit 100;",
+        "select trip_id from default where (passenger_count = 5) AND (vendor_id = 'CMT') AND (total_amount < 500) AND (store_and_fwd_flag = '1') limit 100;",
         &[],
     )
 }

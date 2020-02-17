@@ -58,7 +58,7 @@ fn gen_table(db: &LocustDB, name: &str, partitions: usize, partition_size: usize
                  )),
                 ("vendor_id".to_string(),
                  locustdb::colgen::string_weighted(
-                     ["1", "2", "3", "CMT", "DDS", "VTS"].into_iter().map(|s| s.to_string()).collect(),
+                     ["1", "2", "3", "CMT", "DDS", "VTS"].iter().map(|s| s.to_string()).collect(),
                      vec![195.0, 260.0, 0.006, 493.0, 142.0, 503.0],
                  )),
                 ("reducible1".to_string(),
@@ -126,7 +126,7 @@ fn count_by_passenger_count_pickup_year_trip_distance(b: &mut test::Bencher) {
 #[bench]
 fn sparse_filter(b: &mut test::Bencher) {
     // select trip_id from test where (passenger_count = 0) AND (vendor_id = "DDS") AND (total_amount < 500) AND (cab_type = "green") limit 100;
-    bench_query(b, "select trip_id from trips_e8 where (passenger_count = 0) AND (vendor_id = \"DDS\") AND (total_amount < 500) AND (cab_type = \"green\") limit 100;");
+    bench_query(b, "select trip_id from trips_e8 where (passenger_count = 0) AND (vendor_id = 'DDS') AND (total_amount < 500) AND (cab_type = 'green') limit 100;");
 }
 
 #[bench]
