@@ -761,6 +761,19 @@ fn test_group_by_nullable() {
             vec![Int(20), Str("_f"), Int(1)],
         ],
     );
+    // TODO: fix aliasing overflow when FuseInt is used for single grouping or bitpacking and enable test
+    /*test_query_ec(
+        "SELECT nullable_int3, COUNT(0)
+         FROM default;",
+        &[
+            vec![Null, Int(2)],
+            vec![Int(0), Int(3)],
+            vec![Int(1), Int(1)],
+            vec![Int(2), Int(1)],
+            vec![Int(255), Int(2)],
+            vec![Int(256), Int(1)],
+        ],
+    );*/
 }
 
 #[test]
