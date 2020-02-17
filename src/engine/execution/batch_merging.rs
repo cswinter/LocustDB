@@ -45,8 +45,8 @@ impl<'a> BatchResult<'a> {
         Ok(())
     }
 
-    pub fn into_columns(self) -> HashMap<String, Arc<DataSource + 'a>> {
-        let mut cols = HashMap::<String, Arc<DataSource>>::default();
+    pub fn into_columns(self) -> HashMap<String, Arc<dyn DataSource + 'a>> {
+        let mut cols = HashMap::<String, Arc<dyn DataSource>>::default();
         let columns = self.columns.into_iter().map(|c| Arc::new(c)).collect::<Vec<_>>();
         for projection in self.projection {
             cols.insert(format!("_cs{}", projection), columns[projection].clone());

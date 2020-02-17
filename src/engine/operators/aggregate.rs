@@ -5,16 +5,12 @@ use std::marker::PhantomData;
 
 pub trait Aggregator<T> {
     fn unit() -> T;
-    #[inline]
     fn accumulate(accumulator: T, value: i64) -> T;
-    #[inline]
     fn combine(accumulator1: i64, accumulator2: i64) -> i64;
 }
 
 pub trait CheckedAggregator<T>: Aggregator<T> {
-    #[inline]
     fn accumulate_checked(accumulator: T, value: i64) -> (T, bool);
-    #[inline]
     fn combine_checked(accumulator1: i64, accumulator2: i64) -> (i64, bool);
 }
 

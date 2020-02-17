@@ -136,7 +136,7 @@ fn main() {
     let start_time = precise_time_ns();
     let mut loads = Vec::new();
     for file in files {
-        let mut base_opts = if reduced_nyc {
+        let base_opts = if reduced_nyc {
             locustdb::nyc_taxi_data::ingest_reduced_file(&file, tablename)
         } else if full_nyc {
             locustdb::nyc_taxi_data::ingest_file(&file, tablename)
@@ -297,7 +297,7 @@ fn repl(locustdb: &LocustDB) {
                 }
                 match result {
                     Ok(output) => print_results::print_query_result(&output),
-                    Err(mut fail) => print_error(&fail),
+                    Err(fail) => print_error(&fail),
                 }
             }
             _ => println!("Error: Query execution was canceled!"),

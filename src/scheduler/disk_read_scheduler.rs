@@ -15,7 +15,7 @@ use scheduler::inner_locustdb::InnerLocustDB;
 
 
 pub struct DiskReadScheduler {
-    disk_store: Arc<DiskStore>,
+    disk_store: Arc<dyn DiskStore>,
     task_queue: Mutex<VecDeque<DiskRun>>,
     reader_semaphore: Semaphore,
     lru: LRU,
@@ -35,7 +35,7 @@ struct DiskRun {
 }
 
 impl DiskReadScheduler {
-    pub fn new(disk_store: Arc<DiskStore>, lru: LRU, max_readers: usize, lz4_decode: bool) -> DiskReadScheduler {
+    pub fn new(disk_store: Arc<dyn DiskStore>, lru: LRU, max_readers: usize, lz4_decode: bool) -> DiskReadScheduler {
         DiskReadScheduler {
             disk_store,
             task_queue: Mutex::default(),

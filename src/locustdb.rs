@@ -39,7 +39,7 @@ impl LocustDB {
         LocustDB { inner_locustdb: locustdb }
     }
 
-    pub fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Box<Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
+    pub fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Box<dyn Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
         let (sender, receiver) = oneshot::channel();
 
         // PERF: perform compilation and table snapshot in asynchronous task?
@@ -156,13 +156,13 @@ impl LocustDB {
     }
 
     #[cfg(feature = "enable_rocksdb")]
-    pub fn persistent_storage(db_path: &str) -> Arc<DiskStore> {
+    pub fn persistent_storage(db_path: &str) -> Arc<dyn DiskStore> {
         use disk_store::rocksdb;
         Arc::new(rocksdb::RocksDB::new(db_path))
     }
 
     #[cfg(not(feature = "enable_rocksdb"))]
-    pub fn persistent_storage(_: &str) -> Arc<DiskStore> {
+    pub fn persistent_storage(_: &str) -> Arc<dyn DiskStore> {
         panic!("RocksDB storage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
     }
 }

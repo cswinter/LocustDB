@@ -97,7 +97,7 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         CheckedAdd { lhs, rhs, sum } if sum.is_nullable() => {
             let (present, plan) = combine_nulls2(bp, lhs, rhs);
-            let mut ops = vec![
+            let ops = vec![
                 plan,
                 NullableCheckedAdd {
                     lhs: lhs.forget_nullability(),
@@ -120,7 +120,7 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         CheckedSubtract { lhs, rhs, difference } if difference.is_nullable() => {
             let (present, plan) = combine_nulls2(bp, lhs, rhs);
-            let mut ops = vec![
+            let ops = vec![
                 plan,
                 NullableCheckedSubtract {
                     lhs: lhs.forget_nullability(),
@@ -143,7 +143,7 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         CheckedMultiply { lhs, rhs, product } if product.is_nullable() => {
             let (present, plan) = combine_nulls2(bp, lhs, rhs);
-            let mut ops = vec![
+            let ops = vec![
                 plan,
                 NullableCheckedMultiply {
                     lhs: lhs.forget_nullability(),
@@ -166,7 +166,7 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         CheckedDivide { lhs, rhs, division } if division.is_nullable() => {
             let (present, plan) = combine_nulls2(bp, lhs, rhs);
-            let mut ops = vec![
+            let ops = vec![
                 plan,
                 NullableCheckedDivide {
                     lhs: lhs.forget_nullability(),
@@ -189,7 +189,7 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
         }
         CheckedModulo { lhs, rhs, modulo } if modulo.is_nullable() => {
             let (present, plan) = combine_nulls2(bp, lhs, rhs);
-            let mut ops = vec![
+            let ops = vec![
                 plan,
                 NullableCheckedModulo {
                     lhs: lhs.forget_nullability(),

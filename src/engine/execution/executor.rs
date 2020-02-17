@@ -7,7 +7,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 pub struct QueryExecutor<'a> {
-    ops: Vec<Box<VecOperator<'a> + 'a>>,
+    ops: Vec<Box<dyn VecOperator<'a> + 'a>>,
     stages: Vec<ExecutorStage>,
     count: usize,
     last_buffer: TypedBufferRef,
@@ -90,11 +90,11 @@ impl<'a> QueryExecutor<'a> {
     pub fn last_buffer(&self) -> TypedBufferRef { self.last_buffer }
     pub fn set_last_buffer(&mut self, buffer: TypedBufferRef) { self.last_buffer = buffer; }
 
-    pub fn push(&mut self, op: Box<VecOperator<'a> + 'a>) {
+    pub fn push(&mut self, op: Box<dyn VecOperator<'a> + 'a>) {
         self.ops.push(op);
     }
 
-    pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a Data<'a>>>) -> Scratchpad<'a> {
+    pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a dyn Data<'a>>>) -> Scratchpad<'a> {
         self.stages = self.partition();
         Scratchpad::new(self.count, columns)
     }

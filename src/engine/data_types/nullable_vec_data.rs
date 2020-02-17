@@ -25,7 +25,7 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
         panic!("nullable slice box!")
     }
 
-    default fn append_all(&mut self, other: &Data<'a>, count: usize) -> Option<BoxedData<'a>> {
+    default fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>> {
         if other.get_type() != self.get_type() {
             let mut mixed = self.to_mixed();
             if other.get_type() == EncodingType::Val {
@@ -55,6 +55,14 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
         format!("NullableVec<{:?}>{}", T::t(),
                 display_nullable_slice(&self.data, &self.present, 120))
     }
+
+    // Copied from Data and marked default because specialization demands it
+    default fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
+    default fn cast_ref_i64(&self) -> &[i64] { panic!(self.type_error("cast_ref_i64")) }
+    default fn cast_ref_u32(&self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
+    default fn cast_ref_u16(&self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
+    default fn cast_ref_u8(&self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
+    default fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
 }
 
 impl<'a> Data<'a> for NullableVec<i64> {

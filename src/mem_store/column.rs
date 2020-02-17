@@ -19,7 +19,7 @@ pub trait DataSource: fmt::Debug + Sync + Send {
     fn range(&self) -> Option<(i64, i64)>;
     fn codec(&self) -> Codec;
     fn len(&self) -> usize;
-    fn data_sections(&self) -> Vec<&Data>;
+    fn data_sections(&self) -> Vec<&dyn Data>;
     fn full_type(&self) -> Type;
 }
 
@@ -28,7 +28,7 @@ impl<T: DataSource> DataSource for Arc<T> {
     fn range(&self) -> Option<(i64, i64)> { (**self).range() }
     fn codec(&self) -> Codec { (**self).codec() }
     fn len(&self) -> usize { (**self).len() }
-    fn data_sections(&self) -> Vec<&Data> { (**self).data_sections() }
+    fn data_sections(&self) -> Vec<&dyn Data> { (**self).data_sections() }
     fn full_type(&self) -> Type { (**self).full_type() }
 }
 
@@ -37,10 +37,10 @@ impl DataSource for Column {
     fn range(&self) -> Option<(i64, i64)> { self.range }
     fn codec(&self) -> Codec { self.codec.clone() }
     fn len(&self) -> usize { self.len }
-    fn data_sections(&self) -> Vec<&Data> {
+    fn data_sections(&self) -> Vec<&dyn Data> {
         // TODO(#96): fix unsafety
         unsafe {
-            mem::transmute::<Vec<&Data>, Vec<&Data>>(
+            mem::transmute::<Vec<&dyn Data>, Vec<&dyn Data>>(
                 self.data.iter().map(|d| d.to_any_vec()).collect())
         }
     }
@@ -165,7 +165,7 @@ pub enum DataSection {
 }
 
 impl DataSection {
-    pub fn to_any_vec(&self) -> &Data {
+    pub fn to_any_vec(&self) -> &dyn Data {
         match self {
             DataSection::U8(ref x) => x,
             DataSection::U16(ref x) => x,
