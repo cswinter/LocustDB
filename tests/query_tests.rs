@@ -1,10 +1,4 @@
-extern crate env_logger;
-extern crate futures_executor;
-extern crate locustdb;
-extern crate log;
-extern crate tempdir;
-
-use futures_executor::block_on;
+use futures::executor::block_on;
 
 use locustdb::*;
 use locustdb::nyc_taxi_data;
@@ -83,7 +77,7 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
         LoadOptions::new("test_data/nyc-taxi.csv.gz", "default")
             .with_schema(&nyc_taxi_data::reduced_nyc_schema())
             .with_partition_size(999)));
-    load.unwrap().ok();
+    load.unwrap();
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     let actual_rows = result.0.unwrap().rows;
     assert_eq!(&actual_rows[..min(expected_rows.len(), actual_rows.len())], expected_rows);
@@ -1035,7 +1029,7 @@ fn test_restore_from_disk() {
         let load = block_on(locustdb.load_csv(
             nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
                 .with_partition_size(999)));
-        load.unwrap().ok();
+        load.unwrap();
     }
     // Dropping the LocustDB object will cause all threads to be stopped
     // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously

@@ -1,4 +1,4 @@
-use futures_channel::oneshot::Sender;
+use futures::channel::oneshot::Sender;
 use std::sync::Mutex;
 use std::mem;
 

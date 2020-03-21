@@ -1,5 +1,5 @@
 use locustdb::LocustDB;
-use futures_executor::block_on;
+use futures::executor::block_on;
 
 fn main() {
     let locustdb = LocustDB::memory_only();

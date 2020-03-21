@@ -6,8 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use futures_core::*;
-use futures_channel::oneshot;
+use futures::channel::oneshot;
 use time;
 
 use crate::disk_store::interface::*;
@@ -142,7 +141,7 @@ impl InnerLocustDB {
         None
     }
 
-    pub fn schedule<T: Task + 'static>(&self, task: T) -> impl Future<Item=Trace, Error=oneshot::Canceled> {
+    pub fn schedule<T: Task + 'static>(&self, task: T) -> oneshot::Receiver<Trace> {
         // This function may be entered by event loop thread so it's important it always returns quickly.
         // Since the task queue locks are never held for long, we should be fine.
         let trace_builder = RwLock::new(Some(start_toplevel("schedule")));

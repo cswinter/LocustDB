@@ -1,4 +1,4 @@
-use futures_channel::oneshot;
+use futures::channel::oneshot;
 use super::SharedSender;
 
 pub trait Task: Sync + Send {
