@@ -1,7 +1,7 @@
-use engine::data_types::*;
-use ingest::raw_val::RawVal;
-use mem_store::value::Val;
-use QueryError;
+use crate::engine::data_types::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::value::Val;
+use crate::QueryError;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;

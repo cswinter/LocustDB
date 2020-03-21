@@ -2,14 +2,14 @@ extern crate sqlparser;
 
 use sqlparser::parser::{Parser, ParserError};
 use sqlparser::ast::{Expr as ASTNode, *};
-use engine::*;
-use engine::Query;
-use syntax::expression::*;
-use syntax::expression::Expr;
-use ingest::raw_val::RawVal;
-use syntax::limit::*;
+use crate::engine::*;
+use crate::engine::Query;
+use crate::syntax::expression::*;
+use crate::syntax::expression::Expr;
+use crate::ingest::raw_val::RawVal;
+use crate::syntax::limit::*;
 use sqlparser::dialect::GenericDialect;
-use QueryError;
+use crate::QueryError;
 
 // Convert sqlparser-rs `ASTNode` to LocustDB's `Query`
 pub fn parse_query(query: &str) -> Result<Query, QueryError> {

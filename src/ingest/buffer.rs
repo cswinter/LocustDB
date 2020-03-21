@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use mem_store::raw_col::MixedCol;
-use ingest::raw_val::RawVal;
-use ingest::input_column::InputColumn;
+use crate::mem_store::raw_col::MixedCol;
+use crate::ingest::raw_val::RawVal;
+use crate::ingest::input_column::InputColumn;
 use std::cmp;
 
 #[derive(PartialEq, Debug)]

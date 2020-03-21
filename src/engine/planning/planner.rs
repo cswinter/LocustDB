@@ -1,6 +1,6 @@
-use ::QueryError;
-use engine::*;
-use mem_store::*;
+use crate::QueryError;
+use crate::engine::*;
+use crate::mem_store::*;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::result::Result;

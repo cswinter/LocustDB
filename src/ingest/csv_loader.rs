@@ -1,18 +1,18 @@
 extern crate csv;
 extern crate flate2;
 
-use bitvec::*;
-use ingest::schema::*;
-use mem_store::column::*;
-use mem_store::column_builder::*;
-use mem_store::strings::fast_build_string_column;
-use scheduler::*;
+use crate::bitvec::*;
+use crate::ingest::schema::*;
+use crate::mem_store::column::*;
+use crate::mem_store::column_builder::*;
+use crate::mem_store::strings::fast_build_string_column;
+use crate::scheduler::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::ops::BitOr;
 use std::str;
 use std::sync::Arc;
-use stringpack::*;
+use crate::stringpack::*;
 
 use super::extractor;
 

@@ -32,22 +32,22 @@ extern crate tempdir;
 extern crate time;
 
 
-pub use disk_store::noop_storage::NoopStorage;
-pub use engine::query_task::QueryOutput;
-pub use errors::QueryError;
-pub use ingest::colgen;
-pub use ingest::csv_loader::Options as LoadOptions;
-pub use ingest::extractor;
-pub use ingest::nyc_taxi_data;
-pub use ingest::raw_val::RawVal as Value;
-pub use ingest::raw_val::syntax as value_syntax;
-pub use locustdb::LocustDB as LocustDB;
-pub use locustdb::Options as Options;
-pub use mem_store::table::TableStats;
+pub use crate::disk_store::noop_storage::NoopStorage;
+pub use crate::engine::query_task::QueryOutput;
+pub use crate::errors::QueryError;
+pub use crate::ingest::colgen;
+pub use crate::ingest::csv_loader::Options as LoadOptions;
+pub use crate::ingest::extractor;
+pub use crate::ingest::nyc_taxi_data;
+pub use crate::ingest::raw_val::RawVal as Value;
+pub use crate::ingest::raw_val::syntax as value_syntax;
+pub use crate::locustdb::LocustDB as LocustDB;
+pub use crate::locustdb::Options as Options;
+pub use crate::mem_store::table::TableStats;
 #[doc(hidden)]
-pub use trace::_replace;
+pub use crate::trace::_replace;
 #[doc(hidden)]
-pub use trace::_start;
+pub use crate::trace::_start;
 
 #[macro_use]
 mod trace;

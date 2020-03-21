@@ -1,5 +1,5 @@
-use ingest::raw_val::RawVal;
-use mem_store::value::Val;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::value::Val;
 
 impl RawVal {
     pub fn to_val(&self) -> Val {

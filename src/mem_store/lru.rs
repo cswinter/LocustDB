@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use lru::LruCache;
-use mem_store::partition::ColumnKey;
+use crate::mem_store::partition::ColumnKey;
 
 
 #[derive(Clone)]

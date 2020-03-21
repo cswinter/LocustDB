@@ -1,10 +1,10 @@
 use hex;
 
-use engine::*;
+use crate::engine::*;
 use std::fmt;
 use std::mem;
 use std::str;
-use stringpack::*;
+use crate::stringpack::*;
 
 pub struct UnhexpackStrings<'a> {
     pub packed: BufferRef<u8>,

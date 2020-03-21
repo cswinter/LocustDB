@@ -97,7 +97,7 @@ impl ColumnSchema {
 
 #[cfg(test)]
 mod tests {
-    use ingest::nyc_taxi_data::nyc_schema;
+    use crate::ingest::nyc_taxi_data::nyc_schema;
 
     use super::*;
 

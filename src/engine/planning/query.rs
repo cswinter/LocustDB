@@ -1,14 +1,14 @@
-use ::QueryError;
-use engine::*;
-use ingest::raw_val::RawVal;
-use mem_store::column::DataSource;
+use crate::QueryError;
+use crate::engine::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::column::DataSource;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::sync::Arc;
 use std::u64;
-use syntax::expression::*;
-use syntax::limit::*;
+use crate::syntax::expression::*;
+use crate::syntax::limit::*;
 
 /// NormalFormQuery observes the following invariants:
 /// - none of the expressions contain aggregation functions

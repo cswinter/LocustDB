@@ -1,7 +1,7 @@
 use std::fmt;
 use std::mem;
 
-use ingest::raw_val::RawVal;
+use crate::ingest::raw_val::RawVal;
 
 use super::*;
 

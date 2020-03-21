@@ -1,4 +1,4 @@
-use mem_store::*;
+use crate::mem_store::*;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum EncodingType {

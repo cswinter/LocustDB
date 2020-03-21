@@ -3,17 +3,17 @@ use locustdb_derive::ASTBuilder;
 use regex;
 use regex::Regex;
 
-use ::QueryError;
-use engine::*;
-use ingest::raw_val::RawVal;
-use mem_store::*;
-use mem_store::column::DataSource;
-use mem_store::value::Val;
+use crate::QueryError;
+use crate::engine::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::*;
+use crate::mem_store::column::DataSource;
+use crate::mem_store::value::Val;
 use std::collections::HashMap;
 use std::i64;
 use std::result::Result;
 use std::sync::Arc;
-use syntax::expression::*;
+use crate::syntax::expression::*;
 
 #[derive(Debug, Clone, ASTBuilder)]
 pub enum QueryPlan {

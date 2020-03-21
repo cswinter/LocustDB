@@ -4,9 +4,9 @@ use std::fmt;
 
 use itertools::Itertools;
 
-use engine::data_types::*;
-use ingest::raw_val::RawVal;
-use mem_store::value::Val;
+use crate::engine::data_types::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::value::Val;
 
 
 #[derive(Debug, Clone)]

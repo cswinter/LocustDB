@@ -8,17 +8,17 @@ use futures_util;
 use futures_executor::block_on;
 use num_cpus;
 
-use QueryError;
-use QueryResult;
-use disk_store::interface::*;
-use disk_store::noop_storage::NoopStorage;
-use engine::query_task::QueryTask;
-use ingest::colgen::GenTable;
-use ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
-use mem_store::*;
-use scheduler::*;
-use syntax::parser;
-use trace::{Trace, TraceBuilder};
+use crate::QueryError;
+use crate::QueryResult;
+use crate::disk_store::interface::*;
+use crate::disk_store::noop_storage::NoopStorage;
+use crate::engine::query_task::QueryTask;
+use crate::ingest::colgen::GenTable;
+use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
+use crate::mem_store::*;
+use crate::scheduler::*;
+use crate::syntax::parser;
+use crate::trace::{Trace, TraceBuilder};
 
 
 pub struct LocustDB {
@@ -157,7 +157,7 @@ impl LocustDB {
 
     #[cfg(feature = "enable_rocksdb")]
     pub fn persistent_storage(db_path: &str) -> Arc<dyn DiskStore> {
-        use disk_store::rocksdb;
+        use crate::disk_store::rocksdb;
         Arc::new(rocksdb::RocksDB::new(db_path))
     }
 

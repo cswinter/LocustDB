@@ -11,7 +11,7 @@ use locustdb::nyc_taxi_data;
 use locustdb::Value;
 use std::cmp::min;
 use std::env;
-use value_syntax::*;
+use crate::value_syntax::*;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
@@ -207,7 +207,7 @@ fn lt_filter_on_offset_encoded_column() {
 
 #[test]
 fn test_group_by_limit() {
-    use Value::*;
+    use crate::Value::*;
     test_query_ec(
         "select enum, enum, count(0) from default limit 2;",
         &[
@@ -227,7 +227,7 @@ fn group_by_string_filter_string_eq() {
 
 #[test]
 fn group_by_col_and_aliasing_const_cols() {
-    use Value::*;
+    use crate::Value::*;
     test_query_ec(
         "select enum, constant0, constant0_2, count(0) from default;",
         &[
@@ -357,7 +357,7 @@ fn test_like_mismatch() {
 
 #[test]
 fn test_not_equals() {
-    use Value::*;
+    use crate::Value::*;
     test_query(
         "select num, count(1) from default where num <> 0;",
         &[
@@ -373,7 +373,7 @@ fn test_not_equals() {
 
 #[test]
 fn test_not_equals_2() {
-    use Value::*;
+    use crate::Value::*;
     test_query(
         "select num, count(1) from default where not(num = 0);",
         &[
@@ -891,7 +891,7 @@ fn test_overflow() {
 
 #[test]
 fn test_gen_table() {
-    use Value::*;
+    use crate::Value::*;
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.gen_table(
@@ -923,7 +923,7 @@ fn test_gen_table() {
 
 #[test]
 fn test_column_with_null_partitions() {
-    use Value::*;
+    use crate::Value::*;
     let _ = env_logger::try_init();
     let mut opts = locustdb::Options::default();
     opts.threads = 1;
@@ -957,7 +957,7 @@ fn test_column_with_null_partitions() {
 
 #[test]
 fn test_group_by_string() {
-    use value_syntax::*;
+    use crate::value_syntax::*;
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.gen_table(

@@ -8,11 +8,11 @@ use std::io::Cursor;
 
 use num::PrimInt;
 use byteorder::{NativeEndian, ReadBytesExt};
-use ingest::raw_val::RawVal;
+use crate::ingest::raw_val::RawVal;
 use itertools::Itertools;
 
-use mem_store::value::Val;
-use engine::data_types::*;
+use crate::mem_store::value::Val;
+use crate::engine::data_types::*;
 
 
 pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Sync + Send {

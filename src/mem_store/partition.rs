@@ -3,10 +3,10 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use disk_store::interface::*;
-use ingest::buffer::Buffer;
-use mem_store::*;
-use scheduler::disk_read_scheduler::DiskReadScheduler;
+use crate::disk_store::interface::*;
+use crate::ingest::buffer::Buffer;
+use crate::mem_store::*;
+use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 
 
 pub type ColumnKey = (PartitionID, String);

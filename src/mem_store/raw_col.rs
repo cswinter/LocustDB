@@ -3,9 +3,9 @@ use std::ops::BitOr;
 use std::sync::Arc;
 use std::mem;
 
-use ingest::raw_val::RawVal;
-use mem_store::*;
-use mem_store::column_builder::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::*;
+use crate::mem_store::column_builder::*;
 
 // Can eliminate this? Used by in-memory buffer.
 #[derive(PartialEq, Debug)]

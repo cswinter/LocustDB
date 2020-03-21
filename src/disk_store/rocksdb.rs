@@ -1,22 +1,18 @@
-extern crate rocksdb;
-extern crate capnp;
-
 use std::sync::Arc;
 use std::str;
 
 use byteorder::{ByteOrder, BigEndian};
 use capnp::{serialize, message};
-use self::rocksdb::*;
-use storage_format_capnp::*;
+use rocksdb::*;
+use crate::storage_format_capnp::*;
 
-use disk_store::interface::*;
-use mem_store::column::{Column, DataSection, DataSource};
-use scheduler::inner_locustdb::InnerLocustDB;
-use mem_store::codec::CodecOp;
-use engine::data_types::EncodingType as Type;
+use crate::disk_store::interface::*;
+use crate::mem_store::column::{Column, DataSection, DataSource};
+use crate::scheduler::inner_locustdb::InnerLocustDB;
+use crate::mem_store::codec::CodecOp;
+use crate::engine::data_types::EncodingType as Type;
 
-use time;
-use unit_fmt::*;
+use crate::unit_fmt::*;
 
 
 pub struct RocksDB {
@@ -160,7 +156,7 @@ fn deserialize_column(data: &[u8]) -> Column {
     };
 
     let codec = column.get_codec().unwrap().iter().map(|op| {
-        use storage_format_capnp::codec_op::Which::*;
+        use crate::storage_format_capnp::codec_op::Which::*;
         match op.which().unwrap() {
             Nullable(_) => CodecOp::Nullable,
             Add(add) => {
@@ -184,7 +180,7 @@ fn deserialize_column(data: &[u8]) -> Column {
     }).collect::<Vec<_>>();
 
     let data_sections = column.get_data().unwrap().iter().map(|d| {
-        use storage_format_capnp::data_section::Which::*;
+        use crate::storage_format_capnp::data_section::Which::*;
         match d.which().unwrap() {
             U8(data) => {
                 let data = data.unwrap();

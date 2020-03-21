@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use mem_store::column::Column;
-use scheduler::inner_locustdb::InnerLocustDB;
+use crate::mem_store::column::Column;
+use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 
 pub trait DiskStore: Sync + Send + 'static {

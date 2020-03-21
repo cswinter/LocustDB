@@ -1,4 +1,4 @@
-use errors::QueryError;
+use crate::errors::QueryError;
 
 pub use self::data_types::*;
 pub use self::execution::*;

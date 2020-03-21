@@ -1,7 +1,7 @@
 use fnv::FnvHashMap;
 
-use engine::*;
-use ingest::raw_val::RawVal;
+use crate::engine::*;
+use crate::ingest::raw_val::RawVal;
 use std::hash::Hash;
 
 #[derive(Debug)]
