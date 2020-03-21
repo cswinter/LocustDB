@@ -1,5 +1,5 @@
-use bitvec::*;
-use engine::*;
+use crate::bitvec::*;
+use crate::engine::*;
 
 #[derive(Debug)]
 pub struct Select<T> {

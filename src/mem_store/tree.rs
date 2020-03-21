@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::f64;
-use unit_fmt::*;
+use crate::unit_fmt::*;
 
 pub struct MemTreeTable {
     pub name: String,

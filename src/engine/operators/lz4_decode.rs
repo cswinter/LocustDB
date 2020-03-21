@@ -1,5 +1,5 @@
-use engine::*;
-use mem_store::lz4;
+use crate::engine::*;
+use crate::mem_store::lz4;
 use std::fmt;
 use std::io::Read;
 

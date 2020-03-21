@@ -1,5 +1,5 @@
-use engine::*;
-use mem_store::*;
+use crate::engine::*;
+use crate::mem_store::*;
 
 #[derive(Debug)]
 pub struct EncodeIntConstant {

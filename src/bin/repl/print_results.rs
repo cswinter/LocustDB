@@ -1,4 +1,4 @@
-use fmt_table::fmt_table;
+use crate::fmt_table::fmt_table;
 use locustdb::*;
 use locustdb::unit_fmt::*;
 

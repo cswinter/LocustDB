@@ -1,6 +1,6 @@
-use engine::*;
+use crate::engine::*;
 use std::fmt;
-use stringpack::StringPackerIterator;
+use crate::stringpack::StringPackerIterator;
 
 pub struct UnpackStrings<'a> {
     pub packed: BufferRef<u8>,

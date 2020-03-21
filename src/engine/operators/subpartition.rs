@@ -1,4 +1,4 @@
-use engine::*;
+use crate::engine::*;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -70,10 +70,10 @@ fn subpartition<'a, T: VecData<T> + 'a, C: Comparator<T>>(
 
 #[cfg(test)]
 mod tests {
-    use engine::*;
-    use engine::operators::merge_deduplicate_partitioned::merge_deduplicate_partitioned;
-    use engine::operators::partition::partition;
-    use engine::operators::subpartition::subpartition;
+    use crate::engine::*;
+    use crate::engine::operators::merge_deduplicate_partitioned::merge_deduplicate_partitioned;
+    use crate::engine::operators::partition::partition;
+    use crate::engine::operators::subpartition::subpartition;
 
     use self::MergeOp::*;
 

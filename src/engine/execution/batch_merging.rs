@@ -1,6 +1,6 @@
-use engine::*;
-use errors::QueryError;
-use mem_store::column::DataSource;
+use crate::engine::*;
+use crate::errors::QueryError;
+use crate::mem_store::column::DataSource;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::result::Result;

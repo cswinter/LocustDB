@@ -4,11 +4,11 @@ use std::i64;
 use std::mem;
 use std::string;
 
-use engine::data_types::*;
-use ingest::raw_val::RawVal;
-use mem_store::codec::Codec;
-use mem_store::column::DataSource;
-use mem_store::value::Val;
+use crate::engine::data_types::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::codec::Codec;
+use crate::mem_store::column::DataSource;
+use crate::mem_store::value::Val;
 
 use super::NullableVec;
 

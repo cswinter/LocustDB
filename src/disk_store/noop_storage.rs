@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use mem_store::column::Column;
-use disk_store::interface::*;
-use scheduler::inner_locustdb::InnerLocustDB;
+use crate::mem_store::column::Column;
+use crate::disk_store::interface::*;
+use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub struct NoopStorage;
 

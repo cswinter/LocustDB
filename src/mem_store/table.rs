@@ -4,12 +4,12 @@ use std::str;
 use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
-use disk_store::interface::*;
-use ingest::buffer::Buffer;
-use ingest::input_column::InputColumn;
-use ingest::raw_val::RawVal;
-use mem_store::partition::{Partition, ColumnKey};
-use mem_store::*;
+use crate::disk_store::interface::*;
+use crate::ingest::buffer::Buffer;
+use crate::ingest::input_column::InputColumn;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::partition::{Partition, ColumnKey};
+use crate::mem_store::*;
 
 
 pub struct Table {

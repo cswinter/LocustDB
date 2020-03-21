@@ -1,6 +1,6 @@
-use engine::*;
-use engine::data_types::*;
-use engine::planning::QueryPlanner;
+use crate::engine::*;
+use crate::engine::data_types::*;
+use crate::engine::planning::QueryPlanner;
 
 #[derive(Debug, Clone)]
 pub struct Codec {
@@ -202,7 +202,7 @@ impl Codec {
         }
     }
 
-    pub(in mem_store) fn set_column_name(&mut self, name: &str) {
+    pub(in crate::mem_store) fn set_column_name(&mut self, name: &str) {
         self.column_name = name.to_string();
     }
 

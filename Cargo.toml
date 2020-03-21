@@ -4,6 +4,7 @@ name = "locustdb"
 version = "0.2.1"
 license-file = "LICENSE"
 description = "Embeddable high-performance analytics database."
+edition = "2018"
 [build-dependencies]
 [build-dependencies.capnpc]
 optional = true

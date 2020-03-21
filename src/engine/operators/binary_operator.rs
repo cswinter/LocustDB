@@ -1,5 +1,5 @@
-use bitvec::BitVec;
-use engine::*;
+use crate::bitvec::BitVec;
+use crate::engine::*;
 use std::marker::PhantomData;
 
 pub struct BinaryOperator<LHS, RHS, Out, Op> {

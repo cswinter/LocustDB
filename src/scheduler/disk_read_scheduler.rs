@@ -6,12 +6,12 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::collections::VecDeque;
 use std_semaphore::Semaphore;
 
-use disk_store::interface::DiskStore;
-use disk_store::interface::PartitionID;
-use mem_store::*;
-use mem_store::partition::ColumnHandle;
-use mem_store::partition::Partition;
-use scheduler::inner_locustdb::InnerLocustDB;
+use crate::disk_store::interface::DiskStore;
+use crate::disk_store::interface::PartitionID;
+use crate::mem_store::*;
+use crate::mem_store::partition::ColumnHandle;
+use crate::mem_store::partition::Partition;
+use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 
 pub struct DiskReadScheduler {

@@ -1,4 +1,4 @@
-use ingest::csv_loader::Options;
+use crate::ingest::csv_loader::Options;
 
 pub fn reduced_nyc_schema() -> String {
     "trip_id:i,\

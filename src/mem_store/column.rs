@@ -2,9 +2,9 @@ use std::fmt;
 use std::mem;
 use std::sync::Arc;
 
-use mem_store::*;
-use engine::data_types::*;
-use mem_store::lz4;
+use crate::mem_store::*;
+use crate::engine::data_types::*;
+use crate::mem_store::lz4;
 
 pub struct Column {
     name: String,

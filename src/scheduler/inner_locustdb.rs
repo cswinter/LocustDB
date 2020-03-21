@@ -10,17 +10,17 @@ use futures_core::*;
 use futures_channel::oneshot;
 use time;
 
-use disk_store::interface::*;
-use ingest::colgen::GenTable;
-use ingest::input_column::InputColumn;
-use ingest::raw_val::RawVal;
-use locustdb::Options;
-use mem_store::*;
-use mem_store::partition::Partition;
-use mem_store::table::*;
-use scheduler::*;
-use scheduler::disk_read_scheduler::DiskReadScheduler;
-use trace::*;
+use crate::disk_store::interface::*;
+use crate::ingest::colgen::GenTable;
+use crate::ingest::input_column::InputColumn;
+use crate::ingest::raw_val::RawVal;
+use crate::locustdb::Options;
+use crate::mem_store::*;
+use crate::mem_store::partition::Partition;
+use crate::mem_store::table::*;
+use crate::scheduler::*;
+use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
+use crate::trace::*;
 
 
 pub struct InnerLocustDB {

@@ -2,10 +2,10 @@ use std::cmp;
 use std::i64;
 use std::sync::Arc;
 
-use mem_store::integers::*;
-use mem_store::column::*;
-use mem_store::strings::*;
-use stringpack::*;
+use crate::mem_store::integers::*;
+use crate::mem_store::column::*;
+use crate::mem_store::strings::*;
+use crate::stringpack::*;
 
 
 pub trait ColumnBuilder<T: ?Sized>: Default {

@@ -7,15 +7,15 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 
-use ::QueryError;
-use QueryResult;
-use engine::*;
-use ingest::raw_val::RawVal;
-use mem_store::partition::Partition;
-use mem_store::column::DataSource;
-use scheduler::*;
-use scheduler::disk_read_scheduler::DiskReadScheduler;
-use syntax::expression::*;
+use crate::QueryError;
+use crate::QueryResult;
+use crate::engine::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::partition::Partition;
+use crate::mem_store::column::DataSource;
+use crate::scheduler::*;
+use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
+use crate::syntax::expression::*;
 use time::precise_time_ns;
 
 

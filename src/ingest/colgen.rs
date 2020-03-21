@@ -4,15 +4,15 @@ use std::sync::Arc;
 use crypto::digest::Digest;
 use crypto::md5::Md5;
 use hex;
-use ingest::alias_method_fork::*;
+use crate::ingest::alias_method_fork::*;
 use rand::Rng;
 use rand::SeedableRng;
 use rand::distributions::{Alphanumeric, Standard};
 use rand;
 
-use mem_store::column::*;
-use mem_store::column_builder::{ColumnBuilder, IntColBuilder, StringColBuilder};
-use scheduler::inner_locustdb::InnerLocustDB;
+use crate::mem_store::column::*;
+use crate::mem_store::column_builder::{ColumnBuilder, IntColBuilder, StringColBuilder};
+use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub trait ColumnGenerator: Sync + Send {
     fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column>;
