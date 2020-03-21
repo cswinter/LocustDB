@@ -1,6 +1,3 @@
-extern crate locustdb;
-extern crate futures_executor;
-
 use locustdb::LocustDB;
 use futures_executor::block_on;
 
