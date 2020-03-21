@@ -1,12 +1,10 @@
 #![feature(test)]
-extern crate futures_executor;
-extern crate locustdb;
-extern crate test;
-
-use futures_executor::block_on;
+#![allow(soft_unstable)]
+use futures::executor::block_on;
 use locustdb::{LocustDB, Options};
 use std::env;
 use std::u32;
+extern crate test;
 
 static mut DB: Option<LocustDB> = None;
 

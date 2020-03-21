@@ -1,6 +1,6 @@
 use clap::{App, Arg, crate_version, value_t};
 use failure::Fail;
-use futures_executor::block_on;
+use futures::executor::block_on;
 use time::precise_time_ns;
 
 use locustdb::LocustDB;
@@ -146,8 +146,7 @@ fn main() {
     }
     for l in loads {
         block_on(l)
-            .expect("Ingestion crashed!")
-            .expect("Failed to load file!");
+            .expect("Ingestion crashed!");
     }
     if file_count > 0 {
         println!("Loaded data in {:.3}.", ns((precise_time_ns() - start_time) as usize));
@@ -243,9 +242,7 @@ fn repl(locustdb: &LocustDB) {
                     .with_schema(schema);
                 let load = locustdb.load_csv(opts);
                 println!("Loading {} into table {}.", file, tablename);
-                block_on(load)
-                    .expect("Ingestion crashed!")
-                    .expect("Failed to load file!");
+                block_on(load).expect("Ingestion crashed!");
             }
             continue;
         }

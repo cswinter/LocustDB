@@ -1,11 +1,8 @@
 use std::str;
 use std::sync::Arc;
+use std::error::Error;
 
-use futures_channel::oneshot;
-use futures_core::*;
-use futures_util::FutureExt;
-use futures_util;
-use futures_executor::block_on;
+use futures::channel::oneshot;
 use num_cpus;
 
 use crate::QueryError;
@@ -39,24 +36,26 @@ impl LocustDB {
         LocustDB { inner_locustdb: locustdb }
     }
 
-    pub fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Box<dyn Future<Item=(QueryResult, Trace), Error=oneshot::Canceled>> {
+    pub async fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Result<(QueryResult, Trace), oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
 
         // PERF: perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query) {
             Ok(query) => query,
             Err(err) => {
-                return Box::new(future::ok(
-                    (Err(err),
-                     TraceBuilder::new("empty".to_owned()).finalize())));
+                return Ok((
+                    Err(err),
+                    TraceBuilder::new("empty".to_owned()).finalize()
+                ))
             }
         };
 
         let mut data = match self.inner_locustdb.snapshot(&query.table) {
             Some(data) => data,
-            None => return Box::new(future::ok((
+            None => return Ok((
                 Err(QueryError::NotImplemented(format!("Table {} does not exist!", &query.table))),
-                TraceBuilder::new("empty".to_owned()).finalize()))),
+                TraceBuilder::new("empty".to_owned()).finalize()
+            ))
         };
 
         if self.inner_locustdb.opts().seq_disk_read {
@@ -69,41 +68,45 @@ impl LocustDB {
             let _ = self.inner_locustdb.schedule(read_data);
         }
 
-        match QueryTask::new(
+        let query_task = QueryTask::new(
             query, explain, show, data,
             self.inner_locustdb.disk_read_scheduler().clone(),
-            SharedSender::new(sender)) {
-                Ok(task) => {
-                    let trace_receiver = self.schedule(task);
-                    Box::new(receiver.join(trace_receiver))
-                }
-                Err(err) => {
-                    Box::new(future::ok((Err(err), TraceBuilder::new("empty".to_owned()).finalize())))
-                }
+            SharedSender::new(sender)
+        );
+
+        match query_task {
+            Ok(task) => {
+                let trace = self.schedule(task);
+                Ok((receiver.await?, trace.await?))
             }
+            Err(err) => Ok((Err(err), TraceBuilder::new("empty".to_owned()).finalize())),
+        }
     }
 
-    pub fn load_csv(&self, options: LoadOptions) -> impl Future<Item=Result<(), String>, Error=oneshot::Canceled> {
+    pub async fn load_csv(&self, options: LoadOptions) -> Result<(), Box<dyn Error>> {
         let (sender, receiver) = oneshot::channel();
         let task = CSVIngestionTask::new(
             options,
             self.inner_locustdb.clone(),
             SharedSender::new(sender));
-        self.schedule(task);
-        receiver
+        let _ = self.schedule(task);
+        Ok(receiver.await??)
     }
 
-    pub fn gen_table(&self, opts: GenTable) -> impl Future<Item=(), Error=oneshot::Canceled> {
+    pub async fn gen_table(&self, opts: GenTable) -> Result<(), oneshot::Canceled> {
         let mut receivers = Vec::new();
         let opts = Arc::new(opts);
         for partition in 0..opts.partitions {
             let opts = opts.clone();
             let inner = self.inner_locustdb.clone();
             let (task, receiver) = Task::from_fn(move || inner.gen_partition(&opts, partition as u64));
-            self.schedule(task);
+            let _ = self.schedule(task);
             receivers.push(receiver);
         }
-        futures_util::future::join_all(receivers).map(|_| ())
+        for receiver in receivers {
+            receiver.await?;
+        }
+        Ok(())
     }
 
     pub fn ast(&self, query: &str) -> String {
@@ -113,7 +116,7 @@ impl LocustDB {
         }
     }
 
-    pub fn bulk_load(&self) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
+    pub async fn bulk_load(&self) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         for table in self.inner_locustdb.full_snapshot() {
             self.inner_locustdb.disk_read_scheduler()
                 .schedule_bulk_load(table,
@@ -127,9 +130,9 @@ impl LocustDB {
             receivers.push(receiver);
         }
         for receiver in receivers {
-            block_on(receiver).unwrap();
+            receiver.await?;
         }
-        self.mem_tree(2)
+        self.mem_tree(2).await
     }
 
     pub fn recover(&self) {
@@ -137,21 +140,21 @@ impl LocustDB {
         InnerLocustDB::start_worker_threads(&self.inner_locustdb);
     }
 
-    pub fn mem_tree(&self, depth: usize) -> impl Future<Item=Vec<MemTreeTable>, Error=oneshot::Canceled> {
+    pub async fn mem_tree(&self, depth: usize) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
         let (task, receiver) = Task::from_fn(move || inner.mem_tree(depth));
-        self.schedule(task);
-        receiver
+        let _ = self.schedule(task);
+        receiver.await
     }
 
-    pub fn table_stats(&self) -> impl Future<Item=Vec<TableStats>, Error=oneshot::Canceled> {
+    pub async fn table_stats(&self) -> Result<Vec<TableStats>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
         let (task, receiver) = Task::from_fn(move || inner.stats());
-        self.schedule(task);
-        receiver
+        let _ = self.schedule(task);
+        receiver.await
     }
 
-    fn schedule<T: Task + 'static>(&self, task: T) -> impl Future<Item=Trace, Error=oneshot::Canceled> {
+    pub fn schedule<T: Task + 'static>(&self, task: T) -> oneshot::Receiver<Trace> {
         self.inner_locustdb.schedule(task)
     }
 
