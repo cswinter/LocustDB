@@ -198,7 +198,6 @@ fn repl(locustdb: &LocustDB) {
         }
         rl.add_history_entry(&s);
 
-        let mut print_trace = false;
         let mut explain = false;
         let mut show = vec![];
         let mut s: &str = &s;
@@ -251,10 +250,6 @@ fn repl(locustdb: &LocustDB) {
             explain = true;
             s = &s[9..];
         }
-        if s.starts_with(":trace") {
-            print_trace = true;
-            s = &s[7..];
-        }
         if s.starts_with(":show") {
             show = if s.starts_with(":show(") {
                 let end = s.find(')').unwrap();
@@ -277,10 +272,7 @@ fn repl(locustdb: &LocustDB) {
 
         let query = locustdb.run_query(s, explain, show);
         match block_on(query) {
-            Ok((result, trace)) => {
-                if print_trace {
-                    trace.print();
-                }
+            Ok(result) => {
                 match result {
                     Ok(output) => print_results::print_query_result(&output),
                     Err(fail) => print_error(&fail),

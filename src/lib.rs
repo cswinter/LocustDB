@@ -19,13 +19,7 @@ pub use crate::ingest::raw_val::syntax as value_syntax;
 pub use crate::locustdb::LocustDB as LocustDB;
 pub use crate::locustdb::Options as Options;
 pub use crate::mem_store::table::TableStats;
-#[doc(hidden)]
-pub use crate::trace::_replace;
-#[doc(hidden)]
-pub use crate::trace::_start;
 
-#[macro_use]
-mod trace;
 #[macro_use]
 mod errors;
 mod syntax;

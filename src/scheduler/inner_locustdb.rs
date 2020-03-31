@@ -1,12 +1,10 @@
 use std::collections::{HashMap, VecDeque};
-use std::mem;
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use futures::channel::oneshot;
 use time;
 
 use crate::disk_store::interface::*;
@@ -19,7 +17,6 @@ use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
 use crate::scheduler::*;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
-use crate::trace::*;
 
 
 pub struct InnerLocustDB {
@@ -33,20 +30,7 @@ pub struct InnerLocustDB {
     next_partition_id: AtomicUsize,
     running: AtomicBool,
     idle_queue: Condvar,
-    task_queue: Mutex<VecDeque<Arc<TaskState>>>,
-}
-
-struct TaskState {
-    trace_builder: RwLock<Option<TraceBuilder>>,
-    trace_sender: SharedSender<Trace>,
-    task: Box<dyn Task>,
-}
-
-impl Drop for TaskState {
-    fn drop(&mut self) {
-        let trace_builder = mem::replace(&mut *self.trace_builder.write().unwrap(), None);
-        self.trace_sender.send(trace_builder.map(|tb| tb.finalize()).unwrap());
-    }
+    task_queue: Mutex<VecDeque<Arc<dyn Task>>>,
 }
 
 impl InnerLocustDB {
@@ -76,9 +60,9 @@ impl InnerLocustDB {
     }
 
     pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>) {
-        for id in 0..locustdb.opts.threads {
+        for _ in 0..locustdb.opts.threads {
             let cloned = locustdb.clone();
-            thread::spawn(move || InnerLocustDB::worker_loop(cloned, id));
+            thread::spawn(move || InnerLocustDB::worker_loop(cloned));
         }
         let cloned = locustdb.clone();
         thread::spawn(move || InnerLocustDB::enforce_mem_limit(&cloned));
@@ -102,58 +86,42 @@ impl InnerLocustDB {
         self.idle_queue.notify_all();
     }
 
-    fn worker_loop(locustdb: Arc<InnerLocustDB>, thread_id: usize) {
+    fn worker_loop(locustdb: Arc<InnerLocustDB>) {
         while locustdb.running.load(Ordering::SeqCst) {
             if let Some(task) = InnerLocustDB::await_task(&locustdb) {
-                if let Some(ref tb) = *task.trace_builder.read().unwrap() {
-                    tb.activate();
-                }
-                {
-                    trace_start!("Worker thread {}", thread_id);
-                    task.task.execute();
-                }
-                if let Some(ref mut tb) = *task.trace_builder.write().unwrap() {
-                    tb.collect();
-                }
+                task.execute();
             }
         }
         drop(locustdb) // Make clippy happy
     }
 
-    fn await_task(ldb: &Arc<InnerLocustDB>) -> Option<Arc<TaskState>> {
+    fn await_task(ldb: &Arc<InnerLocustDB>) -> Option<Arc<dyn Task>> {
         let mut task_queue = ldb.task_queue.lock().unwrap();
         while task_queue.is_empty() {
-            if !ldb.running.load(Ordering::SeqCst) { return None; }
+            if !ldb.running.load(Ordering::SeqCst) { return None }
             task_queue = ldb.idle_queue.wait(task_queue).unwrap();
         }
         while let Some(task) = task_queue.pop_front() {
-            if task.task.completed() {
+            if task.completed() {
                 continue;
             }
-            if task.task.multithreaded() {
+            if task.multithreaded() {
                 task_queue.push_front(task.clone());
             }
             if !task_queue.is_empty() {
                 ldb.idle_queue.notify_one();
             }
-            return Some(task);
+            return Some(task)
         };
         None
     }
 
-    pub fn schedule<T: Task + 'static>(&self, task: T) -> oneshot::Receiver<Trace> {
+    pub fn schedule<T: Task + 'static>(&self, task: T) {
         // This function may be entered by event loop thread so it's important it always returns quickly.
         // Since the task queue locks are never held for long, we should be fine.
-        let trace_builder = RwLock::new(Some(start_toplevel("schedule")));
-        let (trace_sender, trace_receiver) = oneshot::channel();
         let mut task_queue = self.task_queue.lock().unwrap();
-        task_queue.push_back(Arc::new(TaskState {
-            trace_sender: SharedSender::new(trace_sender),
-            trace_builder,
-            task: Box::new(task),
-        }));
+        task_queue.push_back(Arc::new(task));
         self.idle_queue.notify_one();
-        trace_receiver
     }
 
     pub fn store_partition(&self, tablename: &str, partition: Vec<Arc<Column>>) {

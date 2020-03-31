@@ -123,7 +123,6 @@ impl QueryTask {
         let mut batch_results = Vec::<BatchResult>::new();
         let mut explains = Vec::new();
         while let Some((partition, id)) = self.next_partition() {
-            trace_start!("Batch {}", id);
             let show = self.show.iter().any(|&x| x == id);
             let cols = partition.get_cols(&self.referenced_cols, &self.db);
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());

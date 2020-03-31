@@ -144,7 +144,6 @@ impl NormalFormQuery {
                              partition: usize,
                              partition_len: usize)
                              -> Result<(BatchResult<'a>, Option<String>), QueryError> {
-        trace_start!("run_aggregate");
 
         let mut qp = QueryPlanner::default();
 
