@@ -15,7 +15,6 @@ use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
 use crate::mem_store::*;
 use crate::scheduler::*;
 use crate::syntax::parser;
-use crate::trace::{Trace, TraceBuilder};
 
 
 pub struct LocustDB {
@@ -36,26 +35,19 @@ impl LocustDB {
         LocustDB { inner_locustdb: locustdb }
     }
 
-    pub async fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Result<(QueryResult, Trace), oneshot::Canceled> {
+    pub async fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Result<QueryResult, oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
 
         // PERF: perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query) {
             Ok(query) => query,
-            Err(err) => {
-                return Ok((
-                    Err(err),
-                    TraceBuilder::new("empty".to_owned()).finalize()
-                ))
-            }
+            Err(err) => return Ok(Err(err)),
         };
 
         let mut data = match self.inner_locustdb.snapshot(&query.table) {
             Some(data) => data,
-            None => return Ok((
-                Err(QueryError::NotImplemented(format!("Table {} does not exist!", &query.table))),
-                TraceBuilder::new("empty".to_owned()).finalize()
-            ))
+            None => return Ok(Err(
+                QueryError::NotImplemented(format!("Table {} does not exist!", &query.table)))),
         };
 
         if self.inner_locustdb.opts().seq_disk_read {
@@ -76,10 +68,10 @@ impl LocustDB {
 
         match query_task {
             Ok(task) => {
-                let trace = self.schedule(task);
-                Ok((receiver.await?, trace.await?))
+                self.schedule(task);
+                Ok(receiver.await?)
             }
-            Err(err) => Ok((Err(err), TraceBuilder::new("empty".to_owned()).finalize())),
+            Err(err) => Ok(Err(err)),
         }
     }
 
@@ -154,7 +146,7 @@ impl LocustDB {
         receiver.await
     }
 
-    pub fn schedule<T: Task + 'static>(&self, task: T) -> oneshot::Receiver<Trace> {
+    pub fn schedule<T: Task + 'static>(&self, task: T) {
         self.inner_locustdb.schedule(task)
     }
 
