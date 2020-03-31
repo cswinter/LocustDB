@@ -1,6 +1,7 @@
 use std::str;
 use std::sync::Arc;
 use std::error::Error;
+use std::path::{Path, PathBuf};
 
 use futures::channel::oneshot;
 use num_cpus;
@@ -151,13 +152,13 @@ impl LocustDB {
     }
 
     #[cfg(feature = "enable_rocksdb")]
-    pub fn persistent_storage(db_path: &str) -> Arc<dyn DiskStore> {
+    pub fn persistent_storage<P: AsRef<Path>>(db_path: P) -> Arc<dyn DiskStore> {
         use crate::disk_store::rocksdb;
         Arc::new(rocksdb::RocksDB::new(db_path))
     }
 
     #[cfg(not(feature = "enable_rocksdb"))]
-    pub fn persistent_storage(_: &str) -> Arc<dyn DiskStore> {
+    pub fn persistent_storage<P: AsRef<Path>>(_: P) -> Arc<dyn DiskStore> {
         panic!("RocksDB storage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
     }
 }
@@ -172,7 +173,7 @@ impl Drop for LocustDB {
 pub struct Options {
     pub threads: usize,
     pub read_threads: usize,
-    pub db_path: Option<String>,
+    pub db_path: Option<PathBuf>,
     pub mem_size_limit_tables: usize,
     pub mem_lz4: bool,
     pub readahead: usize,

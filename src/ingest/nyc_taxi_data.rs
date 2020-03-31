@@ -1,3 +1,4 @@
+use std::path::Path;
 use crate::ingest::csv_loader::Options;
 
 pub fn reduced_nyc_schema() -> String {
@@ -108,12 +109,12 @@ pub fn nyc_schema() -> String {
     dropoff_puma:i".to_string()
 }
 
-pub fn ingest_file(file_path: &str, tablename: &str) -> Options {
+pub fn ingest_file<P: AsRef<Path>>(file_path: P, tablename: &str) -> Options {
     Options::new(file_path, tablename)
         .with_schema(&nyc_schema())
 }
 
-pub fn ingest_reduced_file(file_path: &str, tablename: &str) -> Options {
+pub fn ingest_reduced_file<P: AsRef<Path>>(file_path: P, tablename: &str) -> Options {
     Options::new(file_path, tablename)
         .with_schema(&reduced_nyc_schema())
 }

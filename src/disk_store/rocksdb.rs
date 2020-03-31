@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::str;
+use std::path::Path;
 
 use byteorder::{ByteOrder, BigEndian};
 use capnp::{serialize, message};
@@ -20,7 +21,7 @@ pub struct RocksDB {
 }
 
 impl RocksDB {
-    pub fn new(path: &str) -> RocksDB {
+    pub fn new<P: AsRef<Path>>(path: P) -> RocksDB {
         let mut options = Options::default();
         options.create_if_missing(true);
         options.create_missing_column_families(true);

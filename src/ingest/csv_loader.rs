@@ -9,6 +9,7 @@ use crate::mem_store::strings::fast_build_string_column;
 use crate::scheduler::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::ops::BitOr;
 use std::str;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use self::flate2::read::GzDecoder;
 type IngestionTransform = HashMap<usize, extractor::Extractor>;
 
 pub struct Options {
-    filename: String,
+    filename: PathBuf,
     tablename: String,
     partition_size: usize,
     colnames: Option<Vec<String>>,
@@ -34,9 +35,9 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn new(filename: &str, tablename: &str) -> Options {
+    pub fn new<P: AsRef<Path>>(filename: P, tablename: &str) -> Options {
         Options {
-            filename: filename.to_owned(),
+            filename: filename.as_ref().to_path_buf(),
             tablename: tablename.to_owned(),
             partition_size: 1 << 16,
             colnames: None,
@@ -45,7 +46,7 @@ impl Options {
             always_string: HashSet::new(),
             allow_nulls: HashSet::new(),
             allow_nulls_all_columns: false,
-            unzip: filename.ends_with(".gz"),
+            unzip: filename.as_ref().to_string_lossy().ends_with(".gz"),
         }
     }
 

@@ -1023,7 +1023,7 @@ fn test_restore_from_disk() {
     let _ = env_logger::try_init();
     let tmp_dir = TempDir::new("rocks").unwrap();
     let mut opts = Options::default();
-    opts.db_path = Some(tmp_dir.path().to_str().unwrap().to_string());
+    opts.db_path = Some(tmp_dir.path().to_path_buf());
     {
         let locustdb = LocustDB::new(&opts);
         let load = block_on(locustdb.load_csv(
