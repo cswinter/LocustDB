@@ -117,17 +117,17 @@ git clone https://github.com/cswinter/LocustDB.git
 cd LocustDB
 ```
 
-3. Compile with `RUSTFLAGS="-Ccodegen-units=1"` and `CARGO_INCREMENTAL=0` for optimal performance:
+3. Compile with `--release` for optimal performance:
 
 ```Bash
-RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
+cargo run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
 ```
 
 ### Running tests or benchmarks
 
 `cargo test`
 
-`RUSTFLAGS="-Ccodegen-units=1" CARGO_INCREMENTAL=0 cargo bench`
+`cargo bench`
 
 ### Storage backend
 LocustDB has support for persisting data to disk and running queries on data stored on disk.
