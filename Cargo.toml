@@ -66,3 +66,9 @@ version = "0.10.1"
 default = []
 enable_lz4 = ["lz4"]
 enable_rocksdb = ["rocksdb", "capnp", "capnpc"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+debug = true
+opt-level = 3
