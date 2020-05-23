@@ -527,7 +527,7 @@ dependencies = [
 
 [[package]]
 name = "locustdb"
-version = "0.3.2-alpha.0"
+version = "0.3.2"
 dependencies = [
  "aliasmethod 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bit-vec 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
