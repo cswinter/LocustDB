@@ -17,7 +17,7 @@ jobs:
             asset_name: locustdb-linux-amd64
           - os: macos-latest
             artifact_name: repl
-            esset_name: locustdb-macos-amd64
+            asset_name: locustdb-macos-amd64
 
     steps:
     - uses: actions/checkout@v2    
