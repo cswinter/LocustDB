@@ -44,9 +44,12 @@ jobs:
     - name: Install Dependencies
       run: ./system_dependencies.sh
 
+    - name: Test
       run: cargo test --release --all-features
+
     - name: Build
       run: cargo build --release --all-features --locked
+
     - name: Upload binaries to release
       uses: svenstaro/upload-release-action@v1-release
       with:
