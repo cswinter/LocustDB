@@ -552,6 +552,13 @@ fn test_comparison_operators() {
         ],
     );
     test_query_ec(
+        "SELECT non_dense_ints FROM default WHERE non_dense_ints = id ORDER BY \"id\";",
+        &[
+            vec![Int(0)],
+            vec![Int(4)],
+        ],
+    );
+    test_query_ec(
         "SELECT id FROM default WHERE id <> id / 8 + id ORDER BY id;",
         &[
             vec![Int(8)],
