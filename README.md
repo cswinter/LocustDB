@@ -2,8 +2,8 @@
 
 [![Build Status][bi]][bl] [![Crates.io][ci]][cl] [![Gitter][gi]][gl]
 
-[bi]: https://travis-ci.org/cswinter/LocustDB.svg?branch=master
-[bl]: https://travis-ci.org/cswinter/LocustDB
+[bi]: https://xxx.execute-api.us-west-2.amazonaws.com/production/badge/cswinter/LocustDB
+[bl]: https://xxx.execute-api.us-west-2.amazonaws.com/production/results/cswinter/LocustDB
 
 [ci]: https://img.shields.io/crates/v/locustdb.svg
 [cl]: https://crates.io/crates/locustdb/
