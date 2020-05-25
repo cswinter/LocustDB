@@ -2,8 +2,8 @@
 
 [![Build Status][bi]][bl] [![Crates.io][ci]][cl] [![Gitter][gi]][gl]
 
-[bi]: https://xxx.execute-api.us-west-2.amazonaws.com/production/badge/cswinter/LocustDB
-[bl]: https://xxx.execute-api.us-west-2.amazonaws.com/production/results/cswinter/LocustDB
+[bi]: https://github.com/cswinter/LocustDB/workflows/Test/badge.svg
+[bl]: https://github.com/cswinter/LocustDB/actions
 
 [ci]: https://img.shields.io/crates/v/locustdb.svg
 [cl]: https://crates.io/crates/locustdb/
