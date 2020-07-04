@@ -14,7 +14,7 @@ use sqlparser::parser::{Parser, ParserError};
 // Convert sqlparser-rs `ASTNode` to LocustDB's `Query`
 pub fn parse_query(query: &str) -> Result<Query, QueryError> {
     let dialect = GenericDialect {};
-    let mut ast = Parser::parse_sql(&dialect, query.to_string()).map_err(|e| match e {
+    let mut ast = Parser::parse_sql(&dialect, query).map_err(|e| match e {
         ParserError::ParserError(e_str) => QueryError::ParseError(e_str),
         _ => fatal!("{:?}", e),
     })?;
@@ -34,7 +34,7 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
         }
     };
 
-    let (projection, relation, selection, order_by, limit) = get_query_components(query)?;
+    let (projection, relation, selection, order_by, limit, offset) = get_query_components(query)?;
     let projection = get_projection(projection)?;
     let table = get_table_name(relation)?;
     let filter = match selection {
@@ -44,7 +44,7 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
     let order_by = get_order_by(order_by)?;
     let limit_clause = LimitClause {
         limit: get_limit(limit)?,
-        offset: 0,
+        offset: get_offset(offset)?,
     };
 
     Ok(Query {
@@ -67,6 +67,7 @@ fn get_query_components(
         Option<ASTNode>,
         Option<Vec<OrderByExpr>>,
         Option<ASTNode>,
+        Option<Offset>,
     ),
     QueryError,
 > {
@@ -75,6 +76,7 @@ fn get_query_components(
         body,
         order_by,
         limit,
+        offset,
         ..
     } = *query;
     match body {
@@ -85,6 +87,8 @@ fn get_query_components(
             selection,
             group_by,
             having,
+            // TODO: ensure top is not set
+            top: _,
         }) => {
             if !group_by.is_empty() {
                 Err(QueryError::NotImplemented("Group By  (Hint: If your SELECT clause contains any aggregation expressions, results will implicitly grouped by all other expresssions.)".to_string()))
@@ -109,6 +113,7 @@ fn get_query_components(
                         Some(order_by)
                     },
                     limit,
+                    offset,
                 ))
             }
         }
@@ -170,6 +175,19 @@ fn get_limit(limit: Option<ASTNode>) -> Result<u64, QueryError> {
     }
 }
 
+fn get_offset(offset: Option<Offset>) -> Result<u64, QueryError> {
+    match offset {
+        None => Ok(0),
+        Some(offset) => match offset.value {
+            ASTNode::Value(Value::Number(rows)) => Ok(rows.parse::<u64>().unwrap()),
+            expr => Err(QueryError::ParseError(format!(
+                "Invalid expression in offset clause: Expected constant integer, got {:?}",
+                expr,
+            ))),
+        },
+    }
+}
+
 fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
     Ok(Box::new(match node {
         ASTNode::BinaryOp {
@@ -182,7 +200,9 @@ fn expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
             expr: ref expression,
         } => Expr::Func1(map_unary_operator(op)?, expr(expression)?),
         ASTNode::Value(ref literal) => Expr::Const(get_raw_val(literal)?),
-        ASTNode::Identifier(ref identifier) => Expr::ColName(strip_quotes(identifier)),
+        ASTNode::Identifier(ref identifier) => {
+            Expr::ColName(strip_quotes(identifier.value.as_ref()))
+        }
         ASTNode::Nested(inner) => *expr(inner)?,
         ASTNode::Function(f) => match format!("{}", f.name).to_uppercase().as_ref() {
             "TO_YEAR" => {
@@ -294,6 +314,12 @@ fn map_binary_operator(o: &BinaryOperator) -> Result<Func2Type, QueryError> {
         BinaryOperator::Or => Func2Type::Or,
         BinaryOperator::Like => Func2Type::Like,
         BinaryOperator::NotLike => Func2Type::NotLike,
+        _ => {
+            return Err(QueryError::NotImplemented(format!(
+                "Unsupported operator {:?}",
+                o
+            )))
+        }
     })
 }
 
