@@ -2,11 +2,11 @@ use failure::Backtrace;
 
 #[derive(Fail, Debug)]
 pub enum QueryError {
-    #[fail(display = "Failed to parser query. Chars remaining: {}", _0)]
+    #[fail(display = "Failed to parse query. Chars remaining: {}", _0)]
     SytaxErrorCharsRemaining(String),
-    #[fail(display = "Failed to parser query. Bytes remaining: {:?}", _0)]
+    #[fail(display = "Failed to parse query. Bytes remaining: {:?}", _0)]
     SyntaxErrorBytesRemaining(Vec<u8>),
-    #[fail(display = "Failed to parser query: {}", _0)]
+    #[fail(display = "Failed to parse query: {}", _0)]
     ParseError(String),
     #[fail(display = "Some assumption was violated. This is a bug: {}", _0)]
     FatalError(String, Backtrace),
