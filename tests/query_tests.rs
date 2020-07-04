@@ -1,11 +1,11 @@
 use futures::executor::block_on;
 
-use locustdb::*;
+use crate::value_syntax::*;
 use locustdb::nyc_taxi_data;
 use locustdb::Value;
+use locustdb::*;
 use std::cmp::min;
 use std::env;
-use crate::value_syntax::*;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
@@ -14,9 +14,10 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
-    let _ = block_on(locustdb.load_csv(
-        LoadOptions::new("test_data/tiny.csv", "default")
-            .with_partition_size(40)));
+    let _ = block_on(
+        locustdb
+            .load_csv(LoadOptions::new("test_data/tiny.csv", "default").with_partition_size(40)),
+    );
     let result = if env::var("DEBUG_TESTS").is_ok() {
         block_on(locustdb.run_query(query, true, vec![0, 1, 2])).unwrap()
     } else {
@@ -33,10 +34,13 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
-    let _ = block_on(locustdb.load_csv(
-        LoadOptions::new("test_data/edge_cases.csv", "default")
-            .with_partition_size(3)
-            .allow_nulls_all_columns()));
+    let _ = block_on(
+        locustdb.load_csv(
+            LoadOptions::new("test_data/edge_cases.csv", "default")
+                .with_partition_size(3)
+                .allow_nulls_all_columns(),
+        ),
+    );
     let result = if env::var("DEBUG_TESTS").is_ok() {
         block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
     } else {
@@ -53,10 +57,13 @@ fn test_query_ec_err(query: &str, _expected_err: QueryError) {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
-    let _ = block_on(locustdb.load_csv(
-        LoadOptions::new("test_data/edge_cases.csv", "default")
-            .with_partition_size(3)
-            .allow_nulls_all_columns()));
+    let _ = block_on(
+        locustdb.load_csv(
+            LoadOptions::new("test_data/edge_cases.csv", "default")
+                .with_partition_size(3)
+                .allow_nulls_all_columns(),
+        ),
+    );
     let result = if env::var("DEBUG_TESTS").is_ok() {
         block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
     } else {
@@ -73,24 +80,27 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
-    let load = block_on(locustdb.load_csv(
-        LoadOptions::new("test_data/nyc-taxi.csv.gz", "default")
-            .with_schema(&nyc_taxi_data::reduced_nyc_schema())
-            .with_partition_size(999)));
+    let load = block_on(
+        locustdb.load_csv(
+            LoadOptions::new("test_data/nyc-taxi.csv.gz", "default")
+                .with_schema(&nyc_taxi_data::reduced_nyc_schema())
+                .with_partition_size(999),
+        ),
+    );
     load.unwrap();
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     let actual_rows = result.unwrap().rows;
-    assert_eq!(&actual_rows[..min(expected_rows.len(), actual_rows.len())], expected_rows);
+    assert_eq!(
+        &actual_rows[..min(expected_rows.len(), actual_rows.len())],
+        expected_rows
+    );
 }
 
 #[test]
 fn test_select_string() {
     test_query(
         "select first_name from default order by first_name limit 2;",
-        &[
-            vec!["Adam".into()],
-            vec!["Adam".into()]
-        ],
+        &[vec!["Adam".into()], vec!["Adam".into()]],
     )
 }
 
@@ -114,6 +124,24 @@ fn test_select_nullable_integer() {
 }
 
 #[test]
+fn test_limit_offset() {
+    test_query_ec(
+        "SELECT nullable_int FROM default ORDER BY id DESC LIMIT 5;",
+        &[
+            vec![Int(13)],
+            vec![Null],
+            vec![Int(20)],
+            vec![Null],
+            vec![Null],
+        ],
+    );
+    test_query_ec(
+        "SELECT nullable_int FROM default ORDER BY id DESC LIMIT 4 OFFSET 5 ROWS;",
+        &[vec![Int(10)], vec![Null], vec![Null], vec![Int(-40)]],
+    );
+}
+
+#[test]
 fn test_select_nullable_string() {
     test_query_ec(
         "SELECT country FROM default ORDER BY id DESC;",
@@ -127,7 +155,7 @@ fn test_select_nullable_string() {
             vec![Null],
             vec![Str("France")],
             vec![Str("USA")],
-            vec![Str("Germany")]
+            vec![Str("Germany")],
         ],
     )
 }
@@ -138,7 +166,7 @@ fn test_select_twice() {
         "select first_name, first_name from default order by first_name limit 2;",
         &[
             vec!["Adam".into(), "Adam".into()],
-            vec!["Adam".into(), "Adam".into()]
+            vec!["Adam".into(), "Adam".into()],
         ],
     )
 }
@@ -147,10 +175,7 @@ fn test_select_twice() {
 fn test_select_integer() {
     test_query(
         "select num from default order by num limit 2;",
-        &[
-            vec![0.into()],
-            vec![0.into()]
-        ],
+        &[vec![0.into()], vec![0.into()]],
     )
 }
 
@@ -158,10 +183,7 @@ fn test_select_integer() {
 fn test_sort_string() {
     test_query(
         "select first_name from default order by first_name limit 2;",
-        &[
-            vec!["Adam".into()],
-            vec!["Adam".into()],
-        ],
+        &[vec!["Adam".into()], vec!["Adam".into()]],
     )
 }
 
@@ -169,10 +191,7 @@ fn test_sort_string() {
 fn test_sort_string_desc() {
     test_query(
         &"select first_name from default order by first_name desc limit 2;",
-        &[
-            vec!["Willie".into()],
-            vec!["William".into()],
-        ],
+        &[vec!["Willie".into()], vec!["William".into()]],
     )
 }
 
@@ -227,7 +246,7 @@ fn group_by_col_and_aliasing_const_cols() {
         &[
             vec![Str("aa".to_string()), Int(0), Int(0), Int(5)],
             vec![Str("bb".to_string()), Int(0), Int(0), Int(3)],
-            vec![Str("cc".to_string()), Int(0), Int(0), Int(2)]
+            vec![Str("cc".to_string()), Int(0), Int(0), Int(2)],
         ],
     )
 }
@@ -302,9 +321,7 @@ fn test_multiple_group_by_2() {
 fn test_division() {
     test_query(
         "select num / 10, count(1) from default;",
-        &[
-            vec![0.into(), 100.into()],
-        ],
+        &[vec![0.into(), 100.into()]],
     )
 }
 
@@ -360,7 +377,7 @@ fn test_not_equals() {
             vec![Int(3), Int(11)],
             vec![Int(4), Int(5)],
             vec![Int(5), Int(2)],
-            vec![Int(8), Int(1)]
+            vec![Int(8), Int(1)],
         ],
     )
 }
@@ -376,7 +393,7 @@ fn test_not_equals_2() {
             vec![Int(3), Int(11)],
             vec![Int(4), Int(5)],
             vec![Int(5), Int(2)],
-            vec![Int(8), Int(1)]
+            vec![Int(8), Int(1)],
         ],
     )
 }
@@ -397,19 +414,15 @@ fn test_order_by_aggregate() {
     )
 }
 
-
 #[test]
 fn test_groupless_aggregate() {
-    test_query_nyc(
-        "SELECT count(0) FROM default",
-        &[vec![Int(10_000)]],
-    );
+    test_query_nyc("SELECT count(0) FROM default", &[vec![Int(10_000)]]);
     test_query_nyc(
         "SELECT sum(total_amount), count(0) FROM default",
         &[vec![Int(16_197_630), Int(10_000)]],
     );
     test_query_nyc(
-         "SELECT count(0) FROM default WHERE NOT passenger_count <> 1;",
+        "SELECT count(0) FROM default WHERE NOT passenger_count <> 1;",
         &[vec![Int(6016)]],
     );
 }
@@ -448,9 +461,7 @@ fn test_composite_aggregate() {
 fn test_average() {
     test_query_ec(
         "select avg(nullable_int * nullable_int2) from default;",
-        &[
-            vec![Int(624)]
-        ],
+        &[vec![Int(624)]],
     )
 }
 
@@ -477,7 +488,7 @@ fn test_min_max() {
             vec![Int(1), Int(326_000), Int(0)],
             vec![Int(2), Int(357_050), Int(0)],
             vec![Int(3), Int(52_750), Int(150)],
-            vec![Int(4), Int(44_550), Int(200)]
+            vec![Int(4), Int(44_550), Int(200)],
         ],
     )
 }
@@ -508,11 +519,23 @@ fn test_sparse_filter() {
 fn test_addition() {
     test_query_ec(
         "SELECT u8_offset_encoded + negative FROM default ORDER BY id LIMIT 5;",
-        &[vec![Int(57)], vec![Int(297)], vec![Int(159)], vec![Int(291)], vec![Int(4306)]],
+        &[
+            vec![Int(57)],
+            vec![Int(297)],
+            vec![Int(159)],
+            vec![Int(291)],
+            vec![Int(4306)],
+        ],
     );
     test_query_ec(
         "SELECT -2 + non_dense_ints FROM default ORDER BY id LIMIT 5;",
-        &[vec![Int(-2)], vec![Int(0)], vec![Int(1)], vec![Int(-1)], vec![Int(2)]],
+        &[
+            vec![Int(-2)],
+            vec![Int(0)],
+            vec![Int(1)],
+            vec![Int(-1)],
+            vec![Int(2)],
+        ],
     );
 }
 
@@ -546,30 +569,19 @@ fn test_comparison_operators() {
     );
     test_query_ec(
         "SELECT non_dense_ints FROM default WHERE non_dense_ints = id ORDER BY id;",
-        &[
-            vec![Int(0)],
-            vec![Int(4)],
-        ],
+        &[vec![Int(0)], vec![Int(4)]],
     );
     test_query_ec(
         "SELECT non_dense_ints FROM default WHERE non_dense_ints = id ORDER BY \"id\";",
-        &[
-            vec![Int(0)],
-            vec![Int(4)],
-        ],
+        &[vec![Int(0)], vec![Int(4)]],
     );
     test_query_ec(
         "SELECT id FROM default WHERE id <> id / 8 + id ORDER BY id;",
-        &[
-            vec![Int(8)],
-            vec![Int(9)],
-        ],
+        &[vec![Int(8)], vec![Int(9)]],
     );
     test_query_ec(
         "SELECT id FROM default WHERE id <= 4 AND non_dense_ints >= 3 AND enum > string_packed;",
-        &[
-            vec![Int(4)],
-        ],
+        &[vec![Int(4)]],
     );
 }
 
@@ -582,7 +594,7 @@ fn test_group_by_trip_id() {
             vec![Int(1), Int(3694)],
             vec![Int(2), Int(1758)],
             vec![Int(3), Int(2740)],
-            vec![Int(4), Int(377_955)]
+            vec![Int(4), Int(377_955)],
         ],
     )
 }
@@ -595,9 +607,21 @@ fn test_string_length() {
          ORDER BY length(pickup_ntaname) DESC
          LIMIT 3;",
         &[
-            vec![Int(56), Str("Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill"), Int(1)],
-            vec![Int(50), Str("Mariner\'s Harbor-Arlington-Port Ivory-Graniteville"), Int(3)],
-            vec![Int(48), Str("DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill"), Int(245)],
+            vec![
+                Int(56),
+                Str("Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill"),
+                Int(1),
+            ],
+            vec![
+                Int(50),
+                Str("Mariner\'s Harbor-Arlington-Port Ivory-Graniteville"),
+                Int(3),
+            ],
+            vec![
+                Int(48),
+                Str("DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill"),
+                Int(245),
+            ],
         ],
     )
 }
@@ -715,7 +739,7 @@ fn test_group_by_nullable() {
             vec![Str("France"), Int(2)],
             vec![Str("Germany"), Int(2)],
             vec![Str("Turkey"), Int(1)],
-            vec![Str("USA"), Int(1)]
+            vec![Str("USA"), Int(1)],
         ],
     );
     test_query_ec(
@@ -727,7 +751,7 @@ fn test_group_by_nullable() {
             vec![Int(-1), Int(1)],
             vec![Int(10), Int(1)],
             vec![Int(13), Int(1)],
-            vec![Int(20), Int(1)]
+            vec![Int(20), Int(1)],
         ],
     );
     test_query_ec(
@@ -771,27 +795,21 @@ fn test_null_operators() {
          FROM default
          WHERE nullable_int < nullable_int2
          ORDER BY id;",
-        &[
-            vec![Int(9), Int(13), Int(14)],
-        ],
+        &[vec![Int(9), Int(13), Int(14)]],
     );
     test_query_ec(
         "SELECT id, nullable_int, nullable_int2
          FROM default
          WHERE nullable_int = nullable_int2
          ORDER BY id;",
-        &[
-            vec![Int(1), Int(-40), Int(-40)],
-        ],
+        &[vec![Int(1), Int(-40), Int(-40)]],
     );
     test_query_ec(
         "SELECT id, nullable_int, nullable_int2
          FROM default
          WHERE nullable_int <> nullable_int2 AND nullable_int >= nullable_int2
          ORDER BY id;",
-        &[
-            vec![Int(4), Int(10), Int(9)],
-        ],
+        &[vec![Int(4), Int(10), Int(9)]],
     );
     test_query_ec(
         "SELECT id, nullable_int, nullable_int2
@@ -813,7 +831,7 @@ fn test_null_operators() {
             vec![Str("USA")],
             vec![Str("France")],
             vec![Str("France")],
-            vec![Str("Turkey")]
+            vec![Str("Turkey")],
         ],
     );
     test_query_ec(
@@ -884,10 +902,7 @@ fn test_overflow() {
             vec![Int(709_490_156_681_136_600)],
         ],
     );
-    test_query_ec_err(
-        "SELECT sum(largenum) FROM default;",
-        QueryError::Overflow,
-    );
+    test_query_ec_err("SELECT sum(largenum) FROM default;", QueryError::Overflow);
 }
 
 #[test]
@@ -895,28 +910,27 @@ fn test_gen_table() {
     use crate::Value::*;
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
-    let _ = block_on(locustdb.gen_table(
-        locustdb::colgen::GenTable {
-            name: "test".to_string(),
-            partitions: 8,
-            partition_size: 2 << 14,
-            columns: vec![
-                ("yum".to_string(), locustdb::colgen::string_markov_chain(
-                    vec!["Walnut".to_string(), "Cashew".to_string(), "Hazelnut".to_string()],
-                    vec![
-                        vec![0., 0.5, 0.5],
-                        vec![0.1, 0.5, 0.4],
-                        vec![0.1, 0.9, 0.],
-                    ],
-                ))
-            ],
-        }
-    ));
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 8,
+        partition_size: 2 << 14,
+        columns: vec![(
+            "yum".to_string(),
+            locustdb::colgen::string_markov_chain(
+                vec![
+                    "Walnut".to_string(),
+                    "Cashew".to_string(),
+                    "Hazelnut".to_string(),
+                ],
+                vec![vec![0., 0.5, 0.5], vec![0.1, 0.5, 0.4], vec![0.1, 0.9, 0.]],
+            ),
+        )],
+    }));
     let query = "SELECT yum, count(1) FROM test;";
     let expected_rows = vec![
         [Str("Cashew".to_string()), Int(162_035)],
         [Str("Hazelnut".to_string()), Int(76_401)],
-        [Str("Walnut".to_string()), Int(23_708)]
+        [Str("Walnut".to_string()), Int(23_708)],
     ];
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
     assert_eq!(result.unwrap().rows, expected_rows);
@@ -929,31 +943,42 @@ fn test_column_with_null_partitions() {
     let mut opts = locustdb::Options::default();
     opts.threads = 1;
     let locustdb = LocustDB::new(&opts);
-    let _ = block_on(locustdb.gen_table(
-        locustdb::colgen::GenTable {
-            name: "test".to_string(),
-            partitions: 5,
-            partition_size: 1,
-            columns: vec![
-                ("partition_sparse".to_string(),
-                 locustdb::colgen::partition_sparse(
-                     0.5,
-                     locustdb::colgen::string_markov_chain(
-                         vec!["A".to_string(), "B".to_string()],
-                         vec![
-                             vec![0.3, 0.7],
-                             vec![0.3, 0.7],
-                         ],
-                     ))
-                )
-            ],
-        }
-    ));
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 5,
+        partition_size: 1,
+        columns: vec![(
+            "partition_sparse".to_string(),
+            locustdb::colgen::partition_sparse(
+                0.5,
+                locustdb::colgen::string_markov_chain(
+                    vec!["A".to_string(), "B".to_string()],
+                    vec![vec![0.3, 0.7], vec![0.3, 0.7]],
+                ),
+            ),
+        )],
+    }));
     let query = "SELECT partition_sparse FROM test;";
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().unwrap();
+    let result = block_on(locustdb.run_query(query, true, vec![]))
+        .unwrap()
+        .unwrap();
     assert_eq!(result.rows.iter().filter(|&x| x == &[Null]).count(), 2);
-    assert_eq!(result.rows.iter().filter(|&x| x == &[Str("A".to_string())]).count(), 1);
-    assert_eq!(result.rows.iter().filter(|&x| x == &[Str("B".to_string())]).count(), 2);
+    assert_eq!(
+        result
+            .rows
+            .iter()
+            .filter(|&x| x == &[Str("A".to_string())])
+            .count(),
+        1
+    );
+    assert_eq!(
+        result
+            .rows
+            .iter()
+            .filter(|&x| x == &[Str("B".to_string())])
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -961,24 +986,24 @@ fn test_group_by_string() {
     use crate::value_syntax::*;
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
-    let _ = block_on(locustdb.gen_table(
-        locustdb::colgen::GenTable {
-            name: "test".to_string(),
-            partitions: 3,
-            partition_size: 4096 + 100,
-            columns: vec![
-                ("hex".to_string(),
-                 locustdb::colgen::random_hex_string(8)),
-                ("scrambled".to_string(),
-                 locustdb::colgen::random_string(1, 2)),
-                ("ints".to_string(),
-                 locustdb::colgen::int_uniform(-10, 256))
-            ],
-        }
-    ));
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 3,
+        partition_size: 4096 + 100,
+        columns: vec![
+            ("hex".to_string(), locustdb::colgen::random_hex_string(8)),
+            (
+                "scrambled".to_string(),
+                locustdb::colgen::random_string(1, 2),
+            ),
+            ("ints".to_string(), locustdb::colgen::int_uniform(-10, 256)),
+        ],
+    }));
 
     let query = "SELECT scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().unwrap();
+    let result = block_on(locustdb.run_query(query, true, vec![]))
+        .unwrap()
+        .unwrap();
     let expected_rows = vec![
         [Str("0"), Int(98)],
         [Str("01"), Int(5)],
@@ -989,7 +1014,9 @@ fn test_group_by_string() {
     assert_eq!(result.rows, expected_rows);
 
     let query = "SELECT scrambled, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().unwrap();
+    let result = block_on(locustdb.run_query(query, true, vec![]))
+        .unwrap()
+        .unwrap();
     let expected_rows = vec![
         [Str("0"), Str("0"), Int(98)],
         [Str("01"), Str("01"), Int(5)],
@@ -1000,24 +1027,28 @@ fn test_group_by_string() {
     assert_eq!(result.rows, expected_rows);
 
     let query = "SELECT hex, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().unwrap();
+    let result = block_on(locustdb.run_query(query, true, vec![]))
+        .unwrap()
+        .unwrap();
     let expected_rows = vec![
         [Str("00075c14106c259a"), Str("gA"), Int(1)],
         [Str("00096542e285cb32"), Str("g"), Int(1)],
         [Str("001228dae6b3e755"), Str("m"), Int(1)],
         [Str("0013492a884ee3ab"), Str("P"), Int(1)],
-        [Str("0016b50c9677802d"), Str("Y"), Int(1)]
+        [Str("0016b50c9677802d"), Str("Y"), Int(1)],
     ];
     assert_eq!(result.rows, expected_rows);
 
     let query = "SELECT ints, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap().unwrap();
+    let result = block_on(locustdb.run_query(query, true, vec![]))
+        .unwrap()
+        .unwrap();
     let expected_rows = vec![
         [Int(-10), Str("3I"), Int(1)],
         [Int(-10), Str("8p"), Int(1)],
         [Int(-10), Str("9D"), Int(1)],
         [Int(-10), Str("9m"), Int(1)],
-        [Int(-10), Str("C"), Int(1)]
+        [Int(-10), Str("C"), Int(1)],
     ];
     assert_eq!(result.rows, expected_rows);
 }
@@ -1033,9 +1064,12 @@ fn test_restore_from_disk() {
     opts.db_path = Some(tmp_dir.path().to_path_buf());
     {
         let locustdb = LocustDB::new(&opts);
-        let load = block_on(locustdb.load_csv(
-            nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
-                .with_partition_size(999)));
+        let load = block_on(
+            locustdb.load_csv(
+                nyc_taxi_data::ingest_reduced_file("test_data/nyc-taxi.csv.gz", "default")
+                    .with_partition_size(999),
+            ),
+        );
         load.unwrap();
     }
     // Dropping the LocustDB object will cause all threads to be stopped
@@ -1046,12 +1080,14 @@ fn test_restore_from_disk() {
     let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
     let actual_rows = result.unwrap().rows;
     use Value::*;
-    assert_eq!(&actual_rows[..min(5, actual_rows.len())], &[
-        vec![Int(0), Int(2013), Int(0), Int(2)],
-        vec![Int(0), Int(2013), Int(2), Int(1)],
-        vec![Int(1), Int(2013), Int(0), Int(1965)],
-        vec![Int(1), Int(2013), Int(1), Int(1167)],
-        vec![Int(1), Int(2013), Int(2), Int(824)]
-    ]);
+    assert_eq!(
+        &actual_rows[..min(5, actual_rows.len())],
+        &[
+            vec![Int(0), Int(2013), Int(0), Int(2)],
+            vec![Int(0), Int(2013), Int(2), Int(1)],
+            vec![Int(1), Int(2013), Int(0), Int(1965)],
+            vec![Int(1), Int(2013), Int(1), Int(1167)],
+            vec![Int(1), Int(2013), Int(2), Int(824)]
+        ]
+    );
 }
-
