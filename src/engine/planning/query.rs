@@ -15,16 +15,16 @@ use crate::syntax::limit::*;
 /// - if aggregate.len() > 0 then order_by.len() == 0 and vice versa
 #[derive(Debug, Clone)]
 pub struct NormalFormQuery {
-    pub projection: Vec<Expr>,
+    pub projection: Vec<(Expr, Option<String>)>,
     pub filter: Expr,
-    pub aggregate: Vec<(Aggregator, Expr)>,
+    pub aggregate: Vec<(Aggregator, Expr, Option<String>)>,
     pub order_by: Vec<(Expr, bool)>,
     pub limit: LimitClause,
 }
 
 #[derive(Debug, Clone)]
 pub struct Query {
-    pub select: Vec<Expr>,
+    pub select: Vec<(Expr, Option<String>)>,
     pub table: String,
     pub filter: Expr,
     pub order_by: Vec<(Expr, bool)>,
@@ -91,7 +91,7 @@ impl NormalFormQuery {
         }
 
         let mut select = Vec::new();
-        for expr in &self.projection {
+        for (expr, _) in &self.projection {
             let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
@@ -160,7 +160,10 @@ impl NormalFormQuery {
             max_grouping_key,
             decode_plans,
             encoded_group_by_placeholder) =
-            query_plan::compile_grouping_key(&self.projection, filter, columns, partition_len, &mut qp)?;
+            query_plan::compile_grouping_key(
+                &self.projection.iter().map(|(expr, _)| expr.clone()).collect(), 
+                filter, columns, partition_len, &mut qp
+            )?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
         // PERF: also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
@@ -187,7 +190,7 @@ impl NormalFormQuery {
         let mut aggregation_results = Vec::new();
         let mut selector = None;
         let mut selector_index = None;
-        for (i, &(aggregator, ref expr)) in self.aggregate.iter().enumerate() {
+        for (i, &(aggregator, ref expr, _)) in self.aggregate.iter().enumerate() {
             let (plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut qp)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
@@ -345,31 +348,41 @@ impl NormalFormQuery {
     }
 
     pub fn result_column_names(&self) -> Vec<String> {
-        let mut anon_columns = -1;
         let select_cols = self.projection
             .iter()
-            .map(|expr| match *expr {
-                Expr::ColName(ref name) => name.clone(),
-                _ => {
-                    anon_columns += 1;
-                    // TODO(#101): collision with existing columns
-                    format!("col_{}", anon_columns)
-                }
-            });
-        let mut anon_aggregates = -1;
+            .map(|(expr, alias)| self.expr_to_string(expr, alias.clone()).unwrap());
+
         let aggregate_cols = self.aggregate
             .iter()
-            .map(|&(agg, _)| {
-                anon_aggregates += 1;
-                match agg {
-                    Aggregator::Count => format!("count_{}", anon_aggregates),
-                    Aggregator::Sum => format!("sum_{}", anon_aggregates),
-                    Aggregator::Min => format!("min_{}", anon_aggregates),
-                    Aggregator::Max => format!("max_{}", anon_aggregates),
-                }
-            });
+            .map(|(agg, expr, alias)| 
+                self.expr_to_string(&Expr::Aggregate(*agg, Box::new(expr.clone())), alias.clone()).unwrap()
+            );
 
         select_cols.chain(aggregate_cols).collect()
+    }
+
+    pub fn expr_to_string(&self, e: &Expr, alias: Option<String>) -> Result<String, QueryError> {
+        if alias.is_some() {
+            return Ok(alias.as_ref().unwrap().to_string());
+        }
+
+        match &*e {
+            Expr::ColName(ref name) => Ok(name.to_string()),
+            Expr::Const(ref value) => Ok(value.to_string()),
+            Expr::Aggregate(agg, expr) => {
+                if alias.is_some() {
+                    Ok(alias.as_ref().unwrap().to_string())
+                } else {
+                    match agg {
+                        Aggregator::Count => Ok(format!("COUNT({})", self.expr_to_string(&expr, None)?)),
+                        Aggregator::Sum => Ok(format!("SUM({})", self.expr_to_string(&expr, None)?)),
+                        Aggregator::Min => Ok(format!("MIN({})", self.expr_to_string(&expr, None)?)),
+                        Aggregator::Max => Ok(format!("MAX({})", self.expr_to_string(&expr, None)?)),
+                    }
+                }
+            },
+            _ => Err(QueryError::NotImplemented("".to_string()))
+        }
     }
 }
 
@@ -380,22 +393,23 @@ impl Query {
         let mut aggregate = Vec::new();
         let mut aggregate_colnames = Vec::new();
         let mut select_colnames = Vec::new();
-        for expr in &self.select {
-            let (full_expr, aggregates) = Query::extract_aggregators(expr, &mut aggregate_colnames)?;
+        for (expr, alias) in &self.select {
+            let (full_expr, aggregates) 
+                = Query::extract_aggregators(expr, &mut aggregate_colnames, alias.clone())?;
             if aggregates.is_empty() {
                 let column_name = format!("_cs{}", select_colnames.len());
                 select_colnames.push(column_name.clone());
-                select.push(full_expr);
-                final_projection.push(Expr::ColName(column_name));
+                select.push((full_expr, alias.clone()));
+                final_projection.push((Expr::ColName(column_name), alias.clone()));
             } else {
                 aggregate.extend(aggregates);
-                final_projection.push(full_expr);
+                final_projection.push((full_expr, alias.clone()));
             }
         }
 
         let require_final_pass = (!aggregate.is_empty() && !self.order_by.is_empty())
             || final_projection.iter()
-            .any(|expr| match expr {
+            .any(|(expr, _)| match expr {
                 Expr::ColName(_) => false,
                 _ => true,
             });
@@ -403,11 +417,12 @@ impl Query {
         Ok(if require_final_pass {
             let mut final_order_by = Vec::new();
             for (expr, desc) in &self.order_by {
-                let (full_expr, aggregates) = Query::extract_aggregators(expr, &mut aggregate_colnames)?;
+                let (full_expr, aggregates) 
+                    = Query::extract_aggregators(expr, &mut aggregate_colnames, None)?;
                 if aggregates.is_empty() {
                     let column_name = format!("_cs{}", select_colnames.len());
                     select_colnames.push(column_name.clone());
-                    select.push(full_expr);
+                    select.push((full_expr, None));
                     final_order_by.push((Expr::ColName(column_name), *desc));
                 } else {
                     aggregate.extend(aggregates);
@@ -444,21 +459,21 @@ impl Query {
         })
     }
 
-    pub fn extract_aggregators(expr: &Expr, column_names: &mut Vec<String>) -> Result<(Expr, Vec<(Aggregator, Expr)>), QueryError> {
+    pub fn extract_aggregators(expr: &Expr, column_names: &mut Vec<String>, alias: Option<String>) -> Result<(Expr, Vec<(Aggregator, Expr, Option<String>)>), QueryError> {
         Ok(match expr {
             Expr::Aggregate(aggregator, expr) => {
                 let column_name = format!("_ca{}", column_names.len());
                 column_names.push(column_name.clone());
                 Query::ensure_no_aggregates(expr)?;
-                (Expr::ColName(column_name), vec![(*aggregator, *expr.clone())])
+                (Expr::ColName(column_name), vec![(*aggregator, *expr.clone(), alias)])
             }
             Expr::Func1(t, expr) => {
-                let (expr, aggregates) = Query::extract_aggregators(expr, column_names)?;
+                let (expr, aggregates) = Query::extract_aggregators(expr, column_names, alias)?;
                 (Expr::Func1(*t, Box::new(expr)), aggregates)
             }
             Expr::Func2(t, expr1, expr2) => {
-                let (expr1, mut aggregates1) = Query::extract_aggregators(expr1, column_names)?;
-                let (expr2, aggregates2) = Query::extract_aggregators(expr2, column_names)?;
+                let (expr1, mut aggregates1) = Query::extract_aggregators(expr1, column_names, alias.clone())?;
+                let (expr2, aggregates2) = Query::extract_aggregators(expr2, column_names, alias)?;
                 aggregates1.extend(aggregates2);
                 (Expr::Func2(*t, Box::new(expr1), Box::new(expr2)), aggregates1)
             }
@@ -485,7 +500,7 @@ impl Query {
 
     pub fn is_select_star(&self) -> bool {
         if self.select.len() == 1 {
-            match self.select[0] {
+            match self.select[0].0 {
                 Expr::ColName(ref colname) if colname == "*" => true,
                 _ => false,
             }
@@ -496,7 +511,7 @@ impl Query {
 
     pub fn find_referenced_cols(&self) -> HashSet<String> {
         let mut colnames = HashSet::new();
-        for expr in &self.select {
+        for (expr, _) in &self.select {
             expr.add_colnames(&mut colnames);
         }
         for expr in &self.order_by {

@@ -990,7 +990,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
 // TODO: return struct
 #[allow(clippy::type_complexity)]
 pub fn compile_grouping_key(
-    exprs: &[Expr],
+    exprs: &Vec<Expr>,
     filter: Filter,
     columns: &HashMap<String, Arc<dyn DataSource>>,
     partition_len: usize,
