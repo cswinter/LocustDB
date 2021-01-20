@@ -342,13 +342,13 @@ mod tests {
     fn test_select_star() {
         assert_eq!(
             format!("{:?}", parse_query("select * from default")),
-            "Ok(Query { select: [ColName(\"*\")], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [(ColName(\"*\"), None)], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_to_year() {
         assert_eq!(
             format!("{:?}", parse_query("select to_year(ts) from default")),
-            "Ok(Query { select: [Func1(ToYear, ColName(\"ts\"))], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [(Func1(ToYear, ColName(\"ts\")), None)], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }
