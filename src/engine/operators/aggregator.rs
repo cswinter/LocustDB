@@ -17,4 +17,13 @@ impl Aggregator {
             Aggregator::Min => Ok(std::cmp::min(accumulator, elem)),
         }
     }
+
+    pub fn get_string(self, expr: String) -> String {
+        match self {
+            Aggregator::Sum => format!("Sum({})", expr),
+            Aggregator::Count => format!("Count({})", expr),
+            Aggregator::Max => format!("Max({})", expr),
+            Aggregator::Min => format!("Min({})", expr),
+        }
+    }
 }

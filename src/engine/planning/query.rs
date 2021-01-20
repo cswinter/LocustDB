@@ -348,41 +348,26 @@ impl NormalFormQuery {
     }
 
     pub fn result_column_names(&self) -> Vec<String> {
+        print!("----- {:?} \n", self.projection);
         let select_cols = self.projection
             .iter()
-            .map(|(expr, alias)| self.expr_to_string(expr, alias.clone()).unwrap());
+            .map(|(expr, alias)| {
+                if alias.is_some() {
+                    return alias.as_ref().unwrap().to_string();
+                }
+                expr.clone().get_string()
+            });
 
         let aggregate_cols = self.aggregate
             .iter()
-            .map(|(agg, expr, alias)| 
-                self.expr_to_string(&Expr::Aggregate(*agg, Box::new(expr.clone())), alias.clone()).unwrap()
-            );
+            .map(|(agg, expr, alias)| {
+                if alias.is_some() {
+                    return alias.as_ref().unwrap().to_string();
+                }
+                Expr::Aggregate(*agg, Box::new(expr.clone())).get_string()
+            });
 
         select_cols.chain(aggregate_cols).collect()
-    }
-
-    pub fn expr_to_string(&self, e: &Expr, alias: Option<String>) -> Result<String, QueryError> {
-        if alias.is_some() {
-            return Ok(alias.as_ref().unwrap().to_string());
-        }
-
-        match &*e {
-            Expr::ColName(ref name) => Ok(name.to_string()),
-            Expr::Const(ref value) => Ok(value.to_string()),
-            Expr::Aggregate(agg, expr) => {
-                if alias.is_some() {
-                    Ok(alias.as_ref().unwrap().to_string())
-                } else {
-                    match agg {
-                        Aggregator::Count => Ok(format!("COUNT({})", self.expr_to_string(&expr, None)?)),
-                        Aggregator::Sum => Ok(format!("SUM({})", self.expr_to_string(&expr, None)?)),
-                        Aggregator::Min => Ok(format!("MIN({})", self.expr_to_string(&expr, None)?)),
-                        Aggregator::Max => Ok(format!("MAX({})", self.expr_to_string(&expr, None)?)),
-                    }
-                }
-            },
-            _ => Err(QueryError::NotImplemented("".to_string()))
-        }
     }
 }
 
