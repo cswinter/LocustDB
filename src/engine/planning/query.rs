@@ -347,27 +347,23 @@ impl NormalFormQuery {
             .collect()
     }
 
-    pub fn result_column_names(&self) -> Vec<String> {
-        print!("----- {:?} \n", self.projection);
+    pub fn result_column_names(&self) -> Result<Vec<String>, QueryError> {
         let select_cols = self.projection
             .iter()
-            .map(|(expr, alias)| {
-                if alias.is_some() {
-                    return alias.as_ref().unwrap().to_string();
-                }
-                expr.clone().get_string()
-            });
+            .map(|(_, alias)| { extract_display_colname(alias).unwrap() });
 
         let aggregate_cols = self.aggregate
             .iter()
-            .map(|(agg, expr, alias)| {
-                if alias.is_some() {
-                    return alias.as_ref().unwrap().to_string();
-                }
-                Expr::Aggregate(*agg, Box::new(expr.clone())).get_string()
-            });
+            .map(|(_, _, alias)| { extract_display_colname(alias).unwrap() });
 
-        select_cols.chain(aggregate_cols).collect()
+        return Ok(select_cols.chain(aggregate_cols).collect());
+
+        fn extract_display_colname(alias: &Option<String>) -> Result<String, QueryError> {
+            if alias.is_some() {
+                return Ok(alias.as_ref().unwrap().to_string());
+            }
+            Err(fatal!("No human readable column name found"))
+        }
     }
 }
 
