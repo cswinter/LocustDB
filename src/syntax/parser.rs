@@ -38,7 +38,7 @@ pub fn parse_query(query: &str) -> Result<Query, QueryError> {
     let projection = get_projection(projection)?;
     let table = get_table_name(relation)?;
     let filter = match selection {
-        Some(ref s) => *convert_to_expr(s)?,
+        Some(ref s) => *convert_to_native_expr(s)?,
         None => Expr::Const(RawVal::Int(1)),
     };
     let order_by = get_order_by(order_by)?;
@@ -129,10 +129,15 @@ fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<(Expr, Option<Strin
     for elem in &projection {
         match elem {
             SelectItem::UnnamedExpr(e) => {
-                result.push( (*convert_to_expr(&e)?, Some(format!("{}", e))) )
+                // sqlparser-rs provides string of the projection as entered by the user.
+                // Storing this string in Query.select corresponding to locustdb's Expr.
+                // These will later be used as colnames of query results.
+                result.push( (*convert_to_native_expr(&e)?, Some(format!("{}", e))) )
             },
             SelectItem::Wildcard => result.push( (Expr::ColName('*'.to_string()), None) ),
-            SelectItem::ExprWithAlias { expr, alias } => result.push( (*convert_to_expr(&expr)?, Some(alias.to_string())) ),
+            SelectItem::ExprWithAlias { expr, alias } => {
+                result.push( (*convert_to_native_expr(&expr)?, Some(alias.to_string())) )
+            },
             _ => {
                 return Err(QueryError::NotImplemented(format!(
                     "Unsupported projection in SELECT: {}",
@@ -161,7 +166,7 @@ fn get_order_by(order_by: Option<Vec<OrderByExpr>>) -> Result<Vec<(Expr, bool)>,
     let mut order = Vec::new();
     if let Some(sql_order_by_exprs) = order_by {
         for e in sql_order_by_exprs {
-            order.push((*(convert_to_expr(&e.expr))?, !e.asc.unwrap_or(true)));
+            order.push((*(convert_to_native_expr(&e.expr))?, !e.asc.unwrap_or(true)));
         }
     }
     Ok(order)
@@ -191,22 +196,22 @@ fn get_offset(offset: Option<Offset>) -> Result<u64, QueryError> {
     }
 }
 
-fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
+fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
     Ok(Box::new(match node {
         ASTNode::BinaryOp {
             ref left,
             ref op,
             ref right,
-        } => Expr::Func2(map_binary_operator(op)?, convert_to_expr(left)?, convert_to_expr(right)?),
+        } => Expr::Func2(map_binary_operator(op)?, convert_to_native_expr(left)?, convert_to_native_expr(right)?),
         ASTNode::UnaryOp {
             ref op,
             expr: ref expression,
-        } => Expr::Func1(map_unary_operator(op)?, convert_to_expr(expression)?),
+        } => Expr::Func1(map_unary_operator(op)?, convert_to_native_expr(expression)?),
         ASTNode::Value(ref literal) => Expr::Const(get_raw_val(literal)?),
         ASTNode::Identifier(ref identifier) => {
             Expr::ColName(strip_quotes(identifier.value.as_ref()))
         }
-        ASTNode::Nested(inner) => *convert_to_expr(inner)?,
+        ASTNode::Nested(inner) => *convert_to_native_expr(inner)?,
         ASTNode::Function(f) => match format!("{}", f.name).to_uppercase().as_ref() {
             "TO_YEAR" => {
                 if f.args.len() != 1 {
@@ -214,7 +219,7 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in TO_YEAR function".to_string(),
                     ));
                 }
-                Expr::Func1(Func1Type::ToYear, convert_to_expr(&f.args[0])?)
+                Expr::Func1(Func1Type::ToYear, convert_to_native_expr(&f.args[0])?)
             }
             "REGEX" => {
                 if f.args.len() != 2 {
@@ -222,7 +227,7 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected two arguments in regex function".to_string(),
                     ));
                 }
-                Expr::Func2(Func2Type::RegexMatch, convert_to_expr(&f.args[0])?, convert_to_expr(&f.args[1])?)
+                Expr::Func2(Func2Type::RegexMatch, convert_to_native_expr(&f.args[0])?, convert_to_native_expr(&f.args[1])?)
             }
             "LENGTH" => {
                 if f.args.len() != 1 {
@@ -230,7 +235,7 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one arguments in length function".to_string(),
                     ));
                 }
-                Expr::Func1(Func1Type::Length, convert_to_expr(&f.args[0])?)
+                Expr::Func1(Func1Type::Length, convert_to_native_expr(&f.args[0])?)
             }
             "COUNT" => {
                 if f.args.len() != 1 {
@@ -238,7 +243,7 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in COUNT function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Count, convert_to_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::Count, convert_to_native_expr(&f.args[0])?)
             }
             "SUM" => {
                 if f.args.len() != 1 {
@@ -246,7 +251,7 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in SUM function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Sum, convert_to_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::Sum, convert_to_native_expr(&f.args[0])?)
             }
             "AVG" => {
                 if f.args.len() != 1 {
@@ -256,8 +261,8 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 }
                 Expr::Func2(
                     Func2Type::Divide,
-                    Box::new(Expr::Aggregate(Aggregator::Sum, convert_to_expr(&f.args[0])?)),
-                    Box::new(Expr::Aggregate(Aggregator::Count, convert_to_expr(&f.args[0])?)),
+                    Box::new(Expr::Aggregate(Aggregator::Sum, convert_to_native_expr(&f.args[0])?)),
+                    Box::new(Expr::Aggregate(Aggregator::Count, convert_to_native_expr(&f.args[0])?)),
                 )
             }
             "MAX" => {
@@ -266,7 +271,7 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in MAX function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Max, convert_to_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::Max, convert_to_native_expr(&f.args[0])?)
             }
             "MIN" => {
                 if f.args.len() != 1 {
@@ -274,12 +279,12 @@ fn convert_to_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in MIN function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Min, convert_to_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::Min, convert_to_native_expr(&f.args[0])?)
             }
             _ => return Err(QueryError::NotImplemented(format!("Function {:?}", f.name))),
         },
-        ASTNode::IsNull(ref node) => Expr::Func1(Func1Type::IsNull, convert_to_expr(node)?),
-        ASTNode::IsNotNull(ref node) => Expr::Func1(Func1Type::IsNotNull, convert_to_expr(node)?),
+        ASTNode::IsNull(ref node) => Expr::Func1(Func1Type::IsNull, convert_to_native_expr(node)?),
+        ASTNode::IsNotNull(ref node) => Expr::Func1(Func1Type::IsNotNull, convert_to_native_expr(node)?),
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
     }))
 }
