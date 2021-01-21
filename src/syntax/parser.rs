@@ -128,7 +128,9 @@ fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<(Expr, Option<Strin
     let mut result = Vec::<(Expr, Option<String>)>::new();
     for elem in &projection {
         match elem {
-            SelectItem::UnnamedExpr(e) => result.push( (*convert_to_expr(&e)?, None) ),
+            SelectItem::UnnamedExpr(e) => {
+                result.push( (*convert_to_expr(&e)?, Some(format!("{}", e))) )
+            },
             SelectItem::Wildcard => result.push( (Expr::ColName('*'.to_string()), None) ),
             SelectItem::ExprWithAlias { expr, alias } => result.push( (*convert_to_expr(&expr)?, Some(alias.to_string())) ),
             _ => {
@@ -346,9 +348,16 @@ mod tests {
     }
 
     #[test]
+    fn test_alias() {
+        assert_eq!(
+            format!("{:?}", parse_query("select trip_id as id from default")),
+            "Ok(Query { select: [(ColName(\"trip_id\"), Some(\"id\"))], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+    }
+
+    #[test]
     fn test_to_year() {
         assert_eq!(
             format!("{:?}", parse_query("select to_year(ts) from default")),
-            "Ok(Query { select: [(Func1(ToYear, ColName(\"ts\")), None)], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [(Func1(ToYear, ColName(\"ts\")), Some(\"to_year(ts)\"))], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }

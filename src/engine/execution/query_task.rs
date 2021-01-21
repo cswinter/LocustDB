@@ -80,15 +80,17 @@ impl QueryTask {
                sender: SharedSender<QueryResult>) -> Result<QueryTask, QueryError> {
         let start_time_ns = precise_time_ns();
         if query.is_select_star() {
-            query.select = find_all_cols(&source).into_iter().map(|name| (Expr::ColName(name), None)).collect();
+            query.select = find_all_cols(&source)
+                .into_iter()
+                .map(|name| (Expr::ColName(name.clone()), Some(name))).collect();
         }
 
         let referenced_cols = query.find_referenced_cols();
 
         let (main_phase, final_pass) = query.normalize()?;
         let output_colnames = match &final_pass {
-            Some(final_pass) => final_pass.result_column_names(),
-            None => main_phase.result_column_names(),
+            Some(final_pass) => final_pass.result_column_names()?,
+            None => main_phase.result_column_names()?,
         };
 
         Ok(QueryTask {
