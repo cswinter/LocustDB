@@ -15,16 +15,16 @@ use crate::syntax::limit::*;
 /// - if aggregate.len() > 0 then order_by.len() == 0 and vice versa
 #[derive(Debug, Clone)]
 pub struct NormalFormQuery {
-    pub projection: Vec<(Expr, Option<String>)>,
+    pub projection: Vec<(Expr, Option<String>/*Human readable expression*/)>,
     pub filter: Expr,
-    pub aggregate: Vec<(Aggregator, Expr, Option<String>)>,
+    pub aggregate: Vec<(Aggregator, Expr, Option<String>/*Human readable expression*/)>,
     pub order_by: Vec<(Expr, bool)>,
     pub limit: LimitClause,
 }
 
 #[derive(Debug, Clone)]
 pub struct Query {
-    pub select: Vec<(Expr, Option<String>)>,
+    pub select: Vec<(Expr, Option<String>/*Human readable expression*/)>,
     pub table: String,
     pub filter: Expr,
     pub order_by: Vec<(Expr, bool)>,
@@ -362,7 +362,7 @@ impl NormalFormQuery {
             if alias.is_some() {
                 return Ok(alias.as_ref().unwrap().to_string());
             }
-            Err(fatal!("No human readable column name found"))
+            Err(fatal!("No human readable expression found"))
         }
     }
 }
