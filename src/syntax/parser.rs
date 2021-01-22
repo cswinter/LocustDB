@@ -124,19 +124,30 @@ fn get_query_components(
     }
 }
 
-fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<(Expr, Option<String>)>, QueryError> {
-    let mut result = Vec::<(Expr, Option<String>)>::new();
+fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<ColumnInfo>, QueryError> {
+    let mut result = Vec::<ColumnInfo>::new();
     for elem in &projection {
         match elem {
             SelectItem::UnnamedExpr(e) => {
                 // sqlparser-rs provides string of the projection as entered by the user.
                 // Storing this string in Query.select corresponding to locustdb's Expr.
                 // These will later be used as colnames of query results.
-                result.push( (*convert_to_native_expr(&e)?, Some(format!("{}", e))) )
+                result.push(ColumnInfo {
+                    expr: *convert_to_native_expr(&e)?, 
+                    name: Some(format!("{}", e)),
+                })
             },
-            SelectItem::Wildcard => result.push( (Expr::ColName('*'.to_string()), None) ),
+            SelectItem::Wildcard => {
+                result.push(ColumnInfo {
+                    expr: Expr::ColName('*'.to_string()), 
+                    name: None,
+                })
+            },
             SelectItem::ExprWithAlias { expr, alias } => {
-                result.push( (*convert_to_native_expr(&expr)?, Some(alias.to_string())) )
+                result.push(ColumnInfo {
+                    expr: *convert_to_native_expr(&expr)?, 
+                    name: Some(alias.to_string()),
+                })
             },
             _ => {
                 return Err(QueryError::NotImplemented(format!(
@@ -349,20 +360,20 @@ mod tests {
     fn test_select_star() {
         assert_eq!(
             format!("{:?}", parse_query("select * from default")),
-            "Ok(Query { select: [(ColName(\"*\"), None)], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [ColumnInfo { expr: ColName(\"*\"), name: None }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_alias() {
         assert_eq!(
             format!("{:?}", parse_query("select trip_id as id from default")),
-            "Ok(Query { select: [(ColName(\"trip_id\"), Some(\"id\"))], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [ColumnInfo { expr: ColName(\"trip_id\"), name: Some(\"id\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_to_year() {
         assert_eq!(
             format!("{:?}", parse_query("select to_year(ts) from default")),
-            "Ok(Query { select: [(Func1(ToYear, ColName(\"ts\")), Some(\"to_year(ts)\"))], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [ColumnInfo { expr: Func1(ToYear, ColName(\"ts\")), name: Some(\"to_year(ts)\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }

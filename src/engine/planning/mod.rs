@@ -6,5 +6,6 @@ pub mod planner;
 pub use self::query_plan::QueryPlan;
 pub use self::planner::QueryPlanner;
 pub use self::filter::Filter;
+pub use self::query::ColumnInfo;
 pub use self::query::Query;
 pub use self::query::NormalFormQuery;
