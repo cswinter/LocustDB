@@ -82,7 +82,11 @@ impl QueryTask {
         if query.is_select_star() {
             query.select = find_all_cols(&source)
                 .into_iter()
-                .map(|name| (Expr::ColName(name.clone()), Some(name))).collect();
+                .map(|name| 
+                    ColumnInfo {
+                        expr: Expr::ColName(name.clone()), 
+                        name: Some(name)
+                    }).collect();
         }
 
         let referenced_cols = query.find_referenced_cols();

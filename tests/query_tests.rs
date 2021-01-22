@@ -96,6 +96,29 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     );
 }
 
+fn test_query_colnames(query: &str, expected_result: Vec<String>) {
+    let _ = env_logger::try_init();
+    #[allow(unused_mut)]
+    let mut opts = Options::default();
+    if env::var("DEBUG_TESTS").is_ok() {
+        opts.threads = 1;
+    }
+    let locustdb = LocustDB::new(&opts);
+    let _ = block_on(
+        locustdb.load_csv(
+            LoadOptions::new("test_data/edge_cases.csv", "default")
+                .with_partition_size(3)
+                .allow_nulls_all_columns(),
+        ),
+    );
+    let result = if env::var("DEBUG_TESTS").is_ok() {
+        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+    } else {
+        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+    };
+    assert_eq!(result.unwrap().colnames, expected_result);
+}
+
 #[test]
 fn test_select_string() {
     test_query(
@@ -1088,6 +1111,31 @@ fn test_restore_from_disk() {
             vec![Int(1), Int(2013), Int(0), Int(1965)],
             vec![Int(1), Int(2013), Int(1), Int(1167)],
             vec![Int(1), Int(2013), Int(2), Int(824)]
+        ]
+    );
+}
+
+#[test]
+fn test_colnames() {
+    test_query_colnames(
+        "SELECT non_dense_ints + negative - 2 FROM default;",
+        vec!["non_dense_ints + negative - 2".to_string()]
+    );
+
+    test_query_colnames(
+        "SELECT SUM(u8_offset_encoded) FROM default;",
+        vec!["SUM(u8_offset_encoded)".to_string()]
+    );
+
+    test_query_colnames(
+        "SELECT COUNT(1) as cnt FROM default;",
+        vec!["cnt".to_string()]
+    );
+
+    test_query_colnames(
+        "SELECT u8_offset_encoded FROM default WHERE u8_offset_encoded = 256;",
+        vec![
+            "u8_offset_encoded".to_string()
         ]
     );
 }
