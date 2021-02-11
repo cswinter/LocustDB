@@ -386,7 +386,7 @@ impl<'a> QueryExecutor<'a> {
             trace!(">>> Commit {}", stage_index);
             committed[stage_index] = true;
             total_order.push(stages[stage_index].clone());
-        };
+        }
         stages.iter().enumerate().for_each(|(i, stage)| {
             trace!(">>> Stage {}", i);
             trace!("Dependencies: {:?}", &dependencies[i]);
