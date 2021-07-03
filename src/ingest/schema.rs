@@ -28,7 +28,6 @@ pub enum ColumnTransformation {
     Date,
 }
 
-
 impl Schema {
     pub fn parse(s: &str) -> Result<Schema, String> {
         let mut column_names = Vec::new();
@@ -51,7 +50,11 @@ impl Schema {
             return Err("Must specify names for all columns, or for none.".to_string());
         }
         Ok(Schema {
-            column_names: if column_names.is_empty() { None } else { Some(column_names) },
+            column_names: if column_names.is_empty() {
+                None
+            } else {
+                Some(column_names)
+            },
             column_schemas,
         })
     }
@@ -73,7 +76,7 @@ impl ColumnSchema {
             "string" | "s" => ColumnType::String,
             "nstring" | "ns" => ColumnType::NullableString,
             "" => ColumnType::Drop,
-            _ => return Err(format!("Unrecognized type {}.", s))
+            _ => return Err(format!("Unrecognized type {}.", s)),
         };
         let transformation = match stransform.as_ref() {
             "date" => Some(ColumnTransformation::Date),
@@ -106,14 +109,30 @@ mod tests {
         let expected = Ok(Schema {
             column_names: None,
             column_schemas: vec![
-                ColumnSchema { types: ColumnType::Integer, transformation: None },
-                ColumnSchema { types: ColumnType::NullableString, transformation: None },
-                ColumnSchema { types: ColumnType::String, transformation: None },
-                ColumnSchema { types: ColumnType::NullableInteger, transformation: None },
+                ColumnSchema {
+                    types: ColumnType::Integer,
+                    transformation: None,
+                },
+                ColumnSchema {
+                    types: ColumnType::NullableString,
+                    transformation: None,
+                },
+                ColumnSchema {
+                    types: ColumnType::String,
+                    transformation: None,
+                },
+                ColumnSchema {
+                    types: ColumnType::NullableInteger,
+                    transformation: None,
+                },
             ],
         });
         let actual = Schema::parse("i,ns,string,nint");
         assert_eq!(expected, actual);
-        assert!(Schema::parse(&nyc_schema()).is_ok(), format!("{:?}", Schema::parse(&nyc_schema())));
+        assert!(
+            Schema::parse(&nyc_schema()).is_ok(),
+            "{:?}",
+            Schema::parse(&nyc_schema())
+        );
     }
 }

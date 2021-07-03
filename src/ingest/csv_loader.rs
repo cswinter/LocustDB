@@ -7,13 +7,13 @@ use crate::mem_store::column::*;
 use crate::mem_store::column_builder::*;
 use crate::mem_store::strings::fast_build_string_column;
 use crate::scheduler::*;
+use crate::stringpack::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::path::{Path, PathBuf};
 use std::ops::BitOr;
+use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
-use crate::stringpack::*;
 
 use super::extractor;
 
@@ -65,13 +65,19 @@ impl Options {
                     ColumnTransformation::Date => extractor::date_time,
                 };
                 extractors.insert(i, transform);
-            } else if colschema.types == ColumnType::Integer || colschema.types == ColumnType::NullableInteger {
+            } else if colschema.types == ColumnType::Integer
+                || colschema.types == ColumnType::NullableInteger
+            {
                 extractors.insert(i, extractor::int);
             }
-            if colschema.types == ColumnType::String || colschema.types == ColumnType::NullableString {
+            if colschema.types == ColumnType::String
+                || colschema.types == ColumnType::NullableString
+            {
                 always_string.insert(i);
             }
-            if colschema.types == ColumnType::NullableInteger || colschema.types == ColumnType::NullableString {
+            if colschema.types == ColumnType::NullableInteger
+                || colschema.types == ColumnType::NullableString
+            {
                 allow_nulls.insert(i);
             }
             if colschema.types == ColumnType::Drop {
@@ -131,7 +137,12 @@ pub fn ingest_file(ldb: &InnerLocustDB, opts: &Options) -> Result<(), String> {
             .from_reader(decoded);
         let headers = match opts.colnames {
             Some(ref colnames) => colnames.clone(),
-            None => reader.headers().unwrap().iter().map(str::to_owned).collect()
+            None => reader
+                .headers()
+                .unwrap()
+                .iter()
+                .map(str::to_owned)
+                .collect(),
         };
         auto_ingest(ldb, reader.records().map(|r| r.unwrap()), &headers, opts)
     } else {
@@ -141,18 +152,35 @@ pub fn ingest_file(ldb: &InnerLocustDB, opts: &Options) -> Result<(), String> {
             .map_err(|x| x.to_string())?;
         let headers = match opts.colnames {
             Some(ref colnames) => colnames.clone(),
-            None => reader.headers().unwrap().iter().map(str::to_owned).collect()
+            None => reader
+                .headers()
+                .unwrap()
+                .iter()
+                .map(str::to_owned)
+                .collect(),
         };
         auto_ingest(ldb, reader.records().map(|r| r.unwrap()), &headers, opts)
     }
 }
 
-fn auto_ingest<T>(ldb: &InnerLocustDB, records: T, colnames: &[String], opts: &Options) -> Result<(), String>
-    where T: Iterator<Item=csv::StringRecord> {
-    let ignore = (0..colnames.len()).map(|x| opts.ignore_cols.contains(&x)).collect::<Vec<_>>();
-    let string = (0..colnames.len()).map(|x| opts.always_string.contains(&x)).collect::<Vec<_>>();
-    let mut raw_cols = (0..colnames.len()).map(|x|
-        RawCol::new(opts.allow_nulls_all_columns || opts.allow_nulls.contains(&x))).collect::<Vec<_>>();
+fn auto_ingest<T>(
+    ldb: &InnerLocustDB,
+    records: T,
+    colnames: &[String],
+    opts: &Options,
+) -> Result<(), String>
+where
+    T: Iterator<Item = csv::StringRecord>,
+{
+    let ignore = (0..colnames.len())
+        .map(|x| opts.ignore_cols.contains(&x))
+        .collect::<Vec<_>>();
+    let string = (0..colnames.len())
+        .map(|x| opts.always_string.contains(&x))
+        .collect::<Vec<_>>();
+    let mut raw_cols = (0..colnames.len())
+        .map(|x| RawCol::new(opts.allow_nulls_all_columns || opts.allow_nulls.contains(&x)))
+        .collect::<Vec<_>>();
     let mut row_num = 0usize;
     for row in records {
         for (i, val) in row.iter().enumerate() {
@@ -162,7 +190,8 @@ fn auto_ingest<T>(ldb: &InnerLocustDB, records: T, colnames: &[String], opts: &O
         }
 
         if row_num % opts.partition_size == opts.partition_size - 1 {
-            let partition = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
+            let partition =
+                create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
             ldb.store_partition(&opts.tablename, partition);
         }
         row_num += 1;
@@ -175,7 +204,13 @@ fn auto_ingest<T>(ldb: &InnerLocustDB, records: T, colnames: &[String], opts: &O
     Ok(())
 }
 
-fn create_batch(cols: &mut [RawCol], colnames: &[String], extractors: &IngestionTransform, ignore: &[bool], string: &[bool]) -> Vec<Arc<Column>> {
+fn create_batch(
+    cols: &mut [RawCol],
+    colnames: &[String],
+    extractors: &IngestionTransform,
+    ignore: &[bool],
+    string: &[bool],
+) -> Vec<Arc<Column>> {
     let mut mem_store = Vec::new();
     for (i, col) in cols.iter_mut().enumerate() {
         if !ignore[i] {
@@ -196,9 +231,11 @@ pub struct CSVIngestionTask {
 }
 
 impl CSVIngestionTask {
-    pub fn new(options: Options,
-               locustdb: Arc<InnerLocustDB>,
-               sender: SharedSender<Result<(), String>>) -> CSVIngestionTask {
+    pub fn new(
+        options: Options,
+        locustdb: Arc<InnerLocustDB>,
+        sender: SharedSender<Result<(), String>>,
+    ) -> CSVIngestionTask {
         CSVIngestionTask {
             options,
             locustdb,
@@ -211,10 +248,13 @@ impl Task for CSVIngestionTask {
     fn execute(&self) {
         self.sender.send(ingest_file(&self.locustdb, &self.options))
     }
-    fn completed(&self) -> bool { false }
-    fn multithreaded(&self) -> bool { false }
+    fn completed(&self) -> bool {
+        false
+    }
+    fn multithreaded(&self) -> bool {
+        false
+    }
 }
-
 
 struct RawCol {
     types: ColType,
@@ -247,7 +287,7 @@ impl RawCol {
         self.uhex = self.uhex && is_uppercase_hex(elem);
         self.string_bytes += elem.as_bytes().len();
         if self.allow_null {
-            if elem == "" {
+            if elem.is_empty() {
                 self.any_null = true;
             } else {
                 self.present.set(self.values.len())
@@ -258,22 +298,38 @@ impl RawCol {
 
     fn finalize(&mut self, name: &str, string: bool) -> Arc<Column> {
         let present = if self.allow_null && self.any_null {
-            Some(std::mem::replace(&mut self.present, Vec::new()))
-        } else { None };
+            Some(std::mem::take(&mut self.present))
+        } else {
+            None
+        };
         let result = if self.types.contains_string || string {
-            fast_build_string_column(name, self.values.iter(), self.values.len(),
-                                     self.lhex, self.uhex, self.string_bytes, present)
+            fast_build_string_column(
+                name,
+                self.values.iter(),
+                self.values.len(),
+                self.lhex,
+                self.uhex,
+                self.string_bytes,
+                present,
+            )
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::default();
             for s in self.values.iter() {
                 let int = if s.is_empty() {
-                    if self.allow_null { None } else { Some(0) }
+                    if self.allow_null {
+                        None
+                    } else {
+                        Some(0)
+                    }
                 } else if let Ok(int) = s.parse::<i64>() {
                     Some(int)
                 } else if let Ok(float) = s.parse::<f64>() {
                     Some(float as i64)
                 } else {
-                    unreachable!("{} should be parseable as int or float. {} {:?}", s, name, self.types)
+                    unreachable!(
+                        "{} should be parseable as int or float. {} {:?}",
+                        s, name, self.types
+                    )
                 };
                 builder.push(&int);
             }
@@ -312,23 +368,48 @@ impl RawCol {
 }
 
 fn is_lowercase_hex(string: &str) -> bool {
-    string.len() & 1 == 0 && string.chars().all(|c| {
-        c == '0' || c == '1' || c == '2' || c == '3' ||
-            c == '4' || c == '5' || c == '6' || c == '7' ||
-            c == '8' || c == '9' || c == 'a' || c == 'b' ||
-            c == 'c' || c == 'd' || c == 'e' || c == 'f'
-    })
+    string.len() & 1 == 0
+        && string.chars().all(|c| {
+            c == '0'
+                || c == '1'
+                || c == '2'
+                || c == '3'
+                || c == '4'
+                || c == '5'
+                || c == '6'
+                || c == '7'
+                || c == '8'
+                || c == '9'
+                || c == 'a'
+                || c == 'b'
+                || c == 'c'
+                || c == 'd'
+                || c == 'e'
+                || c == 'f'
+        })
 }
 
 fn is_uppercase_hex(string: &str) -> bool {
-    string.len() & 1 == 0 && string.chars().all(|c| {
-        c == '0' || c == '1' || c == '2' || c == '3' ||
-            c == '4' || c == '5' || c == '6' || c == '7' ||
-            c == '8' || c == '9' || c == 'A' || c == 'B' ||
-            c == 'C' || c == 'D' || c == 'E' || c == 'F'
-    })
+    string.len() & 1 == 0
+        && string.chars().all(|c| {
+            c == '0'
+                || c == '1'
+                || c == '2'
+                || c == '3'
+                || c == '4'
+                || c == '5'
+                || c == '6'
+                || c == '7'
+                || c == '8'
+                || c == '9'
+                || c == 'A'
+                || c == 'B'
+                || c == 'C'
+                || c == 'D'
+                || c == 'E'
+                || c == 'F'
+        })
 }
-
 
 #[derive(Copy, Clone, Debug)]
 struct ColType {
@@ -339,7 +420,11 @@ struct ColType {
 
 impl ColType {
     fn new(string: bool, int: bool, null: bool) -> ColType {
-        ColType { contains_string: string, contains_int: int, contains_null: null }
+        ColType {
+            contains_string: string,
+            contains_int: int,
+            contains_null: null,
+        }
     }
 
     fn string() -> ColType {
@@ -379,4 +464,3 @@ impl BitOr for ColType {
         }
     }
 }
-

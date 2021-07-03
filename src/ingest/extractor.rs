@@ -7,7 +7,7 @@ pub fn multiply_by_100(field: &str) -> i64 {
         int * 100
     } else if let Ok(float) = field.parse::<f64>() {
         (float * 100.0) as i64
-    } else if field == "" {
+    } else if field.is_empty() {
         0
     } else {
         panic!("invalid field {}", &field)
@@ -19,7 +19,7 @@ pub fn multiply_by_1000(field: &str) -> i64 {
         int * 1000
     } else if let Ok(float) = field.parse::<f64>() {
         (float * 1000.0) as i64
-    } else if field == "" {
+    } else if field.is_empty() {
         0
     } else {
         panic!("invalid field {}", &field)
@@ -29,7 +29,7 @@ pub fn multiply_by_1000(field: &str) -> i64 {
 pub fn int(field: &str) -> i64 {
     if let Ok(int) = field.parse::<i64>() {
         int
-    } else if field == "" {
+    } else if field.is_empty() {
         0
     } else {
         panic!("can't parse {} as integer", &field)

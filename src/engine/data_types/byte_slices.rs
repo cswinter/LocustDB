@@ -1,13 +1,12 @@
 use std::cmp::min;
-use std::fmt::Write;
 use std::fmt;
+use std::fmt::Write;
 
 use hex;
 use itertools::Itertools;
 
 use crate::engine::data_types::*;
 use crate::ingest::raw_val::RawVal;
-
 
 #[derive(Debug, Clone)]
 pub struct ByteSlices<'a> {
@@ -17,11 +16,17 @@ pub struct ByteSlices<'a> {
 
 impl<'a> ByteSlices<'a> {
     pub fn new(row_len: usize) -> ByteSlices<'a> {
-        ByteSlices { row_len, data: Vec::default() }
+        ByteSlices {
+            row_len,
+            data: Vec::default(),
+        }
     }
 
     pub fn with_capacity(row_len: usize, rows: usize) -> ByteSlices<'a> {
-        ByteSlices { row_len, data: Vec::with_capacity(row_len * rows) }
+        ByteSlices {
+            row_len,
+            data: Vec::with_capacity(row_len * rows),
+        }
     }
 
     pub fn row(&self, i: usize) -> &[&'a [u8]] {
@@ -30,35 +35,56 @@ impl<'a> ByteSlices<'a> {
 }
 
 impl<'a> Data<'a> for ByteSlices<'a> {
-    fn len(&self) -> usize { self.data.len() / self.row_len }
-    fn get_raw(&self, _i: usize) -> RawVal { panic!(self.type_error("get_raw")) }
-    fn get_type(&self) -> EncodingType { EncodingType::ByteSlices(self.row_len) }
-
-    fn append_all(&mut self, _other: &dyn Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
-        panic!(self.type_error("append_all"))
+    fn len(&self) -> usize {
+        self.data.len() / self.row_len
+    }
+    fn get_raw(&self, _i: usize) -> RawVal {
+        panic!("{}", self.type_error("get_raw"))
+    }
+    fn get_type(&self) -> EncodingType {
+        EncodingType::ByteSlices(self.row_len)
     }
 
-    fn slice_box<'b>(&'b self, _from: usize, _to: usize) -> BoxedData<'b> where 'a: 'b {
-        panic!(self.type_error("slice_box"))
+    fn append_all(&mut self, _other: &dyn Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
+        panic!("{}", self.type_error("append_all"))
+    }
+
+    fn slice_box<'b>(&'b self, _from: usize, _to: usize) -> BoxedData<'b>
+    where
+        'a: 'b,
+    {
+        panic!("{}", self.type_error("slice_box"))
         // let to = min(to, self.len());
         // Box::new(&self[self.row_len * from..self.row_len * to])
     }
 
-    fn type_error(&self, func_name: &str) -> String { format!("RawByteSlices.{}", func_name) }
-
-    fn display(&self) -> String {
-        format!("ByteSlices[{}]{}", self.row_len, display_byte_slices(&self.data, 120))
+    fn type_error(&self, func_name: &str) -> String {
+        format!("RawByteSlices.{}", func_name)
     }
 
-    fn cast_ref_byte_slices(&self) -> &ByteSlices<'a> { self }
-    fn cast_ref_mut_byte_slices(&mut self) -> &mut ByteSlices<'a> { self }
+    fn display(&self) -> String {
+        format!(
+            "ByteSlices[{}]{}",
+            self.row_len,
+            display_byte_slices(&self.data, 120)
+        )
+    }
+
+    fn cast_ref_byte_slices(&self) -> &ByteSlices<'a> {
+        self
+    }
+    fn cast_ref_mut_byte_slices(&mut self) -> &mut ByteSlices<'a> {
+        self
+    }
 }
 
 pub fn display_byte_slices(slice: &[&[u8]], max_chars: usize) -> String {
     let mut length = slice.len();
     loop {
         let result = _display_slice(slice, length);
-        if result.len() < max_chars { break; }
+        if result.len() < max_chars {
+            break;
+        }
         length = min(length - 1, max_chars * length / result.len());
         if length < 3 {
             return _display_slice(slice, 2);
@@ -78,13 +104,15 @@ pub fn display_byte_slices(slice: &[&[u8]], max_chars: usize) -> String {
 fn _display_slice(slice: &[&[u8]], max: usize) -> String {
     let mut result = String::new();
     write!(result, "[").unwrap();
-    write!(result,
-           "{}",
-           slice[..max]
-               .iter()
-               .map(|x| format!("0x{}", hex::encode(x)))
-               .join(", ")
-    ).unwrap();
+    write!(
+        result,
+        "{}",
+        slice[..max]
+            .iter()
+            .map(|x| format!("0x{}", hex::encode(x)))
+            .join(", ")
+    )
+    .unwrap();
     if max < slice.len() {
         write!(result, ", ...] ({} more)", slice.len() - max).unwrap();
     } else {

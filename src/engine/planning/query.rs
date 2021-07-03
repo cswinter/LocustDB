@@ -1,14 +1,14 @@
-use crate::QueryError;
 use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::column::DataSource;
+use crate::syntax::expression::*;
+use crate::syntax::limit::*;
+use crate::QueryError;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::sync::Arc;
 use std::u64;
-use crate::syntax::expression::*;
-use crate::syntax::limit::*;
 
 #[derive(Debug, Clone)]
 pub struct ColumnInfo {
@@ -39,16 +39,24 @@ pub struct Query {
 
 impl NormalFormQuery {
     #[inline(never)] // produces more useful profiles
-    pub fn run<'a>(&self,
-                   columns: &'a HashMap<String, Arc<dyn DataSource>>,
-                   explain: bool,
-                   show: bool,
-                   partition: usize,
-                   partition_len: usize) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
+    pub fn run<'a>(
+        &self,
+        columns: &'a HashMap<String, Arc<dyn DataSource>>,
+        explain: bool,
+        show: bool,
+        partition: usize,
+        partition_len: usize,
+    ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
         let mut planner = QueryPlanner::default();
 
-        let (filter_plan, _) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut planner)?;
+        let (filter_plan, _) = QueryPlan::compile_expr(
+            &self.filter,
+            Filter::None,
+            columns,
+            partition_len,
+            &mut planner,
+        )?;
         let mut filter = match filter_plan.tag {
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
@@ -59,7 +67,9 @@ impl NormalFormQuery {
         let mut sort_indices = None;
         for (plan, desc) in self.order_by.iter().rev() {
             let (ranking, _) = query_plan::order_preserving(
-                QueryPlan::compile_expr(&plan, filter, columns, partition_len, &mut planner)?, &mut planner);
+                QueryPlan::compile_expr(plan, filter, columns, partition_len, &mut planner)?,
+                &mut planner,
+            );
 
             // PERF: better criterion for using top_n
             // PERF: top_n for multiple columns?
@@ -70,10 +80,11 @@ impl NormalFormQuery {
                 match sort_indices {
                     None => {
                         let indices = planner.indices(ranking);
-                        planner.sort_by(ranking, indices,
-                                        *desc, false /* unstable sort */)
+                        planner.sort_by(ranking, indices, *desc, false /* unstable sort */)
                     }
-                    Some(indices) => planner.sort_by(ranking, indices, *desc, true /* stable sort */)
+                    Some(indices) => {
+                        planner.sort_by(ranking, indices, *desc, true /* stable sort */)
+                    }
                 }
             });
         }
@@ -98,7 +109,13 @@ impl NormalFormQuery {
 
         let mut select = Vec::new();
         for col_info in &self.projection {
-            let (mut plan, plan_type) = QueryPlan::compile_expr(&col_info.expr, filter, columns, partition_len, &mut planner)?;
+            let (mut plan, plan_type) = QueryPlan::compile_expr(
+                &col_info.expr,
+                filter,
+                columns,
+                partition_len,
+                &mut planner,
+            )?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
@@ -109,7 +126,8 @@ impl NormalFormQuery {
         }
         let mut order_by = Vec::new();
         for (expr, desc) in &self.order_by {
-            let (mut plan, plan_type) = QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
+            let (mut plan, plan_type) =
+                QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
@@ -117,7 +135,7 @@ impl NormalFormQuery {
                 plan = planner.fuse_nulls(plan);
             }
             order_by.push((plan.any(), *desc));
-        };
+        }
 
         for c in columns {
             debug!("{}: {:?}", partition, c);
@@ -128,8 +146,8 @@ impl NormalFormQuery {
         executor.run(partition_len, &mut results, show)?;
         let (columns, projection, _, order_by) = results.collect_aliased(&select, &[], &order_by);
 
-        Ok(
-            (BatchResult {
+        Ok((
+            BatchResult {
                 columns,
                 projection,
                 aggregations: vec![],
@@ -139,22 +157,28 @@ impl NormalFormQuery {
                 show,
                 unsafe_referenced_buffers: results.collect_pinned(),
             },
-             if explain { Some(format!("{}", executor)) } else { None }))
+            if explain {
+                Some(format!("{}", executor))
+            } else {
+                None
+            },
+        ))
     }
 
     #[inline(never)] // produces more useful profiles
-    pub fn run_aggregate<'a>(&self,
-                             columns: &'a HashMap<String, Arc<dyn DataSource>>,
-                             explain: bool,
-                             show: bool,
-                             partition: usize,
-                             partition_len: usize)
-                             -> Result<(BatchResult<'a>, Option<String>), QueryError> {
-
+    pub fn run_aggregate<'a>(
+        &self,
+        columns: &'a HashMap<String, Arc<dyn DataSource>>,
+        explain: bool,
+        show: bool,
+        partition: usize,
+        partition_len: usize,
+    ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let mut qp = QueryPlanner::default();
 
         // Filter
-        let (filter_plan, filter_type) = QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut qp)?;
+        let (filter_plan, filter_type) =
+            QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut qp)?;
         let filter = match filter_type.encoding_type() {
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
@@ -162,14 +186,22 @@ impl NormalFormQuery {
         };
 
         // Combine all group by columns into a single decodable grouping key
-        let ((raw_grouping_key, is_raw_grouping_key_order_preserving),
+        let (
+            (raw_grouping_key, is_raw_grouping_key_order_preserving),
             max_grouping_key,
             decode_plans,
-            encoded_group_by_placeholder) =
-            query_plan::compile_grouping_key(
-                &self.projection.iter().map(|col_info| col_info.expr.clone()).collect(),
-                filter, columns, partition_len, &mut qp
-            )?;
+            encoded_group_by_placeholder,
+        ) = query_plan::compile_grouping_key(
+            &self
+                .projection
+                .iter()
+                .map(|col_info| col_info.expr.clone())
+                .collect::<Vec<_>>(),
+            filter,
+            columns,
+            partition_len,
+            &mut qp,
+        )?;
 
         // Reduce cardinality of grouping key if necessary and perform grouping
         // PERF: also determine and use is_dense. always true for hashmap, depends on group by columns for raw.
@@ -197,14 +229,16 @@ impl NormalFormQuery {
         let mut selector = None;
         let mut selector_index = None;
         for (i, &(aggregator, ref col_info)) in self.aggregate.iter().enumerate() {
-            let (plan, plan_type) = QueryPlan::compile_expr(&col_info.expr, filter, columns, partition_len, &mut qp)?;
+            let (plan, plan_type) =
+                QueryPlan::compile_expr(&col_info.expr, filter, columns, partition_len, &mut qp)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
                 grouping_key,
                 aggregation_cardinality,
                 aggregator,
-                &mut qp)?;
+                &mut qp,
+            )?;
             // PERF: if summation column is strictly positive, can use sum as well
             if aggregator == Aggregator::Count && !plan.is_nullable() {
                 selector = Some((aggregate, t.encoding_type()));
@@ -235,12 +269,16 @@ impl NormalFormQuery {
                                       input_nullable: bool| {
                 let compacted = match aggregator {
                     // PERF: if summation column is strictly positive, can use NonzeroCompact
-                    Aggregator::Sum | Aggregator::Max | Aggregator::Min => qp.compact(aggregate, selector),
-                    Aggregator::Count => if input_nullable {
+                    Aggregator::Sum | Aggregator::Max | Aggregator::Min => {
                         qp.compact(aggregate, selector)
-                    } else {
-                        qp.nonzero_compact(aggregate)
-                    },
+                    }
+                    Aggregator::Count => {
+                        if input_nullable {
+                            qp.compact(aggregate, selector)
+                        } else {
+                            qp.nonzero_compact(aggregate)
+                        }
+                    }
                 };
                 if t.is_encoded() {
                     Ok(t.codec.unwrap().decode(compacted, &mut qp))
@@ -249,9 +287,12 @@ impl NormalFormQuery {
                 }
             };
 
-            for (i, &(aggregator, aggregate, ref t, input_nullable)) in aggregation_results.iter().enumerate() {
+            for (i, &(aggregator, aggregate, ref t, input_nullable)) in
+                aggregation_results.iter().enumerate()
+            {
                 if selector_index != Some(i) {
-                    let decode_compacted = decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
+                    let decode_compacted =
+                        decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
                     aggregation_cols.push((decode_compacted, aggregator))
                 }
             }
@@ -275,10 +316,12 @@ impl NormalFormQuery {
         if !is_grouping_key_order_preserving {
             let sort_indices = if is_raw_grouping_key_order_preserving {
                 let indices = qp.indices(encoded_group_by_column);
-                qp.sort_by(encoded_group_by_column,
-                           indices,
-                           false /* desc */,
-                           false /* stable */)
+                qp.sort_by(
+                    encoded_group_by_column,
+                    indices,
+                    false, /* desc */
+                    false, /* stable */
+                )
             } else {
                 if grouping_columns.len() != 1 {
                     bail!(QueryError::NotImplemented,
@@ -286,17 +329,17 @@ impl NormalFormQuery {
                         &grouping_key.tag)
                 }
                 let indices = qp.indices(grouping_columns[0]);
-                qp.sort_by(grouping_columns[0],
-                           indices,
-                           false /* desc */,
-                           false /* stable */)
+                qp.sort_by(
+                    grouping_columns[0],
+                    indices,
+                    false, /* desc */
+                    false, /* stable */
+                )
             };
 
             let mut aggregations2 = Vec::new();
             for &(a, aggregator) in &aggregation_cols {
-                aggregations2.push(
-                    (qp.select(a, sort_indices),
-                     aggregator));
+                aggregations2.push((qp.select(a, sort_indices), aggregator));
             }
             aggregation_cols = aggregations2;
 
@@ -322,8 +365,12 @@ impl NormalFormQuery {
         executor.run(partition_len, &mut results, show)?;
         let (columns, projection, aggregations, _) = results.collect_aliased(
             &grouping_columns.iter().map(|s| s.any()).collect::<Vec<_>>(),
-            &aggregation_cols.iter().map(|&(s, aggregator)| (s.any(), aggregator)).collect::<Vec<_>>(),
-            &[]);
+            &aggregation_cols
+                .iter()
+                .map(|&(s, aggregator)| (s.any(), aggregator))
+                .collect::<Vec<_>>(),
+            &[],
+        );
 
         let batch = BatchResult {
             columns,
@@ -342,25 +389,34 @@ impl NormalFormQuery {
         } else {
             Ok((
                 batch,
-                if explain { Some(format!("{}", executor)) } else { None }
+                if explain {
+                    Some(format!("{}", executor))
+                } else {
+                    None
+                },
             ))
         }
     }
 
-    fn column_data(columns: &HashMap<String, Arc<dyn DataSource>>) -> HashMap<String, Vec<&dyn Data>> {
-        columns.iter()
+    fn column_data(
+        columns: &HashMap<String, Arc<dyn DataSource>>,
+    ) -> HashMap<String, Vec<&dyn Data>> {
+        columns
+            .iter()
             .map(|(name, column)| (name.to_string(), column.data_sections()))
             .collect()
     }
 
     pub fn result_column_names(&self) -> Result<Vec<String>, QueryError> {
-        let select_cols = self.projection
+        let select_cols = self
+            .projection
             .iter()
-            .map(|col_info| { extract_display_colname(col_info.name.as_ref()).unwrap() });
+            .map(|col_info| extract_display_colname(col_info.name.as_ref()).unwrap());
 
-        let aggregate_cols = self.aggregate
+        let aggregate_cols = self
+            .aggregate
             .iter()
-            .map(|(_, col_info)| { extract_display_colname(col_info.name.as_ref()).unwrap() });
+            .map(|(_, col_info)| extract_display_colname(col_info.name.as_ref()).unwrap());
 
         return Ok(select_cols.chain(aggregate_cols).collect());
 
@@ -381,35 +437,48 @@ impl Query {
         let mut aggregate_colnames = Vec::new();
         let mut select_colnames = Vec::new();
         for col_info in &self.select {
-            let (full_expr, aggregates) 
-                = Query::extract_aggregators(&col_info.expr, &mut aggregate_colnames, col_info.name.clone())?;
+            let (full_expr, aggregates) = Query::extract_aggregators(
+                &col_info.expr,
+                &mut aggregate_colnames,
+                col_info.name.clone(),
+            )?;
             if aggregates.is_empty() {
                 let column_name = format!("_cs{}", select_colnames.len());
                 select_colnames.push(column_name.clone());
-                select.push(ColumnInfo {expr: full_expr, name: col_info.name.clone()});
-                final_projection.push(ColumnInfo {expr: Expr::ColName(column_name), name: col_info.name.clone()});
+                select.push(ColumnInfo {
+                    expr: full_expr,
+                    name: col_info.name.clone(),
+                });
+                final_projection.push(ColumnInfo {
+                    expr: Expr::ColName(column_name),
+                    name: col_info.name.clone(),
+                });
             } else {
                 aggregate.extend(aggregates);
-                final_projection.push(ColumnInfo {expr: full_expr, name: col_info.name.clone()});
+                final_projection.push(ColumnInfo {
+                    expr: full_expr,
+                    name: col_info.name.clone(),
+                });
             }
         }
 
         let require_final_pass = (!aggregate.is_empty() && !self.order_by.is_empty())
-            || final_projection.iter()
-            .any(|col_info| match col_info.expr {
-                Expr::ColName(_) => false,
-                _ => true,
-            });
+            || final_projection
+                .iter()
+                .any(|col_info| !matches!(col_info.expr, Expr::ColName(_)));
 
         Ok(if require_final_pass {
             let mut final_order_by = Vec::new();
             for (expr, desc) in &self.order_by {
-                let (full_expr, aggregates) 
-                    = Query::extract_aggregators(expr, &mut aggregate_colnames, None)?;
+                let (full_expr, aggregates) =
+                    Query::extract_aggregators(expr, &mut aggregate_colnames, None)?;
                 if aggregates.is_empty() {
                     let column_name = format!("_cs{}", select_colnames.len());
                     select_colnames.push(column_name.clone());
-                    select.push(ColumnInfo {expr: full_expr, name: None});
+                    select.push(ColumnInfo {
+                        expr: full_expr,
+                        name: None,
+                    });
                     final_order_by.push((Expr::ColName(column_name), *desc));
                 } else {
                     aggregate.extend(aggregates);
@@ -422,7 +491,10 @@ impl Query {
                     filter: self.filter.clone(),
                     aggregate,
                     order_by: vec![],
-                    limit: LimitClause { limit: u64::MAX, offset: 0 },
+                    limit: LimitClause {
+                        limit: u64::MAX,
+                        offset: 0,
+                    },
                 },
                 Some(NormalFormQuery {
                     projection: final_projection,
@@ -446,23 +518,40 @@ impl Query {
         })
     }
 
-    pub fn extract_aggregators(expr: &Expr, column_names: &mut Vec<String>, alias: Option<String>) -> Result<(Expr, Vec<(Aggregator, ColumnInfo)>), QueryError> {
+    pub fn extract_aggregators(
+        expr: &Expr,
+        column_names: &mut Vec<String>,
+        alias: Option<String>,
+    ) -> Result<(Expr, Vec<(Aggregator, ColumnInfo)>), QueryError> {
         Ok(match expr {
             Expr::Aggregate(aggregator, expr) => {
                 let column_name = format!("_ca{}", column_names.len());
                 column_names.push(column_name.clone());
                 Query::ensure_no_aggregates(expr)?;
-                (Expr::ColName(column_name), vec![(*aggregator, ColumnInfo {expr: *expr.clone(), name: alias})])
+                (
+                    Expr::ColName(column_name),
+                    vec![(
+                        *aggregator,
+                        ColumnInfo {
+                            expr: *expr.clone(),
+                            name: alias,
+                        },
+                    )],
+                )
             }
             Expr::Func1(t, expr) => {
                 let (expr, aggregates) = Query::extract_aggregators(expr, column_names, alias)?;
                 (Expr::Func1(*t, Box::new(expr)), aggregates)
             }
             Expr::Func2(t, expr1, expr2) => {
-                let (expr1, mut aggregates1) = Query::extract_aggregators(expr1, column_names, alias.clone())?;
+                let (expr1, mut aggregates1) =
+                    Query::extract_aggregators(expr1, column_names, alias.clone())?;
                 let (expr2, aggregates2) = Query::extract_aggregators(expr2, column_names, alias)?;
                 aggregates1.extend(aggregates2);
-                (Expr::Func2(*t, Box::new(expr1), Box::new(expr2)), aggregates1)
+                (
+                    Expr::Func2(*t, Box::new(expr1), Box::new(expr2)),
+                    aggregates1,
+                )
             }
             Expr::Const(_) | Expr::ColName(_) => (expr.clone(), vec![]),
         })
@@ -487,10 +576,7 @@ impl Query {
 
     pub fn is_select_star(&self) -> bool {
         if self.select.len() == 1 {
-            match self.select[0].expr {
-                Expr::ColName(ref colname) if colname == "*" => true,
-                _ => false,
-            }
+            matches!(self.select[0].expr, Expr::ColName(ref colname) if colname == "*")
         } else {
             false
         }
@@ -508,5 +594,3 @@ impl Query {
         colnames
     }
 }
-
-

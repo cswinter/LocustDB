@@ -2,9 +2,9 @@ use std::fmt;
 use std::mem;
 use std::sync::Arc;
 
-use crate::mem_store::*;
 use crate::engine::data_types::*;
 use crate::mem_store::lz4;
+use crate::mem_store::*;
 
 pub struct Column {
     name: String,
@@ -24,35 +24,60 @@ pub trait DataSource: fmt::Debug + Sync + Send {
 }
 
 impl<T: DataSource> DataSource for Arc<T> {
-    fn encoding_type(&self) -> EncodingType { (**self).encoding_type() }
-    fn range(&self) -> Option<(i64, i64)> { (**self).range() }
-    fn codec(&self) -> Codec { (**self).codec() }
-    fn len(&self) -> usize { (**self).len() }
-    fn data_sections(&self) -> Vec<&dyn Data> { (**self).data_sections() }
-    fn full_type(&self) -> Type { (**self).full_type() }
+    fn encoding_type(&self) -> EncodingType {
+        (**self).encoding_type()
+    }
+    fn range(&self) -> Option<(i64, i64)> {
+        (**self).range()
+    }
+    fn codec(&self) -> Codec {
+        (**self).codec()
+    }
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+    fn data_sections(&self) -> Vec<&dyn Data> {
+        (**self).data_sections()
+    }
+    fn full_type(&self) -> Type {
+        (**self).full_type()
+    }
 }
 
 impl DataSource for Column {
-    fn encoding_type(&self) -> EncodingType { self.codec.encoding_type() }
-    fn range(&self) -> Option<(i64, i64)> { self.range }
-    fn codec(&self) -> Codec { self.codec.clone() }
-    fn len(&self) -> usize { self.len }
+    fn encoding_type(&self) -> EncodingType {
+        self.codec.encoding_type()
+    }
+    fn range(&self) -> Option<(i64, i64)> {
+        self.range
+    }
+    fn codec(&self) -> Codec {
+        self.codec.clone()
+    }
+    fn len(&self) -> usize {
+        self.len
+    }
     fn data_sections(&self) -> Vec<&dyn Data> {
         // TODO(#96): fix unsafety
         unsafe {
             mem::transmute::<Vec<&dyn Data>, Vec<&dyn Data>>(
-                self.data.iter().map(|d| d.to_any_vec()).collect())
+                self.data.iter().map(|d| d.to_any_vec()).collect(),
+            )
         }
     }
-    fn full_type(&self) -> Type { Type::new(self.basic_type(), Some(self.codec())) }
+    fn full_type(&self) -> Type {
+        Type::new(self.basic_type(), Some(self.codec()))
+    }
 }
 
 impl Column {
-    pub fn new(name: &str,
-               len: usize,
-               range: Option<(i64, i64)>,
-               codec: Vec<CodecOp>,
-               data: Vec<DataSection>) -> Column {
+    pub fn new(
+        name: &str,
+        len: usize,
+        range: Option<(i64, i64)>,
+        codec: Vec<CodecOp>,
+        data: Vec<DataSection>,
+    ) -> Column {
         let mut codec = if codec.is_empty() {
             Codec::identity(data[0].encoding_type().cast_to_basic())
         } else {
@@ -98,24 +123,37 @@ impl Column {
         }
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn data(&self) -> &[DataSection] { &self.data }
-    pub fn basic_type(&self) -> BasicType { self.codec.decoded_type() }
-    pub fn section_encoding_type(&self, section: usize) -> EncodingType { self.data[section].encoding_type() }
-
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn data(&self) -> &[DataSection] {
+        &self.data
+    }
+    pub fn basic_type(&self) -> BasicType {
+        self.codec.decoded_type()
+    }
+    pub fn section_encoding_type(&self, section: usize) -> EncodingType {
+        self.data[section].encoding_type()
+    }
 
     pub fn heap_size_of_children(&self) -> usize {
-        self.data.iter().map(|section| section.heap_size_of_children()).sum()
+        self.data
+            .iter()
+            .map(|section| section.heap_size_of_children())
+            .sum()
     }
 
     pub fn mem_tree(&self, tree: &mut MemTreeColumn, depth: usize) {
-        if depth == 0 { return; }
+        if depth == 0 {
+            return;
+        }
         let size_bytes = self.heap_size_of_children();
         tree.size_bytes += size_bytes;
         tree.rows += self.len;
         if depth > 1 {
             let signature = self.codec().signature(false);
-            let codec_tree = tree.encodings
+            let codec_tree = tree
+                .encodings
                 .entry(signature.clone())
                 .or_insert_with(MemTreeEncoding::default);
             codec_tree.codec = signature;
@@ -213,36 +251,51 @@ impl DataSection {
         let min_reduction = 90;
         match self {
             DataSection::U8(ref x) => {
-                let mut encoded = lz4::encode(&x);
+                let mut encoded = lz4::encode(x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
-                (DataSection::U8(encoded), len * 100 < x.len() * min_reduction)
+                (
+                    DataSection::U8(encoded),
+                    len * 100 < x.len() * min_reduction,
+                )
             }
             DataSection::U16(ref x) => {
-                let mut encoded = lz4::encode(&x);
+                let mut encoded = lz4::encode(x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
-                (DataSection::U8(encoded), len * 100 < x.len() * 2 * min_reduction)
+                (
+                    DataSection::U8(encoded),
+                    len * 100 < x.len() * 2 * min_reduction,
+                )
             }
             DataSection::U32(ref x) => {
-                let mut encoded = lz4::encode(&x);
+                let mut encoded = lz4::encode(x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
-                (DataSection::U8(encoded), len * 100 < x.len() * 4 * min_reduction)
+                (
+                    DataSection::U8(encoded),
+                    len * 100 < x.len() * 4 * min_reduction,
+                )
             }
             DataSection::U64(ref x) => {
-                let mut encoded = lz4::encode(&x);
+                let mut encoded = lz4::encode(x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
-                (DataSection::U8(encoded), len * 100 < x.len() * 8 * min_reduction)
+                (
+                    DataSection::U8(encoded),
+                    len * 100 < x.len() * 8 * min_reduction,
+                )
             }
             DataSection::I64(ref x) => {
-                let mut encoded = lz4::encode(&x);
+                let mut encoded = lz4::encode(x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
-                (DataSection::U8(encoded), len * 100 < x.len() * 8 * min_reduction)
+                (
+                    DataSection::U8(encoded),
+                    len * 100 < x.len() * 8 * min_reduction,
+                )
             }
-            DataSection::Null(ref x) => (DataSection::Null(*x), false)
+            DataSection::Null(ref x) => (DataSection::Null(*x), false),
         }
     }
 
@@ -276,8 +329,8 @@ impl DataSection {
                     DataSection::I64(decoded)
                 }
                 t => panic!("Unexpected type {:?} for lz4 decode", t),
-            }
-            _ => panic!("Trying to lz4 encode non u8 data section")
+            },
+            _ => panic!("Trying to lz4 encode non u8 data section"),
         }
     }
 
@@ -340,4 +393,3 @@ impl From<Vec<i64>> for DataSection {
         DataSection::I64(vec)
     }
 }
-

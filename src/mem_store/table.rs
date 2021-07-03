@@ -8,20 +8,19 @@ use crate::disk_store::interface::*;
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
-use crate::mem_store::partition::{Partition, ColumnKey};
+use crate::mem_store::partition::{ColumnKey, Partition};
 use crate::mem_store::*;
-
 
 pub struct Table {
     name: String,
     batch_size: usize,
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     buffer: Mutex<Buffer>,
-    lru: LRU,
+    lru: Lru,
 }
 
 impl Table {
-    pub fn new(batch_size: usize, name: &str, lru: LRU) -> Table {
+    pub fn new(batch_size: usize, name: &str, lru: Lru) -> Table {
         Table {
             name: name.to_string(),
             batch_size: batch_size_override(batch_size, name),
@@ -40,7 +39,11 @@ impl Table {
         partitions.values().cloned().collect()
     }
 
-    pub fn load_table_metadata(batch_size: usize, storage: &dyn DiskStore, lru: &LRU) -> HashMap<String, Table> {
+    pub fn load_table_metadata(
+        batch_size: usize,
+        storage: &dyn DiskStore,
+        lru: &Lru,
+    ) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
         for md in storage.load_metadata() {
             let table = tables
@@ -53,7 +56,7 @@ impl Table {
 
     pub fn restore(&self, id: PartitionID, col: &Arc<Column>) {
         let partitions = self.partitions.read().unwrap();
-        partitions[&id].restore(&col);
+        partitions[&id].restore(col);
     }
 
     pub fn evict(&self, key: &ColumnKey) -> usize {
@@ -62,7 +65,12 @@ impl Table {
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
-        let partition = Arc::new(Partition::nonresident(md.id, md.len, &md.columns, self.lru.clone()));
+        let partition = Arc::new(Partition::nonresident(
+            md.id,
+            md.len,
+            &md.columns,
+            self.lru.clone(),
+        ));
         let mut partitions = self.partitions.write().unwrap();
         partitions.insert(md.id, partition);
     }
@@ -90,7 +98,9 @@ impl Table {
     }
 
     fn batch_if_needed(&self, buffer: &mut Buffer) {
-        if buffer.len() < self.batch_size { return; }
+        if buffer.len() < self.batch_size {
+            return;
+        }
         self.batch(buffer);
     }
 
@@ -139,7 +149,10 @@ impl Table {
             name: self.name().to_string(),
             rows: partitions.iter().map(|p| p.len()).sum(),
             batches: partitions.len(),
-            batches_bytes: partitions.iter().map(|partition| partition.heap_size_of_children()).sum(),
+            batches_bytes: partitions
+                .iter()
+                .map(|partition| partition.heap_size_of_children())
+                .sum(),
             buffer_length: buffer.len(),
             buffer_bytes: buffer.heap_size_of_children(),
             size_per_column,
@@ -149,7 +162,10 @@ impl Table {
     pub fn heap_size_of_children(&self) -> usize {
         let batches_size: usize = {
             let batches = self.partitions.read().unwrap();
-            batches.iter().map(|(_, partition)| partition.heap_size_of_children()).sum()
+            batches
+                .iter()
+                .map(|(_, partition)| partition.heap_size_of_children())
+                .sum()
         };
         let buffer_size = {
             let buffer = self.buffer.lock().unwrap();
@@ -170,12 +186,21 @@ impl Table {
                 *sizes.entry(colname).or_insert(0) += size;
             }
         }
-        sizes.iter().map(|(name, size)| (name.to_string(), *size)).collect()
+        sizes
+            .iter()
+            .map(|(name, size)| (name.to_string(), *size))
+            .collect()
     }
 }
 
 fn batch_size_override(batch_size: usize, tablename: &str) -> usize {
-    if tablename == "_meta_tables" { 1 } else if tablename == "_meta_queries" { 10 } else { batch_size }
+    if tablename == "_meta_tables" {
+        1
+    } else if tablename == "_meta_queries" {
+        10
+    } else {
+        batch_size
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -194,5 +219,3 @@ pub struct TableStats {
     pub buffer_bytes: usize,
     pub size_per_column: Vec<(String, usize)>,
 }
-
-

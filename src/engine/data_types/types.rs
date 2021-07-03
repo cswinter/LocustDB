@@ -41,7 +41,7 @@ impl EncodingType {
             EncodingType::NullableI64 => BasicType::NullableInteger,
             EncodingType::Val => BasicType::Val,
             EncodingType::Null => BasicType::Null,
-            _ => panic!("{:?} does not have a corresponding BasicType", &self)
+            _ => panic!("{:?} does not have a corresponding BasicType", &self),
         }
     }
 
@@ -61,7 +61,7 @@ impl EncodingType {
             EncodingType::NullableU32 => EncodingType::NullableU32,
             EncodingType::NullableU64 => EncodingType::NullableU64,
             EncodingType::Val => EncodingType::Val,
-            _ => panic!("{:?} does not have a corresponding nullable type", &self)
+            _ => panic!("{:?} does not have a corresponding nullable type", &self),
         }
     }
 
@@ -69,17 +69,23 @@ impl EncodingType {
         match self {
             EncodingType::NullableStr => EncodingType::OptStr,
             EncodingType::NullableI64 => EncodingType::I64,
-            _ => panic!("{:?} does not have a corresponding fused nullable type", &self)
+            _ => panic!(
+                "{:?} does not have a corresponding fused nullable type",
+                &self
+            ),
         }
     }
 
     pub fn is_nullable(&self) -> bool {
-        match self {
-            EncodingType::NullableStr | EncodingType::NullableI64 |
-            EncodingType::NullableU8 | EncodingType::NullableU16 |
-            EncodingType::NullableU32 | EncodingType::NullableU64 => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            EncodingType::NullableStr
+                | EncodingType::NullableI64
+                | EncodingType::NullableU8
+                | EncodingType::NullableU16
+                | EncodingType::NullableU32
+                | EncodingType::NullableU64
+        )
     }
 
     pub fn non_nullable(&self) -> EncodingType {
@@ -136,10 +142,7 @@ impl BasicType {
     }
 
     pub fn is_nullable(self) -> bool {
-        match self {
-            BasicType::NullableInteger | BasicType::NullableString => true,
-            _ => false,
-        }
+        matches!(self, BasicType::NullableInteger | BasicType::NullableString)
     }
 
     pub fn non_nullable(self) -> BasicType {
@@ -197,18 +200,26 @@ impl Type {
     }
 
     pub fn is_summation_preserving(&self) -> bool {
-        self.codec.as_ref().map_or(true, |c| c.is_summation_preserving())
+        self.codec
+            .as_ref()
+            .map_or(true, |c| c.is_summation_preserving())
     }
 
     pub fn is_elementwise_decodable(&self) -> bool {
-        self.codec.as_ref().map_or(true, |c| c.is_elementwise_decodable())
+        self.codec
+            .as_ref()
+            .map_or(true, |c| c.is_elementwise_decodable())
     }
 
     pub fn is_order_preserving(&self) -> bool {
-        self.codec.as_ref().map_or(true, |c| c.is_order_preserving())
+        self.codec
+            .as_ref()
+            .map_or(true, |c| c.is_order_preserving())
     }
 
-    pub fn is_nullable(&self) -> bool { self.decoded.is_nullable() }
+    pub fn is_nullable(&self) -> bool {
+        self.decoded.is_nullable()
+    }
 
     pub fn scalar(basic: BasicType) -> Type {
         Type {
@@ -220,7 +231,9 @@ impl Type {
     }
 
     pub fn encoding_type(&self) -> EncodingType {
-        self.codec.as_ref().map_or(self.decoded.to_encoded(), |x| x.encoding_type())
+        self.codec
+            .as_ref()
+            .map_or(self.decoded.to_encoded(), |x| x.encoding_type())
     }
 
     pub fn decoded(&self) -> Type {
@@ -235,4 +248,3 @@ impl Type {
         self
     }
 }
-

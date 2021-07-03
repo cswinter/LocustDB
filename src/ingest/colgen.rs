@@ -1,14 +1,14 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use crate::ingest::alias_method_fork::*;
 use crypto::digest::Digest;
 use crypto::md5::Md5;
 use hex;
-use crate::ingest::alias_method_fork::*;
+use rand;
+use rand::distributions::{Alphanumeric, Standard};
 use rand::Rng;
 use rand::SeedableRng;
-use rand::distributions::{Alphanumeric, Standard};
-use rand;
 
 use crate::mem_store::column::*;
 use crate::mem_store::column_builder::{ColumnBuilder, IntColBuilder, StringColBuilder};
@@ -20,7 +20,8 @@ pub trait ColumnGenerator: Sync + Send {
 
 pub fn int_markov_chain(
     elements: Vec<i64>,
-    transition_probabilities: Vec<Vec<f64>>) -> Box<dyn ColumnGenerator> {
+    transition_probabilities: Vec<Vec<f64>>,
+) -> Box<dyn ColumnGenerator> {
     Box::new(MarkovChain {
         elem: elements.into_iter().map(Some).collect(),
         p_transition: transition_probabilities,
@@ -33,7 +34,10 @@ pub fn int_uniform(low: i64, high: i64) -> Box<dyn ColumnGenerator> {
 }
 
 pub fn splayed(offset: i64, coefficient: i64) -> Box<dyn ColumnGenerator> {
-    Box::new(Splayed { offset, coefficient })
+    Box::new(Splayed {
+        offset,
+        coefficient,
+    })
 }
 
 pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<dyn ColumnGenerator> {
@@ -50,7 +54,8 @@ pub fn incrementing_int() -> Box<dyn ColumnGenerator> {
 
 pub fn string_markov_chain(
     elements: Vec<String>,
-    transition_probabilities: Vec<Vec<f64>>) -> Box<dyn ColumnGenerator> {
+    transition_probabilities: Vec<Vec<f64>>,
+) -> Box<dyn ColumnGenerator> {
     Box::new(MarkovChain {
         elem: elements,
         p_transition: transition_probabilities,
@@ -79,7 +84,8 @@ pub fn random_string(min_length: usize, max_length: usize) -> Box<dyn ColumnGene
 
 pub fn partition_sparse(
     null_probability: f64,
-    generator: Box<dyn ColumnGenerator>) -> Box<dyn ColumnGenerator> {
+    generator: Box<dyn ColumnGenerator>,
+) -> Box<dyn ColumnGenerator> {
     Box::new(PartitionSparse {
         null_probability,
         generator,
@@ -102,7 +108,9 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> 
         let mut rng = seeded_rng(seed);
         let mut builder = S::default();
         let mut state = rng.gen_range(0, self.elem.len());
-        let p = self.p_transition.iter()
+        let p = self
+            .p_transition
+            .iter()
             .map(|p| new_alias_table(p).unwrap())
             .collect::<Vec<_>>();
         let mut alias_method = AliasMethod::new(rng);
@@ -113,7 +121,6 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> 
         builder.finalize(name, None)
     }
 }
-
 
 #[derive(Clone)]
 struct Weighted<T, S> {
@@ -139,7 +146,6 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for Weighted<T, S> {
         builder.finalize(name, None)
     }
 }
-
 
 struct UniformInteger {
     low: i64,
@@ -219,7 +225,10 @@ impl ColumnGenerator for RandomString {
         let mut builder = StringColBuilder::default();
         for _ in 0..length {
             let len = rng.gen_range(self.min_length, self.max_length + 1);
-            let string: String = rng.sample_iter::<char, _>(&Alphanumeric).take(len).collect();
+            let string: String = rng
+                .sample_iter::<char, _>(&Alphanumeric)
+                .take(len)
+                .collect();
             builder.push(&string);
         }
         ColumnBuilder::<&str>::finalize(builder, name, None)
@@ -247,9 +256,10 @@ pub struct GenTable {
 
 impl GenTable {
     pub fn gen(&self, db: &InnerLocustDB, partition_number: u64) {
-        let partition = self.columns
+        let partition = self
+            .columns
             .iter()
-            .map(|(name, c)| c.generate(self.partition_size, &name, partition_number))
+            .map(|(name, c)| c.generate(self.partition_size, name, partition_number))
             .collect();
         db.store_partition(&self.name, partition);
     }

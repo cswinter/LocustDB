@@ -4,10 +4,10 @@ use std::fmt::Write;
 
 use itertools::Itertools;
 
-use crate::mem_store::value::Val;
 use crate::bitvec::*;
-use crate::ingest::raw_val::RawVal;
 use crate::engine::data_types::*;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::value::Val;
 
 pub struct NullableVec<T> {
     pub data: Vec<T>,
@@ -15,13 +15,26 @@ pub struct NullableVec<T> {
 }
 
 impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
-    fn len(&self) -> usize { self.data.len() }
-    fn get_raw(&self, i: usize) -> RawVal {
-        if self.present.is_set(i) { T::wrap_one(self.data[i]) } else { RawVal::Null }
+    fn len(&self) -> usize {
+        self.data.len()
     }
-    fn get_type(&self) -> EncodingType { T::t().nullable() }
-    fn type_error(&self, func_name: &str) -> String { format!("NullableVec<{:?}>.{}", T::t(), func_name) }
-    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b> where 'a: 'b {
+    fn get_raw(&self, i: usize) -> RawVal {
+        if self.present.is_set(i) {
+            T::wrap_one(self.data[i])
+        } else {
+            RawVal::Null
+        }
+    }
+    fn get_type(&self) -> EncodingType {
+        T::t().nullable()
+    }
+    fn type_error(&self, func_name: &str) -> String {
+        format!("NullableVec<{:?}>.{}", T::t(), func_name)
+    }
+    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b>
+    where
+        'a: 'b,
+    {
         panic!("nullable slice box!")
     }
 
@@ -49,56 +62,97 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
         }
     }
 
-    fn cast_ref_null_map(&self) -> &[u8] { &self.present }
+    fn cast_ref_null_map(&self) -> &[u8] {
+        &self.present
+    }
 
     fn display(&self) -> String {
-        format!("NullableVec<{:?}>{}", T::t(),
-                display_nullable_slice(&self.data, &self.present, 120))
+        format!(
+            "NullableVec<{:?}>{}",
+            T::t(),
+            display_nullable_slice(&self.data, &self.present, 120)
+        )
     }
 
     // Copied from Data and marked default because specialization demands it
-    default fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] { panic!(self.type_error("cast_ref_str")) }
-    default fn cast_ref_i64(&self) -> &[i64] { panic!(self.type_error("cast_ref_i64")) }
-    default fn cast_ref_u32(&self) -> &[u32] { panic!(self.type_error("cast_ref_u32")) }
-    default fn cast_ref_u16(&self) -> &[u16] { panic!(self.type_error("cast_ref_u16")) }
-    default fn cast_ref_u8(&self) -> &[u8] { panic!(self.type_error("cast_ref_u8")) }
-    default fn to_mixed(&self) -> Vec<Val<'a>> { panic!(self.type_error("to_mixed")) }
+    default fn cast_ref_str<'b>(&'b self) -> &'b [&'a str] {
+        panic!("{}", self.type_error("cast_ref_str"))
+    }
+    default fn cast_ref_i64(&self) -> &[i64] {
+        panic!("{}", self.type_error("cast_ref_i64"))
+    }
+    default fn cast_ref_u32(&self) -> &[u32] {
+        panic!("{}", self.type_error("cast_ref_u32"))
+    }
+    default fn cast_ref_u16(&self) -> &[u16] {
+        panic!("{}", self.type_error("cast_ref_u16"))
+    }
+    default fn cast_ref_u8(&self) -> &[u8] {
+        panic!("{}", self.type_error("cast_ref_u8"))
+    }
+    default fn to_mixed(&self) -> Vec<Val<'a>> {
+        panic!("{}", self.type_error("to_mixed"))
+    }
 }
 
 impl<'a> Data<'a> for NullableVec<i64> {
-    fn cast_ref_i64(&self) -> &[i64] { &self.data }
+    fn cast_ref_i64(&self) -> &[i64] {
+        &self.data
+    }
     // fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { &mut self.data }
     fn to_mixed(&self) -> Vec<Val<'a>> {
-        self.data.iter().enumerate().map(|(i, x)| {
-            if self.present.is_set(i) { Val::Integer(*x) } else { Val::Null }
-        }).collect()
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if self.present.is_set(i) {
+                    Val::Integer(*x)
+                } else {
+                    Val::Null
+                }
+            })
+            .collect()
     }
 }
 
 impl<'a> Data<'a> for NullableVec<u32> {
-    fn cast_ref_u32(&self) -> &[u32] { &self.data }
+    fn cast_ref_u32(&self) -> &[u32] {
+        &self.data
+    }
     // fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { &mut self.data }
 }
 
 impl<'a> Data<'a> for NullableVec<u16> {
-    fn cast_ref_u16(&self) -> &[u16] { &self.data }
+    fn cast_ref_u16(&self) -> &[u16] {
+        &self.data
+    }
     // fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { &mut self.data }
 }
 
 impl<'a> Data<'a> for NullableVec<u8> {
-    fn cast_ref_u8(&self) -> &[u8] { &self.data }
+    fn cast_ref_u8(&self) -> &[u8] {
+        &self.data
+    }
     // fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { &mut self.data }
 }
 
 impl<'a> Data<'a> for NullableVec<&'a str> {
-    fn cast_ref_str(&self) -> &[&'a str] { &self.data }
+    fn cast_ref_str(&self) -> &[&'a str] {
+        &self.data
+    }
 }
 
-pub fn display_nullable_slice<T: fmt::Debug>(slice: &[T], present: &[u8], max_chars: usize) -> String {
+pub fn display_nullable_slice<T: fmt::Debug>(
+    slice: &[T],
+    present: &[u8],
+    max_chars: usize,
+) -> String {
     let mut length = slice.len();
     loop {
         let result = _display_nullable_slice(slice, present, length);
-        if result.len() < max_chars { break; }
+        if result.len() < max_chars {
+            break;
+        }
         length = min(length - 1, max_chars * length / result.len());
         if length < 3 {
             return _display_nullable_slice(slice, present, 2);
@@ -118,10 +172,20 @@ pub fn display_nullable_slice<T: fmt::Debug>(slice: &[T], present: &[u8], max_ch
 fn _display_nullable_slice<T: fmt::Debug>(slice: &[T], present: &[u8], max: usize) -> String {
     let mut result = String::new();
     write!(result, "[").unwrap();
-    write!(result, "{}", slice[..max].iter()
-        .enumerate()
-        .map(|(i, x)| if present.is_set(i) { format!("{:?}", x) } else { "null".to_string() })
-        .join(", ")).unwrap();
+    write!(
+        result,
+        "{}",
+        slice[..max]
+            .iter()
+            .enumerate()
+            .map(|(i, x)| if present.is_set(i) {
+                format!("{:?}", x)
+            } else {
+                "null".to_string()
+            })
+            .join(", ")
+    )
+    .unwrap();
     if max < slice.len() {
         write!(result, ", ...] ({} more)", slice.len() - max).unwrap();
     } else {

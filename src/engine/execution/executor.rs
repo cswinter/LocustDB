@@ -22,21 +22,34 @@ struct ExecutorStage {
 }
 
 impl<'a> QueryExecutor<'a> {
-    pub fn set_buffer_count(&mut self, count: usize) { self.count = count }
+    pub fn set_buffer_count(&mut self, count: usize) {
+        self.count = count
+    }
 
     pub fn named_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
-        let buffer = TypedBufferRef::new(BufferRef { i: self.count, name, t: PhantomData }, tag);
+        let buffer = TypedBufferRef::new(
+            BufferRef {
+                i: self.count,
+                name,
+                t: PhantomData,
+            },
+            tag,
+        );
         self.count += 1;
         self.last_buffer = buffer;
         buffer
     }
 
     pub fn buffer_merge_op(&mut self, name: &'static str) -> BufferRef<MergeOp> {
-        self.named_buffer(name, EncodingType::MergeOp).merge_op().unwrap()
+        self.named_buffer(name, EncodingType::MergeOp)
+            .merge_op()
+            .unwrap()
     }
 
     pub fn buffer_premerge(&mut self, name: &'static str) -> BufferRef<Premerge> {
-        self.named_buffer(name, EncodingType::Premerge).premerge().unwrap()
+        self.named_buffer(name, EncodingType::Premerge)
+            .premerge()
+            .unwrap()
     }
 
     pub fn buffer_str(&mut self, name: &'static str) -> BufferRef<&'a str> {
@@ -48,7 +61,9 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub fn buffer_usize(&mut self, name: &'static str) -> BufferRef<usize> {
-        self.named_buffer(name, EncodingType::USize).usize().unwrap()
+        self.named_buffer(name, EncodingType::USize)
+            .usize()
+            .unwrap()
     }
 
     pub fn buffer_i64(&mut self, name: &'static str) -> BufferRef<i64> {
@@ -64,19 +79,27 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub fn buffer_scalar_i64(&mut self, name: &'static str) -> BufferRef<Scalar<i64>> {
-        self.named_buffer(name, EncodingType::ScalarI64).scalar_i64().unwrap()
+        self.named_buffer(name, EncodingType::ScalarI64)
+            .scalar_i64()
+            .unwrap()
     }
 
     pub fn buffer_scalar_str<'b>(&mut self, name: &'static str) -> BufferRef<Scalar<&'b str>> {
-        self.named_buffer(name, EncodingType::ScalarStr).scalar_str().unwrap()
+        self.named_buffer(name, EncodingType::ScalarStr)
+            .scalar_str()
+            .unwrap()
     }
 
     pub fn buffer_scalar_string(&mut self, name: &'static str) -> BufferRef<Scalar<String>> {
-        self.named_buffer(name, EncodingType::ScalarString).scalar_string().unwrap()
+        self.named_buffer(name, EncodingType::ScalarString)
+            .scalar_string()
+            .unwrap()
     }
 
     pub fn buffer_raw_val(&mut self, name: &'static str) -> BufferRef<RawVal> {
-        self.named_buffer(name, EncodingType::Val).raw_val().unwrap()
+        self.named_buffer(name, EncodingType::Val)
+            .raw_val()
+            .unwrap()
     }
 
     pub fn shared_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
@@ -87,8 +110,12 @@ impl<'a> QueryExecutor<'a> {
         self.shared_buffers[name]
     }
 
-    pub fn last_buffer(&self) -> TypedBufferRef { self.last_buffer }
-    pub fn set_last_buffer(&mut self, buffer: TypedBufferRef) { self.last_buffer = buffer; }
+    pub fn last_buffer(&self) -> TypedBufferRef {
+        self.last_buffer
+    }
+    pub fn set_last_buffer(&mut self, buffer: TypedBufferRef) {
+        self.last_buffer = buffer;
+    }
 
     pub fn push(&mut self, op: Box<dyn VecOperator<'a> + 'a>) {
         self.ops.push(op);
@@ -104,7 +131,12 @@ impl<'a> QueryExecutor<'a> {
         Scratchpad::new(self.count, HashMap::default())
     }
 
-    pub fn run(&mut self, len: usize, scratchpad: &mut Scratchpad<'a>, show: bool) -> Result<(), QueryError> {
+    pub fn run(
+        &mut self,
+        len: usize,
+        scratchpad: &mut Scratchpad<'a>,
+        show: bool,
+    ) -> Result<(), QueryError> {
         for stage in 0..self.stages.len() {
             self.run_stage(len, stage, scratchpad, show)?;
         }
@@ -157,7 +189,9 @@ impl<'a> QueryExecutor<'a> {
                     break;
                 }
             }
-            if to_visit.is_empty() { break; }
+            if to_visit.is_empty() {
+                break;
+            }
 
             let mut ops = vec![];
             let mut stream = false;
@@ -173,7 +207,9 @@ impl<'a> QueryExecutor<'a> {
                 // Mark any new transitive inputs/outputs
                 let mut inputs = vec![current];
                 while let Some(op) = inputs.pop() {
-                    if transitive_input[op] { continue; }
+                    if transitive_input[op] {
+                        continue;
+                    }
                     transitive_input[op] = true;
                     for input in self.ops[op].inputs() {
                         for &p in &producers[input.i] {
@@ -184,7 +220,9 @@ impl<'a> QueryExecutor<'a> {
                 let mut outputs = vec![current];
                 while let Some(op) = outputs.pop() {
                     // Could do cycle detect here
-                    if transitive_output[op] { continue; }
+                    if transitive_output[op] {
+                        continue;
+                    }
                     transitive_output[op] = true;
                     for output in self.ops[op].outputs() {
                         for &c in &consumers[output.i] {
@@ -197,9 +235,14 @@ impl<'a> QueryExecutor<'a> {
                 for input in op.inputs() {
                     if op.can_stream_input(input.i) {
                         'l1: for &p in &producers[input.i] {
-                            if visited[p] { continue; }
-                            let can_stream = self.ops[p].can_stream_output(input.i) && !streaming_disabled[p];
-                            if !can_stream { continue; }
+                            if visited[p] {
+                                continue;
+                            }
+                            let can_stream =
+                                self.ops[p].can_stream_output(input.i) && !streaming_disabled[p];
+                            if !can_stream {
+                                continue;
+                            }
                             // Including op in this stage would introduce a cycle if any of the
                             // outputs is consumed by a transitive input to stage
                             for output in self.ops[p].outputs() {
@@ -221,8 +264,12 @@ impl<'a> QueryExecutor<'a> {
                 for output in op.outputs() {
                     if op.can_stream_output(output.i) && !streaming_disabled[current] {
                         'l2: for &consumer in &consumers[output.i] {
-                            if visited[consumer] { continue; }
-                            if !self.ops[consumer].can_stream_input(output.i) { continue; }
+                            if visited[consumer] {
+                                continue;
+                            }
+                            if !self.ops[consumer].can_stream_input(output.i) {
+                                continue;
+                            }
                             // Including op in this stage would introduce a cycle if any of the
                             // inputs is produces by a transitive output to stage
                             for input in self.ops[consumer].inputs() {
@@ -245,7 +292,7 @@ impl<'a> QueryExecutor<'a> {
                 // cycle are now possible to include because additional operations are part of
                 // the stage.
                 if to_visit.is_empty() {
-                    let ptr = std::mem::replace(&mut producers_to_revisit, vec![]);
+                    let ptr = std::mem::take(&mut producers_to_revisit);
                     'l3: for p in ptr {
                         for output in self.ops[p].outputs() {
                             for &c in &consumers[output.i] {
@@ -259,7 +306,7 @@ impl<'a> QueryExecutor<'a> {
                         to_visit.push(p);
                         stream = stream || self.ops[p].allocates();
                     }
-                    let ctr = std::mem::replace(&mut consumers_to_revisit, vec![]);
+                    let ctr = std::mem::take(&mut consumers_to_revisit);
                     'l4: for consumer in ctr {
                         for input in self.ops[consumer].inputs() {
                             for &p in &producers[input.i] {
@@ -307,20 +354,24 @@ impl<'a> QueryExecutor<'a> {
 
             // Determine if stage/ops should be streaming
             let mut has_streaming_producer = false;
-            let ops = total_order.into_iter().map(|op| {
-                has_streaming_producer |= self.ops[op].is_streaming_producer();
-                let mut streaming_consumers = false;
-                let mut block_consumers = false;
-                for output in self.ops[op].outputs() {
-                    if self.ops[op].can_stream_output(output.i) {
-                        for &consumer in &consumers[output.i] {
-                            streaming_consumers |= self.ops[consumer].can_stream_input(output.i);
-                            block_consumers |= !self.ops[consumer].can_stream_input(output.i);
+            let ops = total_order
+                .into_iter()
+                .map(|op| {
+                    has_streaming_producer |= self.ops[op].is_streaming_producer();
+                    let mut streaming_consumers = false;
+                    let mut block_consumers = false;
+                    for output in self.ops[op].outputs() {
+                        if self.ops[op].can_stream_output(output.i) {
+                            for &consumer in &consumers[output.i] {
+                                streaming_consumers |=
+                                    self.ops[consumer].can_stream_input(output.i);
+                                block_consumers |= !self.ops[consumer].can_stream_input(output.i);
+                            }
                         }
                     }
-                }
-                (op, streaming_consumers && !block_consumers)
-            }).collect::<Vec<_>>();
+                    (op, streaming_consumers && !block_consumers)
+                })
+                .collect::<Vec<_>>();
 
             // TODO(#98): Make streaming possible for stages reading from temp results
             stages.push(ExecutorStage {
@@ -364,13 +415,17 @@ impl<'a> QueryExecutor<'a> {
         let mut visited = vec![false; stages.len()];
         let mut committed = vec![false; stages.len()];
         let mut total_order = Vec::new();
-        fn visit(stage_index: usize,
-                 dependencies: &[HashSet<usize>],
-                 stages: &[ExecutorStage],
-                 visited: &mut Vec<bool>,
-                 committed: &mut Vec<bool>,
-                 total_order: &mut Vec<ExecutorStage>) {
-            if committed[stage_index] { return; }
+        fn visit(
+            stage_index: usize,
+            dependencies: &[HashSet<usize>],
+            stages: &[ExecutorStage],
+            visited: &mut Vec<bool>,
+            committed: &mut Vec<bool>,
+            total_order: &mut Vec<ExecutorStage>,
+        ) {
+            if committed[stage_index] {
+                return;
+            }
             trace!(">>> Visit {}", stage_index);
             if visited[stage_index] {
                 error!("CYCLE DETECTED");
@@ -381,7 +436,14 @@ impl<'a> QueryExecutor<'a> {
             }
             visited[stage_index] = true;
             for &dependency in &dependencies[stage_index] {
-                visit(dependency, dependencies, stages, visited, committed, total_order);
+                visit(
+                    dependency,
+                    dependencies,
+                    stages,
+                    visited,
+                    committed,
+                    total_order,
+                );
             }
             trace!(">>> Commit {}", stage_index);
             committed[stage_index] = true;
@@ -393,12 +455,24 @@ impl<'a> QueryExecutor<'a> {
             for (op, _) in &stage.ops {
                 trace!("{}", &self.ops[*op].display(true));
             }
-            visit(i, &dependencies, &stages, &mut visited, &mut committed, &mut total_order)
+            visit(
+                i,
+                &dependencies,
+                &stages,
+                &mut visited,
+                &mut committed,
+                &mut total_order,
+            )
         });
         total_order
     }
 
-    fn init_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>) -> (usize, usize) {
+    fn init_stage(
+        &mut self,
+        column_length: usize,
+        stage: usize,
+        scratchpad: &mut Scratchpad<'a>,
+    ) -> (usize, usize) {
         trace!("INITIALIZING STAGE {}", stage);
         let mut max_input_length = 0;
         let mut has_streaming_producer = false;
@@ -430,13 +504,21 @@ impl<'a> QueryExecutor<'a> {
         (max_input_length, batch_size)
     }
 
-    fn run_stage(&mut self, column_length: usize, stage: usize, scratchpad: &mut Scratchpad<'a>, show: bool)
-                 -> Result<(), QueryError> {
+    fn run_stage(
+        &mut self,
+        column_length: usize,
+        stage: usize,
+        scratchpad: &mut Scratchpad<'a>,
+        show: bool,
+    ) -> Result<(), QueryError> {
         let (max_length, batch_size) = self.init_stage(column_length, stage, scratchpad);
         let stream = self.stages[stage].stream;
         if show {
             println!("\n-- Stage {} --", stage);
-            println!("batch_size: {}, max_length: {}, column_length: {}, stream: {}", batch_size, max_length, column_length, stream);
+            println!(
+                "batch_size: {}, max_length: {}, column_length: {}, stream: {}",
+                batch_size, max_length, column_length, stream
+            );
         }
         let mut has_more = true;
         let mut iters = 0;
@@ -452,7 +534,11 @@ impl<'a> QueryExecutor<'a> {
                         if let Some(present) = scratchpad.try_get_null_map(output) {
                             print!("null map: ");
                             for i in 0..cmp::min(present.len() * 8, 100) {
-                                if (&*present).is_set(i) { print!("1") } else { print!("0") }
+                                if (&*present).is_set(i) {
+                                    print!("1")
+                                } else {
+                                    print!("0")
+                                }
                             }
                             println!()
                         }
@@ -509,4 +595,3 @@ impl<'a> fmt::Display for QueryExecutor<'a> {
         Ok(())
     }
 }
-

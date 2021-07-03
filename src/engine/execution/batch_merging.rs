@@ -38,7 +38,11 @@ impl<'a> BatchResult<'a> {
         }
         for (i, _) in &self.aggregations {
             if *i >= self.columns.len() {
-                return Err(fatal!("Aggregation exceeds number of columns ({}): {:?}", self.columns.len(), &self.aggregations));
+                return Err(fatal!(
+                    "Aggregation exceeds number of columns ({}): {:?}",
+                    self.columns.len(),
+                    &self.aggregations
+                ));
             }
         }
 
@@ -58,37 +62,47 @@ impl<'a> BatchResult<'a> {
     }
 }
 
-pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usize) -> Result<BatchResult<'a>, QueryError> {
+pub fn combine<'a>(
+    batch1: BatchResult<'a>,
+    batch2: BatchResult<'a>,
+    limit: usize,
+) -> Result<BatchResult<'a>, QueryError> {
     ensure!(
-        batch1.projection.len()  == batch2.projection.len(),
+        batch1.projection.len() == batch2.projection.len(),
         "Unequal number of projections in left ({}) and right ({}) batch result.",
-        batch1.projection.len(), batch2.projection.len(),
+        batch1.projection.len(),
+        batch2.projection.len(),
     );
     ensure!(
-        batch1.order_by.len()  == batch2.order_by.len(),
+        batch1.order_by.len() == batch2.order_by.len(),
         "Unequal number of order by in left ({}) and right ({}) batch result.",
-        batch1.order_by.len(), batch2.order_by.len(),
+        batch1.order_by.len(),
+        batch2.order_by.len(),
     );
     ensure!(
-        batch1.aggregations.len()  == batch2.aggregations.len(),
+        batch1.aggregations.len() == batch2.aggregations.len(),
         "Unequal number of aggregations in left ({:?}) and right ({:?}) batch result.",
-        batch1.aggregations.len(), batch2.aggregations.len(),
+        batch1.aggregations.len(),
+        batch2.aggregations.len(),
     );
-
 
     let mut qp = QueryPlanner::default();
     let mut data = Vec::new();
 
     if !batch1.aggregations.is_empty() {
         // Aggregation query
-        let left = batch1.columns.into_iter()
+        let left = batch1
+            .columns
+            .into_iter()
             .map(|vec| {
                 let buffer = qp.constant_vec(data.len(), vec.encoding_type());
                 data.push(vec);
                 buffer
             })
             .collect::<Vec<_>>();
-        let right = batch2.columns.into_iter()
+        let right = batch2
+            .columns
+            .into_iter()
             .map(|vec| {
                 let buffer = qp.constant_vec(data.len(), vec.encoding_type());
                 data.push(vec);
@@ -99,7 +113,9 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         let lprojection = batch1.projection;
         let rprojection = batch2.projection;
         let (group_by_cols, ops) = if lprojection.is_empty() {
-            let ops = qp.constant_vec(data.len(), EncodingType::MergeOp).merge_op()?;
+            let ops = qp
+                .constant_vec(data.len(), EncodingType::MergeOp)
+                .merge_op()?;
             data.push(Box::new(vec![MergeOp::TakeLeft, MergeOp::MergeRight]));
             (vec![], ops)
         } else if lprojection.len() == 1 {
@@ -130,7 +146,9 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         };
 
         let mut aggregates = Vec::with_capacity(batch1.aggregations.len());
-        for (&(ileft, aggregator), &(iright, _)) in batch1.aggregations.iter().zip(batch2.aggregations.iter()) {
+        for (&(ileft, aggregator), &(iright, _)) in
+            batch1.aggregations.iter().zip(batch2.aggregations.iter())
+        {
             let left = left[ileft].i64()?;
             let right = right[iright].i64()?;
             let aggregated = qp.merge_aggregate(ops, left, right, aggregator);
@@ -141,7 +159,8 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         let mut results = executor.prepare_no_columns();
         executor.run(1, &mut results, batch1.show || batch2.show)?;
 
-        let (columns, projection, aggregations, _) = results.collect_aliased(&group_by_cols, &aggregates, &[]);
+        let (columns, projection, aggregations, _) =
+            results.collect_aliased(&group_by_cols, &aggregates, &[]);
         let result = BatchResult {
             columns,
             projection,
@@ -162,14 +181,18 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
         // No aggregation
         if !batch1.order_by.is_empty() {
             // Sort query
-            let left = batch1.columns.into_iter()
+            let left = batch1
+                .columns
+                .into_iter()
                 .map(|vec| {
                     let buffer = qp.constant_vec(data.len(), vec.encoding_type());
                     data.push(vec);
                     buffer
                 })
                 .collect::<Vec<_>>();
-            let right = batch2.columns.into_iter()
+            let right = batch2
+                .columns
+                .into_iter()
                 .map(|vec| {
                     let buffer = qp.constant_vec(data.len(), vec.encoding_type());
                     data.push(vec);
@@ -179,6 +202,7 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
 
             let (final_sort_col_index1, final_desc) = *batch1.order_by.last().unwrap();
             let final_sort_col_index2 = batch2.order_by.last().unwrap().0;
+            #[allow(clippy::branches_sharing_code)]
             let (merge_ops, merged_final_sort_col) = if batch1.order_by.len() == 1 {
                 let (index1, desc) = batch1.order_by[0];
                 let (index2, _) = batch2.order_by[0];
@@ -187,8 +211,12 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             } else {
                 let (first_sort_col_index1, desc) = batch1.order_by[0];
                 let (first_sort_col_index2, _) = batch2.order_by[0];
-                let (l, r) = unify_types(&mut qp, left[first_sort_col_index1], right[first_sort_col_index2]);
-                let mut partitioning = qp.partition(l.clone(), r.clone(), limit, desc);
+                let (l, r) = unify_types(
+                    &mut qp,
+                    left[first_sort_col_index1],
+                    right[first_sort_col_index2],
+                );
+                let mut partitioning = qp.partition(l, r, limit, desc);
 
                 for i in 1..(left.len() - 1) {
                     let (index1, desc) = batch1.order_by[i];
@@ -196,11 +224,12 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     let (l, r) = unify_types(&mut qp, left[index1], right[index2]);
                     partitioning = qp.subpartition(partitioning, l, r, desc);
                 }
-                let (l, r) = unify_types(&mut qp, left[final_sort_col_index1], right[final_sort_col_index2]);
-                qp.merge_partitioned(partitioning,
-                                     l, r,
-                                     limit,
-                                     batch1.order_by.last().unwrap().1)
+                let (l, r) = unify_types(
+                    &mut qp,
+                    left[final_sort_col_index1],
+                    right[final_sort_col_index2],
+                );
+                qp.merge_partitioned(partitioning, l, r, limit, batch1.order_by.last().unwrap().1)
             };
 
             let mut projection = Vec::new();
@@ -214,9 +243,10 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                 }
             }
             let mut order_by = vec![];
-            for (&(ileft, desc), &(iright, _)) in
-                batch1.order_by[0..batch1.order_by.len() - 1].iter()
-                    .zip(batch2.order_by.iter()) {
+            for (&(ileft, desc), &(iright, _)) in batch1.order_by[0..batch1.order_by.len() - 1]
+                .iter()
+                .zip(batch2.order_by.iter())
+            {
                 let (l, r) = unify_types(&mut qp, left[ileft], right[iright]);
                 let merged = qp.merge_keep(merge_ops, l, r);
                 order_by.push((merged.any(), desc));
@@ -226,7 +256,8 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
             let mut executor = qp.prepare(data)?;
             let mut results = executor.prepare_no_columns();
             executor.run(1, &mut results, batch1.show || batch2.show)?;
-            let (columns, projection, _, order_by) = results.collect_aliased(&projection, &[], &order_by);
+            let (columns, projection, _, order_by) =
+                results.collect_aliased(&projection, &[], &order_by);
 
             Ok(BatchResult {
                 columns,
@@ -242,11 +273,15 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     urb
                 },
             })
-        } else { // Select query
+        } else {
+            // Select query
             // TODO(#97): make this work for differently aliased columns (need to send through query planner)
-            ensure!(batch1.projection  == batch2.projection,
-                    "Different projections in select batches ({:?}, {:?})",
-                    &batch1.projection, &batch2.projection);
+            ensure!(
+                batch1.projection == batch2.projection,
+                "Different projections in select batches ({:?}, {:?})",
+                &batch1.projection,
+                &batch2.projection
+            );
             let mut result = Vec::with_capacity(batch1.columns.len());
             let show = batch1.show || batch2.show;
             for (mut col1, col2) in batch1.columns.into_iter().zip(batch2.columns) {
@@ -255,14 +290,20 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
                     println!("{}", col1.display());
                     println!("{}", col2.display());
                 }
-                let count = if col1.len() >= limit { 0 } else {
+                let count = if col1.len() >= limit {
+                    0
+                } else {
                     min(col2.len(), limit - col1.len())
                 };
                 if let Some(newcol) = col1.append_all(&*col2, count) {
-                    if show { println!("{}", newcol.display()); }
+                    if show {
+                        println!("{}", newcol.display());
+                    }
                     result.push(newcol)
                 } else {
-                    if show { println!("{}", col1.display()); }
+                    if show {
+                        println!("{}", col1.display());
+                    }
                     result.push(col1)
                 }
             }
@@ -284,7 +325,11 @@ pub fn combine<'a>(batch1: BatchResult<'a>, batch2: BatchResult<'a>, limit: usiz
     }
 }
 
-fn unify_types(qp: &mut QueryPlanner, mut left: TypedBufferRef, mut right: TypedBufferRef) -> (TypedBufferRef, TypedBufferRef) {
+fn unify_types(
+    qp: &mut QueryPlanner,
+    mut left: TypedBufferRef,
+    mut right: TypedBufferRef,
+) -> (TypedBufferRef, TypedBufferRef) {
     let lub = left.tag.least_upper_bound(right.tag);
     if left.tag != lub {
         left = qp.cast(left, lub);

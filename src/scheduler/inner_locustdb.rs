@@ -5,23 +5,20 @@ use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use time;
-
 use crate::disk_store::interface::*;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
-use crate::mem_store::*;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
-use crate::scheduler::*;
+use crate::mem_store::*;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
-
+use crate::scheduler::*;
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
-    lru: LRU,
+    lru: Lru,
     pub storage: Arc<dyn DiskStore>,
     disk_read_scheduler: Arc<DiskReadScheduler>,
 
@@ -35,14 +32,19 @@ pub struct InnerLocustDB {
 
 impl InnerLocustDB {
     pub fn new(storage: Arc<dyn DiskStore>, opts: &Options) -> InnerLocustDB {
-        let lru = LRU::default();
+        let lru = Lru::default();
         let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref(), &lru);
-        let max_pid = existing_tables.iter().map(|(_, t)| t.max_partition_id()).max().unwrap_or(0);
-        let disk_read_scheduler = Arc::new(
-            DiskReadScheduler::new(storage.clone(),
-                                   lru.clone(),
-                                   opts.read_threads,
-                                   !opts.mem_lz4));
+        let max_pid = existing_tables
+            .iter()
+            .map(|(_, t)| t.max_partition_id())
+            .max()
+            .unwrap_or(0);
+        let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
+            storage.clone(),
+            lru.clone(),
+            opts.read_threads,
+            !opts.mem_lz4,
+        ));
 
         InnerLocustDB {
             tables: RwLock::new(existing_tables),
@@ -98,7 +100,9 @@ impl InnerLocustDB {
     fn await_task(ldb: &Arc<InnerLocustDB>) -> Option<Arc<dyn Task>> {
         let mut task_queue = ldb.task_queue.lock().unwrap();
         while task_queue.is_empty() {
-            if !ldb.running.load(Ordering::SeqCst) { return None }
+            if !ldb.running.load(Ordering::SeqCst) {
+                return None;
+            }
             task_queue = ldb.idle_queue.wait(task_queue).unwrap();
         }
         while let Some(task) = task_queue.pop_front() {
@@ -111,8 +115,8 @@ impl InnerLocustDB {
             if !task_queue.is_empty() {
                 ldb.idle_queue.notify_one();
             }
-            return Some(task)
-        };
+            return Some(task);
+        }
         None
     }
 
@@ -132,7 +136,9 @@ impl InnerLocustDB {
         self.storage.store_partition(pid, tablename, &partition);
         let (new_partition, keys) = Partition::new(pid, partition, self.lru.clone());
         table.load_partition(new_partition);
-        for key in keys { self.lru.put(key); }
+        for key in keys {
+            self.lru.put(key);
+        }
     }
 
     pub fn ingest(&self, table: &str, row: Vec<(String, RawVal)>) {
@@ -169,7 +175,7 @@ impl InnerLocustDB {
 
     pub fn mem_tree(&self, depth: usize) -> Vec<MemTreeTable> {
         let tables = self.tables.read().unwrap();
-        tables.values().map(|table| { table.mem_tree(depth) }).collect()
+        tables.values().map(|table| table.mem_tree(depth)).collect()
     }
 
     pub fn stats(&self) -> Vec<TableStats> {
@@ -178,7 +184,7 @@ impl InnerLocustDB {
     }
 
     pub fn gen_partition(&self, opts: &GenTable, p: u64) {
-        opts.gen(&self, p);
+        opts.gen(self, p);
     }
 
     fn create_if_empty(&self, table: &str) {
@@ -191,12 +197,19 @@ impl InnerLocustDB {
                 let mut tables = self.tables.write().unwrap();
                 tables.insert(
                     table.to_string(),
-                    Table::new(1 << 20, table, self.lru.clone()));
+                    Table::new(1 << 20, table, self.lru.clone()),
+                );
             }
-            self.ingest("_meta_tables", vec![
-                ("timestamp".to_string(), RawVal::Int(time::now().to_timespec().sec)),
-                ("name".to_string(), RawVal::Str(table.to_string())),
-            ]);
+            self.ingest(
+                "_meta_tables",
+                vec![
+                    (
+                        "timestamp".to_string(),
+                        RawVal::Int(time::now().to_timespec().sec),
+                    ),
+                    ("name".to_string(), RawVal::Str(table.to_string())),
+                ],
+            );
         }
     }
 
@@ -204,7 +217,10 @@ impl InnerLocustDB {
         while ldb.running.load(Ordering::SeqCst) {
             let mut mem_usage_bytes: usize = {
                 let tables = ldb.tables.read().unwrap();
-                tables.values().map(|table| table.heap_size_of_children()).sum()
+                tables
+                    .values()
+                    .map(|table| table.heap_size_of_children())
+                    .sum()
             };
             if mem_usage_bytes > ldb.opts.mem_size_limit_tables {
                 info!("Evicting. mem_usage_bytes = {}", mem_usage_bytes);
@@ -218,7 +234,10 @@ impl InnerLocustDB {
                         }
                         None => {
                             if ldb.opts.mem_size_limit_tables > 0 {
-                                warn!("Table memory usage is {} but failed to find column to evict!", mem_usage_bytes);
+                                warn!(
+                                    "Table memory usage is {} but failed to find column to evict!",
+                                    mem_usage_bytes
+                                );
                             }
                             break;
                         }
@@ -248,4 +267,3 @@ impl Drop for InnerLocustDB {
         info!("Stopped");
     }
 }
-

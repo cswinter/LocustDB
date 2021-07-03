@@ -17,9 +17,9 @@ impl<'a> VecOperator<'a> for SortBySlices {
         let mut result = scratchpad.get_mut(self.indices);
         if self.descending {
             if self.stable {
-                result.sort_by(|i, j| ranking.row(*i).cmp(&ranking.row(*j)).reverse());
+                result.sort_by(|i, j| ranking.row(*i).cmp(ranking.row(*j)).reverse());
             } else {
-                result.sort_unstable_by(|i, j| ranking.row(*i).cmp(&ranking.row(*j)).reverse());
+                result.sort_unstable_by(|i, j| ranking.row(*i).cmp(ranking.row(*j)).reverse());
             }
         } else if self.stable {
             result.sort_by_key(|i| ranking.row(*i));
@@ -29,13 +29,26 @@ impl<'a> VecOperator<'a> for SortBySlices {
         Ok(())
     }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any(), self.indices.any()] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { false }
-    fn can_stream_output(&self, _: usize) -> bool { false }
-    fn allocates(&self) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.ranking.any(), self.indices.any()]
+    }
+    fn outputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.output.any()]
+    }
+    fn can_stream_input(&self, _: usize) -> bool {
+        false
+    }
+    fn can_stream_output(&self, _: usize) -> bool {
+        false
+    }
+    fn allocates(&self) -> bool {
+        true
+    }
 
     fn display_op(&self, _: bool) -> String {
-        format!("sort_by({}, {}, desc={}, stable={})", self.ranking, self.indices, self.descending, self.stable)
+        format!(
+            "sort_by({}, {}, desc={}, stable={})",
+            self.ranking, self.indices, self.descending, self.stable
+        )
     }
 }
