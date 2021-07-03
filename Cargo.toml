@@ -1,10 +1,10 @@
 [package]
 authors = ["Clemens Winter <clemenswinter1@gmail.com>"]
-name = "locustdb"
-version = "0.3.5-alpha.0"
-license-file = "LICENSE"
 description = "Embeddable high-performance analytics database."
 edition = "2018"
+license-file = "LICENSE"
+name = "locustdb"
+version = "0.3.5-alpha.0"
 [build-dependencies]
 [build-dependencies.capnpc]
 optional = true
@@ -35,11 +35,11 @@ rust-crypto = "0.2"
 rustyline = "1.0"
 scoped_threadpool = "0.1"
 seahash = "3.0"
+sqlparser = "0.5"
 std-semaphore = "0.1"
+structopt = "0.3"
 tempdir = "0.3"
 time = "0.1"
-sqlparser = "0.5"
-structopt = "0.3"
 
 [dependencies.capnp]
 optional = true
@@ -67,7 +67,7 @@ enable_lz4 = ["lz4"]
 enable_rocksdb = ["rocksdb", "capnp", "capnpc"]
 
 [profile.release]
-lto = true
 codegen-units = 1
 debug = true
+lto = true
 opt-level = 3

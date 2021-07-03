@@ -1,14 +1,13 @@
-use std::sync::{Arc, Mutex};
-use lru::LruCache;
 use crate::mem_store::partition::ColumnKey;
-
+use lru::LruCache;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-pub struct LRU {
+pub struct Lru {
     cache: Arc<Mutex<LruCache<ColumnKey, ()>>>,
 }
 
-impl LRU {
+impl Lru {
     pub fn touch(&self, column: &ColumnKey) {
         let mut cache = self.cache.lock().unwrap();
         cache.get(column);
@@ -30,10 +29,10 @@ impl LRU {
     }
 }
 
-impl Default for LRU {
-    fn default() -> LRU {
-        LRU {
-            cache: Arc::new(Mutex::new(LruCache::unbounded()))
+impl Default for Lru {
+    fn default() -> Lru {
+        Lru {
+            cache: Arc::new(Mutex::new(LruCache::unbounded())),
         }
     }
 }

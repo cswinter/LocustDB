@@ -133,22 +133,18 @@ fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<ColumnInfo>, QueryE
                 // Storing this string in Query.select corresponding to locustdb's Expr.
                 // These will later be used as colnames of query results.
                 result.push(ColumnInfo {
-                    expr: *convert_to_native_expr(&e)?, 
+                    expr: *convert_to_native_expr(e)?,
                     name: Some(format!("{}", e)),
                 })
-            },
-            SelectItem::Wildcard => {
-                result.push(ColumnInfo {
-                    expr: Expr::ColName('*'.to_string()), 
-                    name: None,
-                })
-            },
-            SelectItem::ExprWithAlias { expr, alias } => {
-                result.push(ColumnInfo {
-                    expr: *convert_to_native_expr(&expr)?, 
-                    name: Some(alias.to_string()),
-                })
-            },
+            }
+            SelectItem::Wildcard => result.push(ColumnInfo {
+                expr: Expr::ColName('*'.to_string()),
+                name: None,
+            }),
+            SelectItem::ExprWithAlias { expr, alias } => result.push(ColumnInfo {
+                expr: *convert_to_native_expr(expr)?,
+                name: Some(alias.to_string()),
+            }),
             _ => {
                 return Err(QueryError::NotImplemented(format!(
                     "Unsupported projection in SELECT: {}",
@@ -213,7 +209,11 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
             ref left,
             ref op,
             ref right,
-        } => Expr::Func2(map_binary_operator(op)?, convert_to_native_expr(left)?, convert_to_native_expr(right)?),
+        } => Expr::Func2(
+            map_binary_operator(op)?,
+            convert_to_native_expr(left)?,
+            convert_to_native_expr(right)?,
+        ),
         ASTNode::UnaryOp {
             ref op,
             expr: ref expression,
@@ -238,7 +238,11 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected two arguments in regex function".to_string(),
                     ));
                 }
-                Expr::Func2(Func2Type::RegexMatch, convert_to_native_expr(&f.args[0])?, convert_to_native_expr(&f.args[1])?)
+                Expr::Func2(
+                    Func2Type::RegexMatch,
+                    convert_to_native_expr(&f.args[0])?,
+                    convert_to_native_expr(&f.args[1])?,
+                )
             }
             "LENGTH" => {
                 if f.args.len() != 1 {
@@ -272,8 +276,14 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 }
                 Expr::Func2(
                     Func2Type::Divide,
-                    Box::new(Expr::Aggregate(Aggregator::Sum, convert_to_native_expr(&f.args[0])?)),
-                    Box::new(Expr::Aggregate(Aggregator::Count, convert_to_native_expr(&f.args[0])?)),
+                    Box::new(Expr::Aggregate(
+                        Aggregator::Sum,
+                        convert_to_native_expr(&f.args[0])?,
+                    )),
+                    Box::new(Expr::Aggregate(
+                        Aggregator::Count,
+                        convert_to_native_expr(&f.args[0])?,
+                    )),
                 )
             }
             "MAX" => {
@@ -295,7 +305,9 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
             _ => return Err(QueryError::NotImplemented(format!("Function {:?}", f.name))),
         },
         ASTNode::IsNull(ref node) => Expr::Func1(Func1Type::IsNull, convert_to_native_expr(node)?),
-        ASTNode::IsNotNull(ref node) => Expr::Func1(Func1Type::IsNotNull, convert_to_native_expr(node)?),
+        ASTNode::IsNotNull(ref node) => {
+            Expr::Func1(Func1Type::IsNotNull, convert_to_native_expr(node)?)
+        }
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
     }))
 }

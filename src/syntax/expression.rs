@@ -1,7 +1,7 @@
-use crate::ingest::raw_val::RawVal;
 use self::Expr::*;
-use std::collections::HashSet;
 use crate::engine::*;
+use crate::ingest::raw_val::RawVal;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -12,6 +12,7 @@ pub enum Expr {
     Aggregate(Aggregator, Box<Expr>),
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Func2Type {
     Equals,
@@ -66,4 +67,3 @@ impl Expr {
         Func1(ftype, Box::new(expr))
     }
 }
-

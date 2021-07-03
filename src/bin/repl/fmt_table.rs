@@ -1,4 +1,3 @@
-
 pub fn fmt_table(headings: &[&str], rows: &[Vec<&str>]) -> String {
     let ncols = headings.len();
     let mut col_width = Vec::<usize>::with_capacity(ncols);
@@ -18,7 +17,7 @@ pub fn fmt_table(headings: &[&str], rows: &[Vec<&str>]) -> String {
     let mut result = String::new();
     append_row(&mut result, headings, &col_width);
 
-    result.push_str("\n");
+    result.push('\n');
     for (i, width) in col_width.iter().enumerate() {
         result.push_str(&String::from_utf8(vec![b'-'; *width]).unwrap());
         if i < ncols - 1 {
@@ -27,7 +26,7 @@ pub fn fmt_table(headings: &[&str], rows: &[Vec<&str>]) -> String {
     }
 
     for row in rows {
-        result.push_str("\n");
+        result.push('\n');
         append_row(&mut result, row, &col_width);
     }
 

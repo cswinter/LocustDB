@@ -14,11 +14,13 @@ pub struct HashMapGroupingValRows<'a> {
 }
 
 impl<'a> HashMapGroupingValRows<'a> {
-    pub fn boxed(input: BufferRef<ValRows<'a>>,
-                 unique_out: BufferRef<ValRows<'a>>,
-                 grouping_key_out: BufferRef<u32>,
-                 cardinality_out: BufferRef<Scalar<i64>>,
-                 columns: usize) -> BoxedOperator<'a> {
+    pub fn boxed(
+        input: BufferRef<ValRows<'a>>,
+        unique_out: BufferRef<ValRows<'a>>,
+        grouping_key_out: BufferRef<u32>,
+        cardinality_out: BufferRef<Scalar<i64>>,
+        columns: usize,
+    ) -> BoxedOperator<'a> {
         Box::new(HashMapGroupingValRows {
             input,
             unique_out,
@@ -37,7 +39,9 @@ impl<'a> VecOperator<'a> for HashMapGroupingValRows<'a> {
             let mut map: FnvHashMap<&[Val<'a>], u32> = FnvHashMap::default();
             let mut grouping = scratchpad.get_mut(self.grouping_key_out);
             let mut unique = scratchpad.get_mut_val_rows(self.unique_out);
-            if stream { grouping.clear() }
+            if stream {
+                grouping.clear()
+            }
             for row in raw_grouping_key.data.chunks(raw_grouping_key.row_len) {
                 grouping.push(*map.entry(row).or_insert_with(|| {
                     for slice in row {
@@ -48,7 +52,7 @@ impl<'a> VecOperator<'a> for HashMapGroupingValRows<'a> {
             }
             RawVal::Int(unique.len() as i64)
         };
-        scratchpad.set_any(self.cardinality_out.any(), Data::constant(count));
+        scratchpad.set_any(self.cardinality_out.any(), constant_data(count));
         Ok(())
     }
 
@@ -57,14 +61,27 @@ impl<'a> VecOperator<'a> for HashMapGroupingValRows<'a> {
         scratchpad.set(self.grouping_key_out, Vec::with_capacity(batch_size));
     }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.unique_out.any(), self.grouping_key_out.any(), self.cardinality_out.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { false }
-    fn can_stream_output(&self, output: usize) -> bool { output != self.unique_out.i }
-    fn allocates(&self) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.input.any()]
+    }
+    fn outputs(&self) -> Vec<BufferRef<Any>> {
+        vec![
+            self.unique_out.any(),
+            self.grouping_key_out.any(),
+            self.cardinality_out.any(),
+        ]
+    }
+    fn can_stream_input(&self, _: usize) -> bool {
+        false
+    }
+    fn can_stream_output(&self, output: usize) -> bool {
+        output != self.unique_out.i
+    }
+    fn allocates(&self) -> bool {
+        true
+    }
 
     fn display_op(&self, _: bool) -> String {
         format!("hashmap_grouping_val_rows({})", self.input)
     }
 }
-

@@ -213,7 +213,7 @@ fn test_sort_string() {
 #[test]
 fn test_sort_string_desc() {
     test_query(
-        &"select first_name from default order by first_name desc limit 2;",
+        "select first_name from default order by first_name desc limit 2;",
         &[vec!["Willie".into()], vec!["William".into()]],
     )
 }
@@ -963,8 +963,10 @@ fn test_gen_table() {
 fn test_column_with_null_partitions() {
     use crate::Value::*;
     let _ = env_logger::try_init();
-    let mut opts = locustdb::Options::default();
-    opts.threads = 1;
+    let opts = locustdb::Options {
+        threads: 1,
+        ..Default::default()
+    };
     let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
         name: "test".to_string(),
@@ -1083,8 +1085,10 @@ fn test_restore_from_disk() {
     use tempdir::TempDir;
     let _ = env_logger::try_init();
     let tmp_dir = TempDir::new("rocks").unwrap();
-    let mut opts = Options::default();
-    opts.db_path = Some(tmp_dir.path().to_path_buf());
+    let opts = Options {
+        db_path: Some(tmp_dir.path().to_path_buf()),
+        ..Default::default()
+    };
     {
         let locustdb = LocustDB::new(&opts);
         let load = block_on(
@@ -1119,23 +1123,21 @@ fn test_restore_from_disk() {
 fn test_colnames() {
     test_query_colnames(
         "SELECT non_dense_ints + negative - 2 FROM default;",
-        vec!["non_dense_ints + negative - 2".to_string()]
+        vec!["non_dense_ints + negative - 2".to_string()],
     );
 
     test_query_colnames(
         "SELECT SUM(u8_offset_encoded) FROM default;",
-        vec!["SUM(u8_offset_encoded)".to_string()]
+        vec!["SUM(u8_offset_encoded)".to_string()],
     );
 
     test_query_colnames(
         "SELECT COUNT(1) as cnt FROM default;",
-        vec!["cnt".to_string()]
+        vec!["cnt".to_string()],
     );
 
     test_query_colnames(
         "SELECT u8_offset_encoded FROM default WHERE u8_offset_encoded = 256;",
-        vec![
-            "u8_offset_encoded".to_string()
-        ]
+        vec!["u8_offset_encoded".to_string()],
     );
 }

@@ -1,13 +1,10 @@
-use std::str;
-use std::sync::Arc;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::str;
+use std::sync::Arc;
 
 use futures::channel::oneshot;
-use num_cpus;
 
-use crate::QueryError;
-use crate::QueryResult;
 use crate::disk_store::interface::*;
 use crate::disk_store::noop_storage::NoopStorage;
 use crate::engine::query_task::QueryTask;
@@ -16,10 +13,11 @@ use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
 use crate::mem_store::*;
 use crate::scheduler::*;
 use crate::syntax::parser;
-
+use crate::QueryError;
+use crate::QueryResult;
 
 pub struct LocustDB {
-    inner_locustdb: Arc<InnerLocustDB>
+    inner_locustdb: Arc<InnerLocustDB>,
 }
 
 impl LocustDB {
@@ -28,15 +26,24 @@ impl LocustDB {
     }
 
     pub fn new(opts: &Options) -> LocustDB {
-        let disk_store = opts.db_path.as_ref()
-            .map(|path| LocustDB::persistent_storage(path))
+        let disk_store = opts
+            .db_path
+            .as_ref()
+            .map(LocustDB::persistent_storage)
             .unwrap_or_else(|| Arc::new(NoopStorage));
         let locustdb = Arc::new(InnerLocustDB::new(disk_store, opts));
         InnerLocustDB::start_worker_threads(&locustdb);
-        LocustDB { inner_locustdb: locustdb }
+        LocustDB {
+            inner_locustdb: locustdb,
+        }
     }
 
-    pub async fn run_query(&self, query: &str, explain: bool, show: Vec<usize>) -> Result<QueryResult, oneshot::Canceled> {
+    pub async fn run_query(
+        &self,
+        query: &str,
+        explain: bool,
+        show: Vec<usize>,
+    ) -> Result<QueryResult, oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
 
         // PERF: perform compilation and table snapshot in asynchronous task?
@@ -47,24 +54,35 @@ impl LocustDB {
 
         let mut data = match self.inner_locustdb.snapshot(&query.table) {
             Some(data) => data,
-            None => return Ok(Err(
-                QueryError::NotImplemented(format!("Table {} does not exist!", &query.table)))),
+            None => {
+                return Ok(Err(QueryError::NotImplemented(format!(
+                    "Table {} does not exist!",
+                    &query.table
+                ))))
+            }
         };
 
         if self.inner_locustdb.opts().seq_disk_read {
-            self.inner_locustdb.disk_read_scheduler()
-                .schedule_sequential_read(&mut data,
-                                          &query.find_referenced_cols(),
-                                          self.inner_locustdb.opts().readahead);
+            self.inner_locustdb
+                .disk_read_scheduler()
+                .schedule_sequential_read(
+                    &mut data,
+                    &query.find_referenced_cols(),
+                    self.inner_locustdb.opts().readahead,
+                );
             let ldb = self.inner_locustdb.clone();
-            let (read_data, _) = Task::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
+            let (read_data, _) =
+                <dyn Task>::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
             let _ = self.inner_locustdb.schedule(read_data);
         }
 
         let query_task = QueryTask::new(
-            query, explain, show, data,
+            query,
+            explain,
+            show,
+            data,
             self.inner_locustdb.disk_read_scheduler().clone(),
-            SharedSender::new(sender)
+            SharedSender::new(sender),
         );
 
         match query_task {
@@ -81,7 +99,8 @@ impl LocustDB {
         let task = CSVIngestionTask::new(
             options,
             self.inner_locustdb.clone(),
-            SharedSender::new(sender));
+            SharedSender::new(sender),
+        );
         let _ = self.schedule(task);
         Ok(receiver.await??)
     }
@@ -92,7 +111,8 @@ impl LocustDB {
         for partition in 0..opts.partitions {
             let opts = opts.clone();
             let inner = self.inner_locustdb.clone();
-            let (task, receiver) = Task::from_fn(move || inner.gen_partition(&opts, partition as u64));
+            let (task, receiver) =
+                <dyn Task>::from_fn(move || inner.gen_partition(&opts, partition as u64));
             let _ = self.schedule(task);
             receivers.push(receiver);
         }
@@ -111,14 +131,15 @@ impl LocustDB {
 
     pub async fn bulk_load(&self) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         for table in self.inner_locustdb.full_snapshot() {
-            self.inner_locustdb.disk_read_scheduler()
-                .schedule_bulk_load(table,
-                                    self.inner_locustdb.opts().readahead);
+            self.inner_locustdb
+                .disk_read_scheduler()
+                .schedule_bulk_load(table, self.inner_locustdb.opts().readahead);
         }
         let mut receivers = Vec::new();
         for _ in 0..self.inner_locustdb.opts().read_threads {
             let ldb = self.inner_locustdb.clone();
-            let (read_data, receiver) = Task::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
+            let (read_data, receiver) =
+                <dyn Task>::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
             let _ = self.inner_locustdb.schedule(read_data);
             receivers.push(receiver);
         }
@@ -135,14 +156,14 @@ impl LocustDB {
 
     pub async fn mem_tree(&self, depth: usize) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
-        let (task, receiver) = Task::from_fn(move || inner.mem_tree(depth));
+        let (task, receiver) = <dyn Task>::from_fn(move || inner.mem_tree(depth));
         let _ = self.schedule(task);
         receiver.await
     }
 
     pub async fn table_stats(&self) -> Result<Vec<TableStats>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
-        let (task, receiver) = Task::from_fn(move || inner.stats());
+        let (task, receiver) = <dyn Task>::from_fn(move || inner.stats());
         let _ = self.schedule(task);
         receiver.await
     }
@@ -193,4 +214,3 @@ impl Default for Options {
         }
     }
 }
-

@@ -2,37 +2,36 @@ use std::path::PathBuf;
 
 use failure::Fail;
 use futures::executor::block_on;
-use time::precise_time_ns;
 use structopt::StructOpt;
+use time::precise_time_ns;
 
-use locustdb::LocustDB;
 use locustdb::unit_fmt::*;
+use locustdb::LocustDB;
 
-mod print_results;
 mod fmt_table;
-
+mod print_results;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
     name = "LocustDB",
-    about="Massively parallel, high performance analytics database that will rapidly devour all of your data.",
-    author="Clemens Winter <clemenswinter1@gmail.com>",
+    about = "Massively parallel, high performance analytics database that will rapidly devour all of your data.",
+    author = "Clemens Winter <clemenswinter1@gmail.com>"
 )]
 struct Opt {
     /// Path to data directory
-    #[structopt(long, name="PATH", parse(from_os_str))]
+    #[structopt(long, name = "PATH", parse(from_os_str))]
     db_path: Option<PathBuf>,
 
     /// Load .csv or .csv.gz files into the database
-    #[structopt(long, name="FILES", parse(from_os_str))]
+    #[structopt(long, name = "FILES", parse(from_os_str))]
     load: Vec<PathBuf>,
 
     /// Name for the table populated with --load
-    #[structopt(long, name="NAME", default_value="default")]
+    #[structopt(long, name = "NAME", default_value = "default")]
     table: String,
 
     /// Limit for in-memory size of tables in GiB")
-    #[structopt(long, name="GB", default_value="8")]
+    #[structopt(long, name = "GB", default_value = "8")]
     mem_limit_tables: usize,
 
     /// Comma separated list specifying the types and (optionally) names of all columns in files specified by `--load` option.
@@ -47,11 +46,11 @@ struct Opt {
     mem_lz4: bool,
 
     /// Number of rows per partition when loading new data
-    #[structopt(long, name="ROWS", default_value="65536")]
+    #[structopt(long, name = "ROWS", default_value = "65536")]
     partition_size: usize,
 
     /// How much data to load at a time in MiB when reading from disk
-    #[structopt(long, name="MB", default_value="256")]
+    #[structopt(long, name = "MB", default_value = "256")]
     readahead: usize,
 
     /// Improves performance on HDD, can hurt performance on SSD.
@@ -59,7 +58,7 @@ struct Opt {
     seq_disk_read: bool,
 
     /// Number of worker threads. [default: number of cores]
-    #[structopt(long, name="INTEGER")]
+    #[structopt(long, name = "INTEGER")]
     threads: Option<usize>,
 
     /// Set ingestion schema for select set of columns from nyc taxi ride dataset.
@@ -90,7 +89,7 @@ fn main() {
     } = Opt::from_args();
 
     let options = locustdb::Options {
-        threads: threads.unwrap_or_else(|| num_cpus::get()),
+        threads: threads.unwrap_or_else(num_cpus::get),
         read_threads: if seq_disk_read { 1 } else { num_cpus::get() },
         db_path: db_path.clone(),
         mem_size_limit_tables: mem_limit_tables * 1024 * 1024 * 1024,
@@ -132,11 +131,13 @@ fn main() {
         println!("Loading {} files into table {}.", file_count, table);
     }
     for l in loads {
-        block_on(l)
-            .expect("Ingestion crashed!");
+        block_on(l).expect("Ingestion crashed!");
     }
     if file_count > 0 {
-        println!("Loaded data in {:.3}.", ns((precise_time_ns() - start_time) as usize));
+        println!(
+            "Loaded data in {:.3}.",
+            ns((precise_time_ns() - start_time) as usize)
+        );
     }
 
     table_stats(&locustdb);
@@ -147,7 +148,12 @@ fn table_stats(locustdb: &LocustDB) {
     let stats = block_on(locustdb.table_stats()).expect("!?!");
     for table in stats {
         let size = table.batches_bytes + table.buffer_bytes;
-        println!("\n# Table `{}` ({} rows, {}) #", &table.name, table.rows, bite(size));
+        println!(
+            "\n# Table `{}` ({} rows, {}) #",
+            &table.name,
+            table.rows,
+            bite(size)
+        );
         for &(ref columname, heapsize) in &table.size_per_column {
             println!("{}: {:.2}", columname, bite(heapsize));
         }
@@ -191,12 +197,18 @@ fn repl(locustdb: &LocustDB) {
         if s.starts_with(":memtree") {
             let depth = if s.starts_with(":memtree(") {
                 let end = s.find(')').unwrap();
-                s[9..end].parse::<usize>().expect("must pass integer to :memtree(x) command")
-            } else { 2 };
+                s[9..end]
+                    .parse::<usize>()
+                    .expect("must pass integer to :memtree(x) command")
+            } else {
+                2
+            };
             match block_on(locustdb.mem_tree(depth)) {
-                Ok(trees) => for tree in trees {
-                    println!("{}\n", &tree)
-                },
+                Ok(trees) => {
+                    for tree in trees {
+                        println!("{}\n", &tree)
+                    }
+                }
                 _ => println!("Error: Query execution was canceled!"),
             }
             continue;
@@ -205,8 +217,10 @@ fn repl(locustdb: &LocustDB) {
             let start = precise_time_ns();
             match block_on(locustdb.bulk_load()) {
                 Ok(trees) => {
-                    println!("Restored DB from disk in {}",
-                             ns((precise_time_ns() - start) as usize));
+                    println!(
+                        "Restored DB from disk in {}",
+                        ns((precise_time_ns() - start) as usize)
+                    );
                     for tree in trees {
                         println!("{}\n", &tree)
                     }
@@ -224,8 +238,7 @@ fn repl(locustdb: &LocustDB) {
             let tablename = args[0];
             let schema = args[1];
             for file in &args[2..] {
-                let opts = locustdb::LoadOptions::new(&file, tablename)
-                    .with_schema(schema);
+                let opts = locustdb::LoadOptions::new(&file, tablename).with_schema(schema);
                 let load = locustdb.load_csv(opts);
                 println!("Loading {} into table {}.", file, tablename);
                 block_on(load).expect("Ingestion crashed!");
@@ -240,7 +253,9 @@ fn repl(locustdb: &LocustDB) {
         if s.starts_with(":show") {
             show = if s.starts_with(":show(") {
                 let end = s.find(')').unwrap();
-                let partition = s[6..end].parse::<usize>().expect("must pass integer to :show(x) command");
+                let partition = s[6..end]
+                    .parse::<usize>()
+                    .expect("must pass integer to :show(x) command");
                 s = &s[(end + 2)..];
                 vec![partition]
             } else {
@@ -259,12 +274,10 @@ fn repl(locustdb: &LocustDB) {
 
         let query = locustdb.run_query(s, explain, show);
         match block_on(query) {
-            Ok(result) => {
-                match result {
-                    Ok(output) => print_results::print_query_result(&output),
-                    Err(fail) => print_error(&fail),
-                }
-            }
+            Ok(result) => match result {
+                Ok(output) => print_results::print_query_result(&output),
+                Err(fail) => print_error(&fail),
+            },
             _ => println!("Error: Query execution was canceled!"),
         }
     }
