@@ -35,7 +35,7 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                         .find(|attr| attr.path == parse_quote!(internal))
                     {
                         let new_buffer = if let Some((t, fn_arg)) =
-                            parse_type(&field_ident, attr.tts.to_string())
+                            parse_type(&field_ident, attr.tokens.to_string())
                         {
                             assert!(
                                 fn_arg.is_none(),
@@ -53,17 +53,17 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                         .find(|attr| attr.path == parse_quote!(output))
                     {
                         let new_buffer: Stmt = if attr
-                            .tts
+                            .tokens
                             .to_string()
                             .contains("shared_byte_slices")
                         {
                             output = parse_quote!(Some(#field_ident.i));
                             parse_quote!(let #field_ident = self.buffer_provider.shared_buffer(#ident_str, EncodingType::ByteSlices(stride)).any();)
-                        } else if attr.tts.to_string().contains("shared_val_rows") {
+                        } else if attr.tokens.to_string().contains("shared_val_rows") {
                             output = parse_quote!(Some(#field_ident.i));
                             parse_quote!(let #field_ident = self.buffer_provider.shared_buffer(#ident_str, EncodingType::ValRows).val_rows().unwrap();)
                         } else if let Some((t, fn_input)) =
-                            parse_type(&field_ident, attr.tts.to_string())
+                            parse_type(&field_ident, attr.tokens.to_string())
                         {
                             if let Some(fn_input) = fn_input {
                                 fn_inputs.push(fn_input);
@@ -75,10 +75,10 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                             create_buffer(&field_ident, &field_type)
                         };
                         let index_lit =
-                            LitInt::new(output_index as u64, IntSuffix::Usize, Span::call_site());
-                        if attr.tts.to_string().contains("shared_byte_slices") {
+                            LitInt::new(&format!("{}usize", output_index), Span::call_site());
+                        if attr.tokens.to_string().contains("shared_byte_slices") {
                             cache_retrieve.push(parse_quote!(buffer[#index_lit].any()));
-                        } else if attr.tts.to_string().contains("shared_val_rows") {
+                        } else if attr.tokens.to_string().contains("shared_val_rows") {
                             cache_retrieve
                                 .push(parse_quote!(buffer[#index_lit].val_rows().unwrap()));
                         } else {
@@ -109,7 +109,7 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                     struct_args.push(parse_quote!(#field_ident));
                 }
 
-                let index = LitInt::new(index as u64, IntSuffix::U64, Span::call_site());
+                let index = LitInt::new(&format!("{}u64", index), Span::call_site());
                 let result2 = result.clone();
                 let item = parse_quote! {
                     pub fn #ident_snake(&mut self, #(#fn_inputs),*) -> (#(#result_type),*) {
