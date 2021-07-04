@@ -10,6 +10,7 @@ version = "0.3.5-alpha.0"
 capnpc = {version = "0.14", optional = true}
 
 [dependencies]
+actix-web = "3"
 aliasmethod = "0.1"
 bit-vec = "0.4"
 byteorder = "1.2"

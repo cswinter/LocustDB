@@ -68,6 +68,10 @@ struct Opt {
     /// Set ingestion schema for nyc taxi ride dataset.
     #[structopt(long, conflicts_with_all(&["reduced-trips", "schema"]))]
     trips: bool,
+
+    // TODO: make this a subcommand
+    #[structopt(long)]
+    server: bool,
 }
 
 fn main() {
@@ -86,6 +90,7 @@ fn main() {
         threads,
         reduced_trips,
         trips,
+        server,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -141,7 +146,14 @@ fn main() {
     }
 
     table_stats(&locustdb);
-    repl(&locustdb);
+
+    if server {
+        actix_web::rt::System::new("locustdb")
+            .block_on(locustdb::server::run(locustdb))
+            .unwrap();
+    } else {
+        repl(&locustdb);
+    }
 }
 
 fn table_stats(locustdb: &LocustDB) {

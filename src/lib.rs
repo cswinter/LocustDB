@@ -38,6 +38,7 @@ mod ingest;
 mod locustdb;
 mod mem_store;
 mod scheduler;
+pub mod server;
 mod stringpack;
 mod syntax;
 pub mod unit_fmt;
