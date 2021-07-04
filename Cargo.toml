@@ -5,6 +5,7 @@ edition = "2018"
 license-file = "LICENSE"
 name = "locustdb"
 version = "0.3.5-alpha.0"
+
 [build-dependencies]
 capnpc = {version = "0.14", optional = true}
 
@@ -25,11 +26,15 @@ futures = "0.3"
 hex = "0.3"
 itertools = "0.5"
 lazy_static = "1.2"
+locustdb-derive = {path = "./locustdb-derive", version = "0.1.0"}
+log = {features = ["max_level_trace", "release_max_level_debug"], version = "0.4"}
 lru = "0.6"
+lz4 = {version = "1.22.0", optional = true}
 num = "0.1"
 num_cpus = "1.0"
 rand = "0.5"
 regex = "1"
+rocksdb = {version = "0.10.1", optional = true}
 rust-crypto = "0.2"
 rustyline = "1.0"
 scoped_threadpool = "0.1"
@@ -39,22 +44,6 @@ std-semaphore = "0.1"
 structopt = "0.3"
 tempdir = "0.3"
 time = "0.1"
-
-[dependencies.locustdb-derive]
-path = "./locustdb-derive"
-version = "0.1.0"
-
-[dependencies.log]
-features = ["max_level_trace", "release_max_level_debug"]
-version = "0.4"
-
-[dependencies.lz4]
-optional = true
-version = "1.22.0"
-
-[dependencies.rocksdb]
-optional = true
-version = "0.10.1"
 
 [features]
 default = []
