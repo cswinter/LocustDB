@@ -16,6 +16,7 @@ use crate::syntax::parser;
 use crate::QueryError;
 use crate::QueryResult;
 
+// Cannot implement Clone on LocustDB without chaning Drop implementation.
 pub struct LocustDB {
     inner_locustdb: Arc<InnerLocustDB>,
 }
@@ -181,12 +182,6 @@ impl LocustDB {
     #[cfg(not(feature = "enable_rocksdb"))]
     pub fn persistent_storage<P: AsRef<Path>>(_: P) -> Arc<dyn DiskStore> {
         panic!("RocksDB storage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
-    }
-}
-
-impl Drop for LocustDB {
-    fn drop(&mut self) {
-        self.inner_locustdb.stop();
     }
 }
 
