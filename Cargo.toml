@@ -6,14 +6,13 @@ license-file = "LICENSE"
 name = "locustdb"
 version = "0.3.5-alpha.0"
 [build-dependencies]
-[build-dependencies.capnpc]
-optional = true
-version = "0.12"
+capnpc = {version = "0.14", optional = true}
 
 [dependencies]
 aliasmethod = "0.1"
 bit-vec = "0.4"
 byteorder = "1.2"
+capnp = {version = "0.14", optional = true}
 chrono = "0.4"
 clap = "2.32"
 csv = "1"
@@ -40,10 +39,6 @@ std-semaphore = "0.1"
 structopt = "0.3"
 tempdir = "0.3"
 time = "0.1"
-
-[dependencies.capnp]
-optional = true
-version = "0.12"
 
 [dependencies.locustdb-derive]
 path = "./locustdb-derive"
