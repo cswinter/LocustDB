@@ -1,22 +1,16 @@
 [package]
 authors = ["Clemens Winter <clemenswinter1@gmail.com>"]
+description = "Macros used internally by locustdb crate."
 edition = "2018"
+license = "Apache-2.0"
 name = "locustdb-derive"
 version = "0.1.0"
-license = "Apache-2.0"
-description = "Macros used internally by locustdb crate."
 [dependencies]
 lazy_static = "1.2"
-quote = "0.6"
+proc-macro2 = {version = "1.0"}
+quote = "1.0"
 regex = "1.1"
-
-[dependencies.proc-macro2]
-features = ["nightly"]
-version = "0.4"
-
-[dependencies.syn]
-features = ["full", "fold", "extra-traits"]
-version = "0.15"
+syn = {features = ["full", "fold", "extra-traits"], version = "1.0"}
 
 [lib]
 proc-macro = true
