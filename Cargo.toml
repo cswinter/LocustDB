@@ -45,6 +45,7 @@ std-semaphore = "0.1"
 structopt = "0.3"
 tempdir = "0.3"
 time = "0.1"
+serde = "1.0"
 
 [features]
 default = []

@@ -1248,6 +1248,7 @@ dependencies = [
  "rustyline",
  "scoped_threadpool",
  "seahash",
+ "serde",
  "sqlparser",
  "std-semaphore",
  "structopt",
