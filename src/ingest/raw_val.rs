@@ -1,9 +1,11 @@
 use std::fmt;
 use std::mem;
+
+use serde::{Deserialize, Serialize};
+
 use crate::engine::data_types::BasicType;
 
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Serialize, Deserialize)]
 pub enum RawVal {
     Int(i64),
     Str(String),
@@ -26,7 +28,6 @@ impl RawVal {
             RawVal::Null => 0,
         }
     }
-
 }
 
 impl fmt::Display for RawVal {
@@ -43,5 +44,7 @@ pub mod syntax {
     pub use super::RawVal::{Int, Null};
 
     #[allow(non_snake_case)]
-    pub fn Str(s: &str) -> super::RawVal { super::RawVal::Str(s.to_string()) }
+    pub fn Str(s: &str) -> super::RawVal {
+        super::RawVal::Str(s.to_string())
+    }
 }
