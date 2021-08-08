@@ -16,7 +16,7 @@ use crate::syntax::parser;
 use crate::QueryError;
 use crate::QueryResult;
 
-// Cannot implement Clone on LocustDB without chaning Drop implementation.
+// Cannot implement Clone on LocustDB without changing Drop implementation.
 pub struct LocustDB {
     inner_locustdb: Arc<InnerLocustDB>,
 }
@@ -207,5 +207,11 @@ impl Default for Options {
             readahead: 256 * 1024 * 1024, // 256 MiB
             seq_disk_read: false,
         }
+    }
+}
+
+impl Drop for LocustDB {
+    fn drop(&mut self) {
+        self.inner_locustdb.stop();
     }
 }
