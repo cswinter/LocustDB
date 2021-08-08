@@ -58,7 +58,7 @@ impl DiskReadScheduler {
         readahead: usize,
     ) {
         let mut task_queue = self.task_queue.lock().unwrap();
-        snapshot.sort_unstable_by_key(|p| p.id());
+        snapshot.sort_unstable_by_key(|p| p.id);
         let mut current_run = DiskRun::default();
         let mut previous_partitionid = 0;
         for partition in snapshot {
@@ -71,7 +71,7 @@ impl DiskReadScheduler {
                 }
                 let columns = partition.non_residents(columns);
                 current_run = DiskRun {
-                    start: partition.id(),
+                    start: partition.id,
                     end: 0,
                     bytes: partition.promise_load(&columns),
                     columns,
@@ -79,7 +79,7 @@ impl DiskReadScheduler {
             } else {
                 current_run.bytes += partition.promise_load(&current_run.columns);
             }
-            previous_partitionid = partition.id();
+            previous_partitionid = partition.id;
         }
         current_run.end = previous_partitionid;
         task_queue.push_back(current_run);
@@ -88,19 +88,19 @@ impl DiskReadScheduler {
 
     pub fn schedule_bulk_load(&self, mut snapshot: Vec<Arc<Partition>>, chunk_size: usize) {
         let mut task_queue = self.task_queue.lock().unwrap();
-        snapshot.sort_unstable_by_key(|p| p.id());
+        snapshot.sort_unstable_by_key(|p| p.id);
         let mut runs = HashMap::<&str, DiskRun>::default();
         for partition in &snapshot {
             for col in partition.col_names() {
                 let reached_chunk_size = {
                     let mut run = runs.entry(col).or_insert(DiskRun {
-                        start: partition.id(),
-                        end: partition.id(),
+                        start: partition.id,
+                        end: partition.id,
                         bytes: 0,
                         columns: [col.to_string()].iter().cloned().collect(),
                     });
                     run.bytes += partition.promise_load(&run.columns);
-                    run.end = partition.id();
+                    run.end = partition.id;
 
                     run.bytes > chunk_size
                 };

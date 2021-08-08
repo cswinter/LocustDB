@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -6,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
 
+use crate::ingest::raw_val::RawVal;
 use crate::LocustDB;
 use crate::Value;
 
@@ -22,6 +24,12 @@ lazy_static! {
         // tera.register_filter("do_nothing", do_nothing_filter);
         tera
     };
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct DataBatch {
+    pub table: String,
+    pub rows: Vec<HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Clone)]
@@ -125,6 +133,37 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
     HttpResponse::Ok().json(response)
 }
 
+// TODO: efficient endpoint
+#[post("/insert")]
+async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
+    log::info!("Inserting! {:?}", req_body);
+    let DataBatch { table, rows } = req_body.0;
+    data.db
+        .ingest(
+            &table,
+            rows.into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|(colname, val)| {
+                            let val = match val {
+                                serde_json::Value::Null => RawVal::Null,
+                                serde_json::Value::Number(n) => match n.as_i64() {
+                                    Some(int) => RawVal::Int(int),
+                                    None => panic!("Unsupported number {}", n),
+                                },
+                                serde_json::Value::String(s) => RawVal::Str(s),
+                                _ => panic!("Unsupported value: {:?}", val),
+                            };
+                            (colname, val)
+                        })
+                        .collect()
+                })
+                .collect(),
+        )
+        .await;
+    HttpResponse::Ok().json(r#"{"status": "ok"}"#)
+}
+
 async fn manual_hello() -> impl Responder {
     HttpResponse::Ok().body("Hey there!")
 }
@@ -140,6 +179,7 @@ pub async fn run(db: LocustDB) -> std::io::Result<()> {
             .service(tables)
             .service(query)
             .service(table_handler)
+            .service(insert)
             .route("/hey", web::get().to(manual_hello))
     })
     .bind("127.0.0.1:8080")?

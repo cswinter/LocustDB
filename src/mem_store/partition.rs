@@ -11,7 +11,7 @@ use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 pub type ColumnKey = (PartitionID, String);
 
 pub struct Partition {
-    id: PartitionID,
+    pub id: PartitionID,
     len: usize,
     cols: Vec<ColumnHandle>,
     lru: Lru,
@@ -157,9 +157,6 @@ impl Partition {
         0
     }
 
-    pub fn id(&self) -> u64 {
-        self.id
-    }
     pub fn len(&self) -> usize {
         self.len
     }
