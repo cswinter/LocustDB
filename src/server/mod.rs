@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::LocustDB;
+use crate::Value;
 
 #[derive(Clone)]
 struct AppState {
@@ -54,7 +56,16 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
         .unwrap()
         .unwrap();
 
-    HttpResponse::Ok().json(result)
+    let response = json!({
+        "colnames": result.colnames,
+        "rows": result.rows.iter().map(|row| row.iter().map(|val| match val {
+            Value::Int(int) => json!(int),
+            Value::Str(str) => json!(str),
+            Value::Null => json!(null),
+        }).collect::<Vec<_>>()).collect::<Vec<_>>(),
+        "stats": result.stats,
+    });
+    HttpResponse::Ok().json(response)
 }
 
 async fn manual_hello() -> impl Responder {

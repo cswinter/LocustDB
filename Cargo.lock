@@ -1249,6 +1249,7 @@ dependencies = [
  "scoped_threadpool",
  "seahash",
  "serde",
+ "serde_json",
  "sqlparser",
  "std-semaphore",
  "structopt",
