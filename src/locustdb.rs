@@ -10,6 +10,7 @@ use crate::disk_store::noop_storage::NoopStorage;
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
+use crate::ingest::raw_val::RawVal;
 use crate::mem_store::*;
 use crate::scheduler::*;
 use crate::syntax::parser;
@@ -104,6 +105,14 @@ impl LocustDB {
         );
         let _ = self.schedule(task);
         Ok(receiver.await??)
+    }
+
+    pub async fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
+        // TODO: efficiency
+        // TODO: async
+        for row in rows {
+            self.inner_locustdb.ingest(table, row);
+        }
     }
 
     pub async fn gen_table(&self, opts: GenTable) -> Result<(), oneshot::Canceled> {

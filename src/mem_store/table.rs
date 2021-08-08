@@ -101,7 +101,7 @@ impl Table {
 
     pub fn load_partition(&self, partition: Partition) {
         let mut partitions = self.partitions.write().unwrap();
-        partitions.insert(partition.id(), Arc::new(partition));
+        partitions.insert(partition.id, Arc::new(partition));
     }
 
     fn batch_if_needed(&self, buffer: &mut Buffer) {
@@ -111,21 +111,25 @@ impl Table {
         self.batch(buffer);
     }
 
-    fn batch(&self, _buffer: &mut Buffer) {
-        // Before reenabling: need to get unique partition ID
-        /*let buffer = mem::replace(buffer, Buffer::default());
+    fn batch(&self, buffer: &mut Buffer) {
+        let buffer = std::mem::take(buffer);
         self.persist_batch(&buffer);
-        let (new_partition, keys) = Partition::from_buffer(0, buffer, self.lru.clone());
-        let mut partitions = self.partitions.write().unwrap();
-        partitions.insert(new_partition.id(), Arc::new(new_partition));
-        for key in keys { self.lru.put(key); }*/
+        let (mut new_partition, keys) = Partition::from_buffer(0, buffer, self.lru.clone());
+        {
+            let mut partitions = self.partitions.write().unwrap();
+            new_partition.id = partitions.len() as u64;
+            partitions.insert(new_partition.id, Arc::new(new_partition));
+        }
+        for key in keys {
+            self.lru.put(key);
+        }
     }
 
     /*fn load_buffer(&self, buffer: Buffer) {
         self.load_batch(buffer.into());
     }*/
 
-    // fn persist_batch(&self, _batch: &Buffer) {}
+    fn persist_batch(&self, _batch: &Buffer) {}
 
     pub fn mem_tree(&self, depth: usize) -> MemTreeTable {
         assert!(depth > 0);
