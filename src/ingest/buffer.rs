@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use crate::mem_store::raw_col::MixedCol;
-use crate::ingest::raw_val::RawVal;
 use crate::ingest::input_column::InputColumn;
+use crate::ingest::raw_val::RawVal;
+use crate::mem_store::raw_col::MixedCol;
 use std::cmp;
+use std::collections::HashMap;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Buffer {
     pub buffer: HashMap<String, MixedCol>,
     pub length: usize,
@@ -23,7 +23,9 @@ impl Buffer {
     pub fn push_row(&mut self, row: Vec<(String, RawVal)>) {
         let len = self.len();
         for (name, input_val) in row {
-            let buffered_col = self.buffer.entry(name)
+            let buffered_col = self
+                .buffer
+                .entry(name)
                 .or_insert_with(|| MixedCol::with_nulls(len));
             buffered_col.push(input_val);
         }
@@ -35,7 +37,9 @@ impl Buffer {
         let len = self.len();
         let mut new_length = 0;
         for (name, input_col) in columns {
-            let buffered_col = self.buffer.entry(name)
+            let buffered_col = self
+                .buffer
+                .entry(name)
                 .or_insert_with(|| MixedCol::with_nulls(len));
             match input_col {
                 InputColumn::Int(vec) => buffered_col.push_ints(vec),
@@ -52,7 +56,9 @@ impl Buffer {
         let len = self.len();
         let mut new_length = 0;
         for (name, input_vals) in columns {
-            let buffered_col = self.buffer.entry(name)
+            let buffered_col = self
+                .buffer
+                .entry(name)
                 .or_insert_with(|| MixedCol::with_nulls(len));
             for input_val in input_vals {
                 buffered_col.push(input_val);
@@ -78,10 +84,12 @@ impl Buffer {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        self.buffer.iter().map(|(_, v)| {
-            // Currently does not take into account the memory of String.
-            v.heap_size_of_children()
-        }).sum()
+        self.buffer
+            .iter()
+            .map(|(_, v)| {
+                // Currently does not take into account the memory of String.
+                v.heap_size_of_children()
+            })
+            .sum()
     }
 }
-
