@@ -1,14 +1,14 @@
 use std::iter::repeat;
+use std::mem;
 use std::ops::BitOr;
 use std::sync::Arc;
-use std::mem;
 
 use crate::ingest::raw_val::RawVal;
-use crate::mem_store::*;
 use crate::mem_store::column_builder::*;
+use crate::mem_store::*;
 
 // Can eliminate this? Used by in-memory buffer.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
@@ -72,7 +72,11 @@ impl MixedCol {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        let data_size = self.data.iter().map(|v| v.heap_size_of_children()).sum::<usize>()
+        let data_size = self
+            .data
+            .iter()
+            .map(|v| v.heap_size_of_children())
+            .sum::<usize>()
             + self.data.capacity() * mem::size_of::<RawVal>();
         let type_size = mem::size_of::<ColType>();
 
@@ -98,7 +102,11 @@ struct ColType {
 
 impl ColType {
     fn new(string: bool, int: bool, null: bool) -> ColType {
-        ColType { contains_string: string, contains_int: int, contains_null: null }
+        ColType {
+            contains_string: string,
+            contains_int: int,
+            contains_null: null,
+        }
     }
 
     fn string() -> ColType {
@@ -121,7 +129,7 @@ impl ColType {
         match *v {
             RawVal::Null => ColType::null(),
             RawVal::Str(_) => ColType::string(),
-            RawVal::Int(_) => ColType::int()
+            RawVal::Int(_) => ColType::int(),
         }
     }
 }
@@ -137,11 +145,14 @@ impl BitOr for ColType {
     }
 }
 
-
 impl<'a> From<&'a str> for RawVal {
-    fn from(val: &str) -> RawVal { RawVal::Str(val.to_string()) }
+    fn from(val: &str) -> RawVal {
+        RawVal::Str(val.to_string())
+    }
 }
 
 impl From<i64> for RawVal {
-    fn from(val: i64) -> RawVal { RawVal::Int(val) }
+    fn from(val: i64) -> RawVal {
+        RawVal::Int(val)
+    }
 }

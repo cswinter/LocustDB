@@ -36,7 +36,14 @@ impl Table {
 
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
-        partitions.values().cloned().collect()
+        let mut partitions: Vec<_> = partitions.values().cloned().collect();
+        let buffer = self.buffer.lock().unwrap();
+        if buffer.len() > 0 {
+            partitions.push(Arc::new(
+                Partition::from_buffer(u64::MAX, buffer.clone(), self.lru.clone()).0,
+            ));
+        }
+        partitions
     }
 
     pub fn load_table_metadata(
