@@ -4,9 +4,25 @@ use std::sync::Arc;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tera::{Context, Tera};
 
 use crate::LocustDB;
 use crate::Value;
+
+lazy_static! {
+    pub static ref TEMPLATES: Tera = {
+        let mut tera = match Tera::new("templates/**/*") {
+            Ok(t) => t,
+            Err(e) => {
+                println!("Parsing error(s): {}", e);
+                ::std::process::exit(1);
+            }
+        };
+        tera.autoescape_on(vec!["html", ".sql"]);
+        // tera.register_filter("do_nothing", do_nothing_filter);
+        tera
+    };
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -19,8 +35,49 @@ struct QueryRequest {
 }
 
 #[get("/")]
-async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
+async fn index(data: web::Data<AppState>) -> impl Responder {
+    let mut context = Context::new();
+    let mut ts: Vec<String> = data
+        .db
+        .table_stats()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|ts| ts.name)
+        .collect::<Vec<_>>();
+    ts.sort();
+    context.insert("tables", &ts);
+    let body = TEMPLATES.render("index.html", &context).unwrap();
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf8")
+        .body(body)
+}
+
+#[get("/table/{tablename}")]
+async fn table_handler(
+    web::Path(tablename): web::Path<String>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let cols = data
+        .db
+        .run_query(
+            &format!("SELECT * FROM {} LIMIT 0", tablename),
+            false,
+            vec![],
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .colnames;
+
+    let mut context = Context::new();
+    context.insert("columns", &cols.join(", "));
+    context.insert("table", &tablename);
+    let body = TEMPLATES.render("table.html", &context).unwrap();
+
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf8")
+        .body(body)
 }
 
 #[get("/tables")]
@@ -78,10 +135,11 @@ pub async fn run(db: LocustDB) -> std::io::Result<()> {
         let app_state = AppState { db: db.clone() };
         App::new()
             .data(app_state)
-            .service(hello)
+            .service(index)
             .service(echo)
             .service(tables)
             .service(query)
+            .service(table_handler)
             .route("/hey", web::get().to(manual_hello))
     })
     .bind("127.0.0.1:8080")?

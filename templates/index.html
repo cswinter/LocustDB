@@ -1,0 +1,89 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>A Basic HTML5 Template</title>
+    <meta name="description" content="A simple HTML5 Template for new projects.">
+    <meta name="author" content="SitePoint">
+
+    <meta property="og:title" content="A Basic HTML5 Template">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://www.sitepoint.com/a-basic-html5-template/">
+    <meta property="og:description" content="A simple HTML5 Template for new projects.">
+    <meta property="og:image" content="image.png">
+
+    <link rel="icon" href="/favicon.ico">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+    <link rel="stylesheet" href="css/styles.css?v=1.0">
+
+</head>
+
+<body>
+    <h1>LocustDB</h1>
+    <h2>Tables</h2>
+    <ul>
+        {% for table in tables %}
+        <li><a href="table/{{ table }}">{{ table }}</a></li>
+        {% endfor %}
+    </ul>
+
+    <h2>Run query</h2>
+    <!-- Large text input box for queries -->
+    <form id="query-form">
+        <input type="submit" value="Run query">
+    </form>
+    <textarea form="query-form" name="query" id="query" placeholder="Enter a query" rows="5" cols="50"></textarea>
+
+    <h2>Results</h2>
+    <div id="results"></div>
+
+    <script>
+        // submit query
+        document.querySelector('form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var query = document.querySelector('textarea[name=query]').value;
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', 'query', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+
+            // Display loading message
+            document.querySelector('#results').innerHTML = '<p>Loading...</p>';
+
+            xhr.onload = function () {
+                var results = JSON.parse(xhr.responseText);
+                console.log(results);
+                var div = document.querySelector('#results');
+                div.innerHTML = '';
+                // create table with results
+                var table = document.createElement('table');
+                var header_row = document.createElement('tr');
+                for (var i = 0; i < results.colnames.length; i++) {
+                    var th = document.createElement('th');
+                    th.innerHTML = '<b>' + results.colnames[i] + '</b>';
+                    header_row.appendChild(th);
+                }
+                table.appendChild(header_row);
+                for (var i = 0; i < results.rows.length; i++) {
+                    var row = results.rows[i];
+                    var tr = document.createElement('tr');
+                    for (var j = 0; j < row.length; j++) {
+                        var td = document.createElement('td');
+                        td.innerHTML = row[j];
+                        tr.appendChild(td);
+                    }
+                    table.appendChild(tr);
+                }
+                div.appendChild(table);
+            };
+            xhr.send(JSON.stringify({ 'query': query }));
+        });
+    </script>
+</body>
+
+</html>
