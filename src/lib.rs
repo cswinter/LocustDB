@@ -36,6 +36,7 @@ mod disk_store;
 mod engine;
 mod ingest;
 mod locustdb;
+pub mod logging_client;
 mod mem_store;
 mod scheduler;
 pub mod server;

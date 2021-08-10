@@ -32,10 +32,10 @@ macro_rules! fatal {
 #[macro_export]
 macro_rules! bail {
     ($kind:expr, $e:expr) => {
-        return Err($kind($e.to_owned()));
+        return Err($kind($e.to_owned()))
     };
     ($kind:expr, $fmt:expr, $($arg:tt)+) => {
-        return Err($kind(format!($fmt, $($arg)+).to_owned()));
+        return Err($kind(format!($fmt, $($arg)+).to_owned()))
     };
 }
 
@@ -43,12 +43,12 @@ macro_rules! bail {
 macro_rules! ensure {
     ($cond:expr, $e:expr) => {
         if !($cond) {
-            return Err(QueryError::FatalError($e.to_string(), failure::Backtrace::new()));
+            return Err(QueryError::FatalError($e.to_string(), failure::Backtrace::new()))
         }
     };
     ($cond:expr, $fmt:expr, $($arg:tt)+) => {
         if !($cond) {
-            return Err(QueryError::FatalError(format!($fmt, $($arg)+).to_string(), failure::Backtrace::new()));
+            return Err(QueryError::FatalError(format!($fmt, $($arg)+).to_string(), failure::Backtrace::new()))
         }
     };
 }
