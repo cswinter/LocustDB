@@ -6,6 +6,9 @@ license-file = "LICENSE"
 name = "locustdb"
 version = "0.3.5-alpha.0"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [build-dependencies]
 capnpc = {version = "0.14", optional = true}
 
@@ -51,11 +54,14 @@ tera = "1"
 reqwest = { version = "0.11", default_features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 systemstat = "0.1.8"
+pyo3 = {features = ["extension-module"], version = "0.13.2", optional = true}
 
 [features]
 default = []
 enable_lz4 = ["lz4"]
 enable_rocksdb = ["rocksdb", "capnp", "capnpc"]
+python = ["pyo3"]
+
 
 [profile.release]
 codegen-units = 1
