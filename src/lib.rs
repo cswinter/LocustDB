@@ -44,6 +44,9 @@ mod stringpack;
 mod syntax;
 pub mod unit_fmt;
 
+#[cfg(feature = "python")]
+pub mod python;
+
 pub type QueryResult = Result<QueryOutput, QueryError>;
 
 #[allow(warnings)]
