@@ -58,19 +58,10 @@ pub struct QueryOutput {
     pub stats: QueryStats,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QueryStats {
     pub runtime_ns: u64,
     pub rows_scanned: usize,
-}
-
-impl Default for QueryStats {
-    fn default() -> QueryStats {
-        QueryStats {
-            runtime_ns: 0,
-            rows_scanned: 0,
-        }
-    }
 }
 
 impl QueryTask {

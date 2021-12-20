@@ -167,7 +167,7 @@ impl Partition {
         }
         for handle in &self.cols {
             let col = handle.col.lock().unwrap();
-            let mut coltree = coltrees
+            let coltree = coltrees
                 .entry(handle.name().to_string())
                 .or_insert(MemTreeColumn {
                     name: handle.name().to_string(),
@@ -179,7 +179,7 @@ impl Partition {
                     fully_resident: false,
                 });
             if let Some(ref col) = *col {
-                col.mem_tree(&mut coltree, depth);
+                col.mem_tree(coltree, depth);
             }
         }
     }
