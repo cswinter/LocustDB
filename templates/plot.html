@@ -53,7 +53,7 @@
         function prepData(packed) {
             console.time("prep");
 
-            data = packed["series"];
+            data = [packed["cols"]["timestamp"], packed["cols"]["cpu"]];
 
             console.timeEnd("prep");
 
@@ -101,7 +101,7 @@
 
         let wait = document.getElementById("wait");
         wait.textContent = "Fetching data.json (2.07MB)....";
-        fetch("query_data").then(r => r.json()).then(packed => {
+        fetch("query_cols").then(r => r.json()).then(packed => {
             wait.textContent = "Rendering...";
             let data = prepData(packed);
             setTimeout(() => makeChart(data), 0);
