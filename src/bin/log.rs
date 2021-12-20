@@ -13,7 +13,7 @@ use tokio::time;
 )]
 struct Opt {
     /// Address of LocustDB server
-    #[structopt(long, name = "ADDR")]
+    #[structopt(long, name = "ADDR", default_value = "http://localhost:8080")]
     addr: String,
 
     /// Logging interval in milliseconds

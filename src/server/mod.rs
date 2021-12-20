@@ -61,6 +61,15 @@ async fn index(data: web::Data<AppState>) -> impl Responder {
         .body(body)
 }
 
+#[get("/plot")]
+async fn plot(_data: web::Data<AppState>) -> impl Responder {
+    let context = Context::new();
+    let body = TEMPLATES.render("plot.html", &context).unwrap();
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf8")
+        .body(body)
+}
+
 #[get("/table/{tablename}")]
 async fn table_handler(
     web::Path(tablename): web::Path<String>,
@@ -109,6 +118,18 @@ async fn tables(data: web::Data<AppState>) -> impl Responder {
 #[post("/echo")]
 async fn echo(req_body: String) -> impl Responder {
     HttpResponse::Ok().body(req_body)
+}
+
+#[get("/query_data")]
+async fn query_data(data: web::Data<AppState>) -> impl Responder {
+    let response = json!({
+        "cols": ["time", "cpu"],
+        "series": [
+            [1640025197013.0, 1640025198013.0, 1640025199013.0, 1640025200013.0, 1640025201013.0, 1640025202113.0, 1640025203113.0, 1640025204113.0, 1640025205113.0],
+            [0.3, 0.4, 0.5, 0.2, 0.1, 0.3, 0.4, 0.5, 0.2]
+        ]
+    });
+    HttpResponse::Ok().json(response)
 }
 
 #[post("/query")]
@@ -174,12 +195,15 @@ pub async fn run(db: LocustDB) -> std::io::Result<()> {
         let app_state = AppState { db: db.clone() };
         App::new()
             .data(app_state)
+            .data(web::PayloadConfig::new(100 * 1024 * 1024))
             .service(index)
             .service(echo)
             .service(tables)
             .service(query)
             .service(table_handler)
             .service(insert)
+            .service(query_data)
+            .service(plot)
             .route("/hey", web::get().to(manual_hello))
     })
     .bind("127.0.0.1:8080")?
