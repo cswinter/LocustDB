@@ -4,19 +4,10 @@ use crate::mem_store::raw_col::MixedCol;
 use std::cmp;
 use std::collections::HashMap;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Default)]
 pub struct Buffer {
     pub buffer: HashMap<String, MixedCol>,
     pub length: usize,
-}
-
-impl Default for Buffer {
-    fn default() -> Buffer {
-        Buffer {
-            buffer: HashMap::new(),
-            length: 0,
-        }
-    }
 }
 
 impl Buffer {

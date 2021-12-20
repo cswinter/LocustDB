@@ -216,7 +216,7 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
         let data = mem::take(self);
         Box::new(NullableVec {
             data,
-            present: present.iter().copied().collect(),
+            present: present.to_vec(),
         })
     }
 

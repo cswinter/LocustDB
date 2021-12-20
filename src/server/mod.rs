@@ -121,7 +121,7 @@ async fn echo(req_body: String) -> impl Responder {
 }
 
 #[get("/query_data")]
-async fn query_data(data: web::Data<AppState>) -> impl Responder {
+async fn query_data(_data: web::Data<AppState>) -> impl Responder {
     let response = json!({
         "cols": ["time", "cpu"],
         "series": [

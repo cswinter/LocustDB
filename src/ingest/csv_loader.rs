@@ -50,6 +50,7 @@ impl Options {
         }
     }
 
+    #[must_use]
     pub fn with_schema(mut self, schema: &str) -> Options {
         let schema = Schema::parse(schema).unwrap();
         self.colnames = schema.column_names;
@@ -91,36 +92,43 @@ impl Options {
         self
     }
 
+    #[must_use]
     pub fn with_partition_size(mut self, chunk_size: usize) -> Options {
         self.partition_size = chunk_size;
         self
     }
 
+    #[must_use]
     pub fn with_column_names(mut self, col_names: Vec<String>) -> Options {
         self.colnames = Some(col_names);
         self
     }
 
+    #[must_use]
     pub fn with_extractors(mut self, extractors: &[(usize, extractor::Extractor)]) -> Options {
         self.extractors = extractors.iter().cloned().collect();
         self
     }
 
+    #[must_use]
     pub fn with_ignore_cols(mut self, ignore: &[usize]) -> Options {
         self.ignore_cols = ignore.iter().cloned().collect();
         self
     }
 
+    #[must_use]
     pub fn with_always_string(mut self, always_string: &[usize]) -> Options {
         self.always_string = always_string.iter().cloned().collect();
         self
     }
 
+    #[must_use]
     pub fn allow_nulls(mut self, allow_nulls: &[usize]) -> Options {
         self.allow_nulls = allow_nulls.iter().cloned().collect();
         self
     }
 
+    #[must_use]
     pub fn allow_nulls_all_columns(mut self) -> Options {
         self.allow_nulls_all_columns = true;
         self
