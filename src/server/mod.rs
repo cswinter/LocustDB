@@ -154,6 +154,40 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
     HttpResponse::Ok().json(response)
 }
 
+#[get("/query_cols")]
+async fn query_cols(
+    data: web::Data<AppState>,
+    // req_body: web::Json<QueryRequest>,
+) -> impl Responder {
+    // log::info!("Query: {:?}", req_body);
+    let result = data
+        .db
+        .run_query("SELECT * FROM test_metrics LIMIT 100000000", false, vec![])
+        .await
+        .unwrap()
+        .unwrap();
+
+    let mut cols: HashMap<String, Vec<serde_json::Value>> = HashMap::default();
+    for col in &result.colnames {
+        cols.insert(col.to_string(), vec![]);
+    }
+    for row in result.rows {
+        for (val, colname) in row.iter().zip(result.colnames.iter()) {
+            cols.get_mut(colname).unwrap().push(match val {
+                Value::Int(int) => json!(int),
+                Value::Str(str) => json!(str),
+                Value::Null => json!(null),
+            });
+        }
+    }
+    let response = json!({
+        "colnames": result.colnames,
+        "cols": cols,
+        "stats": result.stats,
+    });
+    HttpResponse::Ok().json(response)
+}
+
 // TODO: efficient endpoint
 #[post("/insert")]
 async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
@@ -203,6 +237,7 @@ pub async fn run(db: LocustDB) -> std::io::Result<()> {
             .service(table_handler)
             .service(insert)
             .service(query_data)
+            .service(query_cols)
             .service(plot)
             .route("/hey", web::get().to(manual_hello))
     })
