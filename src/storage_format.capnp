@@ -43,13 +43,13 @@ struct CodecOp {
 
 struct DataSection {
     union {
-        u8 @0 :List(UInt8);
-        u16 @1 :List(UInt16);
-        u32 @2 :List(UInt32);
-        u64 @3 :List(UInt64);
-        i64 @4 :List(Int64);
-        f64 @4 :List(Float64);
-        null @5 :UInt64;
+        null @0 :UInt64;
+        u8 @1 :List(UInt8);
+        u16 @2 :List(UInt16);
+        u32 @3 :List(UInt32);
+        u64 @4 :List(UInt64);
+        i64 @5 :List(Int64);
+        f64 @6 :List(Float64);
     }
 }
 
