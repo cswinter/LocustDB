@@ -22,6 +22,7 @@ pub use crate::errors::QueryError;
 pub use crate::ingest::colgen;
 pub use crate::ingest::csv_loader::Options as LoadOptions;
 pub use crate::ingest::extractor;
+pub use crate::ingest::float::FloatOrd;
 pub use crate::ingest::nyc_taxi_data;
 pub use crate::ingest::raw_val::syntax as value_syntax;
 pub use crate::ingest::raw_val::RawVal as Value;

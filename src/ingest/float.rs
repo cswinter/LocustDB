@@ -50,7 +50,6 @@ macro_rules! float_ord_impl {
 float_ord_impl!(f32, u32, 32);
 float_ord_impl!(f64, u64, 64);
 
-
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -126,7 +125,7 @@ mod tests {
                     .collect::<Vec<_>>();
                 let mut v1 = v.clone();
 
-                super::sort(&mut v);
+                sort(&mut v);
                 assert!(v.windows(2).all(|w: &[f64]| w[0] <= w[1]));
 
                 v1.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -138,7 +137,7 @@ mod tests {
         }
 
         let mut v = [5.0];
-        super::sort(&mut v);
+        sort(&mut v);
         assert!(v == [5.0]);
     }
 
@@ -146,7 +145,7 @@ mod tests {
     fn test_sort_nan() {
         let nan = ::core::f64::NAN;
         let mut v = [-1.0, 5.0, 0.0, -0.0, nan, 1.5, nan, 3.7];
-        super::sort(&mut v);
+        sort(&mut v);
         assert!(v[0] == -1.0);
         assert!(v[1] == 0.0 && v[1].is_sign_negative());
         assert!(v[2] == 0.0 && !v[2].is_sign_negative());
@@ -155,5 +154,24 @@ mod tests {
         assert!(v[5] == 5.0);
         assert!(v[6].is_nan());
         assert!(v[7].is_nan());
+    }
+
+    /// Sort a slice of floats.
+    ///
+    /// # Allocation behavior
+    ///
+    /// This routine uses a quicksort implementation that does not heap allocate.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let mut v = [-5.0, 4.0, 1.0, -3.0, 2.0];
+    ///
+    /// float_ord::sort(&mut v);
+    /// assert!(v == [-5.0, -3.0, 1.0, 2.0, 4.0]);
+    /// ```
+    pub fn sort<T>(v: &mut [T]) where FloatOrd<T>: Ord {
+        let v_: &mut [FloatOrd<T>] = unsafe { std::mem::transmute(v) };
+        v_.sort_unstable();
     }
 }

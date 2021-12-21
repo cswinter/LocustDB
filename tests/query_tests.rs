@@ -422,6 +422,30 @@ fn test_not_equals_2() {
 }
 
 #[test]
+fn test_order_by_float() {
+    test_query_ec(
+        "SELECT string_packed, float FROM default ORDER BY float DESC LIMIT 5;",
+        &[
+            vec![Str("azy"), Float(FloatOrd(1.234e29))],
+            vec![Str("😈"), Float(FloatOrd(1234124.51325))],
+            vec![Str("AXY"), Float(FloatOrd(3.14159))],
+            vec![Str("_f"), Float(FloatOrd(1.0))],
+            vec![Str("xyz"), Float(FloatOrd(0.123412))],
+        ],
+    );
+    test_query_ec(
+        "SELECT string_packed, float FROM default ORDER BY float ASC LIMIT 5;",
+        &[
+            vec![Str("axz"), Float(FloatOrd(-124.0))],
+            vec![Str("t"), Float(FloatOrd(-1.0))],
+            vec![Str("asd"), Float(FloatOrd(0.0))],
+            vec![Str("$sss"), Float(FloatOrd(0.00001))],
+            vec![Str("abc"), Float(FloatOrd(0.0003))],
+        ],
+    );
+}
+
+#[test]
 fn test_order_by_aggregate() {
     test_query_nyc(
         "SELECT passenger_count, count(0) FROM default ORDER BY count(0) DESC LIMIT 10;",
