@@ -1,4 +1,5 @@
 use crate::engine::data_types::*;
+use crate::ingest::float::FloatOrd;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::value::Val;
 use crate::QueryError;
@@ -43,6 +44,7 @@ impl BufferRef<Any> {
     pub fn merge_op(self) -> BufferRef<MergeOp> { self.transmute() }
     pub fn premerge(self) -> BufferRef<Premerge> { self.transmute() }
     pub fn raw_val(self) -> BufferRef<RawVal> { self.transmute() }
+    pub fn f64(self) -> BufferRef<FloatOrd<f64>> { self.transmute() }
     pub fn i64(self) -> BufferRef<i64> { self.transmute() }
     pub fn u64(self) -> BufferRef<u64> { self.transmute() }
     pub fn u32(self) -> BufferRef<u32> { self.transmute() }
@@ -107,6 +109,12 @@ impl From<BufferRef<Nullable<i64>>> for TypedBufferRef {
 impl<'a> From<BufferRef<&'a str>> for TypedBufferRef {
     fn from(buffer: BufferRef<&'a str>) -> TypedBufferRef {
         TypedBufferRef::new(buffer.any(), EncodingType::Str)
+    }
+}
+
+impl From<BufferRef<FloatOrd<f64>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<FloatOrd<f64>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::F64)
     }
 }
 

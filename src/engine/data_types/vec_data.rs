@@ -169,6 +169,12 @@ impl FromBytes<i64> for i64 {
     }
 }
 
+impl FromBytes<FloatOrd<f64>> for FloatOrd<f64> {
+    fn from_bytes(bytes: &[u8]) -> FloatOrd<f64> {
+        FloatOrd(Cursor::new(bytes).read_f64::<NativeEndian>().unwrap())
+    }
+}
+
 pub trait CastUsize {
     fn cast_usize(&self) -> usize;
 }

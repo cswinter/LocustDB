@@ -50,24 +50,6 @@ macro_rules! float_ord_impl {
 float_ord_impl!(f32, u32, 32);
 float_ord_impl!(f64, u64, 64);
 
-/// Sort a slice of floats.
-///
-/// # Allocation behavior
-///
-/// This routine uses a quicksort implementation that does not heap allocate.
-///
-/// # Example
-///
-/// ```
-/// let mut v = [-5.0, 4.0, 1.0, -3.0, 2.0];
-///
-/// float_ord::sort(&mut v);
-/// assert!(v == [-5.0, -3.0, 1.0, 2.0, 4.0]);
-/// ```
-pub fn sort<T>(v: &mut [T]) where FloatOrd<T>: Ord {
-    let v_: &mut [FloatOrd<T>] = unsafe { transmute(v) };
-    v_.sort_unstable();
-}
 
 #[cfg(test)]
 mod tests {

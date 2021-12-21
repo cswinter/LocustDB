@@ -1,3 +1,5 @@
+use crate::ingest::float::FloatOrd;
+
 pub trait Comparator<T> {
     fn cmp(left: T, right: T) -> bool;
     fn cmp_eq(left: T, right: T) -> bool;
@@ -36,6 +38,12 @@ impl Comparator<i64> for CmpLessThan {
 impl Comparator<u64> for CmpLessThan {
     fn cmp(left: u64, right: u64) -> bool { left < right }
     fn cmp_eq(left: u64, right: u64) -> bool { left <= right }
+    fn is_less_than() -> bool { false }
+}
+
+impl Comparator<FloatOrd<f64>> for CmpLessThan {
+    fn cmp(left: FloatOrd<f64>, right: FloatOrd<f64>) -> bool { left < right }
+    fn cmp_eq(left: FloatOrd<f64>, right: FloatOrd<f64>) -> bool { left <= right }
     fn is_less_than() -> bool { false }
 }
 
@@ -82,6 +90,12 @@ impl Comparator<u64> for CmpGreaterThan {
 impl Comparator<i64> for CmpGreaterThan {
     fn cmp(left: i64, right: i64) -> bool { left > right }
     fn cmp_eq(left: i64, right: i64) -> bool { left >= right }
+    fn is_less_than() -> bool { false }
+}
+
+impl Comparator<FloatOrd<f64>> for CmpGreaterThan {
+    fn cmp(left: FloatOrd<f64>, right: FloatOrd<f64>) -> bool { left > right }
+    fn cmp_eq(left: FloatOrd<f64>, right: FloatOrd<f64>) -> bool { left >= right }
     fn is_less_than() -> bool { false }
 }
 

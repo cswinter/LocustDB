@@ -1,4 +1,5 @@
 use crate::engine::*;
+use crate::ingest::float::FloatOrd;
 use crate::mem_store::Val;
 
 
@@ -97,6 +98,8 @@ impl<'a> Cast<Val<'a>> for u32 { fn cast(self) -> Val<'a> { Val::Integer(self as
 
 impl<'a> Cast<Val<'a>> for i64 { fn cast(self) -> Val<'a> { Val::Integer(self) } }
 
+impl<'a> Cast<Val<'a>> for FloatOrd<f64> { fn cast(self) -> Val<'a> { Val::Float(self) } }
+
 impl<'a> Cast<Val<'a>> for &'a str { fn cast(self) -> Val<'a> { Val::Str(self) } }
 
 impl<'a> Cast<u8> for Val<'a> {
@@ -131,6 +134,15 @@ impl<'a> Cast<i64> for Val<'a> {
         match self {
             Val::Integer(i) => i as i64,
             _ => panic!("Cast::<i64>{:?}", self)
+        }
+    }
+}
+
+impl<'a> Cast<FloatOrd<f64>> for Val<'a> {
+    fn cast(self) -> FloatOrd<f64> {
+        match self {
+            Val::Float(f) => f,
+            _ => panic!("Cast::<FloatOrd<f64>>{:?}", self)
         }
     }
 }

@@ -241,6 +241,9 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
     default fn cast_ref_i64(&self) -> &[i64] {
         panic!("{}", self.type_error("cast_ref_i64"))
     }
+    default fn cast_ref_f64(&self) -> &[FloatOrd<f64>] {
+        panic!("{}", self.type_error("cast_ref_f64"))
+    }
     default fn cast_ref_u32(&self) -> &[u32] {
         panic!("{}", self.type_error("cast_ref_u32"))
     }
@@ -276,6 +279,9 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
     }
     default fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> {
         panic!("{}", self.type_error("cast_ref_mut_i64"))
+    }
+    default fn cast_ref_mut_f64(&mut self) -> &mut Vec<FloatOrd<f64>> {
+        panic!("{}", self.type_error("cast_ref_mut_f64"))
     }
     default fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> {
         panic!("{}", self.type_error("cast_ref_mut_u32"))
@@ -368,6 +374,18 @@ impl<'a> Data<'a> for Vec<i64> {
     }
     fn to_mixed(&self) -> Vec<Val<'a>> {
         self.iter().map(|i| Val::Integer(*i)).collect()
+    }
+}
+
+impl<'a> Data<'a> for Vec<FloatOrd<f64>> {
+    fn cast_ref_f64(&self) -> &[FloatOrd<f64>] {
+        self
+    }
+    fn cast_ref_mut_f64(&mut self) -> &mut Vec<FloatOrd<f64>> {
+        self
+    }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter().map(|f| Val::Float(*f)).collect()
     }
 }
 
@@ -468,6 +486,9 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for &'a [T] {
     default fn cast_ref_i64(&self) -> &[i64] {
         panic!("{}", self.type_error("cast_ref_i64"))
     }
+    default fn cast_ref_f64(&self) -> &[FloatOrd<f64>] {
+        panic!("{}", self.type_error("cast_ref_f64"))
+    }
     default fn cast_ref_u64(&self) -> &[u64] {
         panic!("{}", self.type_error("cast_ref_u64"))
     }
@@ -502,6 +523,12 @@ impl<'a> Data<'a> for &'a [Val<'a>] {
 
 impl<'a> Data<'a> for &'a [usize] {
     fn cast_ref_usize(&self) -> &[usize] {
+        self
+    }
+}
+
+impl<'a> Data<'a> for &'a [FloatOrd<f64>] {
+    fn cast_ref_f64(&self) -> &[FloatOrd<f64>] {
         self
     }
 }
