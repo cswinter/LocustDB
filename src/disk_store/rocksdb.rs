@@ -396,7 +396,7 @@ fn serialize_column(col: &Column) -> Vec<u8> {
                     }
                     DataSection::F64(x) => {
                         let mut builder = ds.init_f64(x.len() as u32);
-                        populate_primitive_list(&mut builder, &unsafe {
+                        populate_primitive_list(&mut builder, unsafe {
                             std::mem::transmute::<&Vec<FloatOrd<f64>>, &Vec<f64>>(x)
                         });
                     }
