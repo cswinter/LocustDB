@@ -446,6 +446,14 @@ fn test_order_by_float() {
 }
 
 #[test]
+fn test_sum_float() {
+    test_query(
+        "select sum(float) from default;",
+        &[vec![Float(FloatOrd(1.0))]],
+    )
+}
+
+#[test]
 fn test_order_by_aggregate() {
     test_query_nyc(
         "SELECT passenger_count, count(0) FROM default ORDER BY count(0) DESC LIMIT 10;",

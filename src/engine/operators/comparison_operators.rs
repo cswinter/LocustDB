@@ -1,8 +1,8 @@
 use super::binary_operator::*;
 
-use num::PrimInt;
+use num::Num;
 
-use crate::engine::data_types::GenericIntVec;
+use crate::engine::data_types::GenericNumVec;
 
 
 pub struct LessThan;
@@ -15,7 +15,7 @@ pub struct Equals;
 
 
 impl<T, U, V> BinaryOp<T, U, u8> for LessThan
-    where T: Widen<U, Join=V>, V: PrimInt, T: GenericIntVec<T> {
+    where T: Widen<U, Join=V>, V: Num, T: GenericNumVec<T> {
     fn perform(t: T, u: U) -> u8 {
         let (t, u) = t.widen(u);
         (t < u) as u8
@@ -31,7 +31,7 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for LessThan {
 
 
 impl<T, U, V> BinaryOp<T, U, u8> for LessThanEquals
-    where T: Widen<U, Join=V>, V: PrimInt, T: GenericIntVec<T> {
+    where T: Widen<U, Join=V>, V: Num, T: GenericNumVec<T> {
     fn perform(t: T, u: U) -> u8 {
         let (t, u) = t.widen(u);
         (t <= u) as u8
@@ -46,7 +46,7 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for LessThanEquals {
 }
 
 impl<T, U, V> BinaryOp<T, U, u8> for Equals
-    where T: Widen<U, Join=V>, V: PrimInt, T: GenericIntVec<T> {
+    where T: Widen<U, Join=V>, V: Num, T: GenericNumVec<T> {
     fn perform(t: T, u: U) -> u8 {
         let (t, u) = t.widen(u);
         (t == u) as u8
@@ -62,7 +62,7 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for Equals {
 
 
 impl<T, U, V> BinaryOp<T, U, u8> for NotEquals
-    where T: Widen<U, Join=V>, V: PrimInt, T: GenericIntVec<T> {
+    where T: Widen<U, Join=V>, V: Num, T: GenericNumVec<T> {
     fn perform(t: T, u: U) -> u8 {
         let (t, u) = t.widen(u);
         (t != u) as u8
@@ -78,11 +78,11 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for NotEquals {
 
 
 pub trait Widen<T> {
-    type Join: PrimInt;
+    type Join: Num;
     fn widen(self, u: T) -> (Self::Join, Self::Join);
 }
 
-impl<T: PrimInt> Widen<T> for T {
+impl<T: Num> Widen<T> for T {
     type Join = T;
     fn widen(self, u: T) -> (T, T) { (self, u) }
 }

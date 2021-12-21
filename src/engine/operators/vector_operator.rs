@@ -607,6 +607,8 @@ pub mod operator {
             lhs: ScalarI64, rhs: IntegerNoU64;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            lhs: Float, rhs: Float;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThan> }))
         }
     }
@@ -625,11 +627,11 @@ pub mod operator {
             lhs: Str, rhs: Str;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
 
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }))
         }
     }
@@ -648,11 +650,11 @@ pub mod operator {
             lhs: Str, rhs: Str;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Equals> }));
 
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Equals> }));
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Equals> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Equals> }))
         }
     }
@@ -671,11 +673,11 @@ pub mod operator {
             lhs: Str, rhs: Str;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }));
 
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }));
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<NotEquals> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }))
         }
     }
@@ -689,9 +691,9 @@ pub mod operator {
             "addition";
             lhs: ScalarI64, rhs: IntegerNoU64;
             Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Addition<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }))
         }
     }
@@ -703,11 +705,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "check_addition";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Addition<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Addition<_, _>> }))
         }
     }
@@ -736,11 +738,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "subtraction";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }))
         }
     }
@@ -752,11 +754,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "checked_subtraction";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinarySVOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Subtraction<_, _>> }))
         }
     }
@@ -785,11 +787,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "multiplication";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Multiplication<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }))
         }
     }
@@ -801,11 +803,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "checked_multiplication";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Multiplication<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }))
         }
     }
@@ -834,11 +836,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "division";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }))
         }
     }
@@ -850,11 +852,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "checked_division";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinarySVOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Division<_, _>> }))
         }
     }
@@ -867,11 +869,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "nullable_checked_division";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(NullableCheckedBinarySVOperator { lhs, rhs, output, present, op: PhantomData::<Division<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Division<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Division<_, _>> }))
         }
     }
@@ -883,11 +885,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "modulo";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: NumberNoU64, rhs: NumberNoU64;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }))
         }
     }
@@ -899,11 +901,11 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "checked_modulo";
-            lhs: ScalarI64, rhs: IntegerNoU64;
+            lhs: ScalarI64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinarySVOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
-            lhs: IntegerNoU64, rhs: ScalarI64;
+            lhs: NumberNoU64, rhs: ScalarI64;
             Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }));
-            lhs: IntegerNoU64, rhs: IntegerNoU64;
+            lhs: IntegerNoU64, rhs: NumberNoU64;
             Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Modulo<_, _>> }))
         }
     }
@@ -1158,7 +1160,7 @@ pub mod operator {
         } else {
             reify_types! {
                 "aggregation";
-                input: IntegerNoU64, grouping: Integer, aggregator: Aggregator;
+                input: NumberNoU64, grouping: Integer, aggregator: Aggregator;
                 Ok(Box::new(Aggregate { input, grouping, output: output.into(), max_index, a: aggregator }))
             }
         }
@@ -1181,7 +1183,7 @@ pub mod operator {
         } else {
             reify_types! {
                 "checked_aggregation";
-                input: IntegerNoU64, grouping: Integer;
+                input: NumberNoU64, grouping: Integer;
                 Ok(Box::new(CheckedAggregate { input, grouping, output: output.into(), max_index, a: PhantomData::<Sum> }))
             }
         }

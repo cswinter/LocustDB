@@ -6,7 +6,7 @@ use std::i64;
 use std::mem;
 use std::io::Cursor;
 
-use num::{PrimInt};
+use num::{PrimInt, Num};
 use byteorder::{NativeEndian, ReadBytesExt};
 use crate::ingest::float::FloatOrd;
 use crate::ingest::raw_val::RawVal;
@@ -131,8 +131,10 @@ impl<'c> VecData<Val<'c>> for Val<'c> {
 }
 
 pub trait GenericIntVec<T>: VecData<T> + CastUsize + FromBytes<T> + PrimInt + Hash + 'static {}
+pub trait GenericNumVec<T>: VecData<T> + FromBytes<T> + Num + Hash + 'static {}
 
 impl<T> GenericIntVec<T> for T where T: VecData<T> + CastUsize + FromBytes<T> + PrimInt + Copy + Hash + 'static {}
+impl<T> GenericNumVec<T> for T where T: VecData<T> + FromBytes<T> + Num + Hash + 'static {}
 
 
 pub trait FromBytes<T> {
