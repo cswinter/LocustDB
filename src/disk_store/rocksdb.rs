@@ -342,6 +342,10 @@ fn serialize_column(col: &Column) -> Vec<u8> {
                         let mut builder = ds.init_i64(x.len() as u32);
                         populate_primitive_list(&mut builder, x);
                     }
+                    DataSection::F64(x) => {
+                        let mut builder = ds.init_f64(x.len() as u32);
+                        populate_primitive_list(&mut builder, x);
+                    }
                     DataSection::Null(count) => ds.set_null(*count as u64),
                 }
             }
@@ -359,6 +363,7 @@ fn encoding_type_to_capnp(t: Type) -> EncodingType {
         Type::U32 => EncodingType::U32,
         Type::U64 => EncodingType::U64,
         Type::I64 => EncodingType::I64,
+        Type::F64 => EncodingType::F64,
         Type::Null => EncodingType::Null,
         _ => panic!("Trying to encode unsupported type {:?}", t)
     }

@@ -146,6 +146,7 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
         "colnames": result.colnames,
         "rows": result.rows.iter().map(|row| row.iter().map(|val| match val {
             Value::Int(int) => json!(int),
+            Value::Float(float) => json!(float.0),
             Value::Str(str) => json!(str),
             Value::Null => json!(null),
         }).collect::<Vec<_>>()).collect::<Vec<_>>(),
@@ -175,6 +176,7 @@ async fn query_cols(
         for (val, colname) in row.iter().zip(result.colnames.iter()) {
             cols.get_mut(colname).unwrap().push(match val {
                 Value::Int(int) => json!(int),
+                Value::Float(float) => json!(float.0),
                 Value::Str(str) => json!(str),
                 Value::Null => json!(null),
             });

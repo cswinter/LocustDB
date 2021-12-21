@@ -52,6 +52,7 @@ impl MixedCol {
                 match v {
                     RawVal::Str(s) => builder.push(&s),
                     RawVal::Int(i) => builder.push(&i.to_string()),
+                    RawVal::Float(f) => builder.push(&f.0.to_string()),
                     RawVal::Null => builder.push(&""),
                 }
             }
@@ -62,6 +63,7 @@ impl MixedCol {
                 match v {
                     RawVal::Str(_) => panic!("Unexpected string in int column!"),
                     RawVal::Int(i) => builder.push(&Some(i)),
+                    RawVal::Float(_) => panic!("Unexpected float in int column!"),
                     RawVal::Null => builder.push(&None),
                 }
             }
@@ -97,32 +99,38 @@ impl Default for MixedCol {
 struct ColType {
     contains_string: bool,
     contains_int: bool,
+    contains_float: bool,
     contains_null: bool,
 }
 
 impl ColType {
-    fn new(string: bool, int: bool, null: bool) -> ColType {
+    fn new(string: bool, int: bool, float: bool, null: bool) -> ColType {
         ColType {
             contains_string: string,
             contains_int: int,
+            contains_float: float,
             contains_null: null,
         }
     }
 
     fn string() -> ColType {
-        ColType::new(true, false, false)
+        ColType::new(true, false, false, false)
     }
 
     fn int() -> ColType {
-        ColType::new(false, true, false)
+        ColType::new(false, true, false, false)
+    }
+
+    fn float() -> ColType {
+        ColType::new(false, false, true, false)
     }
 
     fn null() -> ColType {
-        ColType::new(false, false, true)
+        ColType::new(false, false, false, true)
     }
 
     fn nothing() -> ColType {
-        ColType::new(false, false, false)
+        ColType::new(false, false, false, false)
     }
 
     fn determine(v: &RawVal) -> ColType {
@@ -130,6 +138,7 @@ impl ColType {
             RawVal::Null => ColType::null(),
             RawVal::Str(_) => ColType::string(),
             RawVal::Int(_) => ColType::int(),
+            RawVal::Float(_) => ColType::float(),
         }
     }
 }
@@ -140,6 +149,7 @@ impl BitOr for ColType {
         ColType {
             contains_string: self.contains_string | rhs.contains_string,
             contains_int: self.contains_int | rhs.contains_int,
+            contains_float: self.contains_float | rhs.contains_float,
             contains_null: self.contains_null | rhs.contains_null,
         }
     }

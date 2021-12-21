@@ -6,8 +6,8 @@ impl RawVal {
         match *self {
             RawVal::Null => Val::Null,
             RawVal::Int(i) => Val::Integer(i),
+            RawVal::Float(f) => Val::Float(f),
             RawVal::Str(ref string) => Val::Str(string),
         }
     }
 }
-

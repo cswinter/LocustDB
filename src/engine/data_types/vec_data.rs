@@ -6,8 +6,9 @@ use std::i64;
 use std::mem;
 use std::io::Cursor;
 
-use num::PrimInt;
+use num::{PrimInt};
 use byteorder::{NativeEndian, ReadBytesExt};
+use crate::ingest::float::FloatOrd;
 use crate::ingest::raw_val::RawVal;
 use itertools::Itertools;
 
@@ -53,6 +54,13 @@ impl VecData<u64> for u64 {
     fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<u64> where u64: 'a { vec.cast_ref_mut_u64() }
     fn wrap_one(value: u64) -> RawVal { RawVal::Int(value as i64) }
     fn t() -> EncodingType { EncodingType::U64 }
+}
+
+impl VecData<FloatOrd<f64>> for FloatOrd<f64> {
+    fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [FloatOrd<f64>] where FloatOrd<f64>: 'a { vec.cast_ref_f64() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<FloatOrd<f64>> where FloatOrd<f64>: 'a { vec.cast_ref_mut_f64() }
+    fn wrap_one(value: FloatOrd<f64>) -> RawVal { RawVal::Float(value) }
+    fn t() -> EncodingType { EncodingType::F64 }
 }
 
 impl VecData<usize> for usize {

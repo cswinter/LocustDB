@@ -9,6 +9,7 @@ pub enum EncodingType {
     U16,
     U32,
     U64,
+    F64,
 
     NullableStr,
     NullableI64,
@@ -37,6 +38,7 @@ impl EncodingType {
         match self {
             EncodingType::Str => BasicType::String,
             EncodingType::I64 => BasicType::Integer,
+            EncodingType::F64 => BasicType::Float,
             EncodingType::NullableStr => BasicType::NullableString,
             EncodingType::NullableI64 => BasicType::NullableInteger,
             EncodingType::Val => BasicType::Val,
@@ -120,6 +122,7 @@ impl EncodingType {
 pub enum BasicType {
     String,
     Integer,
+    Float,
     NullableString,
     NullableInteger,
 
@@ -133,6 +136,7 @@ impl BasicType {
         match self {
             BasicType::String => EncodingType::Str,
             BasicType::Integer => EncodingType::I64,
+            BasicType::Float => EncodingType::F64,
             BasicType::NullableString => EncodingType::NullableStr,
             BasicType::NullableInteger => EncodingType::NullableI64,
             BasicType::Val => EncodingType::Val,

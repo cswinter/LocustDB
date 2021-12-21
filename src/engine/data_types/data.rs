@@ -5,6 +5,7 @@ use std::mem;
 use std::string;
 
 use crate::engine::data_types::*;
+use crate::ingest::float::FloatOrd;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::codec::Codec;
 use crate::mem_store::column::DataSource;
@@ -49,6 +50,9 @@ pub trait Data<'a>: Send + Sync {
 
     fn cast_ref_u64(&self) -> &[u64] {
         panic!("{}", self.type_error("cast_ref_u64"))
+    }
+    fn cast_ref_f64(&self) -> &[FloatOrd<f64>] {
+        panic!("{}", self.type_error("cast_ref_f64"))
     }
     fn cast_ref_usize(&self) -> &[usize] {
         panic!("{}", self.type_error("cast_ref_usize"))
@@ -96,6 +100,9 @@ pub trait Data<'a>: Send + Sync {
     }
     fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> {
         panic!("{}", self.type_error("cast_ref_mut_u8"))
+    }
+    fn cast_ref_mut_f64(&mut self) -> &mut Vec<FloatOrd<f64>> {
+        panic!("{}", self.type_error("cast_ref_mut_f64"))
     }
 
     fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> {

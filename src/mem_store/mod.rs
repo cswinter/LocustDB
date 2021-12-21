@@ -1,6 +1,7 @@
 pub mod codec;
 pub mod column;
 pub mod column_builder;
+pub mod floats;
 pub mod integers;
 pub(crate) mod lru;
 #[cfg(feature = "enable_lz4")]

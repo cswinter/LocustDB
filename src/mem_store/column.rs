@@ -3,6 +3,7 @@ use std::mem;
 use std::sync::Arc;
 
 use crate::engine::data_types::*;
+use crate::ingest::float::FloatOrd;
 use crate::mem_store::lz4;
 use crate::mem_store::*;
 
@@ -199,6 +200,7 @@ pub enum DataSection {
     U32(Vec<u32>),
     U64(Vec<u64>),
     I64(Vec<i64>),
+    F64(Vec<FloatOrd<f64>>),
     Null(usize),
 }
 
@@ -210,6 +212,7 @@ impl DataSection {
             DataSection::U32(ref x) => x,
             DataSection::U64(ref x) => x,
             DataSection::I64(ref x) => x,
+            DataSection::F64(ref x) => x,
             DataSection::Null(ref x) => x,
         }
     }
@@ -221,6 +224,7 @@ impl DataSection {
             DataSection::U32(ref x) => x.len(),
             DataSection::U64(ref x) => x.len(),
             DataSection::I64(ref x) => x.len(),
+            DataSection::F64(ref x) => x.len(),
             DataSection::Null(ref x) => *x,
         }
     }
@@ -232,6 +236,7 @@ impl DataSection {
             DataSection::U32(ref x) => x.capacity(),
             DataSection::U64(ref x) => x.capacity(),
             DataSection::I64(ref x) => x.capacity(),
+            DataSection::F64(ref x) => x.capacity(),
             DataSection::Null(ref x) => *x,
         }
     }
@@ -243,6 +248,7 @@ impl DataSection {
             DataSection::U32(_) => EncodingType::U32,
             DataSection::U64(_) => EncodingType::U64,
             DataSection::I64(_) => EncodingType::I64,
+            DataSection::F64(_) => EncodingType::F64,
             DataSection::Null(_) => EncodingType::Null,
         }
     }
@@ -295,6 +301,15 @@ impl DataSection {
                     len * 100 < x.len() * 8 * min_reduction,
                 )
             }
+            DataSection::F64(ref x) => {
+                let mut encoded = lz4::encode(x);
+                encoded.shrink_to_fit();
+                let len = encoded.len();
+                (
+                    DataSection::U8(encoded),
+                    len * 100 < x.len() * 8 * min_reduction,
+                )
+            }
             DataSection::Null(ref x) => (DataSection::Null(*x), false),
         }
     }
@@ -328,6 +343,11 @@ impl DataSection {
                     lz4::decode::<i64>(&mut lz4::decoder(encoded), &mut decoded);
                     DataSection::I64(decoded)
                 }
+                EncodingType::F64 => {
+                    let mut decoded = vec![FloatOrd(0.0); len];
+                    lz4::decode::<FloatOrd<f64>>(&mut lz4::decoder(encoded), &mut decoded);
+                    DataSection::F64(decoded)
+                }
                 t => panic!("Unexpected type {:?} for lz4 decode", t),
             },
             _ => panic!("Trying to lz4 encode non u8 data section"),
@@ -342,6 +362,7 @@ impl DataSection {
                 DataSection::U32(ref mut x) => x.shrink_to_fit(),
                 DataSection::U64(ref mut x) => x.shrink_to_fit(),
                 DataSection::I64(ref mut x) => x.shrink_to_fit(),
+                DataSection::F64(ref mut x) => x.shrink_to_fit(),
                 DataSection::Null(_) => {}
             }
         }
@@ -354,6 +375,7 @@ impl DataSection {
             DataSection::U32(ref x) => x.capacity() * mem::size_of::<u32>(),
             DataSection::U64(ref x) => x.capacity() * mem::size_of::<u64>(),
             DataSection::I64(ref x) => x.capacity() * mem::size_of::<i64>(),
+            DataSection::F64(ref x) => x.capacity() * mem::size_of::<f64>(),
             DataSection::Null(_) => 0,
         }
     }
@@ -391,5 +413,12 @@ impl From<Vec<i64>> for DataSection {
     fn from(vec: Vec<i64>) -> Self {
         assert_eq!(vec.len(), vec.capacity());
         DataSection::I64(vec)
+    }
+}
+
+impl From<Vec<f64>> for DataSection {
+    fn from(vec: Vec<f64>) -> Self {
+        assert_eq!(vec.len(), vec.capacity());
+        DataSection::F64(unsafe { std::mem::transmute::<Vec<f64>, Vec::<FloatOrd<f64>>>(vec)})
     }
 }

@@ -1,6 +1,7 @@
-use std::fmt;
-use std::convert::From;
+use crate::ingest::float::FloatOrd;
 use crate::ingest::raw_val::RawVal;
+use std::convert::From;
+use std::fmt;
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Clone, Copy, Hash)]
 pub enum Val<'a> {
@@ -8,8 +9,8 @@ pub enum Val<'a> {
     Bool(bool),
     Integer(i64),
     Str(&'a str),
+    Float(FloatOrd<f64>),
 }
-
 
 impl<'a> fmt::Display for Val<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -18,6 +19,7 @@ impl<'a> fmt::Display for Val<'a> {
             Val::Bool(b) => write!(f, "{}", b),
             Val::Integer(i) => write!(f, "{}", i),
             Val::Str(s) => write!(f, "\"{}\"", s),
+            Val::Float(FloatOrd(x)) => write!(f, "{}", x),
         }
     }
 }
@@ -47,7 +49,8 @@ impl<'a> From<&'a str> for Val<'a> {
 }
 
 impl<'a, T> From<Option<T>> for Val<'a>
-    where Val<'a>: From<T>
+where
+    Val<'a>: From<T>,
 {
     fn from(o: Option<T>) -> Val<'a> {
         match o {
@@ -63,6 +66,7 @@ impl<'a, 'b> From<&'a Val<'b>> for RawVal {
             Val::Integer(b) => RawVal::Int(b),
             Val::Str(s) => RawVal::Str(s.to_string()),
             Val::Null | Val::Bool(_) => RawVal::Null,
+            Val::Float(f) => RawVal::Float(f),
         }
     }
 }

@@ -48,6 +48,7 @@ struct DataSection {
         u32 @2 :List(UInt32);
         u64 @3 :List(UInt64);
         i64 @4 :List(Int64);
+        f64 @4 :List(Float64);
         null @5 :UInt64;
     }
 }
@@ -68,10 +69,11 @@ struct UnhexpackStrings {
 }
 
 enum EncodingType {
-    u8 @0;
-    u16 @1;
-    u32 @2;
-    u64 @3;
-    i64 @4;
-    null @5;
+    null @0;
+    u8 @1;
+    u16 @2;
+    u32 @3;
+    u64 @4;
+    i64 @5;
+    f64 @6;
 }
