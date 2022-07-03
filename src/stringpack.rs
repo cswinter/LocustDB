@@ -57,7 +57,7 @@ impl PackedStrings {
         let mut len = b.len();
         while len > 254 {
             self.data.push(255);
-            len -= 254;
+            len -= 255;
         }
         self.data.push(len as u8);
         self.data.extend_from_slice(b);
