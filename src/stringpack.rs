@@ -10,7 +10,8 @@ impl IndexedPackedStrings {
     pub fn push(&mut self, elem: &str) {
         let bytes = elem.as_bytes();
         // TODO(34): overflow
-        self.data.push(((self.backing_store.len() << 24) + bytes.len()) as u64);
+        self.data
+            .push(((self.backing_store.len() << 24) + bytes.len()) as u64);
         self.backing_store.extend_from_slice(bytes);
     }
 
@@ -19,7 +20,7 @@ impl IndexedPackedStrings {
         self.backing_store.clear();
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=&str> + Clone {
+    pub fn iter(&self) -> impl Iterator<Item = &str> + Clone {
         self.data.iter().map(move |&offset_len| unsafe {
             let offset = (offset_len >> 24) as usize;
             let len = (offset_len & 0x00ff_ffff) as usize;
@@ -42,7 +43,7 @@ pub struct PackedStrings {
 
 // PERF: encode using variable size length
 impl PackedStrings {
-    pub fn from_iterator<'a>(strings: impl Iterator<Item=&'a str>) -> PackedStrings {
+    pub fn from_iterator<'a>(strings: impl Iterator<Item = &'a str>) -> PackedStrings {
         let mut sp = PackedStrings { data: Vec::new() };
         for string in strings {
             sp.push(string);
@@ -52,10 +53,14 @@ impl PackedStrings {
     }
 
     pub fn push(&mut self, string: &str) {
-        for &byte in string.as_bytes().iter() {
-            self.data.push(byte);
+        let b = string.as_bytes();
+        let mut len = b.len();
+        while len > 254 {
+            self.data.push(255);
+            len -= 255;
         }
-        self.data.push(0);
+        self.data.push(len as u8);
+        self.data.extend_from_slice(b);
     }
 
     pub fn shrink_to_fit(&mut self) {
@@ -75,7 +80,10 @@ pub struct StringPackerIterator<'a> {
 impl<'a> StringPackerIterator<'a> {
     /// `data` must be valid encoding for StringPacker
     pub unsafe fn from_slice(data: &'a [u8]) -> StringPackerIterator<'a> {
-        StringPackerIterator { data, curr_index: 0 }
+        StringPackerIterator {
+            data,
+            curr_index: 0,
+        }
     }
 }
 
@@ -87,12 +95,17 @@ impl<'a> Iterator for StringPackerIterator<'a> {
             return None;
         }
 
-        let mut index = self.curr_index;
-        while self.data[index] != 0 {
-            index += 1;
+        let mut len = 0usize;
+        while self.data[self.curr_index] == 255 {
+            len += 255;
+            self.curr_index += 1;
         }
-        let result = unsafe { str::from_utf8_unchecked(&self.data[self.curr_index..index]) };
-        self.curr_index = index + 1;
+        len += self.data[self.curr_index] as usize;
+        self.curr_index += 1;
+
+        let result =
+            unsafe { str::from_utf8_unchecked(&self.data[self.curr_index..self.curr_index + len]) };
+        self.curr_index += len;
         Some(result)
     }
 }
@@ -103,7 +116,7 @@ pub struct PackedBytes {
 }
 
 impl PackedBytes {
-    pub fn from_iterator(bytes: impl Iterator<Item=Vec<u8>>) -> PackedBytes {
+    pub fn from_iterator(bytes: impl Iterator<Item = Vec<u8>>) -> PackedBytes {
         let mut data = Vec::<u8>::new();
         for b in bytes {
             let mut len = b.len();
@@ -130,7 +143,10 @@ pub struct PackedBytesIterator<'a> {
 
 impl<'a> PackedBytesIterator<'a> {
     pub fn from_slice(data: &'a [u8]) -> PackedBytesIterator<'a> {
-        PackedBytesIterator { data, curr_index: 0 }
+        PackedBytesIterator {
+            data,
+            curr_index: 0,
+        }
     }
 
     pub fn has_more(&self) -> bool {
