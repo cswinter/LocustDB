@@ -231,10 +231,10 @@ impl QueryTask {
         state.explains.extend(explains);
         state.rows_scanned += rows_scanned;
         state.rows_collected += rows_collected;
-        unsafe {
-            let result = mem::transmute::<_, BatchResult<'static>>(result);
+        
+            let result = unsafe { mem::transmute::<_, BatchResult<'static>>(result) };
             state.partial_results.push(result);
-        }
+        
         if state.completed_batches == self.partitions.len()
             || self.sufficient_rows(state.rows_collected)
         {
