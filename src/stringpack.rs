@@ -21,10 +21,10 @@ impl IndexedPackedStrings {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &str> + Clone {
-        self.data.iter().map(move |&offset_len| unsafe {
+        self.data.iter().map(move |&offset_len| {
             let offset = (offset_len >> 24) as usize;
             let len = (offset_len & 0x00ff_ffff) as usize;
-            str::from_utf8_unchecked(&self.backing_store[offset..(offset + len)])
+            unsafe { str::from_utf8_unchecked(&self.backing_store[offset..(offset + len)]) }
         })
     }
 
