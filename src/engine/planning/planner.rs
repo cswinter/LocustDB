@@ -12,9 +12,9 @@ use self::QueryPlan::*;
 pub struct QueryPlanner {
     pub operations: Vec<QueryPlan>,
     pub buffer_to_operation: Vec<Option<usize>>,
-    pub cache: HashMap<[u8; 16], Vec<TypedBufferRef>>,
+    pub cache: HashMap<[u8; 32], Vec<TypedBufferRef>>,
     checkpoint: usize,
-    cache_checkpoint: HashMap<[u8; 16], Vec<TypedBufferRef>>,
+    cache_checkpoint: HashMap<[u8; 32], Vec<TypedBufferRef>>,
     pub buffer_provider: BufferProvider,
 }
 

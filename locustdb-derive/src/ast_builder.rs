@@ -116,7 +116,7 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
 
                         use blake2::{Blake2s256, Digest};
                         let mut hasher = Blake2s256::new();
-                        let mut signature = [0u8; 16];
+                        let mut signature = [0u8; 32];
                         if self.enable_common_subexpression_elimination() {
                             hasher.update(&#index.to_ne_bytes());
                             #(#hashes)*
