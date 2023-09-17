@@ -114,14 +114,13 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                 let item = parse_quote! {
                     pub fn #ident_snake(&mut self, #(#fn_inputs),*) -> (#(#result_type),*) {
 
-                        use crypto::digest::Digest;
-                        use crypto::md5::Md5;
+                        use blake2::{Blake2s256, Digest};
+                        let mut hasher = Blake2s256::new();
                         let mut signature = [0u8; 16];
-                        let mut hasher = Md5::new();
                         if self.enable_common_subexpression_elimination() {
-                            hasher.input(&#index.to_ne_bytes());
+                            hasher.update(&#index.to_ne_bytes());
                             #(#hashes)*
-                            hasher.result(&mut signature);
+                            signature = hasher.finalize().as_slice().try_into().unwrap();
                             if let Some(buffer) = self.cache.get(&signature) {
                                 return (#(#cache_retrieve),*)
                             }
@@ -239,19 +238,19 @@ fn convert(expr: Expr, field_type: &Type) -> Expr {
 
 fn hash(field_ident: &Ident, field_type: &Type) -> Stmt {
     if *field_type == parse_quote!(String) {
-        parse_quote!(hasher.input_str(#field_ident);)
+        parse_quote!(hasher.update(&#field_ident.as_bytes());)
     } else if *field_type == parse_quote!(usize) || *field_type == parse_quote!(i64) {
-        parse_quote!(hasher.input(&#field_ident.to_ne_bytes());)
+        parse_quote!(hasher.update(&#field_ident.to_ne_bytes());)
     } else if *field_type == parse_quote!(u8) {
-        parse_quote!(hasher.input(&[#field_ident]);)
+        parse_quote!(hasher.update(&[#field_ident]);)
     } else if *field_type == parse_quote!(bool) {
-        parse_quote!(hasher.input(&[#field_ident as u8]);)
+        parse_quote!(hasher.update(&[#field_ident as u8]);)
     } else if *field_type == parse_quote!(Aggregator) {
-        parse_quote!(hasher.input(&[#field_ident as u8]);)
+        parse_quote!(hasher.update(&[#field_ident as u8]);)
     } else if *field_type == parse_quote!(TypedBufferRef) {
-        parse_quote!(hasher.input(&#field_ident.buffer.i.to_ne_bytes());)
+        parse_quote!(hasher.update(&#field_ident.buffer.i.to_ne_bytes());)
     } else {
-        parse_quote!(hasher.input(&#field_ident.i.to_ne_bytes());)
+        parse_quote!(hasher.update(&#field_ident.i.to_ne_bytes());)
     }
 }
 

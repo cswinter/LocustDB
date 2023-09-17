@@ -2,8 +2,6 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::ingest::alias_method_fork::*;
-use crypto::digest::Digest;
-use crypto::md5::Md5;
 use hex;
 use rand;
 use rand::distributions::{Alphanumeric, Standard};
@@ -266,9 +264,5 @@ impl GenTable {
 }
 
 fn seeded_rng(seed: u64) -> rand::XorShiftRng {
-    let mut seed_bytes = [0u8; 16];
-    let mut hasher = Md5::new();
-    hasher.input(&seed.to_ne_bytes());
-    hasher.result(&mut seed_bytes);
-    rand::XorShiftRng::from_seed(seed_bytes)
+    rand::XorShiftRng::seed_from_u64(seed)
 }
