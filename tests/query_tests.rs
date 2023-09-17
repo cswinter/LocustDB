@@ -951,9 +951,9 @@ fn test_gen_table() {
     }));
     let query = "SELECT yum, count(1) FROM test;";
     let expected_rows = vec![
-        [Str("Cashew".to_string()), Int(162_035)],
-        [Str("Hazelnut".to_string()), Int(76_401)],
-        [Str("Walnut".to_string()), Int(23_708)],
+        [Str("Cashew".to_string()), Int(161_920)],
+        [Str("Hazelnut".to_string()), Int(76_356)],
+        [Str("Walnut".to_string()), Int(23_868)],
     ];
     let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
     assert_eq!(result.unwrap().rows, expected_rows);
@@ -970,7 +970,7 @@ fn test_column_with_null_partitions() {
     let locustdb = LocustDB::new(&opts);
     let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
         name: "test".to_string(),
-        partitions: 5,
+        partitions: 20,
         partition_size: 1,
         columns: vec![(
             "partition_sparse".to_string(),
@@ -983,11 +983,12 @@ fn test_column_with_null_partitions() {
             ),
         )],
     }));
+    println!("{:?}", block_on(locustdb.run_query("SELECT * FROM test;", true, vec![])).unwrap().unwrap());
     let query = "SELECT partition_sparse FROM test;";
     let result = block_on(locustdb.run_query(query, true, vec![]))
         .unwrap()
         .unwrap();
-    assert_eq!(result.rows.iter().filter(|&x| x == &[Null]).count(), 2);
+    assert_eq!(result.rows.iter().filter(|&x| x == &[Null]).count(), 13);
     assert_eq!(
         result
             .rows
@@ -1002,7 +1003,7 @@ fn test_column_with_null_partitions() {
             .iter()
             .filter(|&x| x == &[Str("B".to_string())])
             .count(),
-        2
+        6
     );
 }
 
@@ -1030,11 +1031,11 @@ fn test_group_by_string() {
         .unwrap()
         .unwrap();
     let expected_rows = vec![
-        [Str("0"), Int(98)],
-        [Str("01"), Int(5)],
-        [Str("02"), Int(2)],
-        [Str("03"), Int(4)],
-        [Str("04"), Int(2)],
+        [Str("0"), Int(99)],
+        [Str("00"), Int(2)],
+        [Str("02"), Int(1)],
+        [Str("04"), Int(4)],
+        [Str("05"), Int(3)],
     ];
     assert_eq!(result.rows, expected_rows);
 
@@ -1043,11 +1044,11 @@ fn test_group_by_string() {
         .unwrap()
         .unwrap();
     let expected_rows = vec![
-        [Str("0"), Str("0"), Int(98)],
-        [Str("01"), Str("01"), Int(5)],
-        [Str("02"), Str("02"), Int(2)],
-        [Str("03"), Str("03"), Int(4)],
-        [Str("04"), Str("04"), Int(2)],
+        [Str("0"), Str("0"), Int(99)],
+        [Str("00"), Str("00"), Int(2)],
+        [Str("02"), Str("02"), Int(1)],
+        [Str("04"), Str("04"), Int(4)],
+        [Str("05"), Str("05"), Int(3)],
     ];
     assert_eq!(result.rows, expected_rows);
 
@@ -1056,11 +1057,11 @@ fn test_group_by_string() {
         .unwrap()
         .unwrap();
     let expected_rows = vec![
-        [Str("00075c14106c259a"), Str("gA"), Int(1)],
-        [Str("00096542e285cb32"), Str("g"), Int(1)],
-        [Str("001228dae6b3e755"), Str("m"), Int(1)],
-        [Str("0013492a884ee3ab"), Str("P"), Int(1)],
-        [Str("0016b50c9677802d"), Str("Y"), Int(1)],
+        [Str("000365b5ea02afce"), Str("qj"), Int(1)],
+        [Str("00039e63ed327628"), Str("Fk"), Int(1)],
+        [Str("0007c07f9d36e02f"), Str("h"), Int(1)],
+        [Str("000c761329c01138"), Str("69"), Int(1)],
+        [Str("000d9e5ae13b57b7"), Str("m"), Int(1)],
     ];
     assert_eq!(result.rows, expected_rows);
 
@@ -1069,11 +1070,11 @@ fn test_group_by_string() {
         .unwrap()
         .unwrap();
     let expected_rows = vec![
-        [Int(-10), Str("3I"), Int(1)],
-        [Int(-10), Str("8p"), Int(1)],
-        [Int(-10), Str("9D"), Int(1)],
-        [Int(-10), Str("9m"), Int(1)],
-        [Int(-10), Str("C"), Int(1)],
+        [Int(-10), Str("0D"), Int(1)],
+        [Int(-10), Str("0Y"), Int(1)],
+        [Int(-10), Str("0n"), Int(1)],
+        [Int(-10), Str("0t"), Int(1)],
+        [Int(-10), Str("3"), Int(1)],
     ];
     assert_eq!(result.rows, expected_rows);
 }
