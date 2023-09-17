@@ -64,7 +64,7 @@ where
         packed_mapping.push(s);
     }
 
-    let (range, mut codec, mut data_sections) = if dict_size <= From::from(u8::MAX) {
+    let (range, mut codec, mut data_sections) = if dict_size <= Into::<usize>::into(u8::MAX) {
         let indices: Vec<u8> = {
             let mut dictionary: HashMapSea<&str, u8> = HashMapSea::default();
             for (i, s) in packed_mapping.iter().enumerate() {
@@ -82,7 +82,7 @@ where
                 DataSection::U8(dictionary_data),
             ],
         )
-    } else if dict_size <= From::from(u16::MAX) {
+    } else if dict_size <= Into::<usize>::into(u16::MAX) {
         let indices: Vec<u16> = {
             let mut dictionary: HashMapSea<&str, u16> = HashMapSea::default();
             for (i, s) in packed_mapping.iter().enumerate() {

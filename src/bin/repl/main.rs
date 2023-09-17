@@ -148,7 +148,7 @@ fn main() {
     table_stats(&locustdb);
 
     if server {
-        actix_web::rt::System::new("locustdb")
+        actix_web::rt::System::new()
             .block_on(locustdb::server::run(locustdb))
             .unwrap();
     } else {

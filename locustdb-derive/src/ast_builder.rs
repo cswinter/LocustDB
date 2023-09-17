@@ -22,7 +22,7 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                 let mut result = Vec::<Ident>::new();
                 let mut cache_retrieve = Vec::<Expr>::new();
                 let mut result_type = Vec::<Type>::new();
-                let mut output: Expr = parse_quote!(None);
+                let mut output: Expr = parse_quote!(Option::<usize>::None);
                 let mut hashes = Vec::<Stmt>::new();
                 let mut output_index = 0;
                 for field in fields.named.into_iter() {

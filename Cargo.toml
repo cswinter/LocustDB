@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 capnpc = {version = "0.14", optional = true}
 
 [dependencies]
-actix-web = "3"
+actix-web = "4"
 aliasmethod = "0.1"
 bit-vec = "0.4"
 byteorder = "1.2"
@@ -48,7 +48,7 @@ std-semaphore = "0.1"
 structopt = "0.3"
 tempfile = "3"
 time = "0.2"
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tera = "1"
 reqwest = { version = "0.11", default_features = false, features = ["json", "rustls-tls"] }
