@@ -1082,9 +1082,9 @@ fn test_group_by_string() {
 #[test]
 fn test_restore_from_disk() {
     use std::{thread, time};
-    use tempdir::TempDir;
+    use tempfile::TempDir;
     let _ = env_logger::try_init();
-    let tmp_dir = TempDir::new("rocks").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let opts = Options {
         db_path: Some(tmp_dir.path().to_path_buf()),
         ..Default::default()
