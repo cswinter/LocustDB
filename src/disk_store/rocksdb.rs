@@ -5,6 +5,7 @@ use std::path::Path;
 use byteorder::{ByteOrder, BigEndian};
 use capnp::{serialize, message};
 use rocksdb::*;
+use time::OffsetDateTime;
 use crate::storage_format_capnp::*;
 
 use crate::disk_store::interface::*;
@@ -91,18 +92,18 @@ impl DiskStore for RocksDB {
         let iterator = self.db
             .iterator_cf(self.partitions(), IteratorMode::Start)
             .unwrap();
-        let mut t = time::precise_time_ns();
+        let mut t = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
         let mut size_total = 0;
         for (key, value) in iterator {
             let (id, name) = deserialize_column_key(&key);
             let col = deserialize_column(&value);
             let size = col.heap_size_of_children();
-            let now = time::precise_time_ns();
+            let now = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
             size_total += size;
             let elapsed = now - t;
             if elapsed > 1_000_000_000 {
                 debug!("restoring {}.{} {}", name, id, byte(size as f64));
-                debug!("{}/s", byte((1_000_000_000 * size_total as u64 / elapsed) as f64));
+                debug!("{}/s", byte((1_000_000_000 * size_total as i128 / elapsed) as f64));
                 t = now;
                 size_total = 0;
             }

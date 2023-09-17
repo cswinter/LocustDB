@@ -4,7 +4,7 @@ description = "Embeddable high-performance analytics database."
 edition = "2021"
 license-file = "LICENSE"
 name = "locustdb"
-version = "0.3.5-alpha.0"
+ version = "0.3.5-alpha.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -47,7 +47,7 @@ sqlparser = "0.5"
 std-semaphore = "0.1"
 structopt = "0.3"
 tempdir = "0.3"
-time = "0.1"
+time = "0.2"
 serde = "1.0"
 serde_json = "1.0"
 tera = "1"

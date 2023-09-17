@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use time::precise_time_ns;
+use time::OffsetDateTime;
 
 use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
@@ -28,7 +28,7 @@ pub struct QueryTask {
     partitions: Vec<Arc<Partition>>,
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
-    start_time_ns: u64,
+    start_time_ns: i128,
     db: Arc<DiskReadScheduler>,
 
     // Lifetime is not actually static, but tied to the lifetime of this struct.
@@ -73,7 +73,7 @@ impl QueryTask {
         db: Arc<DiskReadScheduler>,
         sender: SharedSender<QueryResult>,
     ) -> Result<QueryTask, QueryError> {
-        let start_time_ns = precise_time_ns();
+        let start_time_ns = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
         if query.is_select_star() {
             query.select = find_all_cols(&source)
                 .into_iter()
@@ -338,7 +338,7 @@ impl QueryTask {
             rows: result_rows,
             query_plans,
             stats: QueryStats {
-                runtime_ns: precise_time_ns() - self.start_time_ns,
+                runtime_ns: (OffsetDateTime::unix_epoch().unix_timestamp_nanos() - self.start_time_ns) as u64,
                 rows_scanned,
             },
         }
