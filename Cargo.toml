@@ -1,7 +1,7 @@
 [package]
 authors = ["Clemens Winter <clemenswinter1@gmail.com>"]
 description = "Embeddable high-performance analytics database."
-edition = "2018"
+edition = "2021"
 license-file = "LICENSE"
 name = "locustdb"
 version = "0.3.5-alpha.0"
