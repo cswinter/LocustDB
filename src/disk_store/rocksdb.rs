@@ -47,11 +47,11 @@ impl RocksDB {
         RocksDB { db }
     }
 
-    fn metadata(&self) -> ColumnFamily {
+    fn metadata(&self) -> &ColumnFamily {
         self.db.cf_handle("metadata").unwrap()
     }
 
-    fn partitions(&self) -> ColumnFamily {
+    fn partitions(&self) -> &ColumnFamily {
         self.db.cf_handle("partitions").unwrap()
     }
 }
@@ -59,8 +59,9 @@ impl RocksDB {
 impl DiskStore for RocksDB {
     fn load_metadata(&self) -> Vec<PartitionMetadata> {
         let mut metadata = Vec::new();
-        let iter = self.db.iterator_cf(self.metadata(), IteratorMode::Start).unwrap();
-        for (key, value) in iter {
+        let iter = self.db.iterator_cf(self.metadata(), IteratorMode::Start);
+        for entry in iter {
+            let (key, value) = entry.unwrap();
             let partition_id = BigEndian::read_u64(&key) as PartitionID;
             metadata.push(deserialize_meta_data(&value, partition_id))
         }
@@ -68,7 +69,7 @@ impl DiskStore for RocksDB {
     }
 
     fn load_column(&self, partition: PartitionID, column_name: &str) -> Column {
-        let data = self.db.get_cf(self.partitions(), &column_key(partition, column_name)).unwrap().unwrap();
+        let data = self.db.get_cf(self.partitions(), column_key(partition, column_name)).unwrap().unwrap();
         deserialize_column(&data)
     }
 
@@ -77,9 +78,9 @@ impl DiskStore for RocksDB {
         // TODO(#94): this is potentially inefficient because it will read column of same name from all tables, tablename should be part of key.
         let iterator = self.db
             .iterator_cf(self.partitions(),
-                         IteratorMode::From(&column_key(start, column_name), Direction::Forward))
-            .unwrap();
-        for (key, value) in iterator {
+                         IteratorMode::From(&column_key(start, column_name), Direction::Forward));
+        for entry in iterator {
+            let (key, value) = entry.unwrap();
             let (id, name) = deserialize_column_key(&key);
             if name != column_name || id > end { return; }
             let col = deserialize_column(&value);
@@ -90,11 +91,11 @@ impl DiskStore for RocksDB {
     fn bulk_load(&self, ldb: &InnerLocustDB) {
         // TODO(#93): use ReadOptions.readahead once available
         let iterator = self.db
-            .iterator_cf(self.partitions(), IteratorMode::Start)
-            .unwrap();
+            .iterator_cf(self.partitions(), IteratorMode::Start);
         let mut t = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
         let mut size_total = 0;
-        for (key, value) in iterator {
+        for entry in iterator {
+            let (key, value) = entry.unwrap();
             let (id, name) = deserialize_column_key(&key);
             let col = deserialize_column(&value);
             let size = col.heap_size_of_children();
@@ -116,11 +117,11 @@ impl DiskStore for RocksDB {
         let mut key = [0; 8];
         BigEndian::write_u64(&mut key, partition);
         let md = serialize_meta_data(tablename, columns);
-        tx.put_cf(self.metadata(), &key, &md).unwrap();
+        tx.put_cf(self.metadata(), key, &md);
         for column in columns {
             let key = column_key(partition, column.name());
             let data = serialize_column(column.as_ref());
-            tx.put_cf(self.partitions(), &key, &data).unwrap();
+            tx.put_cf(self.partitions(), &key, &data);
         }
 
         self.db.write(tx).unwrap();

@@ -38,7 +38,7 @@ num = "0.1"
 num_cpus = "1.0"
 rand = "0.5"
 regex = "1"
-rocksdb = {version = "0.10.1", optional = true}
+rocksdb = {version = "0.19", optional = true}
 rust-crypto = "0.2"
 rustyline = "1.0"
 scoped_threadpool = "0.1"
