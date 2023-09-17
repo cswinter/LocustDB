@@ -113,7 +113,7 @@ impl DiskStore for RocksDB {
     fn store_partition(&self, partition: PartitionID, tablename: &str, columns: &[Arc<Column>]) {
         let mut tx = WriteBatch::default();
         let mut key = [0; 8];
-        BigEndian::write_u64(&mut key, partition as u64);
+        BigEndian::write_u64(&mut key, partition);
         let md = serialize_meta_data(tablename, columns);
         tx.put_cf(self.metadata(), &key, &md).unwrap();
         for column in columns {
@@ -130,7 +130,7 @@ fn column_key(id: PartitionID, column_name: &str) -> Vec<u8> {
     let mut key = Vec::new();
     key.extend(column_name.as_bytes());
     let mut pid = vec![0; 8];
-    BigEndian::write_u64(&mut pid, id as u64);
+    BigEndian::write_u64(&mut pid, id);
     key.extend(pid);
     key
 }
@@ -364,7 +364,7 @@ fn encoding_type_to_capnp(t: Type) -> EncodingType {
     }
 }
 
-fn populate_primitive_list<'a, T>(builder: &mut capnp::primitive_list::Builder<'a, T>, values: &[T])
+fn populate_primitive_list<T>(builder: &mut capnp::primitive_list::Builder<T>, values: &[T])
     where T: capnp::private::layout::PrimitiveElement + Copy {
     for (i, &x) in values.iter().enumerate() {
         builder.set(i as u32, x);

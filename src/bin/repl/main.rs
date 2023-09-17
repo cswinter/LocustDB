@@ -250,7 +250,7 @@ fn repl(locustdb: &LocustDB) {
             let tablename = args[0];
             let schema = args[1];
             for file in &args[2..] {
-                let opts = locustdb::LoadOptions::new(&file, tablename).with_schema(schema);
+                let opts = locustdb::LoadOptions::new(file, tablename).with_schema(schema);
                 let load = locustdb.load_csv(opts);
                 println!("Loading {} into table {}.", file, tablename);
                 block_on(load).expect("Ingestion crashed!");

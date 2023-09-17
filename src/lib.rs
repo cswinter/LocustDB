@@ -2,7 +2,6 @@
 #![allow(incomplete_features)]
 #![feature(
     fn_traits,
-    integer_atomics,
     specialization,
     trait_alias,
     core_intrinsics,

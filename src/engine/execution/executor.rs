@@ -184,7 +184,7 @@ impl<'a> QueryExecutor<'a> {
             let mut to_visit = vec![];
             for (i, visited) in visited.iter_mut().enumerate() {
                 if !*visited {
-                    to_visit.push(i as usize);
+                    to_visit.push(i);
                     *visited = true;
                     break;
                 }

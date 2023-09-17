@@ -75,9 +75,7 @@ impl Buffer {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        self.buffer
-            .iter()
-            .map(|(_, v)| {
+        self.buffer.values().map(|v| {
                 // Currently does not take into account the memory of String.
                 v.heap_size_of_children()
             })

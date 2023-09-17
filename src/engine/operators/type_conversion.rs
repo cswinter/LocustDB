@@ -129,7 +129,7 @@ impl<'a> Cast<u32> for Val<'a> {
 impl<'a> Cast<i64> for Val<'a> {
     fn cast(self) -> i64 {
         match self {
-            Val::Integer(i) => i as i64,
+            Val::Integer(i) => i,
             _ => panic!("Cast::<i64>{:?}", self)
         }
     }

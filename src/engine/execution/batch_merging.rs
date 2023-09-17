@@ -171,7 +171,7 @@ pub fn combine<'a>(
             show: batch1.show && batch2.show,
             unsafe_referenced_buffers: {
                 let mut urb = batch1.unsafe_referenced_buffers;
-                urb.extend(batch2.unsafe_referenced_buffers.into_iter());
+                urb.extend(batch2.unsafe_referenced_buffers);
                 urb
             },
         };
@@ -269,7 +269,7 @@ pub fn combine<'a>(
                 show: batch1.show && batch2.show,
                 unsafe_referenced_buffers: {
                     let mut urb = batch1.unsafe_referenced_buffers;
-                    urb.extend(batch2.unsafe_referenced_buffers.into_iter());
+                    urb.extend(batch2.unsafe_referenced_buffers);
                     urb
                 },
             })
@@ -317,7 +317,7 @@ pub fn combine<'a>(
                 show: batch1.show && batch2.show,
                 unsafe_referenced_buffers: {
                     let mut urb = batch1.unsafe_referenced_buffers;
-                    urb.extend(batch2.unsafe_referenced_buffers.into_iter());
+                    urb.extend(batch2.unsafe_referenced_buffers);
                     urb
                 },
             })

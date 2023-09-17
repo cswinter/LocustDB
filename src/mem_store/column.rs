@@ -155,7 +155,7 @@ impl Column {
             let codec_tree = tree
                 .encodings
                 .entry(signature.clone())
-                .or_insert_with(MemTreeEncoding::default);
+                .or_default();
             codec_tree.codec = signature;
             codec_tree.size_bytes += size_bytes;
             codec_tree.rows += self.len;

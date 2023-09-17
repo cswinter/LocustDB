@@ -284,7 +284,7 @@ pub mod operator {
                 fused: fused.u32()?,
             })),
             EncodingType::I64 => Ok(Box::new(FuseIntNulls {
-                offset: offset as i64,
+                offset,
                 input: input.nullable_i64()?,
                 fused: fused.i64()?,
             })),
@@ -325,7 +325,7 @@ pub mod operator {
                 unfused: unfused.nullable_u32()?,
             })),
             EncodingType::I64 => Ok(Box::new(UnfuseIntNulls {
-                offset: offset as i64,
+                offset,
                 fused: fused.i64()?,
                 data: data.i64()?,
                 present,

@@ -304,7 +304,7 @@ impl<'a> Data<'a> for Vec<&'a str> {
         self
     }
     fn to_mixed(&self) -> Vec<Val<'a>> {
-        self.iter().map(|s| Val::Str(*s)).collect()
+        self.iter().map(|s| Val::Str(s)).collect()
     }
 }
 
@@ -319,7 +319,7 @@ impl<'a> Data<'a> for Vec<Option<&'a str>> {
         self.iter()
             .map(|s| match s {
                 None => Val::Null,
-                Some(s) => Val::Str(*s),
+                Some(s) => Val::Str(s),
             })
             .collect()
     }

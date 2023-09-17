@@ -175,13 +175,13 @@ impl<T> fmt::Display for BufferRef<T> {
 }
 
 fn color_code(s: &str, i: usize) -> String {
-    let colors = vec![
+    let colors = [
         "\x1b[31m",
         "\x1b[32m",
         "\x1b[33m",
         "\x1b[34m",
         "\x1b[35m",
-        "\x1b[36m",
+        "\x1b[36m"
     ];
     if std::env::var("COLOR").is_ok() {
         format!("{}{}\x1b[0m", colors[i % colors.len()], s)
@@ -308,7 +308,7 @@ impl TypedBufferRef {
         Ok(self.buffer.scalar_i64())
     }
 
-    pub fn scalar_str<'a, 'b>(&'b self) -> Result<BufferRef<Scalar<&'a str>>, QueryError> {
+    pub fn scalar_str<'a>(&self) -> Result<BufferRef<Scalar<&'a str>>, QueryError> {
         ensure!(self.tag == EncodingType::ScalarStr, "{:?} != ScalarStr", self.tag);
         Ok(self.buffer.scalar_str())
     }

@@ -15,7 +15,7 @@ pub fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
     // Endianness? Never heard of it...
     let data_u8: &[u8] = unsafe {
         let ptr_u8 = ptr_t as *const u8;
-        from_raw_parts(ptr_u8, data.len() * mem::size_of::<T>())
+        from_raw_parts(ptr_u8, std::mem::size_of_val(data))
     };
 
     let mut result = Vec::new();
@@ -27,11 +27,13 @@ pub fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
     result
 }
 
+// TODO: unsafe
+#[allow(clippy::needless_pass_by_ref_mut)]
 pub fn decode<T>(src: &mut dyn Read, dst: &mut [T]) -> usize {
     let ptr_t = dst.as_ptr();
     let dst_u8: &mut [u8] = unsafe {
         let ptr_u8 = ptr_t as *mut u8;
-        from_raw_parts_mut(ptr_u8, dst.len() * mem::size_of::<T>())
+        from_raw_parts_mut(ptr_u8, std::mem::size_of_val(dst))
     };
 
     let mut read = 0;
