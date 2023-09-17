@@ -37,7 +37,7 @@ pub fn int(field: &str) -> i64 {
 }
 
 pub fn date_time(field: &str) -> i64 {
-    Utc.datetime_from_str(field, "%Y-%m-%d %H:%M:%S")
+    DateTime::parse_from_str(field, "%Y-%m-%d %H:%M:%S")
         .unwrap_or_else(|_| panic!("Failed to parse {} as date time", &field))
         .timestamp()
 }

@@ -1168,8 +1168,8 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         ColumnSection { range, .. } => range,
         ToYear { timestamp, .. } => encoding_range(&timestamp, qp).map(|(min, max)| {
             (
-                i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
-                i64::from(NaiveDateTime::from_timestamp(max, 0).year()),
+                i64::from(NaiveDateTime::from_timestamp_opt(min, 0).unwrap().year()),
+                i64::from(NaiveDateTime::from_timestamp_opt(max, 0).unwrap().year()),
             )
         }),
         Filter { ref plan, .. } => encoding_range(plan, qp),
