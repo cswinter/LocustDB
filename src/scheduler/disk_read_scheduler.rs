@@ -93,7 +93,7 @@ impl DiskReadScheduler {
         for partition in &snapshot {
             for col in partition.col_names() {
                 let reached_chunk_size = {
-                    let mut run = runs.entry(col).or_insert(DiskRun {
+                    let run = runs.entry(col).or_insert(DiskRun {
                         start: partition.id,
                         end: partition.id,
                         bytes: 0,

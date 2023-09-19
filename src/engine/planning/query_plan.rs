@@ -965,7 +965,7 @@ impl QueryPlan {
             )?,
             Func2(RegexMatch, ref expr, ref regex) => match regex {
                 box Const(RawVal::Str(regex)) => {
-                    Regex::new(regex).map_err(|e| {
+                    Regex::new(regex.as_str()).map_err(|e| {
                         QueryError::TypeError(format!("`{}` is not a valid regex: {}", regex, e))
                     })?;
                     let (mut plan, t) =
@@ -977,7 +977,7 @@ impl QueryPlan {
                         plan = codec.decode(plan, planner);
                     }
                     let type_out = Type::unencoded(BasicType::Boolean).mutable();
-                    (planner.regex(plan.str()?, regex).into(), type_out)
+                    (planner.regex(plan.str()?, regex.as_str()).into(), type_out)
                 }
                 _ => bail!(
                     QueryError::TypeError,
@@ -1168,8 +1168,8 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         ColumnSection { range, .. } => range,
         ToYear { timestamp, .. } => encoding_range(&timestamp, qp).map(|(min, max)| {
             (
-                i64::from(NaiveDateTime::from_timestamp(min, 0).year()),
-                i64::from(NaiveDateTime::from_timestamp(max, 0).year()),
+                i64::from(NaiveDateTime::from_timestamp_opt(min, 0).unwrap().year()),
+                i64::from(NaiveDateTime::from_timestamp_opt(max, 0).unwrap().year()),
             )
         }),
         Filter { ref plan, .. } => encoding_range(plan, qp),
@@ -1498,7 +1498,7 @@ fn try_bitpacking(
 
 pub(super) fn prepare<'a>(
     plan: QueryPlan,
-    constant_vecs: &mut Vec<BoxedData<'a>>,
+    constant_vecs: &mut [BoxedData<'a>],
     result: &mut QueryExecutor<'a>,
 ) -> Result<TypedBufferRef, QueryError> {
     trace!("{:?}", &plan);

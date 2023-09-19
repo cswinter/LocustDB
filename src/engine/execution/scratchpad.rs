@@ -214,7 +214,7 @@ impl<'a> Scratchpad<'a> {
         let mut data =
             mem::replace(self.buffer_mut(buffer), RefCell::new(empty_data(0))).into_inner();
         match self.null_maps[buffer.i] {
-            Some(index) => data.make_nullable(&*self.get(BufferRef {
+            Some(index) => data.make_nullable(&self.get(BufferRef {
                 i: index,
                 name: "present",
                 t: PhantomData::<u8>,

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use failure::Fail;
 use futures::executor::block_on;
 use structopt::StructOpt;
-use time::precise_time_ns;
+use time::OffsetDateTime;
 
 use locustdb::unit_fmt::*;
 use locustdb::LocustDB;
@@ -112,7 +112,7 @@ fn main() {
 
     let locustdb = locustdb::LocustDB::new(&options);
 
-    let start_time = precise_time_ns();
+    let start_time = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
     let mut loads = Vec::new();
     let file_count = load.len();
     for file in load {
@@ -141,14 +141,14 @@ fn main() {
     if file_count > 0 {
         println!(
             "Loaded data in {:.3}.",
-            ns((precise_time_ns() - start_time) as usize)
+            ns((OffsetDateTime::unix_epoch().unix_timestamp_nanos() - start_time) as usize)
         );
     }
 
     table_stats(&locustdb);
 
     if server {
-        actix_web::rt::System::new("locustdb")
+        actix_web::rt::System::new()
             .block_on(locustdb::server::run(locustdb))
             .unwrap();
     } else {
@@ -226,12 +226,12 @@ fn repl(locustdb: &LocustDB) {
             continue;
         }
         if s.starts_with(":restore") {
-            let start = precise_time_ns();
+            let start = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
             match block_on(locustdb.bulk_load()) {
                 Ok(trees) => {
                     println!(
                         "Restored DB from disk in {}",
-                        ns((precise_time_ns() - start) as usize)
+                        ns((OffsetDateTime::unix_epoch().unix_timestamp_nanos() - start) as usize)
                     );
                     for tree in trees {
                         println!("{}\n", &tree)
@@ -250,7 +250,7 @@ fn repl(locustdb: &LocustDB) {
             let tablename = args[0];
             let schema = args[1];
             for file in &args[2..] {
-                let opts = locustdb::LoadOptions::new(&file, tablename).with_schema(schema);
+                let opts = locustdb::LoadOptions::new(file, tablename).with_schema(schema);
                 let load = locustdb.load_csv(opts);
                 println!("Loading {} into table {}.", file, tablename);
                 block_on(load).expect("Ingestion crashed!");

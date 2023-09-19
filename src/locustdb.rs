@@ -75,7 +75,7 @@ impl LocustDB {
             let ldb = self.inner_locustdb.clone();
             let (read_data, _) =
                 <dyn Task>::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
-            let _ = self.inner_locustdb.schedule(read_data);
+            self.inner_locustdb.schedule(read_data);
         }
 
         let query_task = QueryTask::new(
@@ -103,7 +103,7 @@ impl LocustDB {
             self.inner_locustdb.clone(),
             SharedSender::new(sender),
         );
-        let _ = self.schedule(task);
+        self.schedule(task);
         Ok(receiver.await??)
     }
 
@@ -123,7 +123,7 @@ impl LocustDB {
             let inner = self.inner_locustdb.clone();
             let (task, receiver) =
                 <dyn Task>::from_fn(move || inner.gen_partition(&opts, partition as u64));
-            let _ = self.schedule(task);
+            self.schedule(task);
             receivers.push(receiver);
         }
         for receiver in receivers {
@@ -150,7 +150,7 @@ impl LocustDB {
             let ldb = self.inner_locustdb.clone();
             let (read_data, receiver) =
                 <dyn Task>::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
-            let _ = self.inner_locustdb.schedule(read_data);
+            self.inner_locustdb.schedule(read_data);
             receivers.push(receiver);
         }
         for receiver in receivers {
@@ -167,14 +167,14 @@ impl LocustDB {
     pub async fn mem_tree(&self, depth: usize) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
         let (task, receiver) = <dyn Task>::from_fn(move || inner.mem_tree(depth));
-        let _ = self.schedule(task);
+        self.schedule(task);
         receiver.await
     }
 
     pub async fn table_stats(&self) -> Result<Vec<TableStats>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
         let (task, receiver) = <dyn Task>::from_fn(move || inner.stats());
-        let _ = self.schedule(task);
+        self.schedule(task);
         receiver.await
     }
 

@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::disk_store::interface::*;
 use crate::ingest::colgen::GenTable;
@@ -34,9 +35,7 @@ impl InnerLocustDB {
     pub fn new(storage: Arc<dyn DiskStore>, opts: &Options) -> InnerLocustDB {
         let lru = Lru::default();
         let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref(), &lru);
-        let max_pid = existing_tables
-            .iter()
-            .map(|(_, t)| t.max_partition_id())
+        let max_pid = existing_tables.values().map(|t| t.max_partition_id())
             .max()
             .unwrap_or(0);
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
@@ -205,7 +204,7 @@ impl InnerLocustDB {
                 vec![
                     (
                         "timestamp".to_string(),
-                        RawVal::Int(time::now().to_timespec().sec),
+                        RawVal::Int(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64)
                     ),
                     ("name".to_string(), RawVal::Str(table.to_string())),
                 ],

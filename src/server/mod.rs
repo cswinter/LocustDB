@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
+use actix_web::web::Data;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -72,13 +73,13 @@ async fn plot(_data: web::Data<AppState>) -> impl Responder {
 
 #[get("/table/{tablename}")]
 async fn table_handler(
-    web::Path(tablename): web::Path<String>,
+    path: web::Path<String>,
     data: web::Data<AppState>,
 ) -> impl Responder {
     let cols = data
         .db
         .run_query(
-            &format!("SELECT * FROM {} LIMIT 0", tablename),
+            &format!("SELECT * FROM {} LIMIT 0", path.as_str()),
             false,
             vec![],
         )
@@ -89,7 +90,7 @@ async fn table_handler(
 
     let mut context = Context::new();
     context.insert("columns", &cols.join(", "));
-    context.insert("table", &tablename);
+    context.insert("table", path.as_str());
     let body = TEMPLATES.render("table.html", &context).unwrap();
 
     HttpResponse::Ok()
@@ -228,8 +229,8 @@ pub async fn run(db: LocustDB) -> std::io::Result<()> {
     HttpServer::new(move || {
         let app_state = AppState { db: db.clone() };
         App::new()
-            .data(app_state)
-            .data(web::PayloadConfig::new(100 * 1024 * 1024))
+            .app_data(Data::new(app_state))
+            .app_data(Data::new(web::PayloadConfig::new(100 * 1024 * 1024)))
             .service(index)
             .service(echo)
             .service(tables)

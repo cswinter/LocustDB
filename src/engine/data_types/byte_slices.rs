@@ -59,7 +59,7 @@ impl<'a> Data<'a> for ByteSlices<'a> {
     }
 
     fn type_error(&self, func_name: &str) -> String {
-        format!("RawByteSlices.{}", func_name)
+        format!("RawByteSlices.{func_name}")
     }
 
     fn display(&self) -> String {
