@@ -643,6 +643,7 @@ pub fn prepare_aggregation(
                     plan,
                     grouping_key,
                     max_index,
+                    // TODO: overflow
                     Aggregator::Count,
                     EncodingType::U32,
                 ),

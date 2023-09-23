@@ -2,12 +2,12 @@ pub fn fmt_table(headings: &[&str], rows: &[Vec<&str>]) -> String {
     let ncols = headings.len();
     let mut col_width = Vec::<usize>::with_capacity(ncols);
     for heading in headings {
-        col_width.push(heading.chars().count() + 1);
+        col_width.push(super::unicode::display_width(heading) + 1);
     }
     for row in rows {
         assert_eq!(ncols, row.len());
         for (i, entry) in row.iter().enumerate() {
-            let width = entry.chars().count() + 1;
+            let width = super::unicode::display_width(entry) + 1;
             if col_width[i] < width {
                 col_width[i] = width;
             }

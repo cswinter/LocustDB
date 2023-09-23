@@ -1,4 +1,5 @@
 use futures::executor::block_on;
+use ordered_float::OrderedFloat;
 
 use crate::value_syntax::*;
 use locustdb::nyc_taxi_data;
@@ -421,6 +422,29 @@ fn test_not_equals_2() {
     )
 }
 
+
+#[test]
+fn test_order_by_float() {
+    test_query_ec(
+        "SELECT string_packed, float FROM default ORDER BY float DESC LIMIT 5;",
+        &[
+            vec![Str("azy"), Float(OrderedFloat(1.234e29))],
+            vec![Str("😈"), Float(OrderedFloat(1234124.51325))],
+            vec![Str("AXY"), Float(OrderedFloat(3.15159))],
+            vec![Str("xyz"), Float(OrderedFloat(0.123412))],
+            vec![Str("abc"), Float(OrderedFloat(0.0003))],
+        ],
+    );
+    test_query_ec(
+        "SELECT string_packed, float FROM default ORDER BY float ASC LIMIT 3;",
+        &[
+            vec![Str("axz"), Float(OrderedFloat(-124.0))],
+            vec![Str("t"), Float(OrderedFloat(-1.0))],
+            vec![Str("asd"), Float(OrderedFloat(0.0))],
+        ],
+    );
+}
+
 #[test]
 fn test_order_by_aggregate() {
     test_query_nyc(
@@ -625,10 +649,7 @@ fn test_group_by_trip_id() {
 #[test]
 fn test_string_length() {
     test_query_nyc(
-        "SELECT length(pickup_ntaname), pickup_ntaname, COUNT(0)
-         FROM default
-         ORDER BY length(pickup_ntaname) DESC
-         LIMIT 3;",
+        "SELECT length(pickup_ntaname), pickup_ntaname, COUNT(0) FROM default ORDER BY length(pickup_ntaname) DESC LIMIT 3;",
         &[
             vec![
                 Int(56),
@@ -1077,6 +1098,20 @@ fn test_group_by_string() {
         [Int(-10), Str("3"), Int(1)],
     ];
     assert_eq!(result.rows, expected_rows);
+}
+
+#[test]
+fn test_group_by_float() {
+    test_query_ec(
+        "SELECT count(0), float FROM default ORDER BY float ASC LIMIT 5;",
+        &[
+            vec![Int(1), Float(OrderedFloat(-124.0))],
+            vec![Int(1), Float(OrderedFloat(-1.0))],
+            vec![Int(1), Float(OrderedFloat(0.0))],
+            vec![Int(2), Float(OrderedFloat(1e-6))],
+            vec![Int(1), Float(OrderedFloat(0.0003))],
+        ],
+    );
 }
 
 #[cfg(feature = "enable_rocksdb")]

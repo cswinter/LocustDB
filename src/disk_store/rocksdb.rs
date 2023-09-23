@@ -4,6 +4,7 @@ use std::path::Path;
 
 use byteorder::{ByteOrder, BigEndian};
 use capnp::{serialize, message};
+use ordered_float::OrderedFloat;
 use rocksdb::*;
 use time::OffsetDateTime;
 use crate::storage_format_capnp::*;
@@ -215,6 +216,12 @@ fn deserialize_column(data: &[u8]) -> Column {
                 buffer.extend(data);
                 DataSection::I64(buffer)
             }
+            F64(data) => {
+                let data = data.unwrap();
+                let mut buffer = Vec::with_capacity(data.len() as usize);
+                buffer.extend(data);
+                DataSection::F64(unsafe { std::mem::transmute::<Vec<f64>, Vec<OrderedFloat<f64>>>(buffer) })
+            }
             Null(count) => DataSection::Null(count as usize),
         }
     }).collect::<Vec<_>>();
@@ -231,6 +238,7 @@ fn deserialize_type(t: EncodingType) -> Type {
         U64 => Type::U64,
         I64 => Type::I64,
         Null => Type::Null,
+        F64 => Type::F64,
     }
 }
 
@@ -343,6 +351,10 @@ fn serialize_column(col: &Column) -> Vec<u8> {
                     DataSection::I64(x) => {
                         let mut builder = ds.init_i64(x.len() as u32);
                         populate_primitive_list(&mut builder, x);
+                    }
+                    DataSection::F64(x) => {
+                        let mut builder = ds.init_f64(x.len() as u32);
+                        populate_primitive_list(&mut builder, unsafe { std::mem::transmute::<&[OrderedFloat<f64>], &[f64]>(x.as_ref()) } );
                     }
                     DataSection::Null(count) => ds.set_null(*count as u64),
                 }
