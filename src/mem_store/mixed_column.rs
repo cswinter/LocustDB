@@ -7,6 +7,7 @@ impl RawVal {
             RawVal::Null => Val::Null,
             RawVal::Int(i) => Val::Integer(i),
             RawVal::Str(ref string) => Val::Str(string),
+            RawVal::Float(f) => Val::Float(f),
         }
     }
 }

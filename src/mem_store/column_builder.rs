@@ -2,10 +2,14 @@ use std::cmp;
 use std::i64;
 use std::sync::Arc;
 
+use ordered_float::OrderedFloat;
+
 use crate::mem_store::integers::*;
 use crate::mem_store::column::*;
 use crate::mem_store::strings::*;
 use crate::stringpack::*;
+
+use super::floats::FloatColumn;
 
 
 pub trait ColumnBuilder<T: ?Sized>: Default {
@@ -100,6 +104,28 @@ impl ColumnBuilder<Option<i64>> for IntColBuilder {
                                  self.max,
                                  delta_encode,
                                  present)
+    }
+}
+
+#[derive(Default)]
+pub struct FloatColBuilder {
+    data: Vec<OrderedFloat<f64>>,
+}
+
+impl ColumnBuilder<Option<f64>> for FloatColBuilder {
+    fn new() -> FloatColBuilder { FloatColBuilder::default() }
+
+    #[inline]
+    fn push(&mut self, elem: &Option<f64>) {
+        // PERF: can set arbitrary values for null to help compression (extend from last/previous value)
+        let elem = elem.unwrap_or(0.0);
+        self.data.push(OrderedFloat(elem));
+    }
+
+    fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column> {
+        FloatColumn::new_boxed(name,
+                               self.data,
+                               present)
     }
 }
 

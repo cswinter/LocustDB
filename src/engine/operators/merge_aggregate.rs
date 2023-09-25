@@ -1,15 +1,17 @@
+use ordered_float::OrderedFloat;
+
 use crate::engine::*;
 
 #[derive(Debug)]
-pub struct MergeAggregate {
+pub struct MergeAggregate<T> {
     pub merge_ops: BufferRef<MergeOp>,
-    pub left: BufferRef<i64>,
-    pub right: BufferRef<i64>,
-    pub aggregated: BufferRef<i64>,
+    pub left: BufferRef<T>,
+    pub right: BufferRef<T>,
+    pub aggregated: BufferRef<T>,
     pub aggregator: Aggregator,
 }
 
-impl<'a> VecOperator<'a> for MergeAggregate {
+impl<'a, T> VecOperator<'a> for MergeAggregate<T> where T: VecData<T> + Combinable<T> + 'a {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let aggregated = {
             let ops = scratchpad.get(self.merge_ops);
@@ -32,7 +34,7 @@ impl<'a> VecOperator<'a> for MergeAggregate {
     }
 }
 
-fn merge_aggregate(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator: Aggregator) -> Result<Vec<i64>, QueryError> {
+fn merge_aggregate<T: Combinable<T>>(ops: &[MergeOp], left: &[T], right: &[T], aggregator: Aggregator) -> Result<Vec<T>, QueryError> {
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;
@@ -54,7 +56,7 @@ fn merge_aggregate(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator: Agg
             }
             MergeOp::MergeRight => {
                 let last = result.len() - 1;
-                result[last] = aggregator.combine_i64(result[last], right[j])?;
+                result[last] = T::combine(aggregator, result[last], right[j])?;
                 j += 1;
             }
         }
@@ -62,3 +64,29 @@ fn merge_aggregate(ops: &[MergeOp], left: &[i64], right: &[i64], aggregator: Agg
     Ok(result)
 }
 
+trait Combinable<T>: Clone + Copy {
+    fn combine(op: Aggregator, a: T, b: T) -> Result<T, QueryError>;
+}
+
+impl Combinable<i64> for i64 {
+    fn combine(op: Aggregator, a: i64, b: i64) -> Result<i64, QueryError> {
+        match op {
+            Aggregator::SumI64 => a.checked_add(b).ok_or(QueryError::Overflow),
+            Aggregator::Count => Ok(a + b),
+            Aggregator::MaxI64 => Ok(std::cmp::max(a, b)),
+            Aggregator::MinI64 => Ok(std::cmp::min(a, b)),
+            _ => Err(fatal!("Unsupported aggregator for i64: {:?}", op)),
+        }
+    }
+}
+
+impl Combinable<OrderedFloat<f64>> for OrderedFloat<f64> {
+    fn combine(op: Aggregator, a: OrderedFloat<f64>, b: OrderedFloat<f64>) -> Result<OrderedFloat<f64>, QueryError> {
+        match op {
+            Aggregator::SumF64 => Ok(a + b),
+            Aggregator::MaxF64 => Ok(std::cmp::max(a, b)),
+            Aggregator::MinF64 => Ok(std::cmp::min(a, b)),
+            _ => Err(fatal!("Unsupported aggregator for f64: {:?}", op)),
+        }
+    }
+}

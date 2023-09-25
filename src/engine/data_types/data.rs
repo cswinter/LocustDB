@@ -4,6 +4,8 @@ use std::i64;
 use std::mem;
 use std::string;
 
+use ordered_float::OrderedFloat;
+
 use crate::engine::data_types::*;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::codec::Codec;
@@ -32,6 +34,9 @@ pub trait Data<'a>: Send + Sync {
     }
     fn cast_ref_i64(&self) -> &[i64] {
         panic!("{}", self.type_error("cast_ref_i64"))
+    }
+    fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
+        panic!("{}", self.type_error("cast_ref_f64"))
     }
     fn cast_ref_u32(&self) -> &[u32] {
         panic!("{}", self.type_error("cast_ref_u32"))
@@ -100,6 +105,9 @@ pub trait Data<'a>: Send + Sync {
 
     fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> {
         panic!("{}", self.type_error("cast_ref_mut_u64"))
+    }
+    fn cast_ref_mut_f64(&mut self) -> &mut Vec<OrderedFloat<f64>> {
+        panic!("{}", self.type_error("cast_ref_mut_f64"))
     }
     fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> {
         panic!("{}", self.type_error("cast_ref_mut_usize"))
@@ -228,6 +236,9 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
     default fn cast_ref_u64(&self) -> &[u64] {
         panic!("{}", self.type_error("cast_ref_u64"))
     }
+    default fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
+        panic!("{}", self.type_error("cast_ref_f64"))
+    }
     default fn cast_ref_usize(&self) -> &[usize] {
         panic!("{}", self.type_error("cast_ref_usize"))
     }
@@ -263,6 +274,9 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for Vec<T> {
     }
     default fn cast_ref_mut_u64(&mut self) -> &mut Vec<u64> {
         panic!("{}", self.type_error("cast_ref_mut_u64"))
+    }
+    default fn cast_ref_mut_f64(&mut self) -> &mut Vec<OrderedFloat<f64>> {
+        panic!("{}", self.type_error("cast_ref_mut_f64"))
     }
     default fn cast_ref_mut_usize(&mut self) -> &mut Vec<usize> {
         panic!("{}", self.type_error("cast_ref_mut_usize"))
@@ -400,6 +414,18 @@ impl<'a> Data<'a> for Vec<u8> {
     }
 }
 
+impl<'a> Data<'a> for Vec<OrderedFloat<f64>> {
+    fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
+        self
+    }
+    fn cast_ref_mut_f64(&mut self) -> &mut Vec<OrderedFloat<f64>> {
+        self
+    }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter().map(|i| Val::Float(*i)).collect()
+    }
+}
+
 impl<'a> Data<'a> for Vec<MergeOp> {
     fn cast_ref_merge_op(&self) -> &[MergeOp] {
         self
@@ -473,6 +499,9 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for &'a [T] {
     default fn cast_ref_u8(&self) -> &[u8] {
         panic!("{}", self.type_error("cast_ref_u8"))
     }
+    default fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
+        panic!("{}", self.type_error("cast_ref_f64"))
+    }
     default fn cast_ref_usize(&self) -> &[usize] {
         panic!("{}", self.type_error("cast_ref_usize"))
     }
@@ -525,6 +554,12 @@ impl<'a> Data<'a> for &'a [u16] {
 
 impl<'a> Data<'a> for &'a [u8] {
     fn cast_ref_u8(&self) -> &[u8] {
+        self
+    }
+}
+
+impl<'a> Data<'a> for &'a [OrderedFloat<f64>] {
+    fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
         self
     }
 }

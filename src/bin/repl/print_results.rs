@@ -3,7 +3,7 @@ use locustdb::*;
 use locustdb::unit_fmt::*;
 
 pub fn print_query_result(results: &QueryOutput) {
-    let rt = results.stats.runtime_ns;
+    let rt = if results.stats.runtime_ns == 0 { 1 } else { results.stats.runtime_ns };
 
     println!();
     for (query_plan, count) in &results.query_plans {

@@ -1,3 +1,5 @@
+use ordered_float::OrderedFloat;
+
 use crate::engine::*;
 use crate::mem_store::Val;
 
@@ -99,6 +101,8 @@ impl<'a> Cast<Val<'a>> for i64 { fn cast(self) -> Val<'a> { Val::Integer(self) }
 
 impl<'a> Cast<Val<'a>> for &'a str { fn cast(self) -> Val<'a> { Val::Str(self) } }
 
+impl<'a> Cast<Val<'a>> for OrderedFloat<f64> { fn cast(self) -> Val<'a> { Val::Float(self) } }
+
 impl<'a> Cast<u8> for Val<'a> {
     fn cast(self) -> u8 {
         match self {
@@ -131,6 +135,15 @@ impl<'a> Cast<i64> for Val<'a> {
         match self {
             Val::Integer(i) => i,
             _ => panic!("Cast::<i64>{:?}", self)
+        }
+    }
+}
+
+impl<'a> Cast<OrderedFloat<f64>> for Val<'a> {
+    fn cast(self) -> OrderedFloat<f64> {
+        match self {
+            Val::Float(f) => f,
+            _ => panic!("Cast::<f64>{:?}", self)
         }
     }
 }

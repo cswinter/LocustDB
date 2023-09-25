@@ -49,6 +49,7 @@ struct DataSection {
         u64 @3 :List(UInt64);
         i64 @4 :List(Int64);
         null @5 :UInt64;
+        f64 @6 :List(Float64);
     }
 }
 
@@ -74,4 +75,5 @@ enum EncodingType {
     u64 @3;
     i64 @4;
     null @5;
+    f64 @6;
 }

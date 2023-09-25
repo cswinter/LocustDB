@@ -149,6 +149,7 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
             Value::Int(int) => json!(int),
             Value::Str(str) => json!(str),
             Value::Null => json!(null),
+            Value::Float(float) => json!(float.0),
         }).collect::<Vec<_>>()).collect::<Vec<_>>(),
         "stats": result.stats,
     });
@@ -178,6 +179,7 @@ async fn query_cols(
                 Value::Int(int) => json!(int),
                 Value::Str(str) => json!(str),
                 Value::Null => json!(null),
+                Value::Float(f) => json!(f.0),
             });
         }
     }

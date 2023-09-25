@@ -312,8 +312,9 @@ impl QueryTask {
         rows_scanned: usize,
         explains: &[String],
     ) -> QueryOutput {
-        let limit = self.main_phase.limit.limit as usize;
-        let offset = self.main_phase.limit.offset as usize;
+        let lo = self.final_pass.as_ref().map(|x| &x.limit).unwrap_or(&self.main_phase.limit);
+        let limit = lo.limit as usize;
+        let offset = lo.offset as usize;
         let mut result_rows = Vec::new();
         let count = cmp::min(limit, full_result.len() - offset);
         for i in offset..(count + offset) {

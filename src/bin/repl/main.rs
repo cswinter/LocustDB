@@ -10,6 +10,7 @@ use locustdb::LocustDB;
 
 mod fmt_table;
 mod print_results;
+mod unicode;
 
 #[derive(StructOpt, Debug)]
 #[structopt(

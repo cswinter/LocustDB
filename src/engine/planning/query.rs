@@ -47,7 +47,9 @@ impl NormalFormQuery {
         partition: usize,
         partition_len: usize,
     ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
+        println!("Running {:?}", self);
         let limit = (self.limit.limit + self.limit.offset) as usize;
+        println!("limit: {limit}");
         let mut planner = QueryPlanner::default();
 
         let (filter_plan, _) = QueryPlan::compile_expr(
@@ -269,7 +271,7 @@ impl NormalFormQuery {
                                       input_nullable: bool| {
                 let compacted = match aggregator {
                     // PERF: if summation column is strictly positive, can use NonzeroCompact
-                    Aggregator::Sum | Aggregator::Max | Aggregator::Min => {
+                    Aggregator::SumI64 | Aggregator::MaxI64 | Aggregator::MinI64 | Aggregator::SumF64 | Aggregator::MaxF64 | Aggregator::MinF64 => {
                         qp.compact(aggregate, selector)
                     }
                     Aggregator::Count => {
@@ -293,6 +295,16 @@ impl NormalFormQuery {
                 if selector_index != Some(i) {
                     let decode_compacted =
                         decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
+                    let aggregator = if aggregate.tag == EncodingType::F64 {
+                        match aggregator {
+                            Aggregator::SumI64 => Aggregator::SumF64,
+                            Aggregator::MaxI64 => Aggregator::MaxF64,
+                            Aggregator::MinI64 => Aggregator::MinF64,
+                            _ => aggregator,
+                        }
+                    } else {
+                        aggregator
+                    };
                     aggregation_cols.push((decode_compacted, aggregator))
                 }
             }

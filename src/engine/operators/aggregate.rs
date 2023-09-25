@@ -1,65 +1,96 @@
+use ordered_float::OrderedFloat;
+
 use crate::bitvec::BitVec;
 use crate::engine::*;
 use std::i64;
 use std::marker::PhantomData;
 
-pub trait Aggregator<T> {
-    fn unit() -> T;
-    fn accumulate(accumulator: T, value: i64) -> T;
-    fn combine(accumulator1: i64, accumulator2: i64) -> i64;
+pub trait Aggregator<T, Acc> {
+    fn unit() -> Acc;
+    fn accumulate(accumulator: Acc, value: T) ->Acc;
+    fn combine(accumulator1: Acc, accumulator2: Acc) -> Acc;
 }
 
-pub trait CheckedAggregator<T>: Aggregator<T> {
-    fn accumulate_checked(accumulator: T, value: i64) -> (T, bool);
-    fn combine_checked(accumulator1: i64, accumulator2: i64) -> (i64, bool);
+pub trait CheckedAggregator<T, Acc>: Aggregator<T, Acc> {
+    fn accumulate_checked(accumulator: Acc, value: T) -> (Acc, bool);
+    fn combine_checked(accumulator1: Acc, accumulator2: Acc) -> (Acc, bool);
 }
 
-pub struct Sum;
+pub struct SumI64;
 
-impl Aggregator<i64> for Sum {
+impl<T> Aggregator<T, i64> for SumI64 where T: Into<i64> {
     fn unit() -> i64 { 0 }
     #[inline]
-    fn accumulate(accumulator: i64, value: i64) -> i64 { accumulator + value }
+    fn accumulate(accumulator: i64, value: T) -> i64 { accumulator + value.into() }
     #[inline]
     fn combine(accumulator1: i64, accumulator2: i64) -> i64 { accumulator1 + accumulator2 }
 }
 
-impl CheckedAggregator<i64> for Sum {
+impl<T> CheckedAggregator<T, i64> for SumI64 where T: Into<i64> {
     #[inline]
-    fn accumulate_checked(acc: i64, value: i64) -> (i64, bool) { acc.overflowing_add(value) }
+    fn accumulate_checked(acc: i64, value: T) -> (i64, bool) { acc.overflowing_add(value.into()) }
     #[inline]
     fn combine_checked(acc1: i64, acc2: i64) -> (i64, bool) { acc1.overflowing_add(acc2) }
 }
 
+pub struct SumF64;
+
+impl<T> Aggregator<T, OrderedFloat<f64>> for SumF64 where T: Into<OrderedFloat<f64>> {
+    fn unit() -> OrderedFloat<f64> { OrderedFloat(0.0) }
+    #[inline]
+    fn accumulate(accumulator: OrderedFloat<f64>, value: T) -> OrderedFloat<f64> { accumulator + value.into() }
+    #[inline]
+    fn combine(accumulator1: OrderedFloat<f64>, accumulator2: OrderedFloat<f64>) -> OrderedFloat<f64> { accumulator1 + accumulator2 }
+}
 
 pub struct Count;
 
-impl Aggregator<u32> for Count {
+impl<V> Aggregator<V, u32> for Count {
     fn unit() -> u32 { 0 }
     #[inline]
-    fn accumulate(accumulator: u32, _: i64) -> u32 { accumulator + 1 }
+    fn accumulate(accumulator: u32, _: V) -> u32 { accumulator + 1 }
     #[inline]
-    fn combine(accumulator1: i64, accumulator2: i64) -> i64 { accumulator1 + accumulator2 }
+    fn combine(accumulator1: u32, accumulator2: u32) -> u32 { accumulator1 + accumulator2 }
 }
 
-pub struct Max;
+pub struct MaxI64;
 
-impl Aggregator<i64> for Max {
+impl<V> Aggregator<V, i64> for MaxI64 where V: Into<i64> {
     fn unit() -> i64 { i64::MIN }
     #[inline]
-    fn accumulate(accumulator: i64, value: i64) -> i64 { std::cmp::max(accumulator, value) }
+    fn accumulate(accumulator: i64, value: V) -> i64 { std::cmp::max(accumulator, value.into()) }
     #[inline]
     fn combine(accumulator1: i64, accumulator2: i64) -> i64 { std::cmp::max(accumulator1, accumulator2) }
 }
 
-pub struct Min;
+pub struct MaxF64;
 
-impl Aggregator<i64> for Min {
+impl<V> Aggregator<V, OrderedFloat<f64>> for MaxF64 where V: Into<OrderedFloat<f64>> {
+    fn unit() -> OrderedFloat<f64> { OrderedFloat(f64::MIN) }
+    #[inline]
+    fn accumulate(accumulator: OrderedFloat<f64>, value: V) -> OrderedFloat<f64> { std::cmp::max(accumulator, value.into()) }
+    #[inline]
+    fn combine(accumulator1: OrderedFloat<f64>, accumulator2: OrderedFloat<f64>) -> OrderedFloat<f64> { std::cmp::max(accumulator1, accumulator2) }
+}
+
+pub struct MinI64;
+
+impl<V> Aggregator<V, i64> for MinI64 where V: Into<i64> {
     fn unit() -> i64 { i64::MAX }
     #[inline]
-    fn accumulate(accumulator: i64, value: i64) -> i64 { std::cmp::min(accumulator, value) }
+    fn accumulate(accumulator: i64, value: V) -> i64 { std::cmp::min(accumulator, value.into()) }
     #[inline]
     fn combine(accumulator1: i64, accumulator2: i64) -> i64 { std::cmp::min(accumulator1, accumulator2) }
+}
+
+pub struct MinF64;
+
+impl<V> Aggregator<V, OrderedFloat<f64>> for MinF64 where V: Into<OrderedFloat<f64>> {
+    fn unit() -> OrderedFloat<f64> { OrderedFloat(f64::MAX) }
+    #[inline]
+    fn accumulate(accumulator: OrderedFloat<f64>, value: V) -> OrderedFloat<f64> { std::cmp::min(accumulator, value.into()) }
+    #[inline]
+    fn combine(accumulator1: OrderedFloat<f64>, accumulator2: OrderedFloat<f64>) -> OrderedFloat<f64> { std::cmp::min(accumulator1, accumulator2) }
 }
 
 
@@ -71,8 +102,8 @@ pub struct Aggregate<T, U, V, A> {
     pub a: PhantomData<A>,
 }
 
-impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for Aggregate<T, U, V, A> where
-    T: GenericIntVec<T> + Into<i64>, U: GenericIntVec<U>, V: GenericIntVec<V> {
+impl<'a, T, U, V, A: Aggregator<T, V>> VecOperator<'a> for Aggregate<T, U, V, A> where
+    T: VecData<T> + 'static, U: GenericIntVec<U>, V: VecData<V> + 'static {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let nums = scratchpad.get(self.input);
         let grouping = scratchpad.get(self.grouping);
@@ -85,7 +116,7 @@ impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for Aggregate<T, U, V, A> wh
 
         for (i, n) in grouping.iter().zip(nums.iter()) {
             let i = i.cast_usize();
-            accumulators[i] = A::accumulate(accumulators[i], (*n).into());
+            accumulators[i] = A::accumulate(accumulators[i], *n);
         }
 
         Ok(())
@@ -107,7 +138,7 @@ impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for Aggregate<T, U, V, A> wh
     fn display_output(&self) -> bool { false }
 }
 
-pub struct AggregateNullable<T, U, V, A> {
+pub struct AggregateNullable<T, U, V, A> where A: Aggregator<T, V> {
     pub input: BufferRef<Nullable<T>>,
     pub grouping: BufferRef<U>,
     pub output: BufferRef<V>,
@@ -115,8 +146,8 @@ pub struct AggregateNullable<T, U, V, A> {
     pub a: PhantomData<A>,
 }
 
-impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for AggregateNullable<T, U, V, A> where
-    T: GenericIntVec<T> + Into<i64>, U: GenericIntVec<U>, V: GenericIntVec<V> {
+impl<'a, T, U, V, A: Aggregator<T, V>> VecOperator<'a> for AggregateNullable<T, U, V, A> where
+    T: VecData<T> + 'static, U: GenericIntVec<U>, V: VecData<V> + 'static {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (nums, present) = scratchpad.get_nullable(self.input);
         let grouping = scratchpad.get(self.grouping);
@@ -130,7 +161,7 @@ impl<'a, T, U, V, A: Aggregator<V>> VecOperator<'a> for AggregateNullable<T, U, 
         for i in 0..nums.len() {
             if (&*present).is_set(i) {
                 let g = grouping[i].cast_usize();
-                accumulators[g] = A::accumulate(accumulators[g], nums[i].into());
+                accumulators[g] = A::accumulate(accumulators[g], nums[i]);
             }
         }
         Ok(())
@@ -160,8 +191,8 @@ pub struct CheckedAggregate<T, U, V, A> {
     pub a: PhantomData<A>,
 }
 
-impl<'a, T, U, V, A: CheckedAggregator<V>> VecOperator<'a> for CheckedAggregate<T, U, V, A> where
-    T: GenericIntVec<T> + Into<i64>, U: GenericIntVec<U>, V: GenericIntVec<V> {
+impl<'a, T, U, V, A: CheckedAggregator<T, V>> VecOperator<'a> for CheckedAggregate<T, U, V, A> where
+    T: GenericIntVec<T> + Into<V>, U: GenericIntVec<U>, V: GenericIntVec<V> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let nums = scratchpad.get(self.input);
         let grouping = scratchpad.get(self.grouping);
@@ -175,7 +206,7 @@ impl<'a, T, U, V, A: CheckedAggregator<V>> VecOperator<'a> for CheckedAggregate<
         let mut any_overflow = false;
         for (i, n) in grouping.iter().zip(nums.iter()) {
             let i = i.cast_usize();
-            let (result, overflow) = A::accumulate_checked(accumulators[i], (*n).into());
+            let (result, overflow) = A::accumulate_checked(accumulators[i], *n);
             any_overflow |= overflow;
             accumulators[i] = result;
         }
@@ -207,7 +238,7 @@ pub struct CheckedAggregateNullable<T, U, V, A> {
     pub a: PhantomData<A>,
 }
 
-impl<'a, T, U, V, A: CheckedAggregator<V>> VecOperator<'a> for CheckedAggregateNullable<T, U, V, A> where
+impl<'a, T, U, V, A: CheckedAggregator<T, V>> VecOperator<'a> for CheckedAggregateNullable<T, U, V, A> where
     T: GenericIntVec<T> + Into<i64>, U: GenericIntVec<U>, V: GenericIntVec<V> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (nums, present) = scratchpad.get_nullable(self.input);
@@ -223,7 +254,7 @@ impl<'a, T, U, V, A: CheckedAggregator<V>> VecOperator<'a> for CheckedAggregateN
         for i in 0..nums.len() {
             if (&*present).is_set(i) {
                 let g = grouping[i].cast_usize();
-                let (result, overflow) = A::accumulate_checked(accumulators[g], nums[i].into());
+                let (result, overflow) = A::accumulate_checked(accumulators[g], nums[i]);
                 any_overflow |= overflow;
                 accumulators[g] = result;
             }

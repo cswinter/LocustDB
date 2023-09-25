@@ -320,6 +320,26 @@ impl RawCol {
                 self.string_bytes,
                 present,
             )
+        } else if self.types.contains_float {
+            let mut builder = FloatColBuilder::default();
+            for s in self.values.iter() {
+                let f = if s.is_empty() {
+                    if self.allow_null {
+                        None
+                    } else {
+                        Some(0.0)
+                    }
+                } else if let Ok(float) = s.parse::<f64>() {
+                    Some(float)
+                } else {
+                    unreachable!(
+                        "{} should be parseable as float. {} {:?}",
+                        s, name, self.types
+                    )
+                };
+                builder.push(&f);
+            }
+            builder.finalize(name, present)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::default();
             for s in self.values.iter() {
@@ -423,39 +443,47 @@ fn is_uppercase_hex(string: &str) -> bool {
 struct ColType {
     contains_string: bool,
     contains_int: bool,
+    contains_float: bool,
     contains_null: bool,
 }
 
 impl ColType {
-    fn new(string: bool, int: bool, null: bool) -> ColType {
+    fn new(string: bool, int: bool, float: bool, null: bool) -> ColType {
         ColType {
             contains_string: string,
             contains_int: int,
+            contains_float: float,
             contains_null: null,
         }
     }
 
     fn string() -> ColType {
-        ColType::new(true, false, false)
+        ColType::new(true, false, false, false)
     }
 
     fn int() -> ColType {
-        ColType::new(false, true, false)
+        ColType::new(false, true, false, false)
+    }
+
+    fn float() -> ColType {
+        ColType::new(false, false, true, false)
     }
 
     fn null() -> ColType {
-        ColType::new(false, false, true)
+        ColType::new(false, false, false, true)
     }
 
     fn nothing() -> ColType {
-        ColType::new(false, false, false)
+        ColType::new(false, false, false, false)
     }
 
     fn determine(s: &str) -> ColType {
         if s.is_empty() {
             ColType::null()
-        } else if s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() {
+        } else if s.parse::<i64>().is_ok() {
             ColType::int()
+        } else if s.parse::<f64>().is_ok() {
+            ColType::float()
         } else {
             ColType::string()
         }
@@ -468,6 +496,7 @@ impl BitOr for ColType {
         ColType {
             contains_string: self.contains_string | rhs.contains_string,
             contains_int: self.contains_int | rhs.contains_int,
+            contains_float: self.contains_float | rhs.contains_float,
             contains_null: self.contains_null | rhs.contains_null,
         }
     }

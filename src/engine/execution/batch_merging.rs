@@ -149,8 +149,8 @@ pub fn combine<'a>(
         for (&(ileft, aggregator), &(iright, _)) in
             batch1.aggregations.iter().zip(batch2.aggregations.iter())
         {
-            let left = left[ileft].i64()?;
-            let right = right[iright].i64()?;
+            let left = left[ileft];
+            let right = right[iright];
             let aggregated = qp.merge_aggregate(ops, left, right, aggregator);
             aggregates.push((aggregated.any(), aggregator));
         }

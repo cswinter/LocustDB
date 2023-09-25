@@ -1,20 +1,11 @@
-use crate::engine::*;
-
+// TODO: would probably be better to have two types here, an UntypedAggregator emitted by parser which is then converted into the right TypedAggregator by query planner
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Aggregator {
-    Sum = 0,
-    Count = 1,
-    Max = 2,
-    Min = 3,
-}
-
-impl Aggregator {
-    pub fn combine_i64(self, accumulator: i64, elem: i64) -> Result<i64, QueryError> {
-        match self {
-            Aggregator::Sum => accumulator.checked_add(elem).ok_or(QueryError::Overflow),
-            Aggregator::Count => Ok(accumulator + elem),
-            Aggregator::Max => Ok(std::cmp::max(accumulator, elem)),
-            Aggregator::Min => Ok(std::cmp::min(accumulator, elem)),
-        }
-    }
+    SumI64 = 0,
+    SumF64 = 1,
+    Count = 2,
+    MaxI64 = 3,
+    MaxF64 = 4,
+    MinI64 = 5,
+    MinF64 = 6,
 }
