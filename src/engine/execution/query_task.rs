@@ -87,7 +87,6 @@ impl QueryTask {
         let referenced_cols = query.find_referenced_cols();
 
         let (main_phase, final_pass) = query.normalize()?;
-        println!("main_phase: {:?} final_pass: {:?}", main_phase, final_pass);
         let output_colnames = match &final_pass {
             Some(final_pass) => final_pass.result_column_names()?,
             None => main_phase.result_column_names()?,
@@ -249,8 +248,6 @@ impl QueryTask {
                     return;
                 }
             };
-            println!("full result {:?}: ", full_result);
-            println!("final pass {:?}: ", self.final_pass);
             let final_result = if let Some(final_pass) = &self.final_pass {
                 let data_sources = full_result.into_columns();
                 let cols = unsafe {

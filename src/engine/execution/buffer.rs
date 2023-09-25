@@ -83,6 +83,10 @@ impl From<TypedBufferRef> for BufferRef<i64> {
     fn from(buffer: TypedBufferRef) -> BufferRef<i64> { buffer.i64().unwrap() }
 }
 
+impl From<TypedBufferRef> for BufferRef<OrderedFloat<f64>> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<OrderedFloat<f64>> { buffer.f64().unwrap() }
+}
+
 // this is a temporary hack because there is no buffer type for ByteSlices and can be removed once there is
 impl From<BufferRef<Any>> for TypedBufferRef {
     fn from(buffer: BufferRef<Any>) -> TypedBufferRef {
@@ -117,6 +121,12 @@ impl<'a> From<BufferRef<&'a str>> for TypedBufferRef {
 impl From<BufferRef<i64>> for TypedBufferRef {
     fn from(buffer: BufferRef<i64>) -> TypedBufferRef {
         TypedBufferRef::new(buffer.any(), EncodingType::I64)
+    }
+}
+
+impl From<BufferRef<OrderedFloat<f64>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<OrderedFloat<f64>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::F64)
     }
 }
 
@@ -245,6 +255,11 @@ impl TypedBufferRef {
     pub fn u8(&self) -> Result<BufferRef<u8>, QueryError> {
         ensure!(self.tag == EncodingType::U8, "{:?} != U8", self.tag);
         Ok(self.buffer.u8())
+    }
+
+    pub fn f64(&self) -> Result<BufferRef<OrderedFloat<f64>>, QueryError> {
+        ensure!(self.tag == EncodingType::F64, "{:?} != F64", self.tag);
+        Ok(self.buffer.f64())
     }
 
     pub fn nullable_u8(&self) -> Result<BufferRef<Nullable<u8>>, QueryError> {

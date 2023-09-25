@@ -201,7 +201,9 @@ fn types(t: &Ident) -> Option<Vec<Type>> {
         "Str" => Some(vec![Type::Str]),
         "IntegerNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64]),
         "Integer" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64]),
+        "Float" => Some(vec![Type::F64]),
         "NullableInteger" => Some(vec![Type::NullableU8, Type::NullableU16, Type::NullableU32, Type::NullableI64]),
+        "NullableFloat" => Some(vec![Type::NullableF64]),
         "Primitive" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::F64, Type::Str, Type::OptStr]),
         "NullablePrimitive" => Some(vec![Type::NullableU8, Type::NullableU16, Type::NullableU32, Type::NullableI64, Type::NullableF64, Type::NullableStr]),
         "PrimitiveUSize" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::F64, Type::Str, Type::USize]),
@@ -209,7 +211,8 @@ fn types(t: &Ident) -> Option<Vec<Type>> {
         "Const" => Some(vec![Type::ScalarI64, Type::ScalarStr]),
         "ScalarI64" => Some(vec![Type::ScalarI64]),
         "ScalarStr" => Some(vec![Type::ScalarStr]),
-        "Aggregator" => Some(vec![Type::AggregatorCount, Type::AggregatorSum, Type::AggregatorMax, Type::AggregatorMin]),
+        "IntAggregator" => Some(vec![Type::AggregatorCount, Type::AggregatorSumI64, Type::AggregatorMaxI64, Type::AggregatorMinI64]),
+        "FloatAggregator" => Some(vec![Type::AggregatorCount, Type::AggregatorSumF64, Type::AggregatorMaxF64, Type::AggregatorMinF64]),
         _ => None,
     }
 }
@@ -236,10 +239,13 @@ enum Type {
     ScalarStr,
     USize,
 
-    AggregatorSum,
+    AggregatorSumI64,
+    AggregatorSumF64,
     AggregatorCount,
-    AggregatorMax,
-    AggregatorMin,
+    AggregatorMaxI64,
+    AggregatorMaxF64,
+    AggregatorMinI64,
+    AggregatorMinF64,
 }
 
 impl Type {
@@ -263,9 +269,12 @@ impl Type {
             Type::ScalarI64 => parse_quote!(EncodingType::ScalarI64),
             Type::ScalarStr => parse_quote!(EncodingType::ScalarStr),
             Type::AggregatorCount => parse_quote!(Aggregator::Count),
-            Type::AggregatorSum => parse_quote!(Aggregator::Sum),
-            Type::AggregatorMax => parse_quote!(Aggregator::Max),
-            Type::AggregatorMin => parse_quote!(Aggregator::Min),
+            Type::AggregatorSumI64 => parse_quote!(Aggregator::SumI64),
+            Type::AggregatorSumF64 => parse_quote!(Aggregator::SumF64),
+            Type::AggregatorMaxI64 => parse_quote!(Aggregator::MaxI64),
+            Type::AggregatorMaxF64 => parse_quote!(Aggregator::MaxF64),
+            Type::AggregatorMinI64 => parse_quote!(Aggregator::MinI64),
+            Type::AggregatorMinF64 => parse_quote!(Aggregator::MinF64),
         }
     }
 
@@ -289,9 +298,12 @@ impl Type {
             Type::ScalarI64 => parse_quote!( let #variable = #variable.buffer.scalar_i64(); ),
             Type::ScalarStr => parse_quote!( let #variable = #variable.buffer.scalar_str(); ),
             Type::AggregatorCount => parse_quote!( let #variable = PhantomData::<Count>; ),
-            Type::AggregatorSum => parse_quote!( let #variable = PhantomData::<Sum>; ),
-            Type::AggregatorMax => parse_quote!( let #variable = PhantomData::<Max>; ),
-            Type::AggregatorMin => parse_quote!( let #variable = PhantomData::<Min>; ),
+            Type::AggregatorSumI64 => parse_quote!( let #variable = PhantomData::<SumI64>; ),
+            Type::AggregatorSumF64 => parse_quote!( let #variable = PhantomData::<SumF64>; ),
+            Type::AggregatorMaxI64 => parse_quote!( let #variable = PhantomData::<MaxI64>; ),
+            Type::AggregatorMaxF64 => parse_quote!( let #variable = PhantomData::<MaxF64>; ),
+            Type::AggregatorMinI64 => parse_quote!( let #variable = PhantomData::<MinI64>; ),
+            Type::AggregatorMinF64 => parse_quote!( let #variable = PhantomData::<MinF64>; ),
         }
     }
 }

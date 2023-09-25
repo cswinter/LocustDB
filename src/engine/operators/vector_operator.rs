@@ -1152,13 +1152,35 @@ pub mod operator {
         if input.is_nullable() {
             reify_types! {
                 "nullable_aggregation";
-                input: NullableInteger, grouping: Integer, aggregator: Aggregator;
+                input: NullableInteger, grouping: Integer, aggregator: IntAggregator;
                 Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
             }
         } else {
             reify_types! {
                 "aggregation";
-                input: IntegerNoU64, grouping: Integer, aggregator: Aggregator;
+                input: IntegerNoU64, grouping: Integer, aggregator: IntAggregator;
+                Ok(Box::new(Aggregate { input, grouping, output: output.into(), max_index, a: aggregator }))
+            }
+        }
+    }
+
+    pub fn aggregate_f64<'a>(
+        input: TypedBufferRef,
+        grouping: TypedBufferRef,
+        max_index: BufferRef<Scalar<i64>>,
+        aggregator: Aggregator,
+        output: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        if input.is_nullable() {
+            reify_types! {
+                "nullable_aggregation";
+                input: NullableFloat, grouping: Integer, aggregator: FloatAggregator;
+                Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
+            }
+        } else {
+            reify_types! {
+                "aggregation";
+                input: Float, grouping: Integer, aggregator: FloatAggregator;
                 Ok(Box::new(Aggregate { input, grouping, output: output.into(), max_index, a: aggregator }))
             }
         }
@@ -1171,18 +1193,18 @@ pub mod operator {
         aggregator: Aggregator,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        assert!(aggregator == Aggregator::Sum);
+        assert!(aggregator == Aggregator::SumI64);
         if input.is_nullable() {
             reify_types! {
                 "checked_nullable_aggregation";
                 input: NullableInteger, grouping: Integer;
-                Ok(Box::new(CheckedAggregateNullable { input, grouping, output: output.into(), max_index, a: PhantomData::<Sum> }))
+                Ok(Box::new(CheckedAggregateNullable { input, grouping, output: output.into(), max_index, a: PhantomData::<SumI64> }))
             }
         } else {
             reify_types! {
                 "checked_aggregation";
                 input: IntegerNoU64, grouping: Integer;
-                Ok(Box::new(CheckedAggregate { input, grouping, output: output.into(), max_index, a: PhantomData::<Sum> }))
+                Ok(Box::new(CheckedAggregate { input, grouping, output: output.into(), max_index, a: PhantomData::<SumI64> }))
             }
         }
     }
@@ -1228,7 +1250,7 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "compact";
-            data, compacted: Integer, select: Integer;
+            data, compacted: Primitive, select: Integer;
             Ok(Box::new(Compact { data, select, compacted }))
         }
     }
@@ -1428,18 +1450,28 @@ pub mod operator {
 
     pub fn merge_aggregate<'a>(
         merge_ops: BufferRef<MergeOp>,
-        left: BufferRef<i64>,
-        right: BufferRef<i64>,
+        left: TypedBufferRef,
+        right: TypedBufferRef,
         aggregator: Aggregator,
-        aggregated_out: BufferRef<i64>,
-    ) -> BoxedOperator<'a> {
-        Box::new(MergeAggregate {
-            merge_ops,
-            left,
-            right,
-            aggregated: aggregated_out,
-            aggregator,
-        })
+        aggregated_out: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        match left.tag {
+            EncodingType::I64 => Ok(Box::new(MergeAggregate {
+                merge_ops,
+                left: left.i64()?,
+                right: right.i64()?,
+                aggregated: aggregated_out.i64()?,
+                aggregator,
+            })),
+            EncodingType::F64 => Ok(Box::new(MergeAggregate {
+                merge_ops,
+                left: left.f64()?,
+                right: right.f64()?,
+                aggregated: aggregated_out.f64()?,
+                aggregator,
+            })),
+            _ => panic!("Unsupported type {:?} for merge_aggregate", left.tag),
+        }
     }
 
     pub fn merge_partitioned<'a>(

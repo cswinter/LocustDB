@@ -296,7 +296,15 @@ fn test_sum() {
     test_query(
         "select tld, sum(num) from default where (tld = 'name');",
         &[vec!["name".into(), 26.into()]],
-    )
+    );
+    test_query_ec(
+        "select enum, sum(float) from default;",
+        &[
+            vec![Str("aa"), Float(OrderedFloat(-123.87628600000001))],
+            vec![Str("bb"), Float(OrderedFloat(1.234e29))],
+            vec![Str("cc"), Float(OrderedFloat(-1.0))]
+        ],
+    );
 }
 
 #[test]
@@ -537,7 +545,15 @@ fn test_min_max() {
             vec![Int(3), Int(52_750), Int(150)],
             vec![Int(4), Int(44_550), Int(200)],
         ],
-    )
+    );
+    test_query_ec(
+        "select enum, max(float), min(float) from default;",
+        &[
+            vec![Str("aa"), Float(OrderedFloat(0.123412)), Float(OrderedFloat(-124.0))],
+            vec![Str("bb"), Float(OrderedFloat(1.234e29)), Float(OrderedFloat(3.15159))],
+            vec![Str("cc"), Float(OrderedFloat(0.0)), Float(OrderedFloat(-1.0))]
+        ],
+    );
 }
 
 #[test]

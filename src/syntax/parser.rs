@@ -266,7 +266,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in SUM function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Sum, convert_to_native_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::SumI64, convert_to_native_expr(&f.args[0])?)
             }
             "AVG" => {
                 if f.args.len() != 1 {
@@ -277,7 +277,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 Expr::Func2(
                     Func2Type::Divide,
                     Box::new(Expr::Aggregate(
-                        Aggregator::Sum,
+                        Aggregator::SumI64,
                         convert_to_native_expr(&f.args[0])?,
                     )),
                     Box::new(Expr::Aggregate(
@@ -292,7 +292,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in MAX function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Max, convert_to_native_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::MaxI64, convert_to_native_expr(&f.args[0])?)
             }
             "MIN" => {
                 if f.args.len() != 1 {
@@ -300,7 +300,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in MIN function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Min, convert_to_native_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::MinI64, convert_to_native_expr(&f.args[0])?)
             }
             _ => return Err(QueryError::NotImplemented(format!("Function {:?}", f.name))),
         },

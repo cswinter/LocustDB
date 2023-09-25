@@ -580,11 +580,11 @@ pub enum QueryPlan {
     /// Merges `lhs` and `lhs` according to `merge_ops`, combining duplicates.
     MergeAggregate {
         merge_ops: BufferRef<MergeOp>,
-        lhs: BufferRef<i64>,
-        rhs: BufferRef<i64>,
+        lhs: TypedBufferRef,
+        rhs: TypedBufferRef,
         aggregator: Aggregator,
-        #[output]
-        merged: BufferRef<i64>,
+        #[output(t = "base=lhs")]
+        merged: TypedBufferRef,
     },
 }
 
@@ -650,7 +650,7 @@ pub fn prepare_aggregation(
                 Type::encoded(Codec::integer_cast(EncodingType::U32)),
             )
         }
-        Aggregator::Sum => {
+        Aggregator::SumI64 if matches!(plan_type.decoded, BasicType::Integer | BasicType::NullableInteger) => {
             if !plan_type.is_summation_preserving() {
                 plan = plan_type.codec.unwrap().decode(plan, planner);
             }
@@ -660,13 +660,30 @@ pub fn prepare_aggregation(
                     plan,
                     grouping_key,
                     max_index,
-                    Aggregator::Sum,
+                    Aggregator::SumI64,
                     EncodingType::I64,
                 ),
                 Type::unencoded(BasicType::Integer),
             )
         }
-        Aggregator::Max | Aggregator::Min => {
+        Aggregator::SumI64 => {
+            // This fell through from the previous case, so we know that this is a float summation.
+            if !plan_type.is_summation_preserving() {
+                plan = plan_type.codec.unwrap().decode(plan, planner);
+            }
+            // PERF: determine dense groupings
+            (
+                planner.aggregate(
+                    plan,
+                    grouping_key,
+                    max_index,
+                    Aggregator::SumF64,
+                    EncodingType::F64,
+                ),
+                Type::unencoded(BasicType::Float),
+            )
+        }
+        Aggregator::MaxI64 | Aggregator::MinI64 if matches!(plan_type.decoded, BasicType::Integer | BasicType::NullableInteger) => {
             // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
             plan = plan_type.codec.unwrap().decode(plan, planner);
             (
@@ -674,6 +691,22 @@ pub fn prepare_aggregation(
                 Type::unencoded(BasicType::Integer),
             )
         }
+        Aggregator::MaxI64 | Aggregator::MinI64 => {
+            // This fell through from the previous case, so we know that this is a float summation.
+            // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
+            plan = plan_type.codec.unwrap().decode(plan, planner);
+            let aggregator = match aggregator {
+                Aggregator::MaxI64 => Aggregator::MaxF64,
+                Aggregator::MinI64 => Aggregator::MinF64,
+                _ => unreachable!(),
+            };
+            (
+                planner.aggregate(plan, grouping_key, max_index, aggregator, EncodingType::F64),
+                Type::unencoded(BasicType::Float),
+            )
+        }
+        Aggregator::SumF64 => panic!("All sums are represented as SumI64 by the parser since it does not have access to type information"),
+        Aggregator::MaxF64 | Aggregator::MinF64 => panic!("All max/min are represented as MaxI64/MaxF64 by the parser since it does not have access to type information"),
     })
 }
 
@@ -1656,7 +1689,11 @@ pub(super) fn prepare<'a>(
             max_index,
             aggregator,
             aggregate,
-        } => operator::aggregate(plan, grouping_key, max_index, aggregator, aggregate)?,
+        } => if aggregate.tag == EncodingType::F64 {
+            operator::aggregate_f64(plan, grouping_key, max_index, aggregator, aggregate)?
+        } else {
+            operator::aggregate(plan, grouping_key, max_index, aggregator, aggregate)?
+        },
         QueryPlan::CheckedAggregate {
             plan,
             grouping_key,
@@ -1879,7 +1916,7 @@ pub(super) fn prepare<'a>(
             rhs,
             aggregator,
             merged,
-        } => operator::merge_aggregate(merge_ops, lhs, rhs, aggregator, merged),
+        } => operator::merge_aggregate(merge_ops, lhs, rhs, aggregator, merged)?,
         QueryPlan::ConstantVec {
             index,
             constant_vec,
