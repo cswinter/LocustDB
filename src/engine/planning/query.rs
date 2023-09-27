@@ -47,9 +47,7 @@ impl NormalFormQuery {
         partition: usize,
         partition_len: usize,
     ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
-        println!("Running {:?}", self);
         let limit = (self.limit.limit + self.limit.offset) as usize;
-        println!("limit: {limit}");
         let mut planner = QueryPlanner::default();
 
         let (filter_plan, _) = QueryPlan::compile_expr(
