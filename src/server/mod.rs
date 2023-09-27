@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use actix_web::web::Data;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
@@ -164,7 +165,7 @@ async fn query_cols(
     // log::info!("Query: {:?}", req_body);
     let result = data
         .db
-        .run_query("SELECT * FROM test_metrics LIMIT 100000000", false, vec![])
+        .run_query("SELECT timestamp, cpu * 100 AS cpu FROM test_metrics LIMIT 100000000", false, vec![])
         .await
         .unwrap()
         .unwrap();
@@ -205,9 +206,14 @@ async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> im
                         .map(|(colname, val)| {
                             let val = match val {
                                 serde_json::Value::Null => RawVal::Null,
-                                serde_json::Value::Number(n) => match n.as_i64() {
-                                    Some(int) => RawVal::Int(int),
-                                    None => panic!("Unsupported number {}", n),
+                                serde_json::Value::Number(n) => {
+                                    if n.is_i64() { 
+                                        RawVal::Int(n.as_i64().unwrap())
+                                    } else if n.is_f64() {
+                                        RawVal::Float(OrderedFloat(n.as_f64().unwrap()))
+                                    } else {
+                                        panic!("Unsupported number {}", n)
+                                    }
                                 },
                                 serde_json::Value::String(s) => RawVal::Str(s),
                                 _ => panic!("Unsupported value: {:?}", val),

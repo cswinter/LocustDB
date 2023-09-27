@@ -35,6 +35,7 @@ impl Buffer {
             match input_col {
                 InputColumn::Int(vec) => buffered_col.push_ints(vec),
                 InputColumn::Str(vec) => buffered_col.push_strings(vec),
+                InputColumn::Float(vec) => buffered_col.push_floats(vec),
                 InputColumn::Null(c) => buffered_col.push_nulls(c),
             }
             new_length = cmp::max(new_length, buffered_col.len())

@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use locustdb_derive::reify_types;
 use regex::Regex;
+use ordered_float::OrderedFloat;
 
 use crate::engine::Aggregator;
 use crate::engine::*;
@@ -781,16 +782,24 @@ pub mod operator {
     pub fn multiplication<'a>(
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        output: BufferRef<i64>,
+        output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "multiplication";
             lhs: ScalarI64, rhs: IntegerNoU64;
-            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output: output.into(), op: PhantomData::<Multiplication<_, _, i64>> }));
             lhs: IntegerNoU64, rhs: ScalarI64;
-            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, i64>> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
-            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }))
+            Ok(Box::new(BinaryOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, i64>> }));
+            lhs: Float, rhs: NumberNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
+            lhs: NumberNoU64, rhs: Float;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
+            lhs: ScalarI64, rhs: Float;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
+            lhs: Float, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }))
         }
     }
 
@@ -802,11 +811,11 @@ pub mod operator {
         reify_types! {
             "checked_multiplication";
             lhs: ScalarI64, rhs: IntegerNoU64;
-            Ok(Box::new(CheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            Ok(Box::new(CheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Multiplication<_, _, i64>> }));
             lhs: IntegerNoU64, rhs: ScalarI64;
-            Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }));
+            Ok(Box::new(CheckedBinaryVSOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _, i64>> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
-            Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _>> }))
+            Ok(Box::new(CheckedBinaryOperator { lhs, rhs, output, op: PhantomData::<Multiplication<_, _, i64>> }))
         }
     }
 
@@ -819,11 +828,11 @@ pub mod operator {
         reify_types! {
             "nullable_checked_multiplication";
             lhs: ScalarI64, rhs: IntegerNoU64;
-            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, present, op: PhantomData::<Multiplication<_, _>> }));
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs: rhs, rhs: lhs, output, present, op: PhantomData::<Multiplication<_, _, i64>> }));
             lhs: IntegerNoU64, rhs: ScalarI64;
-            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Multiplication<_, _>> }));
+            Ok(Box::new(NullableCheckedBinaryVSOperator { lhs, rhs, output, present, op: PhantomData::<Multiplication<_, _, i64>> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
-            Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Multiplication<_, _>> }))
+            Ok(Box::new(NullableCheckedBinaryOperator { lhs, rhs, output, present, op: PhantomData::<Multiplication<_, _, i64>> }))
         }
     }
 

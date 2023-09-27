@@ -335,7 +335,7 @@ pub enum QueryPlan {
     Multiply {
         lhs: TypedBufferRef,
         rhs: TypedBufferRef,
-        #[output(t = "base=i64;null=lhs,rhs")]
+        #[output(t = "base=provided;null=lhs,rhs")]
         product: TypedBufferRef,
     },
     CheckedMultiply {
@@ -744,6 +744,16 @@ impl Function2 {
         }
     }
 
+    pub fn float_op(factory: Factory, type_lhs: BasicType, type_rhs: BasicType) -> Function2 {
+        Function2 {
+            factory,
+            type_lhs,
+            type_rhs,
+            type_out: Type::unencoded(BasicType::Float).mutable(),
+            encoding_invariance: false,
+        }
+    }
+
     pub fn comparison_op(factory: Factory, t: BasicType) -> Function2 {
         Function2 {
             factory,
@@ -775,9 +785,20 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
         ),
         (
             Func2Type::Multiply,
-            vec![Function2::integer_op(Box::new(|qp, lhs, rhs| {
-                qp.checked_multiply(lhs, rhs)
-            }))],
+            vec![
+                Function2::integer_op(Box::new(|qp, lhs, rhs| {
+                    qp.checked_multiply(lhs, rhs)
+                })),
+                Function2::float_op(Box::new(|qp, lhs, rhs| {
+                    qp.multiply(lhs, rhs, EncodingType::F64)
+                }), BasicType::Integer, BasicType::Float),
+                Function2::float_op(Box::new(|qp, lhs, rhs| {
+                    qp.multiply(lhs, rhs, EncodingType::F64)
+                }), BasicType::Float, BasicType::Integer),
+                Function2::float_op(Box::new(|qp, lhs, rhs| {
+                    qp.multiply(lhs, rhs, EncodingType::F64)
+                }), BasicType::Float, BasicType::Float),
+            ],
         ),
         (
             Func2Type::Divide,
@@ -1797,7 +1818,7 @@ pub(super) fn prepare<'a>(
             difference,
         } => operator::nullable_checked_subtraction(lhs, rhs, present, difference)?,
         QueryPlan::Multiply { lhs, rhs, product } => {
-            operator::multiplication(lhs, rhs, product.i64()?)?
+            operator::multiplication(lhs, rhs, product)?
         }
         QueryPlan::CheckedMultiply { lhs, rhs, product } => {
             operator::checked_multiplication(lhs, rhs, product.i64()?)?
