@@ -21,7 +21,7 @@ lazy_static! {
 #[pymodule]
 fn locustdb(_py: Python, m: &PyModule) -> PyResult<()> {
     env_logger::init();
-    m.add_function(wrap_pyfunction!(log, m)?).unwrap();
+    m.add_function(wrap_pyfunction!(self::log, m)?).unwrap();
     Ok(())
 }
 
