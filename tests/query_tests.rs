@@ -1192,4 +1192,9 @@ fn test_colnames() {
         "SELECT u8_offset_encoded FROM default WHERE u8_offset_encoded = 256;",
         vec!["u8_offset_encoded".to_string()],
     );
+
+    test_query_colnames(
+        "SELECT \"u8_offset_encoded\" FROM \"default\" WHERE \"u8_offset_encoded\" = 256;",
+        vec!["u8_offset_encoded".to_string()],
+    );
 }

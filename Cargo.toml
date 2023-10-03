@@ -14,6 +14,7 @@ capnpc = {version = "0.14", optional = true}
 
 [dependencies]
 actix-web = "4"
+actix-cors = "0.6"
 aliasmethod = "0.1"
 bit-vec = "0.4"
 byteorder = "1.2"
@@ -43,7 +44,7 @@ blake2 = "0.10"
 rustyline = "1.0"
 scoped_threadpool = "0.1"
 seahash = "3.0"
-sqlparser = "0.5"
+sqlparser = "0.38"
 std-semaphore = "0.1"
 structopt = "0.3"
 tempfile = "3"

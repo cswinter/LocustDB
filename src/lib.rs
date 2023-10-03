@@ -6,7 +6,8 @@
     trait_alias,
     core_intrinsics,
     box_patterns,
-    proc_macro_hygiene
+    proc_macro_hygiene,
+    let_chains,
 )]
 #[macro_use]
 extern crate failure_derive;
