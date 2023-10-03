@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use actix_web::web::Data;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use actix_cors::Cors;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -157,15 +158,15 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
     HttpResponse::Ok().json(response)
 }
 
-#[get("/query_cols")]
+#[post("/query_cols")]
 async fn query_cols(
     data: web::Data<AppState>,
-    // req_body: web::Json<QueryRequest>,
+    req_body: web::Json<QueryRequest>,
 ) -> impl Responder {
-    // log::info!("Query: {:?}", req_body);
+    log::info!("Query: {:?}", req_body);
     let result = data
         .db
-        .run_query("SELECT timestamp, cpu * 100 AS cpu FROM test_metrics LIMIT 100000000", false, vec![])
+        .run_query(&req_body.query, false, vec![])
         .await
         .unwrap()
         .unwrap();
@@ -236,7 +237,15 @@ pub async fn run(db: LocustDB) -> std::io::Result<()> {
     let db = Arc::new(db);
     HttpServer::new(move || {
         let app_state = AppState { db: db.clone() };
+        let cors = Cors::default()
+            .allowed_origin("http://localhost:5173")
+            .allowed_origin("http://localhost:8080")
+            .allowed_methods(vec!["GET", "POST", "OPTIONS"]) // Ensure OPTIONS is allowed
+            .allowed_headers(vec!["Authorization", "Accept"])
+            .allowed_header(actix_web::http::header::CONTENT_TYPE)
+            .max_age(3600);
         App::new()
+            .wrap(cors)
             .app_data(Data::new(app_state))
             .app_data(Data::new(web::PayloadConfig::new(100 * 1024 * 1024)))
             .service(index)
