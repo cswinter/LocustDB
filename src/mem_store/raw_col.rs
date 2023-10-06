@@ -3,6 +3,8 @@ use std::mem;
 use std::ops::BitOr;
 use std::sync::Arc;
 
+use ordered_float::OrderedFloat;
+
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::column_builder::*;
 use crate::mem_store::*;
@@ -31,6 +33,11 @@ impl MixedCol {
         self.data.extend(ints.into_iter().map(RawVal::Int));
     }
 
+    pub fn push_floats(&mut self, floats: Vec<f64>) {
+        self.types = self.types | ColType::float();
+        self.data.extend(floats.into_iter().map(|f| RawVal::Float(OrderedFloat(f))));
+    }
+
     pub fn push_strings(&mut self, strs: Vec<String>) {
         self.types = self.types | ColType::string();
         self.data.extend(strs.into_iter().map(RawVal::Str));
@@ -57,6 +64,17 @@ impl MixedCol {
                 }
             }
             ColumnBuilder::<String>::finalize(builder, name, None)
+        } else if self.types.contains_float {
+            let mut builder = FloatColBuilder::default();
+            for v in self.data {
+                match v {
+                    RawVal::Str(_) => panic!("Unexpected string in float column!"),
+                    RawVal::Int(i) => builder.push(&Some(i as f64)),
+                    RawVal::Null => builder.push(&None),
+                    RawVal::Float(f) => builder.push(&Some(f.into_inner())),
+                }
+            }
+            builder.finalize(name, None)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::default();
             for v in self.data {

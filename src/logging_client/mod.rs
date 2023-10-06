@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::time::{self, MissedTickBehavior};
 
-type EventBuffer = Arc<Mutex<HashMap<String, Vec<HashMap<String, i64>>>>>;
+type EventBuffer = Arc<Mutex<HashMap<String, Vec<HashMap<String, f64>>>>>;
 
 pub struct LoggingClient {
     // Table -> Rows
@@ -23,7 +23,7 @@ struct BackgroundWorker {
 #[derive(Serialize, Deserialize, Debug)]
 struct DataBatch {
     pub table: String,
-    pub rows: Vec<HashMap<String, i64>>,
+    pub rows: Vec<HashMap<String, f64>>,
 }
 
 impl LoggingClient {
@@ -40,11 +40,11 @@ impl LoggingClient {
         LoggingClient { events: buffer }
     }
 
-    pub fn log(&mut self, table: &str, mut row: HashMap<String, i64>) {
+    pub fn log(&mut self, table: &str, mut row: HashMap<String, f64>) {
         let time_millis = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_millis() as f64 / 1000.0;
         row.insert("timestamp".to_string(), time_millis);
         let mut events = self.events.lock().unwrap();
         events.entry(table.to_string()).or_default().push(row);

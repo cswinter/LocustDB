@@ -1,4 +1,5 @@
-use num::PrimInt;
+use num::{PrimInt, ToPrimitive};
+use ordered_float::OrderedFloat;
 
 use std::marker::PhantomData;
 
@@ -14,9 +15,10 @@ pub struct Subtraction<LHS, RHS> {
     rhs: PhantomData<RHS>,
 }
 
-pub struct Multiplication<LHS, RHS> {
+pub struct Multiplication<LHS, RHS, OUT> {
     lhs: PhantomData<LHS>,
     rhs: PhantomData<RHS>,
+    out: PhantomData<OUT>,
 }
 
 pub struct Division<LHS, RHS> {
@@ -62,7 +64,7 @@ impl<LHS: PrimInt, RHS: PrimInt> CheckedBinaryOp<LHS, RHS, i64> for Subtraction<
     }
 }
 
-impl<LHS: PrimInt, RHS: PrimInt> BinaryOp<LHS, RHS, i64> for Multiplication<LHS, RHS> {
+impl<LHS: PrimInt, RHS: PrimInt> BinaryOp<LHS, RHS, i64> for Multiplication<LHS, RHS, i64> {
     #[inline]
     fn perform(lhs: LHS, rhs: RHS) -> i64 {
         lhs.to_i64().unwrap() * rhs.to_i64().unwrap()
@@ -71,11 +73,20 @@ impl<LHS: PrimInt, RHS: PrimInt> BinaryOp<LHS, RHS, i64> for Multiplication<LHS,
     fn symbol() -> &'static str { "*" }
 }
 
-impl<LHS: PrimInt, RHS: PrimInt> CheckedBinaryOp<LHS, RHS, i64> for Multiplication<LHS, RHS> {
+impl<LHS: PrimInt, RHS: PrimInt> CheckedBinaryOp<LHS, RHS, i64> for Multiplication<LHS, RHS, i64> {
     #[inline]
     fn perform_checked(lhs: LHS, rhs: RHS) -> (i64, bool) {
         lhs.to_i64().unwrap().overflowing_mul(rhs.to_i64().unwrap())
     }
+}
+
+impl<LHS: ToPrimitive, RHS: ToPrimitive> BinaryOp<LHS, RHS, OrderedFloat<f64>> for Multiplication<LHS, RHS, OrderedFloat<f64>> {
+     #[inline]
+     fn perform(lhs: LHS, rhs: RHS) -> OrderedFloat<f64> {
+         OrderedFloat(lhs.to_f64().unwrap() * rhs.to_f64().unwrap())
+     }
+
+     fn symbol() -> &'static str { "*" }
 }
 
 impl<LHS: PrimInt, RHS: PrimInt> BinaryOp<LHS, RHS, i64> for Division<LHS, RHS> {

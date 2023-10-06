@@ -36,7 +36,7 @@ async fn main() {
             .unwrap();
         log.log(
             "test_metrics",
-            [("cpu".to_string(), (cpu.user * 100.0) as i64)]
+            [("cpu".to_string(), cpu.user as f64)]
                 .iter()
                 .cloned()
                 .collect(),

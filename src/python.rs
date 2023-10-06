@@ -26,7 +26,7 @@ fn locustdb(_py: Python, m: &PyModule) -> PyResult<()> {
 }
 
 #[pyfunction]
-fn log(table: &str, metrics: HashMap<String, i64>) -> PyResult<()> {
+fn log(table: &str, metrics: HashMap<String, f64>) -> PyResult<()> {
     let mut client = DEFAULT_CLIENT.lock().unwrap();
     client.log(table, metrics);
     Ok(())

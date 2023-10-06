@@ -83,6 +83,7 @@ impl Table {
     }
 
     pub fn ingest(&self, row: Vec<(String, RawVal)>) {
+        log::debug!("Ingesting row: {:?}", row);
         let mut buffer = self.buffer.lock().unwrap();
         buffer.push_row(row);
         self.batch_if_needed(buffer.deref_mut());
@@ -105,6 +106,7 @@ impl Table {
     }
 
     fn batch_if_needed(&self, buffer: &mut Buffer) {
+        log::debug!("buffer.len()={} self.batch_size={}", buffer.len(), self.batch_size);
         if buffer.len() < self.batch_size {
             return;
         }
