@@ -21,7 +21,7 @@ struct BackgroundWorker {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct DataBatch {
+pub struct DataBatch {
     pub table: String,
     pub rows: Vec<HashMap<String, f64>>,
 }
@@ -32,7 +32,7 @@ impl LoggingClient {
         let worker = BackgroundWorker {
             client: reqwest::Client::new(),
             flush_interval,
-            url: format!("{}/insert", locustdb_url),
+            url: format!("{locustdb_url}/insert_bin"),
             events: buffer.clone(),
         };
         tokio::spawn(worker.run());
@@ -58,18 +58,46 @@ impl BackgroundWorker {
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
+            log::debug!("TICK!");
             let buffer = mem::take(&mut *self.events.lock().unwrap());
             for (table, rows) in buffer.into_iter() {
-                log::debug!("Pushing {} events to {}", rows.len(), table);
+                fn bytes_in_row(row: &HashMap<String, f64>) -> usize {
+                    row.iter().map(|(k, v)| k.len() + v.to_string().len()).sum::<usize>()
+                }
+                let bytes = rows.iter().map(bytes_in_row).sum::<usize>();
+                log::debug!("Pushing {} events to {} ({} bytes)", rows.len(), table, bytes);
+
                 let data_batch = DataBatch { table, rows };
-                let result = self.client.post(&self.url).json(&data_batch).send().await;
-                if let Err(err) = result {
-                    log::warn!(
-                        "Failed to send data batch for table {}, {} events dropped: {}",
-                        data_batch.table,
-                        data_batch.rows.len(),
-                        err
-                    );
+                let body = bincode::serialize(&data_batch).unwrap();
+
+                let mut s = String::new();
+                for b in &body[0..64] {
+                    s.push_str(&format!("{:02x}", *b));
+                }
+                log::info!("Inserting bytes: {} {}", s, body.len());
+                bincode::deserialize::<DataBatch>(&body[..]).unwrap();
+
+                let result = self.client.post(&self.url).body(body).send().await;
+                match result {
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to send data batch for table {}, {} events dropped: {}",
+                            data_batch.table,
+                            data_batch.rows.len(),
+                            err
+                        )
+                    },
+                    Ok(response) => {
+                        if let Err(err) = response.error_for_status_ref() {
+                            log::warn!(
+                                "Failed to send data batch for table {}, {} events dropped: {}",
+                                data_batch.table,
+                                data_batch.rows.len(),
+                                err
+                            )
+                        }
+                        log::debug!("{:?}", response);
+                    }
                 }
             }
         }

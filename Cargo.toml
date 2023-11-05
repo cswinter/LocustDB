@@ -59,6 +59,8 @@ pyo3 = {features = ["extension-module"], version = "0.19", optional = true}
 ordered-float = { version = "3", features = ["serde"] }
 unicode-width = "0.1"
 unicode-segmentation = "1"
+bincode = "1.3"
+random_word = { version = "0.4", features = ["en"] }
 
 [features]
 default = []

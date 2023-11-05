@@ -2,17 +2,17 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
-use actix_web::web::Data;
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use actix_cors::Cors;
+use actix_web::web::{Bytes, Data};
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
 
 use crate::ingest::raw_val::RawVal;
-use crate::LocustDB;
-use crate::Value;
+use crate::{Value, QueryOutput};
+use crate::{logging_client, LocustDB};
 
 lazy_static! {
     pub static ref TEMPLATES: Tera = {
@@ -45,6 +45,11 @@ struct QueryRequest {
     query: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct MultiQueryRequest {
+    queries: Vec<String>,
+}
+
 #[get("/")]
 async fn index(data: web::Data<AppState>) -> impl Responder {
     let mut context = Context::new();
@@ -74,10 +79,7 @@ async fn plot(_data: web::Data<AppState>) -> impl Responder {
 }
 
 #[get("/table/{tablename}")]
-async fn table_handler(
-    path: web::Path<String>,
-    data: web::Data<AppState>,
-) -> impl Responder {
+async fn table_handler(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
     let cols = data
         .db
         .run_query(
@@ -171,6 +173,104 @@ async fn query_cols(
         .unwrap()
         .unwrap();
 
+    let response = query_output_to_json_cols(result);
+    HttpResponse::Ok().json(response)
+}
+
+#[post("/multi_query_cols")]
+async fn multi_query_cols(
+    data: web::Data<AppState>,
+    req_body: web::Json<MultiQueryRequest>,
+) -> impl Responder {
+    log::info!("Multi Query: {:?}", req_body);
+    let mut results = vec![];
+    for q in &req_body.queries {
+        // Run query immediately starts executing without awaiting future
+        let result = data
+            .db
+            .run_query(q, false, vec![]);
+        results.push(result);
+    }
+    let mut json_results = vec![];
+    for result in results {
+        let result = result.await.unwrap().unwrap();
+        json_results.push(query_output_to_json_cols(result));
+    }
+    HttpResponse::Ok().json(json_results)
+}
+
+// TODO: efficient endpoint
+#[post("/insert")]
+async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
+    let DataBatch { table, rows } = req_body.0;
+    log::info!("Inserting {} rows into {}", rows.len(), table);
+    data.db
+        .ingest(
+            &table,
+            rows.into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|(colname, val)| {
+                            let val = match val {
+                                serde_json::Value::Null => RawVal::Null,
+                                serde_json::Value::Number(n) => {
+                                    if n.is_i64() {
+                                        RawVal::Int(n.as_i64().unwrap())
+                                    } else if n.is_f64() {
+                                        RawVal::Float(OrderedFloat(n.as_f64().unwrap()))
+                                    } else {
+                                        panic!("Unsupported number {}", n)
+                                    }
+                                }
+                                serde_json::Value::String(s) => RawVal::Str(s),
+                                _ => panic!("Unsupported value: {:?}", val),
+                            };
+                            (colname, val)
+                        })
+                        .collect()
+                })
+                .collect(),
+        )
+        .await;
+    log::info!("Succesfully appended to {}", table);
+    HttpResponse::Ok().json(r#"{"status": "ok"}"#)
+}
+
+// TODO: more efficient columnar endpoint
+#[post("/insert_bin")]
+async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responder {
+    // PRINT FIRST 64 BYTES
+    let mut bytes = req_body.clone();
+    let mut s = String::new();
+    for _ in 0..64 {
+        s.push_str(&format!("{:02x}", bytes[0]));
+        bytes = bytes.slice(1..);
+    }
+    log::info!("Inserting bytes: {} ({})", s, req_body.len());
+
+    let logging_client::DataBatch { table, rows } = bincode::deserialize(&req_body).unwrap();
+    log::info!("Inserting {} rows into {}", rows.len(), table);
+    data.db
+        .ingest(
+            &table,
+            rows.into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|(k, v)| (k, RawVal::Float(OrderedFloat(v))))
+                        .collect()
+                })
+                .collect(),
+        )
+        .await;
+    log::info!("Succesfully appended to {}", table);
+    HttpResponse::Ok().json(r#"{"status": "ok"}"#)
+}
+
+async fn manual_hello() -> impl Responder {
+    HttpResponse::Ok().body("Hey there!")
+}
+
+fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
     let mut cols: HashMap<String, Vec<serde_json::Value>> = HashMap::default();
     for col in &result.colnames {
         cols.insert(col.to_string(), vec![]);
@@ -185,53 +285,13 @@ async fn query_cols(
             });
         }
     }
-    let response = json!({
+    json!({
         "colnames": result.colnames,
         "cols": cols,
         "stats": result.stats,
-    });
-    HttpResponse::Ok().json(response)
+    })
 }
 
-// TODO: efficient endpoint
-#[post("/insert")]
-async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
-    log::info!("Inserting! {:?}", req_body);
-    let DataBatch { table, rows } = req_body.0;
-    data.db
-        .ingest(
-            &table,
-            rows.into_iter()
-                .map(|row| {
-                    row.into_iter()
-                        .map(|(colname, val)| {
-                            let val = match val {
-                                serde_json::Value::Null => RawVal::Null,
-                                serde_json::Value::Number(n) => {
-                                    if n.is_i64() { 
-                                        RawVal::Int(n.as_i64().unwrap())
-                                    } else if n.is_f64() {
-                                        RawVal::Float(OrderedFloat(n.as_f64().unwrap()))
-                                    } else {
-                                        panic!("Unsupported number {}", n)
-                                    }
-                                },
-                                serde_json::Value::String(s) => RawVal::Str(s),
-                                _ => panic!("Unsupported value: {:?}", val),
-                            };
-                            (colname, val)
-                        })
-                        .collect()
-                })
-                .collect(),
-        )
-        .await;
-    HttpResponse::Ok().json(r#"{"status": "ok"}"#)
-}
-
-async fn manual_hello() -> impl Responder {
-    HttpResponse::Ok().body("Hey there!")
-}
 
 pub async fn run(db: LocustDB) -> std::io::Result<()> {
     let db = Arc::new(db);
@@ -254,8 +314,10 @@ pub async fn run(db: LocustDB) -> std::io::Result<()> {
             .service(query)
             .service(table_handler)
             .service(insert)
+            .service(insert_bin)
             .service(query_data)
             .service(query_cols)
+            .service(multi_query_cols)
             .service(plot)
             .route("/hey", web::get().to(manual_hello))
     })
