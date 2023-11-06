@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::mem_store::*;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum EncodingType {
     Str,
     OptStr,
@@ -120,7 +122,7 @@ impl EncodingType {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BasicType {
     String,
     Integer,

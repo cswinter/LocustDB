@@ -69,12 +69,6 @@ impl BackgroundWorker {
 
                 let data_batch = DataBatch { table, rows };
                 let body = bincode::serialize(&data_batch).unwrap();
-
-                let mut s = String::new();
-                for b in &body[0..64] {
-                    s.push_str(&format!("{:02x}", *b));
-                }
-                log::info!("Inserting bytes: {} {}", s, body.len());
                 bincode::deserialize::<DataBatch>(&body[..]).unwrap();
 
                 let result = self.client.post(&self.url).body(body).send().await;

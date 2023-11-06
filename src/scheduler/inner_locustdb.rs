@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::disk_store::interface::*;
+use crate::disk_store::v2::{Storage, StorageV2, WALSegment};
 use crate::ingest::colgen::GenTable;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
@@ -23,6 +24,8 @@ pub struct InnerLocustDB {
     pub storage: Arc<dyn DiskStore>,
     disk_read_scheduler: Arc<DiskReadScheduler>,
 
+    storage_v2: Option<Arc<StorageV2>>,
+
     opts: Options,
 
     next_partition_id: AtomicUsize,
@@ -32,10 +35,19 @@ pub struct InnerLocustDB {
 }
 
 impl InnerLocustDB {
-    pub fn new(storage: Arc<dyn DiskStore>, opts: &Options) -> InnerLocustDB {
+    pub fn new(
+        storage: Arc<dyn DiskStore>,
+        storage_v2: Option<Arc<StorageV2>>,
+        opts: &Options,
+    ) -> InnerLocustDB {
         let lru = Lru::default();
-        let existing_tables = Table::load_table_metadata(1 << 20, storage.as_ref(), &lru);
-        let max_pid = existing_tables.values().map(|t| t.max_partition_id())
+        let (existing_tables, wal) = match &storage_v2 {
+            None => (Table::load_table_metadata(1 << 20, storage.as_ref(), &lru), vec![]),
+            Some(storage) => Table::restore_from_disk(1 << 20, storage, &lru),
+        };
+        let max_pid = existing_tables
+            .values()
+            .map(|t| t.max_partition_id())
             .max()
             .unwrap_or(0);
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
@@ -45,19 +57,29 @@ impl InnerLocustDB {
             !opts.mem_lz4,
         ));
 
-        InnerLocustDB {
+        let inner = InnerLocustDB {
             tables: RwLock::new(existing_tables),
             lru,
             storage,
             disk_read_scheduler,
             running: AtomicBool::new(true),
 
+            storage_v2,
+
             opts: opts.clone(),
 
             next_partition_id: AtomicUsize::new(max_pid as usize + 1),
             idle_queue: Condvar::new(),
             task_queue: Mutex::new(VecDeque::new()),
+        };
+
+        for wal in wal {
+            for (table, rows) in wal.data {
+                inner.ingest_no_persist(&table, rows);
+            }
         }
+
+        inner
     }
 
     pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>) {
@@ -140,10 +162,31 @@ impl InnerLocustDB {
         }
     }
 
-    pub fn ingest(&self, table: &str, row: Vec<(String, RawVal)>) {
+    pub fn ingest_single(&self, table: &str, row: Vec<(String, RawVal)>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
         tables.get(table).unwrap().ingest(row)
+    }
+
+
+    pub fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
+        if let Some(storage) = &self.storage_v2 {
+            storage.persist_wal_segment(WALSegment {
+                id: 0,
+                // TODO: clone
+                data: vec![(table.to_string(), rows.clone())],
+            });
+        }
+        self.ingest_no_persist(table, rows);
+    }
+
+    fn ingest_no_persist(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
+        self.create_if_empty(table);
+        let tables = self.tables.read().unwrap();
+        let table = tables.get(table).unwrap();
+        for row in rows {
+            table.ingest(row);
+        }
     }
 
     pub fn restore(&self, id: PartitionID, column: Column) {
@@ -199,12 +242,17 @@ impl InnerLocustDB {
                     Table::new(1 << 20, table, self.lru.clone()),
                 );
             }
-            self.ingest(
+            self.ingest_single(
                 "_meta_tables",
                 vec![
                     (
                         "timestamp".to_string(),
-                        RawVal::Int(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64)
+                        RawVal::Int(
+                            SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs() as i64,
+                        ),
                     ),
                     ("name".to_string(), RawVal::Str(table.to_string())),
                 ],

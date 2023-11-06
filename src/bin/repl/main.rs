@@ -23,6 +23,10 @@ struct Opt {
     #[structopt(long, name = "PATH", parse(from_os_str))]
     db_path: Option<PathBuf>,
 
+    /// Path to data directory based on v2 storage format
+    #[structopt(long, name = "PATH_V2", parse(from_os_str))]
+    db_v2_path: Option<PathBuf>,
+
     /// Load .csv or .csv.gz files into the database
     #[structopt(long, name = "FILES", parse(from_os_str))]
     load: Vec<PathBuf>,
@@ -80,6 +84,7 @@ fn main() {
 
     let Opt {
         db_path,
+        db_v2_path,
         load,
         table,
         mem_limit_tables,
@@ -98,6 +103,7 @@ fn main() {
         threads: threads.unwrap_or_else(num_cpus::get),
         read_threads: if seq_disk_read { 1 } else { num_cpus::get() },
         db_path: db_path.clone(),
+        db_v2_path: db_v2_path.clone(),
         mem_size_limit_tables: mem_limit_tables * 1024 * 1024 * 1024,
         mem_lz4,
         readahead: readahead * 1024 * 1024,

@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::engine::planning::QueryPlanner;
 use crate::engine::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Codec {
     ops: Vec<CodecOp>,
     column_name: String,
@@ -301,7 +303,7 @@ impl Codec {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum CodecOp {
     Nullable,
     Add(EncodingType, i64),

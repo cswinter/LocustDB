@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
 use crate::disk_store::interface::*;
+use crate::disk_store::v2::{StorageV2, Storage, WALSegment};
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
@@ -60,6 +61,23 @@ impl Table {
         }
         tables
     }
+
+    pub fn restore_from_disk(
+        batch_size: usize,
+        storage: &StorageV2,
+        lru: &Lru,
+    ) -> (HashMap<String, Table>, Vec<WALSegment>) {
+        let mut tables = HashMap::new();
+        let (meta_store, wal_segments) = storage.recover();
+        for md in meta_store.partitions {
+            let table = tables
+                .entry(md.tablename.clone())
+                .or_insert_with(|| Table::new(batch_size, &md.tablename, lru.clone()));
+            table.insert_nonresident_partition(&md);
+        }
+        (tables, wal_segments)
+    }
+
 
     pub fn restore(&self, id: PartitionID, col: &Arc<Column>) {
         let partitions = self.partitions.read().unwrap();

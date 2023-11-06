@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::mem_store::column::Column;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 
@@ -14,6 +16,7 @@ pub trait DiskStore: Sync + Send + 'static {
 
 pub type PartitionID = u64;
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PartitionMetadata {
     pub id: PartitionID,
     pub tablename: String,
@@ -21,6 +24,7 @@ pub struct PartitionMetadata {
     pub columns: Vec<ColumnMetadata>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ColumnMetadata {
     pub name: String,
     pub size_bytes: usize,

@@ -3,11 +3,13 @@ use std::mem;
 use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
 use crate::engine::data_types::*;
 use crate::mem_store::lz4;
 use crate::mem_store::*;
 
+#[derive(Serialize, Deserialize)]
 pub struct Column {
     name: String,
     len: usize,
@@ -194,7 +196,7 @@ impl fmt::Debug for Column {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum DataSection {
     U8(Vec<u8>),
     U16(Vec<u16>),

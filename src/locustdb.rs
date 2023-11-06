@@ -7,6 +7,7 @@ use futures::channel::oneshot;
 
 use crate::disk_store::interface::*;
 use crate::disk_store::noop_storage::NoopStorage;
+use crate::disk_store::v2::StorageV2;
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
@@ -33,7 +34,10 @@ impl LocustDB {
             .as_ref()
             .map(LocustDB::persistent_storage)
             .unwrap_or_else(|| Arc::new(NoopStorage));
-        let locustdb = Arc::new(InnerLocustDB::new(disk_store, opts));
+        let storage_v2 = opts.db_v2_path.as_ref().map(|path| {
+            Arc::new(StorageV2::new(path))
+        });
+        let locustdb = Arc::new(InnerLocustDB::new(disk_store, storage_v2, opts));
         InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB {
             inner_locustdb: locustdb,
@@ -108,11 +112,7 @@ impl LocustDB {
     }
 
     pub async fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
-        // TODO: efficiency
-        // TODO: async
-        for row in rows {
-            self.inner_locustdb.ingest(table, row);
-        }
+        self.inner_locustdb.ingest(table, rows);
     }
 
     pub async fn gen_table(&self, opts: GenTable) -> Result<(), oneshot::Canceled> {
@@ -199,6 +199,7 @@ pub struct Options {
     pub threads: usize,
     pub read_threads: usize,
     pub db_path: Option<PathBuf>,
+    pub db_v2_path: Option<PathBuf>,
     pub mem_size_limit_tables: usize,
     pub mem_lz4: bool,
     pub readahead: usize,
@@ -211,6 +212,7 @@ impl Default for Options {
             threads: num_cpus::get(),
             read_threads: num_cpus::get(),
             db_path: None,
+            db_v2_path: None,
             mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
             mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB

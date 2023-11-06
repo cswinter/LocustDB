@@ -4,13 +4,14 @@ use std::ops::BitOr;
 use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::column_builder::*;
 use crate::mem_store::*;
 
 // Can eliminate this? Used by in-memory buffer.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
@@ -113,7 +114,7 @@ impl Default for MixedCol {
     }
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,

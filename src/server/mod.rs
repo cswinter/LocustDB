@@ -107,8 +107,20 @@ async fn tables(data: web::Data<AppState>) -> impl Responder {
     println!("Requesting table stats");
     let stats = data.db.table_stats().await.unwrap();
 
+    let mut total_buffer_bytes = 0;
+    let mut total_bytes = 0;
+    let mut total_rows = 0;
+    for table in &stats {
+        total_buffer_bytes += table.buffer_bytes;
+        total_bytes += table.batches_bytes + table.buffer_bytes;
+        total_rows += table.rows;
+    }
+
     let mut body = String::new();
-    for table in stats {
+    writeln!(body, "Total rows: {}", total_rows).unwrap();
+    writeln!(body, "Total bytes: {}", total_bytes).unwrap();
+    writeln!(body, "Total buffer bytes: {}", total_buffer_bytes).unwrap();
+    for table in &stats {
         writeln!(body, "{}", table.name).unwrap();
         writeln!(body, "  Rows: {}", table.rows).unwrap();
         writeln!(body, "  Batches: {}", table.batches).unwrap();
