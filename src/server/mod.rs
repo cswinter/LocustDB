@@ -5,13 +5,14 @@ use std::sync::Arc;
 use actix_cors::Cors;
 use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use futures::channel::oneshot::Canceled;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
 
 use crate::ingest::raw_val::RawVal;
-use crate::{Value, QueryOutput};
+use crate::{QueryError, QueryOutput, Value};
 use crate::{logging_client, LocustDB};
 
 lazy_static! {
@@ -178,15 +179,17 @@ async fn query_cols(
     req_body: web::Json<QueryRequest>,
 ) -> impl Responder {
     log::info!("Query: {:?}", req_body);
-    let result = data
+    let x = data
         .db
         .run_query(&req_body.query, false, vec![])
-        .await
-        .unwrap()
-        .unwrap();
-
-    let response = query_output_to_json_cols(result);
-    HttpResponse::Ok().json(response)
+        .await;
+    match  flatmap_err_response(x) {
+        Ok(result) => {
+            let response = query_output_to_json_cols(result);
+            HttpResponse::Ok().json(response)
+        }
+        Err(err) => err,
+    }
 }
 
 #[post("/multi_query_cols")]
@@ -205,10 +208,23 @@ async fn multi_query_cols(
     }
     let mut json_results = vec![];
     for result in results {
-        let result = result.await.unwrap().unwrap();
+        let result = match flatmap_err_response(result.await) {
+            Ok(result) => result,
+            Err(err) => return err,
+        };
         json_results.push(query_output_to_json_cols(result));
     }
     HttpResponse::Ok().json(json_results)
+}
+
+fn flatmap_err_response(err: Result<Result<QueryOutput, QueryError>, Canceled>) -> Result<QueryOutput, HttpResponse> {
+    match err {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(QueryError::NotImplemented(msg))) => Err(HttpResponse::NotImplemented().json(msg)),
+        Ok(Err(QueryError::FatalError(msg, bt))) => Err(HttpResponse::InternalServerError().json((msg, bt.to_string()))),
+        Ok(Err(err)) => Err(HttpResponse::BadRequest().json(err.to_string())),
+        Err(err) => Err(HttpResponse::InternalServerError().json(err.to_string())),
+    }
 }
 
 // TODO: efficient endpoint

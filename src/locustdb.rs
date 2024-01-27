@@ -35,7 +35,8 @@ impl LocustDB {
             .map(LocustDB::persistent_storage)
             .unwrap_or_else(|| Arc::new(NoopStorage));
         let storage_v2 = opts.db_v2_path.as_ref().map(|path| {
-            Arc::new(StorageV2::new(path))
+            let (storage, wal) = StorageV2::new(path);
+            (Arc::new(storage), wal)
         });
         let locustdb = Arc::new(InnerLocustDB::new(disk_store, storage_v2, opts));
         InnerLocustDB::start_worker_threads(&locustdb);
@@ -204,6 +205,8 @@ pub struct Options {
     pub mem_lz4: bool,
     pub readahead: usize,
     pub seq_disk_read: bool,
+    /// Maximum size of WAL in bytes before triggering compaction
+    pub max_wal_size_bytes: u64,
 }
 
 impl Default for Options {
@@ -217,6 +220,7 @@ impl Default for Options {
             mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB
             seq_disk_read: false,
+            max_wal_size_bytes: 64 * 1024 * 1024, // 64 MiB
         }
     }
 }

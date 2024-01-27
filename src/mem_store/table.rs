@@ -17,6 +17,7 @@ pub struct Table {
     batch_size: usize,
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     buffer: Mutex<Buffer>,
+    /// LRU that keeps track of when each (table, partition, column) segment was last accessed.
     lru: Lru,
 }
 
@@ -62,20 +63,30 @@ impl Table {
         tables
     }
 
-    pub fn restore_from_disk(
+    pub fn restore_tables_from_disk(
         batch_size: usize,
         storage: &StorageV2,
+        wal_segments: Vec<WALSegment>,
         lru: &Lru,
-    ) -> (HashMap<String, Table>, Vec<WALSegment>) {
+    ) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
-        let (meta_store, wal_segments) = storage.recover();
-        for md in meta_store.partitions {
+        for md in &storage.meta_store().lock().unwrap().partitions {
             let table = tables
                 .entry(md.tablename.clone())
                 .or_insert_with(|| Table::new(batch_size, &md.tablename, lru.clone()));
-            table.insert_nonresident_partition(&md);
+            table.insert_nonresident_partition(md);
         }
-        (tables, wal_segments)
+        for wal_segment in wal_segments {
+            for (table_name, rows) in wal_segment.data {
+                let table = tables
+                    .entry(table_name.clone())
+                    .or_insert_with(|| Table::new(batch_size, &table_name, lru.clone()));
+                for row in rows {
+                    table.ingest(row);
+                }
+            }
+        }
+        tables
     }
 
 
@@ -104,7 +115,6 @@ impl Table {
         log::debug!("Ingesting row: {:?}", row);
         let mut buffer = self.buffer.lock().unwrap();
         buffer.push_row(row);
-        self.batch_if_needed(buffer.deref_mut());
     }
 
     pub fn ingest_homogeneous(&self, columns: HashMap<String, InputColumn>) {
@@ -115,7 +125,6 @@ impl Table {
     pub fn ingest_heterogeneous(&self, columns: HashMap<String, Vec<RawVal>>) {
         let mut buffer = self.buffer.lock().unwrap();
         buffer.push_untyped_cols(columns);
-        self.batch_if_needed(&mut buffer);
     }
 
     pub fn load_partition(&self, partition: Partition) {
@@ -123,33 +132,25 @@ impl Table {
         partitions.insert(partition.id, Arc::new(partition));
     }
 
-    fn batch_if_needed(&self, buffer: &mut Buffer) {
-        log::debug!("buffer.len()={} self.batch_size={}", buffer.len(), self.batch_size);
-        if buffer.len() < self.batch_size {
-            return;
+    pub(crate) fn batch(&self) -> Option<Arc<Partition>> {
+        let mut buffer = self.buffer.lock().unwrap();
+        if buffer.len() == 0 { 
+            return None
         }
-        self.batch(buffer);
-    }
-
-    fn batch(&self, buffer: &mut Buffer) {
-        let buffer = std::mem::take(buffer);
-        self.persist_batch(&buffer);
+        let buffer = std::mem::take(buffer.deref_mut());
         let (mut new_partition, keys) = Partition::from_buffer(0, buffer, self.lru.clone());
+        let arc_partition;
         {
             let mut partitions = self.partitions.write().unwrap();
             new_partition.id = partitions.len() as u64;
-            partitions.insert(new_partition.id, Arc::new(new_partition));
+            arc_partition = Arc::new(new_partition);
+            partitions.insert(arc_partition.id, arc_partition.clone());
         }
         for key in keys {
             self.lru.put(key);
         }
+        Some(arc_partition)
     }
-
-    /*fn load_buffer(&self, buffer: Buffer) {
-        self.load_batch(buffer.into());
-    }*/
-
-    fn persist_batch(&self, _batch: &Buffer) {}
 
     pub fn mem_tree(&self, depth: usize) -> MemTreeTable {
         assert!(depth > 0);

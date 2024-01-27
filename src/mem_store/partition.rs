@@ -13,7 +13,7 @@ pub type ColumnKey = (PartitionID, String);
 pub struct Partition {
     pub id: PartitionID,
     len: usize,
-    cols: Vec<ColumnHandle>,
+    pub(crate) cols: Vec<ColumnHandle>,
     lru: Lru,
 }
 
@@ -219,6 +219,7 @@ pub struct ColumnHandle {
     size_bytes: AtomicUsize,
     resident: AtomicBool,
     load_scheduled: AtomicBool,
+    evictable: AtomicBool,
     col: Mutex<Option<Arc<Column>>>,
 }
 
@@ -229,6 +230,7 @@ impl ColumnHandle {
             size_bytes: AtomicUsize::new(col.heap_size_of_children()),
             resident: AtomicBool::new(true),
             load_scheduled: AtomicBool::new(false),
+            evictable: AtomicBool::new(false),
             col: Mutex::new(Some(col)),
         }
     }
@@ -239,6 +241,7 @@ impl ColumnHandle {
             size_bytes: AtomicUsize::new(size_bytes),
             resident: AtomicBool::new(false),
             load_scheduled: AtomicBool::new(false),
+            evictable: AtomicBool::new(true),
             col: Mutex::new(None),
         }
     }

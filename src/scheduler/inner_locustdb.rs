@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::str;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, AtomicU64};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -25,6 +25,7 @@ pub struct InnerLocustDB {
     disk_read_scheduler: Arc<DiskReadScheduler>,
 
     storage_v2: Option<Arc<StorageV2>>,
+    wal_size: AtomicU64,
 
     opts: Options,
 
@@ -37,13 +38,16 @@ pub struct InnerLocustDB {
 impl InnerLocustDB {
     pub fn new(
         storage: Arc<dyn DiskStore>,
-        storage_v2: Option<Arc<StorageV2>>,
+        storage_v2: Option<(Arc<StorageV2>, Vec<WALSegment>)>,
         opts: &Options,
     ) -> InnerLocustDB {
         let lru = Lru::default();
-        let (existing_tables, wal) = match &storage_v2 {
-            None => (Table::load_table_metadata(1 << 20, storage.as_ref(), &lru), vec![]),
-            Some(storage) => Table::restore_from_disk(1 << 20, storage, &lru),
+        let (storage_v2, existing_tables) = match storage_v2 {
+            None => (None, Table::load_table_metadata(1 << 20, storage.as_ref(), &lru)),
+            Some((storage, wal_segments)) => {
+                let tables = Table::restore_tables_from_disk(1 << 20, &storage, wal_segments, &lru);
+                (Some(storage), tables)
+            }
         };
         let max_pid = existing_tables
             .values()
@@ -57,7 +61,7 @@ impl InnerLocustDB {
             !opts.mem_lz4,
         ));
 
-        let inner = InnerLocustDB {
+        InnerLocustDB {
             tables: RwLock::new(existing_tables),
             lru,
             storage,
@@ -65,21 +69,15 @@ impl InnerLocustDB {
             running: AtomicBool::new(true),
 
             storage_v2,
+            // TODO: doesn't take into account size of existing wal after restart
+            wal_size: AtomicU64::new(0),
 
             opts: opts.clone(),
 
             next_partition_id: AtomicUsize::new(max_pid as usize + 1),
             idle_queue: Condvar::new(),
             task_queue: Mutex::new(VecDeque::new()),
-        };
-
-        for wal in wal {
-            for (table, rows) in wal.data {
-                inner.ingest_no_persist(&table, rows);
-            }
         }
-
-        inner
     }
 
     pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>) {
@@ -171,13 +169,17 @@ impl InnerLocustDB {
 
     pub fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
         if let Some(storage) = &self.storage_v2 {
-            storage.persist_wal_segment(WALSegment {
+            let bytes_written = storage.persist_wal_segment(WALSegment {
                 id: 0,
                 // TODO: clone
                 data: vec![(table.to_string(), rows.clone())],
             });
+            self.wal_size.fetch_add(bytes_written, Ordering::SeqCst);
         }
         self.ingest_no_persist(table, rows);
+        if self.wal_size.load(Ordering::SeqCst) > self.opts.max_wal_size_bytes {
+            self.wal_flush();
+        }
     }
 
     fn ingest_no_persist(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
@@ -187,6 +189,30 @@ impl InnerLocustDB {
         for row in rows {
             table.ingest(row);
         }
+    }
+
+    fn wal_flush(&self) {
+        // TODO: race conditions, need careful locking here
+        self.wal_size.store(0, Ordering::SeqCst);
+        let mut new_partitions = Vec::new();
+        let tables = self.tables.write().unwrap();
+        for table in tables.values() {
+            if let Some(partition) = table.batch() {
+                let columns: Vec<_> = partition.cols.iter().map(|c| c.try_get().as_ref().unwrap().clone()).collect();
+                let partition_metadata =
+                    PartitionMetadata {
+                        id: partition.id,
+                        tablename: table.name().to_string(),
+                        len: partition.len(),
+                        columns: columns.iter().map(|c| ColumnMetadata {
+                            name: c.name().to_string(),
+                            size_bytes: c.heap_size_of_children(),
+                        }).collect(),
+                    };
+                new_partitions.push((partition_metadata, columns));
+            }
+        }
+        self.storage_v2.as_ref().unwrap().persist_partitions_delete_wal(new_partitions)
     }
 
     pub fn restore(&self, id: PartitionID, column: Column) {
