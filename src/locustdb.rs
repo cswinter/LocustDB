@@ -35,7 +35,7 @@ impl LocustDB {
             .map(LocustDB::persistent_storage)
             .unwrap_or_else(|| Arc::new(NoopStorage));
         let storage_v2 = opts.db_v2_path.as_ref().map(|path| {
-            let (storage, wal) = StorageV2::new(path);
+            let (storage, wal) = StorageV2::new(path, false);
             (Arc::new(storage), wal)
         });
         let locustdb = Arc::new(InnerLocustDB::new(disk_store, storage_v2, opts));

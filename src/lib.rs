@@ -32,7 +32,7 @@ pub use crate::mem_store::table::TableStats;
 #[macro_use]
 mod errors;
 mod bitvec;
-mod disk_store;
+pub mod disk_store;
 mod engine;
 mod ingest;
 mod locustdb;
