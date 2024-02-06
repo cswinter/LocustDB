@@ -44,7 +44,7 @@ impl Partition {
         table: &str,
         id: PartitionID,
         len: usize,
-        cols: &[ColumnMetadata],
+        cols: &[ColumnPartitionMetadata],
         lru: Lru,
     ) -> Partition {
         Partition {
@@ -223,7 +223,6 @@ pub struct ColumnHandle {
     size_bytes: AtomicUsize,
     resident: AtomicBool,
     load_scheduled: AtomicBool,
-    evictable: AtomicBool,
     col: Mutex<Option<Arc<Column>>>,
 }
 
@@ -234,7 +233,6 @@ impl ColumnHandle {
             size_bytes: AtomicUsize::new(col.heap_size_of_children()),
             resident: AtomicBool::new(true),
             load_scheduled: AtomicBool::new(false),
-            evictable: AtomicBool::new(false),
             col: Mutex::new(Some(col)),
         }
     }
@@ -245,7 +243,6 @@ impl ColumnHandle {
             size_bytes: AtomicUsize::new(size_bytes),
             resident: AtomicBool::new(false),
             load_scheduled: AtomicBool::new(false),
-            evictable: AtomicBool::new(true),
             col: Mutex::new(None),
         }
     }

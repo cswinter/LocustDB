@@ -14,14 +14,13 @@ use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
-use crate::mem_store::*;
+use crate::{mem_store::*, NoopStorage};
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
     lru: Lru,
-    pub storage: Arc<dyn DiskStore>,
     disk_read_scheduler: Arc<DiskReadScheduler>,
 
     storage_v2: Option<Arc<StorageV2>>,
@@ -37,17 +36,16 @@ pub struct InnerLocustDB {
 
 impl InnerLocustDB {
     pub fn new(
-        storage: Arc<dyn DiskStore>,
         storage_v2: Option<(Arc<StorageV2>, Vec<WALSegment>)>,
         opts: &Options,
     ) -> InnerLocustDB {
         let lru = Lru::default();
         let (storage_v2, existing_tables) = match storage_v2 {
-            None => (None, Table::load_table_metadata(1 << 20, storage.as_ref(), &lru)),
             Some((storage, wal_segments)) => {
-                let tables = Table::restore_tables_from_disk(1 << 20, &storage, wal_segments, &lru);
+                let tables = Table::restore_tables_from_disk(&storage, wal_segments, &lru);
                 (Some(storage), tables)
             }
+            None => (None, HashMap::new()),
         };
         let max_pid = existing_tables
             .values()
@@ -55,7 +53,7 @@ impl InnerLocustDB {
             .max()
             .unwrap_or(0);
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
-            storage_v2.clone().map(|s| s as Arc<dyn ColumnLoader>).unwrap_or(storage.clone()),
+            storage_v2.clone().map(|s| s as Arc<dyn ColumnLoader>).unwrap_or(Arc::new(NoopStorage)),
             lru.clone(),
             opts.read_threads,
             !opts.mem_lz4,
@@ -64,7 +62,6 @@ impl InnerLocustDB {
         InnerLocustDB {
             tables: RwLock::new(existing_tables),
             lru,
-            storage,
             disk_read_scheduler,
             running: AtomicBool::new(true),
 
@@ -152,7 +149,9 @@ impl InnerLocustDB {
         let tables = self.tables.read().unwrap();
         let table = tables.get(tablename).unwrap();
         let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
-        self.storage.store_partition(pid, tablename, &partition);
+        if self.storage_v2.is_some() {
+            todo!();
+        }
         let (new_partition, keys) = Partition::new(table.name(), pid, partition, self.lru.clone());
         table.load_partition(new_partition);
         for (id, column) in keys {
@@ -204,7 +203,7 @@ impl InnerLocustDB {
                         id: partition.id,
                         tablename: table.name().to_string(),
                         len: partition.len(),
-                        columns: columns.iter().map(|c| ColumnMetadata {
+                        columns: columns.iter().map(|c| ColumnPartitionMetadata {
                             name: c.name().to_string(),
                             size_bytes: c.heap_size_of_children(),
                         }).collect(),
@@ -265,7 +264,7 @@ impl InnerLocustDB {
                 let mut tables = self.tables.write().unwrap();
                 tables.insert(
                     table.to_string(),
-                    Table::new(1 << 20, table, self.lru.clone()),
+                    Table::new(table, self.lru.clone()),
                 );
             }
             self.ingest_single(

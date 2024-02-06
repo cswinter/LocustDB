@@ -1,12 +1,10 @@
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str;
 use std::sync::Arc;
 
 use futures::channel::oneshot;
 
-use crate::disk_store::interface::*;
-use crate::disk_store::noop_storage::NoopStorage;
 use crate::disk_store::v2::StorageV2;
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
@@ -29,16 +27,11 @@ impl LocustDB {
     }
 
     pub fn new(opts: &Options) -> LocustDB {
-        let disk_store = opts
-            .db_path
-            .as_ref()
-            .map(LocustDB::persistent_storage)
-            .unwrap_or_else(|| Arc::new(NoopStorage));
         let storage_v2 = opts.db_v2_path.as_ref().map(|path| {
             let (storage, wal) = StorageV2::new(path, false);
             (Arc::new(storage), wal)
         });
-        let locustdb = Arc::new(InnerLocustDB::new(disk_store, storage_v2, opts));
+        let locustdb = Arc::new(InnerLocustDB::new(storage_v2, opts));
         InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB {
             inner_locustdb: locustdb,
@@ -181,17 +174,6 @@ impl LocustDB {
 
     pub fn schedule<T: Task + 'static>(&self, task: T) {
         self.inner_locustdb.schedule(task)
-    }
-
-    #[cfg(feature = "enable_rocksdb")]
-    pub fn persistent_storage<P: AsRef<Path>>(db_path: P) -> Arc<dyn DiskStore> {
-        use crate::disk_store::rocksdb;
-        Arc::new(rocksdb::RocksDB::new(db_path))
-    }
-
-    #[cfg(not(feature = "enable_rocksdb"))]
-    pub fn persistent_storage<P: AsRef<Path>>(_: P) -> Arc<dyn DiskStore> {
-        panic!("RocksDB storage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
     }
 }
 

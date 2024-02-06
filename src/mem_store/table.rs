@@ -14,7 +14,6 @@ use crate::mem_store::*;
 
 pub struct Table {
     name: String,
-    batch_size: usize,
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     buffer: Mutex<Buffer>,
     /// LRU that keeps track of when each (table, partition, column) segment was last accessed.
@@ -22,10 +21,9 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(batch_size: usize, name: &str, lru: Lru) -> Table {
+    pub fn new(name: &str, lru: Lru) -> Table {
         Table {
             name: name.to_string(),
-            batch_size: batch_size_override(batch_size, name),
             partitions: RwLock::new(HashMap::new()),
             buffer: Mutex::new(Buffer::default()),
             lru,
@@ -48,23 +46,7 @@ impl Table {
         partitions
     }
 
-    pub fn load_table_metadata(
-        batch_size: usize,
-        storage: &dyn DiskStore,
-        lru: &Lru,
-    ) -> HashMap<String, Table> {
-        let mut tables = HashMap::new();
-        for md in storage.load_metadata() {
-            let table = tables
-                .entry(md.tablename.clone())
-                .or_insert_with(|| Table::new(batch_size, &md.tablename, lru.clone()));
-            table.insert_nonresident_partition(&md);
-        }
-        tables
-    }
-
     pub fn restore_tables_from_disk(
-        batch_size: usize,
         storage: &StorageV2,
         wal_segments: Vec<WALSegment>,
         lru: &Lru,
@@ -73,14 +55,14 @@ impl Table {
         for md in &storage.meta_store().lock().unwrap().partitions {
             let table = tables
                 .entry(md.tablename.clone())
-                .or_insert_with(|| Table::new(batch_size, &md.tablename, lru.clone()));
+                .or_insert_with(|| Table::new(&md.tablename, lru.clone()));
             table.insert_nonresident_partition(md);
         }
         for wal_segment in wal_segments {
             for (table_name, rows) in wal_segment.data {
                 let table = tables
                     .entry(table_name.clone())
-                    .or_insert_with(|| Table::new(batch_size, &table_name, lru.clone()));
+                    .or_insert_with(|| Table::new(&table_name, lru.clone()));
                 for row in rows {
                     table.ingest(row);
                 }
@@ -223,16 +205,6 @@ impl Table {
             .iter()
             .map(|(name, size)| (name.to_string(), *size))
             .collect()
-    }
-}
-
-fn batch_size_override(batch_size: usize, tablename: &str) -> usize {
-    if tablename == "_meta_tables" {
-        1
-    } else if tablename == "_meta_queries" {
-        10
-    } else {
-        batch_size
     }
 }
 
