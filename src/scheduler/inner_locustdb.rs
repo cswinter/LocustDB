@@ -55,7 +55,7 @@ impl InnerLocustDB {
             .max()
             .unwrap_or(0);
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
-            storage.clone(),
+            storage_v2.clone().map(|s| s as Arc<dyn ColumnLoader>).unwrap_or(storage.clone()),
             lru.clone(),
             opts.read_threads,
             !opts.mem_lz4,
@@ -153,10 +153,10 @@ impl InnerLocustDB {
         let table = tables.get(tablename).unwrap();
         let pid = self.next_partition_id.fetch_add(1, Ordering::SeqCst) as u64;
         self.storage.store_partition(pid, tablename, &partition);
-        let (new_partition, keys) = Partition::new(pid, partition, self.lru.clone());
+        let (new_partition, keys) = Partition::new(table.name(), pid, partition, self.lru.clone());
         table.load_partition(new_partition);
-        for key in keys {
-            self.lru.put(key);
+        for (id, column) in keys {
+            self.lru.put((table.name().to_string(), id, column));
         }
     }
 

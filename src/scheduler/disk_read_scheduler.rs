@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex};
 use std_semaphore::Semaphore;
 
-use crate::disk_store::interface::DiskStore;
+use crate::disk_store::interface::ColumnLoader;
 use crate::disk_store::interface::PartitionID;
 use crate::mem_store::partition::ColumnHandle;
 use crate::mem_store::partition::Partition;
@@ -14,7 +14,7 @@ use crate::mem_store::*;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub struct DiskReadScheduler {
-    disk_store: Arc<dyn DiskStore>,
+    disk_store: Arc<dyn ColumnLoader>,
     task_queue: Mutex<VecDeque<DiskRun>>,
     reader_semaphore: Semaphore,
     lru: Lru,
@@ -35,7 +35,7 @@ struct DiskRun {
 
 impl DiskReadScheduler {
     pub fn new(
-        disk_store: Arc<dyn DiskStore>,
+        disk_store: Arc<dyn ColumnLoader>,
         lru: Lru,
         max_readers: usize,
         lz4_decode: bool,
@@ -148,7 +148,7 @@ impl DiskReadScheduler {
                 #[allow(unused_mut)]
                 let mut column = {
                     let _token = self.reader_semaphore.access();
-                    self.disk_store.load_column(handle.id(), handle.name())
+                    self.disk_store.load_column(&handle.key().0, handle.id(), handle.name())
                 };
                 // Need to hold lock when we put new value into lru
                 let mut maybe_column = handle.try_get();

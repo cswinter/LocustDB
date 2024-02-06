@@ -42,7 +42,7 @@ impl Table {
         let buffer = self.buffer.lock().unwrap();
         if buffer.len() > 0 {
             partitions.push(Arc::new(
-                Partition::from_buffer(u64::MAX, buffer.clone(), self.lru.clone()).0,
+                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone()).0,
             ));
         }
         partitions
@@ -97,11 +97,12 @@ impl Table {
 
     pub fn evict(&self, key: &ColumnKey) -> usize {
         let partitions = self.partitions.read().unwrap();
-        partitions.get(&key.0).map(|p| p.evict(&key.1)).unwrap_or(0)
+        partitions.get(&key.1).map(|p| p.evict(&key.2)).unwrap_or(0)
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
         let partition = Arc::new(Partition::nonresident(
+            self.name(),
             md.id,
             md.len,
             &md.columns,
@@ -138,7 +139,7 @@ impl Table {
             return None
         }
         let buffer = std::mem::take(buffer.deref_mut());
-        let (mut new_partition, keys) = Partition::from_buffer(0, buffer, self.lru.clone());
+        let (mut new_partition, keys) = Partition::from_buffer(self.name(), 0, buffer, self.lru.clone());
         let arc_partition;
         {
             let mut partitions = self.partitions.write().unwrap();
@@ -146,8 +147,8 @@ impl Table {
             arc_partition = Arc::new(new_partition);
             partitions.insert(arc_partition.id, arc_partition.clone());
         }
-        for key in keys {
-            self.lru.put(key);
+        for (id, column) in keys {
+            self.lru.put((self.name().to_string(), id, column));
         }
         Some(arc_partition)
     }

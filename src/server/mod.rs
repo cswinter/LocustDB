@@ -81,10 +81,11 @@ async fn plot(_data: web::Data<AppState>) -> impl Responder {
 
 #[get("/table/{tablename}")]
 async fn table_handler(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
+    // TODO: sql injection
     let cols = data
         .db
         .run_query(
-            &format!("SELECT * FROM {} LIMIT 0", path.as_str()),
+            &format!("SELECT * FROM \"{}\" LIMIT 0", path.as_str()),
             false,
             vec![],
         )

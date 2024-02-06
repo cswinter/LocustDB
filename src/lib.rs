@@ -8,6 +8,7 @@
     box_patterns,
     proc_macro_hygiene,
     let_chains,
+    trait_upcasting,
 )]
 #[macro_use]
 extern crate failure_derive;

@@ -57,19 +57,8 @@ impl RocksDB {
     }
 }
 
-impl DiskStore for RocksDB {
-    fn load_metadata(&self) -> Vec<PartitionMetadata> {
-        let mut metadata = Vec::new();
-        let iter = self.db.iterator_cf(self.metadata(), IteratorMode::Start);
-        for entry in iter {
-            let (key, value) = entry.unwrap();
-            let partition_id = BigEndian::read_u64(&key) as PartitionID;
-            metadata.push(deserialize_meta_data(&value, partition_id))
-        }
-        metadata
-    }
-
-    fn load_column(&self, partition: PartitionID, column_name: &str) -> Column {
+impl ColumnLoader for RocksDB {
+    fn load_column(&self, _: &str, partition: PartitionID, column_name: &str) -> Column {
         let data = self.db.get_cf(self.partitions(), column_key(partition, column_name)).unwrap().unwrap();
         deserialize_column(&data)
     }
@@ -87,6 +76,19 @@ impl DiskStore for RocksDB {
             let col = deserialize_column(&value);
             ldb.restore(id, col);
         }
+    }
+}
+
+impl DiskStore for RocksDB {
+    fn load_metadata(&self) -> Vec<PartitionMetadata> {
+        let mut metadata = Vec::new();
+        let iter = self.db.iterator_cf(self.metadata(), IteratorMode::Start);
+        for entry in iter {
+            let (key, value) = entry.unwrap();
+            let partition_id = BigEndian::read_u64(&key) as PartitionID;
+            metadata.push(deserialize_meta_data(&value, partition_id))
+        }
+        metadata
     }
 
     fn bulk_load(&self, ldb: &InnerLocustDB) {

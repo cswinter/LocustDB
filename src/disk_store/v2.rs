@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use super::interface::PartitionMetadata;
+use super::interface::{ColumnLoader, PartitionMetadata};
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::Column;
 
@@ -34,6 +34,16 @@ pub trait Storage: Send + Sync + 'static {
     fn persist_partitions_delete_wal(&self, partitions: Vec<(PartitionMetadata, Vec<Arc<Column>>)>);
     fn meta_store(&self) -> &Mutex<MetaStore>;
     fn load_column(&self, partition: PartitionID, table_name: &str, column_name: &str) -> Column;
+}
+
+impl ColumnLoader for StorageV2 {
+    fn load_column(&self, table_name: &str, partition: super::interface::PartitionID, column_name: &str) -> Column {
+        Storage::load_column(self, partition, table_name, column_name)
+    }
+
+    fn load_column_range(&self, _start: super::interface::PartitionID, _end: super::interface::PartitionID, _column_name: &str, _ldb: &crate::scheduler::InnerLocustDB) {
+        todo!()
+    }
 }
 
 trait BlobWriter {

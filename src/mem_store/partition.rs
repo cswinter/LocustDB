@@ -8,7 +8,8 @@ use crate::ingest::buffer::Buffer;
 use crate::mem_store::*;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 
-pub type ColumnKey = (PartitionID, String);
+// Table, Partition, Column
+pub type ColumnKey = (String, PartitionID, String);
 
 pub struct Partition {
     pub id: PartitionID,
@@ -18,7 +19,7 @@ pub struct Partition {
 }
 
 impl Partition {
-    pub fn new(id: PartitionID, cols: Vec<Arc<Column>>, lru: Lru) -> (Partition, Vec<ColumnKey>) {
+    pub fn new(table: &str, id: PartitionID, cols: Vec<Arc<Column>>, lru: Lru) -> (Partition, Vec<(u64, String)>) {
         let mut keys = Vec::with_capacity(cols.len());
         (
             Partition {
@@ -30,7 +31,7 @@ impl Partition {
                         let key = (id, c.name().to_string());
                         // Can't put into lru directly, because then memory limit enforcer might try to evict unreachable column.
                         keys.push(key);
-                        ColumnHandle::resident(id, c)
+                        ColumnHandle::resident(table, id, c)
                     })
                     .collect(),
                 lru,
@@ -40,6 +41,7 @@ impl Partition {
     }
 
     pub fn nonresident(
+        table: &str,
         id: PartitionID,
         len: usize,
         cols: &[ColumnMetadata],
@@ -50,14 +52,15 @@ impl Partition {
             len,
             cols: cols
                 .iter()
-                .map(|c| ColumnHandle::non_resident(id, c.name.to_string(), c.size_bytes))
+                .map(|c| ColumnHandle::non_resident(table, id, c.name.to_string(), c.size_bytes))
                 .collect(),
             lru,
         }
     }
 
-    pub fn from_buffer(id: PartitionID, buffer: Buffer, lru: Lru) -> (Partition, Vec<ColumnKey>) {
+    pub fn from_buffer(table: &str, id: PartitionID, buffer: Buffer, lru: Lru) -> (Partition, Vec<(u64, String)>) {
         Partition::new(
+            table,
             id,
             buffer
                 .buffer
@@ -215,7 +218,8 @@ impl Partition {
 }
 
 pub struct ColumnHandle {
-    key: (PartitionID, String),
+    // Table, Partition, Column
+    key: (String, PartitionID, String),
     size_bytes: AtomicUsize,
     resident: AtomicBool,
     load_scheduled: AtomicBool,
@@ -224,9 +228,9 @@ pub struct ColumnHandle {
 }
 
 impl ColumnHandle {
-    fn resident(id: PartitionID, col: Arc<Column>) -> ColumnHandle {
+    fn resident(table: &str, id: PartitionID, col: Arc<Column>) -> ColumnHandle {
         ColumnHandle {
-            key: (id, col.name().to_string()),
+            key: (table.to_string(), id, col.name().to_string()),
             size_bytes: AtomicUsize::new(col.heap_size_of_children()),
             resident: AtomicBool::new(true),
             load_scheduled: AtomicBool::new(false),
@@ -235,9 +239,9 @@ impl ColumnHandle {
         }
     }
 
-    fn non_resident(id: PartitionID, name: String, size_bytes: usize) -> ColumnHandle {
+    fn non_resident(table: &str, id: PartitionID, name: String, size_bytes: usize) -> ColumnHandle {
         ColumnHandle {
-            key: (id, name),
+            key: (table.to_string(), id, name),
             size_bytes: AtomicUsize::new(size_bytes),
             resident: AtomicBool::new(false),
             load_scheduled: AtomicBool::new(false),
@@ -258,16 +262,20 @@ impl ColumnHandle {
         self.load_scheduled.load(Ordering::SeqCst)
     }
 
-    pub fn key(&self) -> &(PartitionID, String) {
+    pub fn key(&self) -> &(String, PartitionID, String) {
         &self.key
     }
 
+    pub fn table(&self) -> &str {
+        &self.key.0
+    }
+
     pub fn id(&self) -> PartitionID {
-        self.key.0
+        self.key.1
     }
 
     pub fn name(&self) -> &str {
-        &self.key.1
+        &self.key.2
     }
 
     pub fn try_get(&self) -> MutexGuard<Option<Arc<Column>>> {
