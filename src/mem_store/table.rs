@@ -9,7 +9,7 @@ use crate::disk_store::v2::{StorageV2, Storage, WALSegment};
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
-use crate::mem_store::partition::{ColumnKey, Partition};
+use crate::mem_store::partition::{ColumnLocator, Partition};
 use crate::mem_store::*;
 
 pub struct Table {
@@ -77,9 +77,9 @@ impl Table {
         partitions[&id].restore(col);
     }
 
-    pub fn evict(&self, key: &ColumnKey) -> usize {
+    pub fn evict(&self, key: &ColumnLocator) -> usize {
         let partitions = self.partitions.read().unwrap();
-        partitions.get(&key.1).map(|p| p.evict(&key.2)).unwrap_or(0)
+        partitions.get(&key.id).map(|p| p.evict(&key.column)).unwrap_or(0)
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
@@ -87,7 +87,7 @@ impl Table {
             self.name(),
             md.id,
             md.len,
-            &md.columns,
+            &md.subpartitions,
             self.lru.clone(),
         ));
         let mut partitions = self.partitions.write().unwrap();
@@ -130,7 +130,7 @@ impl Table {
             partitions.insert(arc_partition.id, arc_partition.clone());
         }
         for (id, column) in keys {
-            self.lru.put((self.name().to_string(), id, column));
+            self.lru.put(ColumnLocator::new(self.name(), id, &column));
         }
         Some(arc_partition)
     }

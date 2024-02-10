@@ -189,6 +189,8 @@ pub struct Options {
     pub seq_disk_read: bool,
     /// Maximum size of WAL in bytes before triggering compaction
     pub max_wal_size_bytes: u64,
+    /// Maximum size of partition
+    pub max_partition_size_bytes: u64,
 }
 
 impl Default for Options {
@@ -203,6 +205,7 @@ impl Default for Options {
             readahead: 256 * 1024 * 1024, // 256 MiB
             seq_disk_read: false,
             max_wal_size_bytes: 64 * 1024 * 1024, // 64 MiB
+            max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
         }
     }
 }

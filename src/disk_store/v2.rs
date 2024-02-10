@@ -31,17 +31,36 @@ type PartitionID = u64;
 pub trait Storage: Send + Sync + 'static {
     /// Persists a WAL segment and returns the number of bytes written
     fn persist_wal_segment(&self, segment: WALSegment) -> u64;
-    fn persist_partitions_delete_wal(&self, partitions: Vec<(PartitionMetadata, Vec<Arc<Column>>)>);
+    fn persist_partitions_delete_wal(
+        &self,
+        partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
+    );
     fn meta_store(&self) -> &Mutex<MetaStore>;
-    fn load_column(&self, partition: PartitionID, table_name: &str, column_name: &str) -> Column;
+    fn load_column(
+        &self,
+        partition: PartitionID,
+        table_name: &str,
+        column_name: &str,
+    ) -> Vec<Column>;
 }
 
 impl ColumnLoader for StorageV2 {
-    fn load_column(&self, table_name: &str, partition: super::interface::PartitionID, column_name: &str) -> Column {
+    fn load_column(
+        &self,
+        table_name: &str,
+        partition: super::interface::PartitionID,
+        column_name: &str,
+    ) -> Vec<Column> {
         Storage::load_column(self, partition, table_name, column_name)
     }
 
-    fn load_column_range(&self, _start: super::interface::PartitionID, _end: super::interface::PartitionID, _column_name: &str, _ldb: &crate::scheduler::InnerLocustDB) {
+    fn load_column_range(
+        &self,
+        _start: super::interface::PartitionID,
+        _end: super::interface::PartitionID,
+        _column_name: &str,
+        _ldb: &crate::scheduler::InnerLocustDB,
+    ) {
         todo!()
     }
 }
@@ -73,23 +92,41 @@ impl StorageV2 {
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
         let writer = Box::new(FileBlobWriter::new());
-        let (meta_store, wal_segments) = StorageV2::recover(&writer, &meta_db_path, &new_meta_db_path, &wal_dir, readonly);
+        let (meta_store, wal_segments) = StorageV2::recover(
+            &writer,
+            &meta_db_path,
+            &new_meta_db_path,
+            &wal_dir,
+            readonly,
+        );
         let meta_store = Arc::new(Mutex::new(meta_store));
-        (StorageV2 {
-            wal_dir,
-            meta_db_path,
-            new_meta_db_path,
-            tables_path,
-            meta_store,
-            writer,
-        }, wal_segments)
+        (
+            StorageV2 {
+                wal_dir,
+                meta_db_path,
+                new_meta_db_path,
+                tables_path,
+                meta_store,
+                writer,
+            },
+            wal_segments,
+        )
     }
 
-    fn recover<'a>(writer: &FileBlobWriter, mut meta_db_path: &'a Path, new_meta_db_path: &'a Path, wal_dir: &Path, readonly: bool) -> (MetaStore, Vec<WALSegment>) {
+    fn recover<'a>(
+        writer: &FileBlobWriter,
+        mut meta_db_path: &'a Path,
+        new_meta_db_path: &'a Path,
+        wal_dir: &Path,
+        readonly: bool,
+    ) -> (MetaStore, Vec<WALSegment>) {
         // If db crashed during wal flush, might have new state at new_meta_db_path and potentially
         // old state at meta_db_path. If both exist, delete old state and rename new state to old.
         if writer.exists(new_meta_db_path).unwrap() {
-            log::info!("Found new unfinalized meta db at {}", new_meta_db_path.display());
+            log::info!(
+                "Found new unfinalized meta db at {}",
+                new_meta_db_path.display()
+            );
             if writer.exists(meta_db_path).unwrap() {
                 log::info!("Found old meta db at {}, deleting", meta_db_path.display());
                 if !readonly {
@@ -100,9 +137,7 @@ impl StorageV2 {
             if readonly {
                 meta_db_path = new_meta_db_path;
             } else {
-                writer
-                    .rename(new_meta_db_path, meta_db_path)
-                    .unwrap();
+                writer.rename(new_meta_db_path, meta_db_path).unwrap();
             }
         }
 
@@ -164,21 +199,25 @@ impl Storage for StorageV2 {
 
     fn persist_partitions_delete_wal(
         &self,
-        partitions: Vec<(PartitionMetadata, Vec<Arc<Column>>)>,
+        partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
     ) {
         let mut meta_store = self.meta_store.lock().unwrap();
-        for (metadata, cols) in partitions {
-            for col in cols {
+        for (partition, subpartition_cols) in partitions {
+            for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
                 // TODO: column names might not be valid for filesystem (too long, disallowed characters). use cleaned prefix + hashcode for column names that are long/have special chars?
-                let table_dir = self.tables_path.join(&metadata.tablename);
+                let table_dir = self.tables_path.join(&partition.tablename);
+                let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
                 self.writer
                     .store(
-                        &table_dir.join(format!("{}_{}.part", metadata.id, col.name())),
-                        &bincode::serialize(&*col).unwrap(),
+                        &table_dir.join(format!(
+                            "{}_{}.part",
+                            partition.id, metadata.subpartition_key
+                        )),
+                        &bincode::serialize(&cols).unwrap(),
                     )
                     .unwrap();
             }
-            meta_store.partitions.push(metadata);
+            meta_store.partitions.push(partition);
         }
         self.writer
             .store(
@@ -197,11 +236,31 @@ impl Storage for StorageV2 {
         }
     }
 
-    fn load_column(&self, partition: PartitionID, table_name: &str, column_name: &str) -> Column {
+    fn load_column(
+        &self,
+        partition: PartitionID,
+        table_name: &str,
+        column_name: &str,
+    ) -> Vec<Column> {
+        // TODO: efficient access
+        let subpartition_key = self
+            .meta_store()
+            .lock()
+            .unwrap()
+            .partitions
+            .iter()
+            .find(|p| p.id == partition && p.tablename == table_name)
+            .unwrap()
+            .subpartitions
+            .iter()
+            .find(|sp| sp.column_names.contains(&column_name.to_string()))
+            .unwrap()
+            .subpartition_key
+            .clone();
         let path = self
             .tables_path
             .join(table_name)
-            .join(format!("{}_{}.part", partition, column_name));
+            .join(format!("{}_{}.part", partition, subpartition_key));
         let data = self.writer.load(&path).unwrap();
         bincode::deserialize(&data).unwrap()
     }

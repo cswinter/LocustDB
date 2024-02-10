@@ -1,10 +1,12 @@
 use std::collections::{HashMap, VecDeque};
-use std::str;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{mem, str};
+
+use itertools::Itertools;
 
 use crate::disk_store::interface::*;
 use crate::disk_store::v2::{Storage, StorageV2, WALSegment};
@@ -14,9 +16,11 @@ use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
-use crate::{mem_store::*, NoopStorage};
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
+use crate::{mem_store::*, NoopStorage};
+
+use self::partition::ColumnLocator;
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
@@ -53,7 +57,10 @@ impl InnerLocustDB {
             .max()
             .unwrap_or(0);
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
-            storage_v2.clone().map(|s| s as Arc<dyn ColumnLoader>).unwrap_or(Arc::new(NoopStorage)),
+            storage_v2
+                .clone()
+                .map(|s| s as Arc<dyn ColumnLoader>)
+                .unwrap_or(Arc::new(NoopStorage)),
             lru.clone(),
             opts.read_threads,
             !opts.mem_lz4,
@@ -155,7 +162,7 @@ impl InnerLocustDB {
         let (new_partition, keys) = Partition::new(table.name(), pid, partition, self.lru.clone());
         table.load_partition(new_partition);
         for (id, column) in keys {
-            self.lru.put((table.name().to_string(), id, column));
+            self.lru.put(ColumnLocator::new(table.name(), id, &column));
         }
     }
 
@@ -164,7 +171,6 @@ impl InnerLocustDB {
         let tables = self.tables.read().unwrap();
         tables.get(table).unwrap().ingest(row)
     }
-
 
     pub fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
         if let Some(storage) = &self.storage_v2 {
@@ -197,21 +203,69 @@ impl InnerLocustDB {
         let tables = self.tables.write().unwrap();
         for table in tables.values() {
             if let Some(partition) = table.batch() {
-                let columns: Vec<_> = partition.cols.iter().map(|c| c.try_get().as_ref().unwrap().clone()).collect();
-                let partition_metadata =
-                    PartitionMetadata {
-                        id: partition.id,
-                        tablename: table.name().to_string(),
-                        len: partition.len(),
-                        columns: columns.iter().map(|c| ColumnPartitionMetadata {
-                            name: c.name().to_string(),
-                            size_bytes: c.heap_size_of_children(),
-                        }).collect(),
-                    };
-                new_partitions.push((partition_metadata, columns));
+                let columns: Vec<_> = partition
+                    .cols
+                    .iter()
+                    .map(|c| c.try_get().as_ref().unwrap().clone())
+                    .sorted_by(|a, b| a.name().cmp(b.name()));
+
+                #[derive(Default)]
+                struct PartitionBuilder {
+                    subpartition_metadata: Vec<SubpartitionMeatadata>,
+                    subpartitions: Vec<Vec<Arc<Column>>>,
+                    subpartition: Vec<Arc<Column>>,
+                    bytes: u64,
+                }
+
+                let mut acc = PartitionBuilder::default();
+                fn push(acc: &mut PartitionBuilder, subpartition_key: String) {
+                    acc.subpartition_metadata.push(SubpartitionMeatadata {
+                        column_names: acc.subpartition.iter().map(|c| c.name().to_string()).collect(),
+                        size_bytes: acc.bytes,
+                        subpartition_key,
+                    });
+                    acc.subpartitions.push(mem::take(&mut acc.subpartition));
+                    acc.bytes = 0;
+                }
+
+                for column in columns {
+                    let size_bytes = column.heap_size_of_children() as u64;
+                    if acc.bytes + size_bytes > self.opts.max_partition_size_bytes {
+                        push(&mut acc, column.name().to_string());
+                    }
+                    acc.subpartition.push(column);
+                    acc.bytes += size_bytes;
+                }
+
+                let subpartition_key = if acc.subpartitions.is_empty() {
+                    "all".to_string()
+                } else if acc.subpartition.len() == 1 {
+                    // TODO: sanitize
+                    acc.subpartition[0].name().to_string()
+                } else {
+                    use sha2::{Digest, Sha256};
+                    let mut hasher = Sha256::new();
+                    for col in &acc.subpartition {
+                        hasher.update(col.name());
+                    }
+                    format!("{:x}", hasher.finalize())
+                };
+                push(&mut acc, subpartition_key);
+
+                let partition_metadata = PartitionMetadata {
+                    id: partition.id,
+                    tablename: table.name().to_string(),
+                    len: partition.len(),
+                    subpartitions: acc.subpartition_metadata,
+                };
+                new_partitions.push((partition_metadata, acc.subpartitions));
             }
         }
-        self.storage_v2.as_ref().unwrap().persist_partitions_delete_wal(new_partitions)
+
+        self.storage_v2
+            .as_ref()
+            .unwrap()
+            .persist_partitions_delete_wal(new_partitions)
     }
 
     pub fn restore(&self, id: PartitionID, column: Column) {
@@ -262,10 +316,7 @@ impl InnerLocustDB {
         if !exists {
             {
                 let mut tables = self.tables.write().unwrap();
-                tables.insert(
-                    table.to_string(),
-                    Table::new(table, self.lru.clone()),
-                );
+                tables.insert(table.to_string(), Table::new(table, self.lru.clone()));
             }
             self.ingest_single(
                 "_meta_tables",

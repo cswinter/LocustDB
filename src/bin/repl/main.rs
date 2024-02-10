@@ -43,6 +43,10 @@ struct Opt {
     #[structopt(long, name = "WAL_SIZE", default_value = "16777216")]
     max_wal_size_bytes: u64,
 
+    /// Maximum size of WAL in bytes
+    #[structopt(long, name = "PART_SIZE", default_value = "8388608")]
+    max_partition_size_bytes: u64,
+
     /// Comma separated list specifying the types and (optionally) names of all columns in files specified by `--load` option.
     /// Valid types: `s`, `string`, `i`, `integer`, `ns` (nullable string), `ni` (nullable integer)
     /// Example schema without column names: `int,string,string,string,int`
@@ -102,6 +106,7 @@ fn main() {
         trips,
         server,
         max_wal_size_bytes,
+        max_partition_size_bytes,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -114,6 +119,7 @@ fn main() {
         readahead: readahead * 1024 * 1024,
         seq_disk_read,
         max_wal_size_bytes,
+        max_partition_size_bytes,
     };
 
     if db_path.is_some() && !cfg!(feature = "enable_rocksdb") {

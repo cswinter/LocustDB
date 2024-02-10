@@ -145,12 +145,14 @@ impl DiskReadScheduler {
                 }
             } else {
                 debug!("Point lookup for {}.{}", handle.name(), handle.id());
-                #[allow(unused_mut)]
-                let mut column = {
+                let columns = {
                     let _token = self.reader_semaphore.access();
-                    self.disk_store.load_column(&handle.key().0, handle.id(), handle.name())
+                    self.disk_store.load_column(&handle.key().table, handle.id(), handle.name())
                 };
                 // Need to hold lock when we put new value into lru
+                // TODO: also populate columns that were colocated in same subpartition
+                #[allow(unused_mut)]
+                let mut column = columns.into_iter().find(|c| c.name() == handle.name()).unwrap();
                 let mut maybe_column = handle.try_get();
                 self.lru.put(handle.key().clone());
                 #[cfg(feature = "enable_lz4")]

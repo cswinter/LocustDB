@@ -9,7 +9,12 @@ use crate::mem_store::*;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 
 // Table, Partition, Column
-pub type ColumnKey = (String, PartitionID, String);
+#[derive(Hash, Eq, PartialEq, Clone)]
+pub struct ColumnLocator {
+    pub table: String,
+    pub id: PartitionID,
+    pub column: String,
+}
 
 pub struct Partition {
     pub id: PartitionID,
@@ -19,7 +24,12 @@ pub struct Partition {
 }
 
 impl Partition {
-    pub fn new(table: &str, id: PartitionID, cols: Vec<Arc<Column>>, lru: Lru) -> (Partition, Vec<(u64, String)>) {
+    pub fn new(
+        table: &str,
+        id: PartitionID,
+        cols: Vec<Arc<Column>>,
+        lru: Lru,
+    ) -> (Partition, Vec<(u64, String)>) {
         let mut keys = Vec::with_capacity(cols.len());
         (
             Partition {
@@ -44,7 +54,7 @@ impl Partition {
         table: &str,
         id: PartitionID,
         len: usize,
-        cols: &[ColumnPartitionMetadata],
+        cols: &[SubpartitionMeatadata],
         lru: Lru,
     ) -> Partition {
         Partition {
@@ -52,13 +62,27 @@ impl Partition {
             len,
             cols: cols
                 .iter()
-                .map(|c| ColumnHandle::non_resident(table, id, c.name.to_string(), c.size_bytes))
+                .flat_map(|subpartition| {
+                    subpartition.column_names.iter().map(|c| {
+                        ColumnHandle::non_resident(
+                            table,
+                            id,
+                            &subpartition.subpartition_key,
+                            c.to_string(),
+                        )
+                    })
+                })
                 .collect(),
             lru,
         }
     }
 
-    pub fn from_buffer(table: &str, id: PartitionID, buffer: Buffer, lru: Lru) -> (Partition, Vec<(u64, String)>) {
+    pub fn from_buffer(
+        table: &str,
+        id: PartitionID,
+        buffer: Buffer,
+        lru: Lru,
+    ) -> (Partition, Vec<(u64, String)>) {
         Partition::new(
             table,
             id,
@@ -218,8 +242,9 @@ impl Partition {
 }
 
 pub struct ColumnHandle {
-    // Table, Partition, Column
-    key: (String, PartitionID, String),
+    // Table, Partition, Subpartition
+    key: ColumnLocator,
+    name: String,
     size_bytes: AtomicUsize,
     resident: AtomicBool,
     load_scheduled: AtomicBool,
@@ -229,7 +254,12 @@ pub struct ColumnHandle {
 impl ColumnHandle {
     fn resident(table: &str, id: PartitionID, col: Arc<Column>) -> ColumnHandle {
         ColumnHandle {
-            key: (table.to_string(), id, col.name().to_string()),
+            key: ColumnLocator {
+                table: table.to_string(),
+                id,
+                column: col.name().to_string(),
+            },
+            name: col.name().to_string(),
             size_bytes: AtomicUsize::new(col.heap_size_of_children()),
             resident: AtomicBool::new(true),
             load_scheduled: AtomicBool::new(false),
@@ -237,10 +267,16 @@ impl ColumnHandle {
         }
     }
 
-    fn non_resident(table: &str, id: PartitionID, name: String, size_bytes: usize) -> ColumnHandle {
+    fn non_resident(
+        table: &str,
+        id: PartitionID,
+        subpartition_key: &str,
+        name: String,
+    ) -> ColumnHandle {
         ColumnHandle {
-            key: (table.to_string(), id, name),
-            size_bytes: AtomicUsize::new(size_bytes),
+            key: ColumnLocator::new(table, id, subpartition_key),
+            name,
+            size_bytes: AtomicUsize::new(0),
             resident: AtomicBool::new(false),
             load_scheduled: AtomicBool::new(false),
             col: Mutex::new(None),
@@ -259,20 +295,20 @@ impl ColumnHandle {
         self.load_scheduled.load(Ordering::SeqCst)
     }
 
-    pub fn key(&self) -> &(String, PartitionID, String) {
+    pub fn key(&self) -> &ColumnLocator {
         &self.key
     }
 
     pub fn table(&self) -> &str {
-        &self.key.0
-    }
-
-    pub fn id(&self) -> PartitionID {
-        self.key.1
+        &self.key.table
     }
 
     pub fn name(&self) -> &str {
-        &self.key.2
+        &self.name
+    }
+
+    pub fn id(&self) -> PartitionID {
+        self.key.id
     }
 
     pub fn try_get(&self) -> MutexGuard<Option<Arc<Column>>> {
@@ -292,6 +328,16 @@ impl ColumnHandle {
             self.size_bytes()
         } else {
             0
+        }
+    }
+}
+
+impl ColumnLocator {
+    pub fn new(table: &str, id: PartitionID, column: &str) -> ColumnLocator {
+        ColumnLocator {
+            table: table.to_string(),
+            id,
+            column: column.to_string(),
         }
     }
 }

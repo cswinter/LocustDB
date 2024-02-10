@@ -1386,6 +1386,7 @@ dependencies = [
  "seahash",
  "serde",
  "serde_json",
+ "sha2",
  "sqlparser",
  "std-semaphore",
  "structopt",
