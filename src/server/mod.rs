@@ -153,7 +153,7 @@ async fn query_data(_data: web::Data<AppState>) -> impl Responder {
 
 #[post("/query")]
 async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> impl Responder {
-    log::info!("Query: {:?}", req_body);
+    log::debug!("Query: {:?}", req_body);
     let result = data
         .db
         .run_query(&req_body.query, false, vec![])
@@ -179,7 +179,7 @@ async fn query_cols(
     data: web::Data<AppState>,
     req_body: web::Json<QueryRequest>,
 ) -> impl Responder {
-    log::info!("Query: {:?}", req_body);
+    log::debug!("Query: {:?}", req_body);
     let x = data
         .db
         .run_query(&req_body.query, false, vec![])
@@ -198,7 +198,7 @@ async fn multi_query_cols(
     data: web::Data<AppState>,
     req_body: web::Json<MultiQueryRequest>,
 ) -> impl Responder {
-    log::info!("Multi Query: {:?}", req_body);
+    log::debug!("Multi Query: {:?}", req_body);
     let mut results = vec![];
     for q in &req_body.queries {
         // Run query immediately starts executing without awaiting future
@@ -232,7 +232,7 @@ fn flatmap_err_response(err: Result<Result<QueryOutput, QueryError>, Canceled>) 
 #[post("/insert")]
 async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
     let DataBatch { table, rows } = req_body.0;
-    log::info!("Inserting {} rows into {}", rows.len(), table);
+    log::debug!("Inserting {} rows into {}", rows.len(), table);
     data.db
         .ingest(
             &table,
@@ -261,7 +261,7 @@ async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> im
                 .collect(),
         )
         .await;
-    log::info!("Succesfully appended to {}", table);
+    log::debug!("Succesfully appended to {}", table);
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
 }
 
@@ -275,10 +275,10 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
         s.push_str(&format!("{:02x}", bytes[0]));
         bytes = bytes.slice(1..);
     }
-    log::info!("Inserting bytes: {} ({})", s, req_body.len());
+    log::debug!("Inserting bytes: {} ({})", s, req_body.len());
 
     let logging_client::DataBatch { table, rows } = bincode::deserialize(&req_body).unwrap();
-    log::info!("Inserting {} rows into {}", rows.len(), table);
+    log::debug!("Inserting {} rows into {}", rows.len(), table);
     data.db
         .ingest(
             &table,
@@ -291,7 +291,7 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
                 .collect(),
         )
         .await;
-    log::info!("Succesfully appended to {}", table);
+    log::debug!("Succesfully appended to {}", table);
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
 }
 
@@ -322,8 +322,7 @@ fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
 }
 
 
-pub async fn run(db: LocustDB) -> std::io::Result<()> {
-    let db = Arc::new(db);
+pub async fn run(db: Arc<LocustDB>) -> std::io::Result<()> {
     HttpServer::new(move || {
         let app_state = AppState { db: db.clone() };
         let cors = Cors::default()

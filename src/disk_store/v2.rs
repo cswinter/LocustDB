@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::interface::{ColumnLoader, PartitionMetadata};
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::Column;
+use crate::perf_counter::PerfCounter;
 
 type Row = Vec<(String, RawVal)>;
 
@@ -83,10 +84,11 @@ pub struct StorageV2 {
     tables_path: PathBuf,
     meta_store: Arc<Mutex<MetaStore>>,
     writer: Box<dyn BlobWriter + Send + Sync + 'static>,
+    perf_counter: Arc<PerfCounter>,
 }
 
 impl StorageV2 {
-    pub fn new(path: &Path, readonly: bool) -> (StorageV2, Vec<WALSegment>) {
+    pub fn new(path: &Path, perf_counter: Arc<PerfCounter>, readonly: bool) -> (StorageV2, Vec<WALSegment>) {
         let meta_db_path = path.join("meta");
         let new_meta_db_path = path.join("meta_new");
         let wal_dir = path.join("wal");
@@ -98,6 +100,7 @@ impl StorageV2 {
             &new_meta_db_path,
             &wal_dir,
             readonly,
+            perf_counter.as_ref(),
         );
         let meta_store = Arc::new(Mutex::new(meta_store));
         (
@@ -108,6 +111,7 @@ impl StorageV2 {
                 tables_path,
                 meta_store,
                 writer,
+                perf_counter,
             },
             wal_segments,
         )
@@ -119,6 +123,7 @@ impl StorageV2 {
         new_meta_db_path: &'a Path,
         wal_dir: &Path,
         readonly: bool,
+        perf_counter: &PerfCounter,
     ) -> (MetaStore, Vec<WALSegment>) {
         // If db crashed during wal flush, might have new state at new_meta_db_path and potentially
         // old state at meta_db_path. If both exist, delete old state and rename new state to old.
@@ -143,6 +148,7 @@ impl StorageV2 {
 
         let mut meta_store: MetaStore = if writer.exists(meta_db_path).unwrap() {
             let data = writer.load(meta_db_path).unwrap();
+            perf_counter.disk_read_meta_store(data.len() as u64);
             bincode::deserialize(&data).unwrap()
         } else {
             MetaStore {
@@ -156,6 +162,7 @@ impl StorageV2 {
         log::info!("Recovering from wal checkpoint {}", next_wal_id);
         for wal_file in writer.list(wal_dir).unwrap() {
             let wal_data = writer.load(&wal_file).unwrap();
+            perf_counter.disk_read_wal(wal_data.len() as u64);
             let wal_segment: WALSegment = bincode::deserialize(&wal_data).unwrap();
             log::info!(
                 "Found wal segment {} with id {}",
@@ -193,6 +200,7 @@ impl Storage for StorageV2 {
         }
         let path = self.wal_dir.join(format!("{}.wal", segment.id));
         let data = bincode::serialize(&segment).unwrap();
+        self.perf_counter.disk_write_wal(data.len() as u64);
         self.writer.store(&path, &data).unwrap();
         data.len() as u64
     }
@@ -201,28 +209,37 @@ impl Storage for StorageV2 {
         &self,
         partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
     ) {
+        // Lock meta store
         let mut meta_store = self.meta_store.lock().unwrap();
+
+        // Write out new partition files
         for (partition, subpartition_cols) in partitions {
             for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
                 // TODO: column names might not be valid for filesystem (too long, disallowed characters). use cleaned prefix + hashcode for column names that are long/have special chars?
                 let table_dir = self.tables_path.join(&partition.tablename);
                 let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
+                let data = bincode::serialize(&cols).unwrap();
+                self.perf_counter.new_partition_file_write(data.len() as u64);
                 self.writer
                     .store(
                         &table_dir.join(format!(
                             "{}_{}.part",
                             partition.id, metadata.subpartition_key
                         )),
-                        &bincode::serialize(&cols).unwrap(),
+                        &data,
                     )
                     .unwrap();
             }
             meta_store.partitions.push(partition);
         }
+
+        // Atomically overwrite meta store file
+        let data = bincode::serialize(&*meta_store).unwrap();
+        self.perf_counter.disk_write_meta_store(data.len() as u64);
         self.writer
             .store(
                 &self.new_meta_db_path,
-                &bincode::serialize(&*meta_store).unwrap(),
+                &data,
             )
             .unwrap();
         if self.writer.exists(&self.meta_db_path).unwrap() {
@@ -231,6 +248,8 @@ impl Storage for StorageV2 {
         self.writer
             .rename(&self.new_meta_db_path, &self.meta_db_path)
             .unwrap();
+
+        // Delete WAL files
         for file in self.writer.list(&self.wal_dir).unwrap() {
             self.writer.delete(&file).unwrap();
         }
@@ -262,6 +281,7 @@ impl Storage for StorageV2 {
             .join(table_name)
             .join(format!("{}_{}.part", partition, subpartition_key));
         let data = self.writer.load(&path).unwrap();
+        self.perf_counter.disk_read_partition(data.len() as u64);
         bincode::deserialize(&data).unwrap()
     }
 }

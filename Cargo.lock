@@ -1397,6 +1397,7 @@ dependencies = [
  "tokio",
  "unicode-segmentation",
  "unicode-width",
+ "walkdir",
 ]
 
 [[package]]

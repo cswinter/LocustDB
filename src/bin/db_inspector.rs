@@ -1,6 +1,8 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use locustdb::disk_store::v2::{Storage, StorageV2};
+use locustdb::perf_counter::PerfCounter;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -31,7 +33,7 @@ struct Opt {
 async fn main() {
     env_logger::init();
     let opts = Opt::from_args();
-    let (storage, wal) = StorageV2::new(&opts.db_v2_path, true);
+    let (storage, wal) = StorageV2::new(&opts.db_v2_path, Arc::new(PerfCounter::default()), true);
 
     {
         let meta = storage.meta_store().lock().unwrap();

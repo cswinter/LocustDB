@@ -16,6 +16,7 @@ use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
+use crate::perf_counter::PerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 use crate::{mem_store::*, NoopStorage};
@@ -32,6 +33,8 @@ pub struct InnerLocustDB {
 
     opts: Options,
 
+    perf_counter: Arc<PerfCounter>,
+
     next_partition_id: AtomicUsize,
     running: AtomicBool,
     idle_queue: Condvar,
@@ -39,11 +42,13 @@ pub struct InnerLocustDB {
 }
 
 impl InnerLocustDB {
-    pub fn new(
-        storage_v2: Option<(Arc<StorageV2>, Vec<WALSegment>)>,
-        opts: &Options,
-    ) -> InnerLocustDB {
+    pub fn new(opts: &Options) -> InnerLocustDB {
         let lru = Lru::default();
+        let perf_counter = Arc::new(PerfCounter::default());
+        let storage_v2 = opts.db_v2_path.as_ref().map(|path| {
+            let (storage, wal) = StorageV2::new(path, perf_counter.clone(), false);
+            (Arc::new(storage), wal)
+        });
         let (storage_v2, existing_tables) = match storage_v2 {
             Some((storage, wal_segments)) => {
                 let tables = Table::restore_tables_from_disk(&storage, wal_segments, &lru);
@@ -77,6 +82,7 @@ impl InnerLocustDB {
             wal_size: AtomicU64::new(0),
 
             opts: opts.clone(),
+            perf_counter,
 
             next_partition_id: AtomicUsize::new(max_pid as usize + 1),
             idle_queue: Condvar::new(),
@@ -220,7 +226,11 @@ impl InnerLocustDB {
                 let mut acc = PartitionBuilder::default();
                 fn push(acc: &mut PartitionBuilder, subpartition_key: String) {
                     acc.subpartition_metadata.push(SubpartitionMeatadata {
-                        column_names: acc.subpartition.iter().map(|c| c.name().to_string()).collect(),
+                        column_names: acc
+                            .subpartition
+                            .iter()
+                            .map(|c| c.name().to_string())
+                            .collect(),
                         size_bytes: acc.bytes,
                         subpartition_key,
                     });
@@ -382,6 +392,10 @@ impl InnerLocustDB {
 
     pub fn disk_read_scheduler(&self) -> &Arc<DiskReadScheduler> {
         &self.disk_read_scheduler
+    }
+
+    pub fn perf_counter(&self) -> &PerfCounter {
+        self.perf_counter.as_ref()
     }
 }
 

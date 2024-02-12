@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use failure::Fail;
 use futures::executor::block_on;
@@ -19,10 +20,6 @@ mod unicode;
     author = "Clemens Winter <clemenswinter1@gmail.com>"
 )]
 struct Opt {
-    /// Path to data directory
-    #[structopt(long, name = "PATH", parse(from_os_str))]
-    db_path: Option<PathBuf>,
-
     /// Path to data directory based on v2 storage format
     #[structopt(long, name = "PATH_V2", parse(from_os_str))]
     db_v2_path: Option<PathBuf>,
@@ -91,7 +88,6 @@ fn main() {
     env_logger::init();
 
     let Opt {
-        db_path,
         db_v2_path,
         load,
         table,
@@ -112,7 +108,6 @@ fn main() {
     let options = locustdb::Options {
         threads: threads.unwrap_or_else(num_cpus::get),
         read_threads: if seq_disk_read { 1 } else { num_cpus::get() },
-        db_path: db_path.clone(),
         db_v2_path: db_v2_path.clone(),
         mem_size_limit_tables: mem_limit_tables * 1024 * 1024 * 1024,
         mem_lz4,
@@ -122,9 +117,6 @@ fn main() {
         max_partition_size_bytes,
     };
 
-    if db_path.is_some() && !cfg!(feature = "enable_rocksdb") {
-        println!("WARNING: --db-path option passed, but RocksDB storage backend is not enabled in this build of LocustDB.");
-    }
     if options.readahead > options.mem_size_limit_tables {
         println!("WARNING: `mem-limit-tables` should be at least as large as `readahead`");
     }
@@ -168,7 +160,7 @@ fn main() {
 
     if server {
         actix_web::rt::System::new()
-            .block_on(locustdb::server::run(locustdb))
+            .block_on(locustdb::server::run(Arc::new(locustdb)))
             .unwrap();
     } else {
         repl(&locustdb);

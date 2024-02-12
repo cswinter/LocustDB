@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use futures::channel::oneshot;
 
-use crate::disk_store::v2::StorageV2;
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::*;
+use crate::perf_counter::PerfCounter;
 use crate::scheduler::*;
 use crate::syntax::parser;
 use crate::QueryError;
@@ -27,11 +27,7 @@ impl LocustDB {
     }
 
     pub fn new(opts: &Options) -> LocustDB {
-        let storage_v2 = opts.db_v2_path.as_ref().map(|path| {
-            let (storage, wal) = StorageV2::new(path, false);
-            (Arc::new(storage), wal)
-        });
-        let locustdb = Arc::new(InnerLocustDB::new(storage_v2, opts));
+        let locustdb = Arc::new(InnerLocustDB::new(opts));
         InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB {
             inner_locustdb: locustdb,
@@ -175,13 +171,16 @@ impl LocustDB {
     pub fn schedule<T: Task + 'static>(&self, task: T) {
         self.inner_locustdb.schedule(task)
     }
+
+    pub fn perf_counter(&self) -> &PerfCounter {
+        self.inner_locustdb.perf_counter()
+    }
 }
 
 #[derive(Clone)]
 pub struct Options {
     pub threads: usize,
     pub read_threads: usize,
-    pub db_path: Option<PathBuf>,
     pub db_v2_path: Option<PathBuf>,
     pub mem_size_limit_tables: usize,
     pub mem_lz4: bool,
@@ -198,7 +197,6 @@ impl Default for Options {
         Options {
             threads: num_cpus::get(),
             read_threads: num_cpus::get(),
-            db_path: None,
             db_v2_path: None,
             mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
             mem_lz4: true,

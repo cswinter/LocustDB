@@ -16,8 +16,8 @@ extern crate failure_derive;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-
 pub use crate::disk_store::noop_storage::NoopStorage;
+
 pub use crate::engine::query_task::QueryOutput;
 pub use crate::errors::QueryError;
 pub use crate::ingest::colgen;
@@ -39,6 +39,7 @@ mod ingest;
 mod locustdb;
 pub mod logging_client;
 mod mem_store;
+pub mod perf_counter;
 mod scheduler;
 pub mod server;
 mod stringpack;
