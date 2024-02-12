@@ -117,3 +117,21 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
         })
         .collect()
 }
+
+// Stats at fbb7f27:
+// $ RUST_BACKTRACE=1 RUST_LOG=info cargo run --release --bin db_bench -- --load-factor=9
+// elapsed: 81.138535253s
+// total uncompressed data: 1.00GiB
+// total size on disk: 1.11GiB
+// total files: 1540
+// disk writes
+//   total:      4.76GiB
+//   wal:        3.36GiB
+//   partition:  1.05GiB
+//   compaction: 0.000B
+//   meta store: 364MiB
+// files created
+//   total:     3112
+//   wal:       1536
+//   partition: 1525
+//   meta:      51
