@@ -82,24 +82,17 @@ impl BackgroundWorker {
     async fn flush(&self) {
         let buffer = mem::take(&mut *self.events.lock().unwrap());
         for (table, rows) in buffer.into_iter() {
-            fn bytes_in_row(row: &HashMap<String, f64>) -> usize {
-                row.iter()
-                    .map(|(k, v)| k.len() + v.to_string().len())
-                    .sum::<usize>()
-            }
-            let bytes = rows.iter().map(bytes_in_row).sum::<usize>();
+            let nrows = rows.len();
+            let data_batch = DataBatch { table: table.clone(), rows };
+            let serialized = bincode::serialize(&data_batch).unwrap();
             log::debug!(
                 "Pushing {} events to {} ({} bytes)",
-                rows.len(),
+                nrows,
                 table,
-                bytes
+                serialized.len(),
             );
 
-            let data_batch = DataBatch { table, rows };
-            let body = bincode::serialize(&data_batch).unwrap();
-            bincode::deserialize::<DataBatch>(&body[..]).unwrap();
-
-            let result = self.client.post(&self.url).body(body).send().await;
+            let result = self.client.post(&self.url).body(serialized).send().await;
             match result {
                 Err(err) => {
                     log::warn!(
