@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use rand::{FromEntropy, Rng};
 use structopt::StructOpt;
 use tempfile::tempdir;
 
@@ -33,6 +34,8 @@ async fn main() {
 
     let start_time = std::time::Instant::now();
 
+    let mut rng = rand::rngs::SmallRng::from_entropy();
+
     log::info!("Starting small table logging");
     let small_tables = small_table_names(load_factor);
     for _row in 0..1 << load_factor {
@@ -40,7 +43,26 @@ async fn main() {
             log.log(
                 table,
                 (0..1 << load_factor)
-                    .map(|c| (format!("col_{c}"), rand::random::<f64>()))
+                    .map(|c| (format!("col_{c}"), rng.gen::<f64>()))
+                    .collect(),
+            );
+        }
+    }
+
+    let large_tables = [
+        "event_log",
+        "customer_feedback_items_raw_data_unstructured_json",
+        "advertiser_campaigns",
+        "order_items",
+    ];
+    // large tables have n = 2^(1.5N - 1) rows and 2^(1.5N - 1) columns each
+    let n = 2f64.powf(1.5 * load_factor as f64 - 1.0).round() as u64;
+    for _row in 0..n {
+        for table in &large_tables{
+            log.log(
+                table,
+                (0..n)
+                    .map(|c| (format!("col_{c}"), rng.gen::<f64>()))
                     .collect(),
             );
         }
@@ -67,7 +89,7 @@ async fn main() {
         .sum::<u64>();
 
     println!("elapsed: {:?}", start_time.elapsed());
-    println!("total uncompressed data: {}", locustdb::unit_fmt::bite(8 * (1 << (3 * load_factor))));
+    println!("total uncompressed data: {}", locustdb::unit_fmt::bite(2 * 8 * (1 << (3 * load_factor))));
     println!("total size on disk: {}", locustdb::unit_fmt::bite(size_on_disk as usize));
     println!("total files: {}", file_count);
     println!("disk writes");
