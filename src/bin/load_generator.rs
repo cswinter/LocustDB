@@ -59,9 +59,7 @@ async fn main() {
             for _ in 0..(rowcount.get(i).cloned().unwrap_or(1)) {
                 log.log(
                     table,
-                    (0..columns)
-                        .map(|c| (format!("col_{c}"), rand::random::<f64>()))
-                        .collect(),
+                    (0..columns).map(|c| (format!("col_{c}"), rand::random::<f64>())),
                 );
             }
         }

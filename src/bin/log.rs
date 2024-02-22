@@ -36,10 +36,7 @@ async fn main() {
             .unwrap();
         log.log(
             "system_stats",
-            [("cpu".to_string(), cpu.user as f64)]
-                .iter()
-                .cloned()
-                .collect(),
+            [("cpu".to_string(), cpu.user as f64)].iter().cloned(),
         );
     }
 }

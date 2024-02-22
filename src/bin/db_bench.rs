@@ -39,12 +39,10 @@ async fn main() {
     log::info!("Starting small table logging");
     let small_tables = small_table_names(load_factor);
     for _row in 0..1 << load_factor {
-        for table in &small_tables{
+        for table in &small_tables {
             log.log(
                 table,
-                (0..1 << load_factor)
-                    .map(|c| (format!("col_{c}"), rng.gen::<f64>()))
-                    .collect(),
+                (0..1 << load_factor).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
             );
         }
     }
@@ -56,14 +54,13 @@ async fn main() {
         "order_items",
     ];
     // large tables have n = 2^(1.5N - 1) rows and 2^(1.5N - 1) columns each
+    log::info!("Starting large table logging");
     let n = 2f64.powf(1.5 * load_factor as f64 - 1.0).round() as u64;
     for _row in 0..n {
-        for table in &large_tables{
+        for table in &large_tables {
             log.log(
                 table,
-                (0..n)
-                    .map(|c| (format!("col_{c}"), rng.gen::<f64>()))
-                    .collect(),
+                (0..n).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
             );
         }
     }
@@ -89,22 +86,53 @@ async fn main() {
         .sum::<u64>();
 
     println!("elapsed: {:?}", start_time.elapsed());
-    println!("total uncompressed data: {}", locustdb::unit_fmt::bite(2 * 8 * (1 << (3 * load_factor))));
-    println!("total size on disk: {}", locustdb::unit_fmt::bite(size_on_disk as usize));
+    println!(
+        "total uncompressed data: {}",
+        locustdb::unit_fmt::bite(2 * 8 * (1 << (3 * load_factor)))
+    );
+    println!(
+        "total size on disk: {}",
+        locustdb::unit_fmt::bite(size_on_disk as usize)
+    );
     println!("total files: {}", file_count);
     println!("disk writes");
-    println!("  total:      {}", locustdb::unit_fmt::bite(perf_counter.disk_write_bytes() as usize));
-    println!("  wal:        {}", locustdb::unit_fmt::bite(perf_counter.disk_write_wal_bytes() as usize));
-    println!("  partition:  {}", locustdb::unit_fmt::bite(perf_counter.disk_write_new_partition_bytes() as usize));
-    println!("  compaction: {}", locustdb::unit_fmt::bite(perf_counter.disk_write_compaction_bytes() as usize));
-    println!("  meta store: {}", locustdb::unit_fmt::bite(perf_counter.disk_write_meta_store_bytes() as usize));
+    println!(
+        "  total:      {}",
+        locustdb::unit_fmt::bite(perf_counter.disk_write_bytes() as usize)
+    );
+    println!(
+        "  wal:        {}",
+        locustdb::unit_fmt::bite(perf_counter.disk_write_wal_bytes() as usize)
+    );
+    println!(
+        "  partition:  {}",
+        locustdb::unit_fmt::bite(perf_counter.disk_write_new_partition_bytes() as usize)
+    );
+    println!(
+        "  compaction: {}",
+        locustdb::unit_fmt::bite(perf_counter.disk_write_compaction_bytes() as usize)
+    );
+    println!(
+        "  meta store: {}",
+        locustdb::unit_fmt::bite(perf_counter.disk_write_meta_store_bytes() as usize)
+    );
     println!("files created");
     println!("  total:     {}", perf_counter.files_created());
     println!("  wal:       {}", perf_counter.files_created_wal());
-    println!("  partition: {}", perf_counter.files_created_new_partition());
+    println!(
+        "  partition: {}",
+        perf_counter.files_created_new_partition()
+    );
     println!("  meta:      {}", perf_counter.files_created_meta_store());
-
-
+    println!("network");
+    println!(
+        "  ingestion requests: {}",
+        perf_counter.ingestion_requests()
+    );
+    println!(
+        "  ingestion bytes:    {}",
+        locustdb::unit_fmt::bite(perf_counter.network_read_ingestion_bytes() as usize)
+    );
 
     // 1 large tables with 2^(2N) rows and 2^(2N) columns each
     // let large_table = format!(
@@ -157,3 +185,24 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 //   wal:       1536
 //   partition: 1525
 //   meta:      51
+
+// Stats at 0453932:
+// $ RUST_BACKTRACE=1 RUST_LOG=info cargo run --release --bin db_bench -- --load-factor=8
+// elapsed: 12.212316902s
+// total uncompressed data: 256MiB
+// total size on disk: 280MiB
+// total files: 537
+// disk writes
+//   total:      1.10GiB
+//   wal:        867MiB
+//   partition:  247MiB
+//   compaction: 0.000B
+//   meta store: 9.32MiB
+// files created
+//   total:     965
+//   wal:       516
+//   partition: 440
+//   meta:      9
+// network
+//   ingestion requests: 516
+//   ingestion bytes:    739MiB

@@ -20,8 +20,7 @@ pub struct PerfCounter {
     file_accessed_partition: AtomicU64,
 
     ingestion_requests: AtomicU64,
-
-    network_bytes_read_ingestion: AtomicU64,
+    network_read_ingestion_bytes: AtomicU64,
 }
 
 impl PerfCounter {
@@ -80,12 +79,9 @@ impl PerfCounter {
         self.files_created_new_partition.fetch_add(1, ORDERING);
     }
 
-    pub fn ingestion_request(&self) {
+    pub fn network_read_ingestion(&self, bytes: u64) {
         self.ingestion_requests.fetch_add(1, ORDERING);
-    }
-
-    pub fn network_bytes_read_ingestion(&self, bytes: u64) {
-        self.network_bytes_read_ingestion.fetch_add(bytes, ORDERING);
+        self.network_read_ingestion_bytes.fetch_add(bytes, ORDERING);
     }
 
     pub fn disk_write_bytes(&self) -> u64 {
@@ -127,5 +123,13 @@ impl PerfCounter {
 
     pub fn files_created_meta_store(&self) -> u64 {
         self.files_created_meta_store.load(ORDERING)
+    }
+
+    pub fn network_read_ingestion_bytes(&self) -> u64 {
+        self.network_read_ingestion_bytes.load(ORDERING)
+    }
+
+    pub fn ingestion_requests(&self) -> u64 {
+        self.ingestion_requests.load(ORDERING)
     }
 }

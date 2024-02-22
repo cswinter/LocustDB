@@ -12,8 +12,8 @@ use serde_json::json;
 use tera::{Context, Tera};
 
 use crate::ingest::raw_val::RawVal;
-use crate::{QueryError, QueryOutput, Value};
 use crate::{logging_client, LocustDB};
+use crate::{QueryError, QueryOutput, Value};
 
 lazy_static! {
     pub static ref TEMPLATES: Tera = {
@@ -180,11 +180,8 @@ async fn query_cols(
     req_body: web::Json<QueryRequest>,
 ) -> impl Responder {
     log::debug!("Query: {:?}", req_body);
-    let x = data
-        .db
-        .run_query(&req_body.query, false, vec![])
-        .await;
-    match  flatmap_err_response(x) {
+    let x = data.db.run_query(&req_body.query, false, vec![]).await;
+    match flatmap_err_response(x) {
         Ok(result) => {
             let response = query_output_to_json_cols(result);
             HttpResponse::Ok().json(response)
@@ -202,9 +199,7 @@ async fn multi_query_cols(
     let mut results = vec![];
     for q in &req_body.queries {
         // Run query immediately starts executing without awaiting future
-        let result = data
-            .db
-            .run_query(q, false, vec![]);
+        let result = data.db.run_query(q, false, vec![]);
         results.push(result);
     }
     let mut json_results = vec![];
@@ -218,19 +213,30 @@ async fn multi_query_cols(
     HttpResponse::Ok().json(json_results)
 }
 
-fn flatmap_err_response(err: Result<Result<QueryOutput, QueryError>, Canceled>) -> Result<QueryOutput, HttpResponse> {
+fn flatmap_err_response(
+    err: Result<Result<QueryOutput, QueryError>, Canceled>,
+) -> Result<QueryOutput, HttpResponse> {
     match err {
         Ok(Ok(result)) => Ok(result),
         Ok(Err(QueryError::NotImplemented(msg))) => Err(HttpResponse::NotImplemented().json(msg)),
-        Ok(Err(QueryError::FatalError(msg, bt))) => Err(HttpResponse::InternalServerError().json((msg, bt.to_string()))),
+        Ok(Err(QueryError::FatalError(msg, bt))) => {
+            Err(HttpResponse::InternalServerError().json((msg, bt.to_string())))
+        }
         Ok(Err(err)) => Err(HttpResponse::BadRequest().json(err.to_string())),
         Err(err) => Err(HttpResponse::InternalServerError().json(err.to_string())),
     }
 }
 
-// TODO: efficient endpoint
 #[post("/insert")]
 async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
+    let total_network_bytes = req_body.0.rows.iter().fold(0, |acc, row| {
+        acc + row
+            .iter()
+            .fold(0, |acc, (k, v)| acc + k.len() + v.to_string().len())
+    });
+    data.db
+        .perf_counter()
+        .network_read_ingestion(total_network_bytes as u64);
     let DataBatch { table, rows } = req_body.0;
     log::debug!("Inserting {} rows into {}", rows.len(), table);
     data.db
@@ -265,33 +271,53 @@ async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> im
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
 }
 
-// TODO: more efficient columnar endpoint
+// TODO: even more efficient, push all data-conversions into client
 #[post("/insert_bin")]
 async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responder {
     // PRINT FIRST 64 BYTES
     let mut bytes = req_body.clone();
     let mut s = String::new();
     for _ in 0..64 {
+        if bytes.is_empty() {
+            break;
+        }
         s.push_str(&format!("{:02x}", bytes[0]));
         bytes = bytes.slice(1..);
     }
     log::debug!("Inserting bytes: {} ({})", s, req_body.len());
 
-    let logging_client::DataBatch { table, rows } = bincode::deserialize(&req_body).unwrap();
-    log::debug!("Inserting {} rows into {}", rows.len(), table);
     data.db
-        .ingest(
-            &table,
-            rows.into_iter()
-                .map(|row| {
-                    row.into_iter()
-                        .map(|(k, v)| (k, RawVal::Float(OrderedFloat(v))))
-                        .collect()
-                })
-                .collect(),
-        )
-        .await;
-    log::debug!("Succesfully appended to {}", table);
+        .perf_counter()
+        .network_read_ingestion(req_body.len() as u64);
+
+    let mut events: logging_client::EventBuffer = bincode::deserialize(&req_body).unwrap();
+    for (name, table) in &mut events.tables {
+        let len = table.len;
+        log::debug!("Inserting {} rows into {}", table.len, name);
+
+        // TODO: efficiency
+        let mut rows = Vec::new();
+        for i in 0..table.len {
+            let mut row = Vec::new();
+            for (colname, col) in &mut table.columns {
+                match &mut col.data {
+                    logging_client::ColumnData::Dense(data) => {
+                        row.push((colname.to_string(), RawVal::Float(OrderedFloat(data.pop().unwrap()))))
+                    }
+                    logging_client::ColumnData::Sparse(data) => {
+                        if data.last().map(|(j, _)| *j == len - i - 1).unwrap_or(false) {
+                            row.push((colname.to_string(), RawVal::Float(OrderedFloat(data.pop().unwrap().1))));
+                        }
+                    }
+                }
+            }
+            rows.push(row);
+        }
+        rows.reverse();
+
+        data.db.ingest(name, rows).await;
+        log::debug!("Succesfully appended to {}", name);
+    }
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
 }
 
@@ -321,7 +347,6 @@ fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
     })
 }
 
-
 pub async fn run(db: Arc<LocustDB>) -> std::io::Result<()> {
     HttpServer::new(move || {
         let app_state = AppState { db: db.clone() };
@@ -335,7 +360,7 @@ pub async fn run(db: Arc<LocustDB>) -> std::io::Result<()> {
         App::new()
             .wrap(cors)
             .app_data(Data::new(app_state))
-            .app_data(Data::new(web::PayloadConfig::new(100 * 1024 * 1024)))
+            .app_data(Data::new(web::PayloadConfig::new(512 * 1024 * 1024)))
             .service(index)
             .service(echo)
             .service(tables)
