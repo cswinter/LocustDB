@@ -86,10 +86,10 @@ async fn main() {
                 for segment in &wal {
                     println!("Segment {} has {} tables", segment.id, segment.data.tables.len());
                     if opts.wal > 2 {
-                        for (name, table) in segment.data.as_ref().tables {
+                        for (name, table) in &segment.data.as_ref().tables {
                             println!("  Table {} has {} columns", name, table.columns.len());
                             if opts.wal > 3 {
-                                for col in table.columns {
+                                for col in &table.columns {
                                     println!("    {:?}", col);
                                 }
                             }
