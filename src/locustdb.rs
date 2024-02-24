@@ -175,6 +175,10 @@ impl LocustDB {
     pub fn perf_counter(&self) -> &PerfCounter {
         self.inner_locustdb.perf_counter()
     }
+
+    pub fn force_flush(&self) {
+        self.inner_locustdb.wal_flush();
+    }
 }
 
 #[derive(Clone)]

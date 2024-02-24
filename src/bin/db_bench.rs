@@ -65,7 +65,9 @@ async fn main() {
         }
     }
 
+    let total_events = log.total_events;
     drop(log);
+    db.force_flush();
 
     let perf_counter = db.perf_counter();
 
@@ -91,10 +93,11 @@ async fn main() {
         locustdb::unit_fmt::bite(2 * 8 * (1 << (3 * load_factor)))
     );
     println!(
-        "total size on disk: {}",
+        "total size on disk: {} (SmallRng output is compressible)",
         locustdb::unit_fmt::bite(size_on_disk as usize)
     );
     println!("total files: {}", file_count);
+    println!("total events: {}", total_events);
     println!("disk writes");
     println!(
         "  total:      {}",

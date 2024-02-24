@@ -115,6 +115,7 @@ impl InnerLocustDB {
         let _guard = self.task_queue.lock();
         self.running.store(false, Ordering::SeqCst);
         self.idle_queue.notify_all();
+        self.wal_flush();
     }
 
     fn worker_loop(locustdb: Arc<InnerLocustDB>) {
@@ -202,7 +203,7 @@ impl InnerLocustDB {
         }
     }
 
-    fn wal_flush(&self) {
+    pub(crate) fn wal_flush(&self) {
         // TODO: race conditions, need careful locking here
         self.wal_size.store(0, Ordering::SeqCst);
         let mut new_partitions = Vec::new();

@@ -286,11 +286,20 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
     }
     log::debug!("Inserting bytes: {} ({})", s, req_body.len());
 
+
     data.db
         .perf_counter()
         .network_read_ingestion(req_body.len() as u64);
 
     let mut events: logging_client::EventBuffer = bincode::deserialize(&req_body).unwrap();
+    log::info!(
+        "Received request data for {} events",
+        events
+            .tables
+            .values()
+            .map(|t| t.columns.values().next().map(|c| c.data.len()).unwrap_or(0))
+            .sum::<usize>()
+    );
     for (name, table) in &mut events.tables {
         let len = table.len;
         log::debug!("Inserting {} rows into {}", table.len, name);

@@ -34,6 +34,7 @@ pub struct LoggingClient {
     events: Arc<Mutex<EventBuffer>>,
     shutdown: Arc<AtomicBool>,
     flushed: Arc<AtomicBool>,
+    pub total_events: u64,
 }
 
 struct BackgroundWorker {
@@ -66,6 +67,7 @@ impl LoggingClient {
             events: buffer,
             shutdown,
             flushed,
+            total_events: 0,
         }
     }
 
@@ -90,6 +92,7 @@ impl LoggingClient {
             .or_default()
             .push(time_millis, table.len);
         table.len += 1;
+        self.total_events += 1;
     }
 }
 
@@ -103,6 +106,12 @@ impl BackgroundWorker {
             log::debug!("TICK!");
             self.flush().await;
         }
+        loop {
+            self.flush().await;
+            if self.request_data.lock().unwrap().is_none() {
+                break;
+            }
+        }
         self.flush().await;
         self.flushed
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -112,11 +121,19 @@ impl BackgroundWorker {
         let mut buffer = self.events.lock().unwrap();
         let mut request_data = self.request_data.lock().unwrap();
         if request_data.is_some() {
-            return
+            return;
         }
+        log::info!(
+            "Creating request data for {} events",
+            buffer
+                .tables
+                .values()
+                .map(|t| t.columns.values().next().map(|c| c.data.len()).unwrap_or(0))
+                .sum::<usize>()
+        );
         let serialized = bincode::serialize(&*buffer).unwrap();
         if buffer.tables.is_empty() {
-            return
+            return;
         }
         // TODO: keep all buffers on client, but don't send tables that are empty
         buffer.tables.clear();
@@ -144,6 +161,7 @@ impl BackgroundWorker {
                         log::warn!("Failed to send data batch ({} B): {}", bytes, err);
                     } else {
                         self.request_data.lock().unwrap().take();
+                        log::info!("Sent data");
                     }
                     log::debug!("{:?}", response);
                 }
@@ -188,6 +206,23 @@ impl Drop for LoggingClient {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         while !self.flushed.load(std::sync::atomic::Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+}
+
+impl ColumnData {
+    pub fn len(&self) -> usize {
+        match self {
+            ColumnData::Dense(data) => data.len(),
+            ColumnData::Sparse(data) => data.len(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ColumnData::Dense(data) => data.is_empty(),
+            ColumnData::Sparse(data) => data.is_empty(),
         }
     }
 }
