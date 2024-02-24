@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::interface::{ColumnLoader, PartitionMetadata};
 use crate::logging_client::EventBuffer;
 use crate::mem_store::Column;
-use crate::perf_counter::PerfCounter;
+use crate::perf_counter::{PerfCounter, QueryPerfCounter};
 
 #[derive(Serialize, Deserialize)]
 pub struct WALSegment<'a> {
@@ -39,6 +39,7 @@ pub trait Storage: Send + Sync + 'static {
         partition: PartitionID,
         table_name: &str,
         column_name: &str,
+        perf_counter: &QueryPerfCounter,
     ) -> Vec<Column>;
 }
 
@@ -48,8 +49,9 @@ impl ColumnLoader for StorageV2 {
         table_name: &str,
         partition: super::interface::PartitionID,
         column_name: &str,
+        perf_counter: &QueryPerfCounter,
     ) -> Vec<Column> {
-        Storage::load_column(self, partition, table_name, column_name)
+        Storage::load_column(self, partition, table_name, column_name, perf_counter)
     }
 
     fn load_column_range(
@@ -257,6 +259,7 @@ impl Storage for StorageV2 {
         partition: PartitionID,
         table_name: &str,
         column_name: &str,
+        perf_counter: &QueryPerfCounter,
     ) -> Vec<Column> {
         // TODO: efficient access
         let subpartition_key = self
@@ -279,6 +282,7 @@ impl Storage for StorageV2 {
             .join(format!("{}_{}.part", partition, subpartition_key));
         let data = self.writer.load(&path).unwrap();
         self.perf_counter.disk_read_partition(data.len() as u64);
+        perf_counter.disk_read(data.len() as u64);
         bincode::deserialize(&data).unwrap()
     }
 }

@@ -462,8 +462,10 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for &'a [T] {
         Box::new(&self[from..to])
     }
 
-    fn append_all(&mut self, _other: &dyn Data<'a>, _count: usize) -> Option<BoxedData<'a>> {
-        panic!("append_all on borrow")
+    fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>> {
+        let mut owned = Vec::from(*self);
+        owned.append_all(other, count);
+        Some(Box::new(owned))
     }
 
     fn type_error(&self, func_name: &str) -> String {

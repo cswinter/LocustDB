@@ -11,6 +11,7 @@ use crate::disk_store::interface::PartitionID;
 use crate::mem_store::partition::ColumnHandle;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::*;
+use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub struct DiskReadScheduler {
@@ -115,7 +116,7 @@ impl DiskReadScheduler {
         debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
     }
 
-    pub fn get_or_load(&self, handle: &ColumnHandle) -> Arc<Column> {
+    pub fn get_or_load(&self, handle: &ColumnHandle, perf_counter: &QueryPerfCounter) -> Arc<Column> {
         loop {
             if handle.is_resident() {
                 let mut maybe_column = handle.try_get();
@@ -147,7 +148,7 @@ impl DiskReadScheduler {
                 debug!("Point lookup for {}.{}", handle.name(), handle.id());
                 let columns = {
                     let _token = self.reader_semaphore.access();
-                    self.disk_store.load_column(&handle.key().table, handle.id(), handle.name())
+                    self.disk_store.load_column(&handle.key().table, handle.id(), handle.name(), perf_counter)
                 };
                 // Need to hold lock when we put new value into lru
                 // TODO: also populate columns that were colocated in same subpartition

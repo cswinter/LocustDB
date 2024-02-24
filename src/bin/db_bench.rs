@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use locustdb::LocustDB;
 use rand::{FromEntropy, Rng};
 use structopt::StructOpt;
 use tempfile::tempdir;
@@ -71,7 +72,7 @@ async fn main() {
 
     let perf_counter = db.perf_counter();
 
-    log::info!("Done");
+    log::info!("Ingestion done");
 
     // count number of files in db_path and all subdirectories
     let file_count = walkdir::WalkDir::new(db_path.path())
@@ -87,6 +88,54 @@ async fn main() {
         .map(|e| e.metadata().unwrap().len())
         .sum::<u64>();
 
+    println!();
+    query(
+        &db,
+        "Querying 100 related columns in small table",
+        &format!(
+            "SELECT {} FROM {}",
+            (0..100)
+                .map(|c| format!("col_{c}"))
+                .collect::<Vec<String>>()
+                .join(", "),
+            small_tables[0]
+        ),
+    )
+    .await;
+    query(
+        &db,
+        "Querying full small table",
+        &format!("SELECT * FROM {}", small_tables[1]),
+    )
+    .await;
+    query(
+        &db,
+        "Querying 100 random columns in small table",
+        &format!(
+            "SELECT {} FROM {}",
+            (0..100)
+                .map(|_| format!("col_{}", rng.gen_range(0u64, 1 << load_factor)))
+                .collect::<Vec<String>>()
+                .join(", "),
+            small_tables[2]
+        ),
+    )
+    .await;
+    query(&db, "Querying 10 related columns in large table", "SELECT col_0, col_1, col_2, col_3, col_4, col_5, col_6, col_7, col_8, col_9 FROM event_log")
+        .await;
+    query(
+        &db,
+        "Querying 10 random columns in large table",
+        &format!(
+            "SELECT {} FROM event_log",
+            (0..10)
+                .map(|_| format!("col_{}", rng.gen_range(0u64, 1 << load_factor)))
+                .collect::<Vec<String>>()
+                .join(", ")
+        ),
+    ).await;
+
+    println!();
     println!("elapsed: {:?}", start_time.elapsed());
     println!(
         "total uncompressed data: {}",
@@ -136,12 +185,30 @@ async fn main() {
         "  ingestion bytes:    {}",
         locustdb::unit_fmt::bite(perf_counter.network_read_ingestion_bytes() as usize)
     );
+    println!("query");
+    println!(
+        "  files opened: {}",
+        perf_counter.files_opened_partition(),
+    );
+    println!(
+        "  disk read:    {}",
+        locustdb::unit_fmt::bite(perf_counter.disk_read_partition_bytes() as usize)
+    );
+}
 
-    // 1 large tables with 2^(2N) rows and 2^(2N) columns each
-    // let large_table = format!(
-    //     "{}_{i}",
-    //     random_word::gen(random_word::Lang::En).to_string();
-    // );
+async fn query(db: &LocustDB, description: &str, query: &str) {
+    let evicted_bytes = db.evict_cache();
+    log::info!("Evicted {}", locustdb::unit_fmt::bite(evicted_bytes));
+    println!("{}", description);
+    let response = db.run_query(query, false, vec![]).await.unwrap().unwrap();
+    println!(
+        "Returned {} columns with {} rows in {:?} ({} files opened, {})",
+        response.rows.first().map(|r| r.len()).unwrap_or(0),
+        response.rows.len(),
+        Duration::from_nanos(response.stats.runtime_ns),
+        response.stats.files_opened,
+        locustdb::unit_fmt::bite(response.stats.disk_read_bytes as usize),
+    );
 }
 
 fn create_locustdb(db_path: PathBuf) -> Arc<locustdb::LocustDB> {
@@ -253,3 +320,38 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 // network
 //   ingestion requests: 14
 //   ingestion bytes:    280MiB
+
+// $ RUST_BACKTRACE=1 cargo run --bin db_bench -- --load-factor=8
+// Querying 100 related columns in small table
+// Returned 100 columns with 256 rows in 252.602ms (100 files opened, 24.0MiB)
+// Querying full small table
+// Returned 257 columns with 256 rows in 684.762302ms (257 files opened, 61.8MiB)
+// Querying 100 random columns in small table
+// Returned 100 columns with 256 rows in 195.1599ms (77 files opened, 18.5MiB)
+// Querying 10 related columns in large table
+// Returned 10 columns with 2048 rows in 610.756901ms (10 files opened, 62.1MiB)
+// Querying 10 random columns in large table
+// Returned 10 columns with 2048 rows in 605.867601ms (10 files opened, 68.4MiB)
+
+// elapsed: 27.505325227s
+// total uncompressed data: 256MiB
+// total size on disk: 278MiB (SmallRng output is compressible)
+// total files: 795
+// total events: 73728
+// disk writes
+//   total:      566MiB
+//   wal:        280MiB
+//   partition:  275MiB
+//   compaction: 0.000B
+//   meta store: 11.9MiB
+// files created
+//   total:     813
+//   wal:       14
+//   partition: 794
+//   meta:      5
+// network
+//   ingestion requests: 14
+//   ingestion bytes:    280MiB
+// query
+//   files opened: 454
+//   disk read:    235MiB

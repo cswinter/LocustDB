@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use crate::disk_store::interface::*;
 use crate::ingest::buffer::Buffer;
 use crate::mem_store::*;
+use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 
 // Table, Partition, Column
@@ -99,11 +100,12 @@ impl Partition {
         &self,
         referenced_cols: &HashSet<String>,
         drs: &DiskReadScheduler,
+        perf_counter: &QueryPerfCounter,
     ) -> HashMap<String, Arc<dyn DataSource>> {
         let mut columns = HashMap::<String, Arc<dyn DataSource>>::new();
         for handle in &self.cols {
             if referenced_cols.contains(handle.name()) {
-                let column = drs.get_or_load(handle);
+                let column = drs.get_or_load(handle, perf_counter);
                 columns.insert(handle.name().to_string(), Arc::new(column));
             }
         }

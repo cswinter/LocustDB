@@ -6,14 +6,15 @@ use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 
 use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::column::DataSource;
 use crate::mem_store::partition::Partition;
+use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 use crate::syntax::expression::*;
@@ -28,8 +29,9 @@ pub struct QueryTask {
     partitions: Vec<Arc<Partition>>,
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
-    start_time_ns: i128,
+    start_time: Instant,
     db: Arc<DiskReadScheduler>,
+    perf_counter: Arc<QueryPerfCounter>,
 
     // Lifetime is not actually static, but tied to the lifetime of this struct.
     // There is currently no good way to express this constraint in Rust.
@@ -45,7 +47,6 @@ pub struct QueryState<'a> {
     completed_batches: usize,
     partial_results: Vec<BatchResult<'a>>,
     explains: Vec<String>,
-    rows_scanned: usize,
     rows_collected: usize,
     colstacks: Vec<Vec<HashMap<String, Arc<dyn DataSource>>>>,
 }
@@ -61,7 +62,9 @@ pub struct QueryOutput {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QueryStats {
     pub runtime_ns: u64,
-    pub rows_scanned: usize,
+    pub rows_scanned: u64,
+    pub files_opened: u64,
+    pub disk_read_bytes: u64,
 }
 
 impl QueryTask {
@@ -73,7 +76,7 @@ impl QueryTask {
         db: Arc<DiskReadScheduler>,
         sender: SharedSender<QueryResult>,
     ) -> Result<QueryTask, QueryError> {
-        let start_time_ns = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
+        let start_time = Instant::now();
         if query.is_select_star() {
             query.select = find_all_cols(&source)
                 .into_iter()
@@ -100,14 +103,14 @@ impl QueryTask {
             partitions: source,
             referenced_cols,
             output_colnames,
-            start_time_ns,
+            start_time,
             db,
+            perf_counter: Arc::default(),
 
             unsafe_state: Mutex::new(QueryState {
                 partial_results: Vec::new(),
                 completed_batches: 0,
                 explains: Vec::new(),
-                rows_scanned: 0,
                 rows_collected: 0,
                 colstacks: Vec::new(),
             }),
@@ -123,8 +126,10 @@ impl QueryTask {
                 rows: vec![],
                 query_plans: Default::default(),
                 stats: QueryStats {
-                    runtime_ns: 0,
+                    runtime_ns: start_time.elapsed().as_nanos() as u64,
                     rows_scanned: 0,
+                    files_opened: 0,
+                    disk_read_bytes: 0,
                 },
             }));
         }
@@ -140,7 +145,7 @@ impl QueryTask {
         let mut explains = Vec::new();
         while let Some((partition, id)) = self.next_partition() {
             let show = self.show.iter().any(|&x| x == id);
-            let cols = partition.get_cols(&self.referenced_cols, &self.db);
+            let cols = partition.get_cols(&self.referenced_cols, &self.db, self.perf_counter.as_ref());
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
             let unsafe_cols = unsafe {
                 mem::transmute::<
@@ -229,7 +234,7 @@ impl QueryTask {
         }
         state.completed_batches += result.batch_count;
         state.explains.extend(explains);
-        state.rows_scanned += rows_scanned;
+        self.perf_counter.scanned(rows_scanned as u64);
         state.rows_collected += rows_collected;
         
             let result = unsafe { mem::transmute::<_, BatchResult<'static>>(result) };
@@ -266,9 +271,9 @@ impl QueryTask {
                     )
                     .unwrap()
                     .0;
-                self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains)
+                self.convert_to_output_format(&full_result, &state.explains)
             } else {
-                self.convert_to_output_format(&full_result, state.rows_scanned, &state.explains)
+                self.convert_to_output_format(&full_result, &state.explains)
             };
             self.sender.send(Ok(final_result));
             self.completed.store(true, Ordering::SeqCst);
@@ -309,7 +314,6 @@ impl QueryTask {
     fn convert_to_output_format(
         &self,
         full_result: &BatchResult,
-        rows_scanned: usize,
         explains: &[String],
     ) -> QueryOutput {
         let lo = self.final_pass.as_ref().map(|x| &x.limit).unwrap_or(&self.main_phase.limit);
@@ -339,8 +343,10 @@ impl QueryTask {
             rows: result_rows,
             query_plans,
             stats: QueryStats {
-                runtime_ns: (OffsetDateTime::unix_epoch().unix_timestamp_nanos() - self.start_time_ns) as u64,
-                rows_scanned,
+                runtime_ns: self.start_time.elapsed().as_nanos() as u64,
+                rows_scanned: self.perf_counter.rows_scanned(),
+                files_opened: self.perf_counter.files_opened(),
+                disk_read_bytes: self.perf_counter.disk_read_bytes(),
             },
         }
     }

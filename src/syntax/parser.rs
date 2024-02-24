@@ -182,7 +182,7 @@ fn get_order_by(order_by: Option<Vec<OrderByExpr>>) -> Result<Vec<(Expr, bool)>,
 fn get_limit(limit: Option<ASTNode>) -> Result<u64, QueryError> {
     match limit {
         Some(ASTNode::Value(Value::Number(int, _))) => Ok(int.parse::<u64>().unwrap()),
-        None => Ok(100),
+        None => Ok(u64::MAX),
         _ => Err(QueryError::NotImplemented(format!(
             "Invalid expression in limit clause: {:?}",
             limit

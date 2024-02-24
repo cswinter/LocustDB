@@ -179,6 +179,10 @@ impl LocustDB {
     pub fn force_flush(&self) {
         self.inner_locustdb.wal_flush();
     }
+
+    pub fn evict_cache(&self) -> usize {
+        self.inner_locustdb.evict_cache()
+    }
 }
 
 #[derive(Clone)]

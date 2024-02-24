@@ -374,9 +374,7 @@ impl InnerLocustDB {
                     match ldb.lru.evict() {
                         Some(victim) => {
                             let tables = ldb.tables.read().unwrap();
-                            for t in tables.values() {
-                                mem_usage_bytes -= t.evict(&victim);
-                            }
+                            mem_usage_bytes -= tables[&victim.table].evict(&victim);
                         }
                         None => {
                             if ldb.opts.mem_size_limit_tables > 0 {
@@ -409,6 +407,15 @@ impl InnerLocustDB {
 
     pub fn perf_counter(&self) -> &PerfCounter {
         self.perf_counter.as_ref()
+    }
+
+    pub(crate) fn evict_cache(&self) -> usize {
+        let tables = self.tables.read().unwrap();
+        let mut bytes_evicted = 0;
+        while let Some(victim) = self.lru.evict() {
+            bytes_evicted += tables[&victim.table].evict(&victim);
+        }
+        bytes_evicted
     }
 }
 

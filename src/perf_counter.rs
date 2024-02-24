@@ -23,6 +23,13 @@ pub struct PerfCounter {
     network_read_ingestion_bytes: AtomicU64,
 }
 
+#[derive(Debug, Default)]
+pub struct QueryPerfCounter {
+    pub rows_scanned: AtomicU64,
+    pub files_opened: AtomicU64,
+    pub disk_read_bytes: AtomicU64,
+}
+
 impl PerfCounter {
     pub fn new() -> PerfCounter {
         PerfCounter::default()
@@ -131,5 +138,40 @@ impl PerfCounter {
 
     pub fn ingestion_requests(&self) -> u64 {
         self.ingestion_requests.load(ORDERING)
+    }
+
+    pub fn disk_read_partition_bytes(&self) -> u64 {
+        self.disk_read_partition_bytes.load(ORDERING)
+    }
+
+    pub fn files_opened_partition(&self) -> u64 {
+        self.file_accessed_partition.load(ORDERING)
+    }
+}
+
+impl QueryPerfCounter {
+    pub fn new() -> QueryPerfCounter {
+        QueryPerfCounter::default()
+    }
+
+    pub fn rows_scanned(&self) -> u64 {
+        self.rows_scanned.load(ORDERING)
+    }
+
+    pub fn files_opened(&self) -> u64 {
+        self.files_opened.load(ORDERING)
+    }
+
+    pub fn disk_read_bytes(&self) -> u64 {
+        self.disk_read_bytes.load(ORDERING)
+    }
+
+    pub fn scanned(&self, rows: u64) {
+        self.rows_scanned.fetch_add(rows, ORDERING);
+    }
+
+    pub fn disk_read(&self, bytes: u64) {
+        self.files_opened.fetch_add(1, ORDERING);
+        self.disk_read_bytes.fetch_add(bytes, ORDERING);
     }
 }
