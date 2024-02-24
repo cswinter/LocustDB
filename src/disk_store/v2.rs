@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::error::Error;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
@@ -7,18 +8,14 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use super::interface::{ColumnLoader, PartitionMetadata};
-use crate::ingest::raw_val::RawVal;
+use crate::logging_client::EventBuffer;
 use crate::mem_store::Column;
 use crate::perf_counter::PerfCounter;
 
-type Row = Vec<(String, RawVal)>;
-
 #[derive(Serialize, Deserialize)]
-pub struct WALSegment {
+pub struct WALSegment<'a> {
     pub id: u64,
-    // TODO: inefficient format
-    // [(TableName, [Rows])]
-    pub data: Vec<(String, Vec<Row>)>,
+    pub data: Cow<'a, EventBuffer>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -124,7 +121,7 @@ impl StorageV2 {
         wal_dir: &Path,
         readonly: bool,
         perf_counter: &PerfCounter,
-    ) -> (MetaStore, Vec<WALSegment>) {
+    ) -> (MetaStore, Vec<WALSegment<'static>>) {
         // If db crashed during wal flush, might have new state at new_meta_db_path and potentially
         // old state at meta_db_path. If both exist, delete old state and rename new state to old.
         if writer.exists(new_meta_db_path).unwrap() {

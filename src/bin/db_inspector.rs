@@ -84,13 +84,13 @@ async fn main() {
             println!("Number of WAL segments: {:?}", wal.len());
             if opts.wal > 1 {
                 for segment in &wal {
-                    println!("Segment {} has {} tables", segment.id, segment.data.len());
+                    println!("Segment {} has {} tables", segment.id, segment.data.tables.len());
                     if opts.wal > 2 {
-                        for (table, rows) in &segment.data {
-                            println!("  Table {} has {} rows", table, rows.len());
+                        for (name, table) in segment.data.as_ref().tables {
+                            println!("  Table {} has {} columns", name, table.columns.len());
                             if opts.wal > 3 {
-                                for row in rows {
-                                    println!("    {:?}", row);
+                                for col in table.columns {
+                                    println!("    {:?}", col);
                                 }
                             }
                         }

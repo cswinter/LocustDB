@@ -6,24 +6,24 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::time::{self, MissedTickBehavior};
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct EventBuffer {
     pub tables: HashMap<String, TableBuffer>,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 pub struct TableBuffer {
     pub len: u64,
     pub columns: HashMap<String, ColumnBuffer>,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct ColumnBuffer {
     pub column_name: String,
     pub data: ColumnData,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ColumnData {
     Dense(Vec<f64>),
     Sparse(Vec<(u64, f64)>),

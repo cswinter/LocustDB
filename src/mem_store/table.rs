@@ -5,10 +5,11 @@ use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
 use crate::disk_store::interface::*;
-use crate::disk_store::v2::{StorageV2, Storage, WALSegment};
+use crate::disk_store::v2::{Storage, StorageV2, WALSegment};
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
+use crate::logging_client::ColumnData;
 use crate::mem_store::partition::{ColumnLocator, Partition};
 use crate::mem_store::*;
 
@@ -59,18 +60,28 @@ impl Table {
             table.insert_nonresident_partition(md);
         }
         for wal_segment in wal_segments {
-            for (table_name, rows) in wal_segment.data {
+            for (table_name, table_data) in wal_segment.data.into_owned().tables {
                 let table = tables
                     .entry(table_name.clone())
                     .or_insert_with(|| Table::new(&table_name, lru.clone()));
-                for row in rows {
-                    table.ingest(row);
-                }
+                let columns = table_data
+                    .columns
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let col = match v.data {
+                            ColumnData::Dense(data) => InputColumn::Float(data),
+                            ColumnData::Sparse(_) => {
+                                todo!("INGESTION OF SPARSE VALUES NOT IMPLEMENTED")
+                            }
+                        };
+                        (k, col)
+                    })
+                    .collect();
+                table.ingest_homogeneous(columns);
             }
         }
         tables
     }
-
 
     pub fn restore(&self, id: PartitionID, col: &Arc<Column>) {
         let partitions = self.partitions.read().unwrap();
@@ -79,7 +90,10 @@ impl Table {
 
     pub fn evict(&self, key: &ColumnLocator) -> usize {
         let partitions = self.partitions.read().unwrap();
-        partitions.get(&key.id).map(|p| p.evict(&key.column)).unwrap_or(0)
+        partitions
+            .get(&key.id)
+            .map(|p| p.evict(&key.column))
+            .unwrap_or(0)
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
@@ -117,11 +131,12 @@ impl Table {
 
     pub(crate) fn batch(&self) -> Option<Arc<Partition>> {
         let mut buffer = self.buffer.lock().unwrap();
-        if buffer.len() == 0 { 
-            return None
+        if buffer.len() == 0 {
+            return None;
         }
         let buffer = std::mem::take(buffer.deref_mut());
-        let (mut new_partition, keys) = Partition::from_buffer(self.name(), 0, buffer, self.lru.clone());
+        let (mut new_partition, keys) =
+            Partition::from_buffer(self.name(), 0, buffer, self.lru.clone());
         let arc_partition;
         {
             let mut partitions = self.partitions.write().unwrap();

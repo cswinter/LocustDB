@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
@@ -14,6 +15,8 @@ use crate::ingest::colgen::GenTable;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
+use crate::logging_client::ColumnData;
+use crate::logging_client::EventBuffer;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
 use crate::perf_counter::PerfCounter;
@@ -179,27 +182,36 @@ impl InnerLocustDB {
         tables.get(table).unwrap().ingest(row)
     }
 
-    pub fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
+    pub fn ingest_efficient(&self, events: EventBuffer) {
         if let Some(storage) = &self.storage_v2 {
             let bytes_written = storage.persist_wal_segment(WALSegment {
                 id: 0,
-                // TODO: clone
-                data: vec![(table.to_string(), rows.clone())],
+                data: Cow::Borrowed(&events),
             });
             self.wal_size.fetch_add(bytes_written, Ordering::SeqCst);
         }
-        self.ingest_no_persist(table, rows);
+        for (table, data) in events.tables {
+            self.create_if_empty(&table);
+            let tables = self.tables.read().unwrap();
+            let table = tables.get(&table).unwrap();
+            // TODO: eliminate conversion
+            let columns = data
+                .columns
+                .into_iter()
+                .map(|(k, v)| {
+                    let col = match v.data {
+                        ColumnData::Dense(data) => InputColumn::Float(data),
+                        ColumnData::Sparse(_) => {
+                            todo!("INGESTION OF SPARSE VALUES NOT IMPLEMENTED")
+                        }
+                    };
+                    (k, col)
+                })
+                .collect();
+            table.ingest_homogeneous(columns);
+        }
         if self.wal_size.load(Ordering::SeqCst) > self.opts.max_wal_size_bytes {
             self.wal_flush();
-        }
-    }
-
-    fn ingest_no_persist(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
-        self.create_if_empty(table);
-        let tables = self.tables.read().unwrap();
-        let table = tables.get(table).unwrap();
-        for row in rows {
-            table.ingest(row);
         }
     }
 

@@ -6,12 +6,10 @@ use actix_cors::Cors;
 use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::channel::oneshot::Canceled;
-use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
 
-use crate::ingest::raw_val::RawVal;
 use crate::{logging_client, LocustDB};
 use crate::{QueryError, QueryOutput, Value};
 
@@ -227,49 +225,49 @@ fn flatmap_err_response(
     }
 }
 
-#[post("/insert")]
-async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
-    let total_network_bytes = req_body.0.rows.iter().fold(0, |acc, row| {
-        acc + row
-            .iter()
-            .fold(0, |acc, (k, v)| acc + k.len() + v.to_string().len())
-    });
-    data.db
-        .perf_counter()
-        .network_read_ingestion(total_network_bytes as u64);
-    let DataBatch { table, rows } = req_body.0;
-    log::debug!("Inserting {} rows into {}", rows.len(), table);
-    data.db
-        .ingest(
-            &table,
-            rows.into_iter()
-                .map(|row| {
-                    row.into_iter()
-                        .map(|(colname, val)| {
-                            let val = match val {
-                                serde_json::Value::Null => RawVal::Null,
-                                serde_json::Value::Number(n) => {
-                                    if n.is_i64() {
-                                        RawVal::Int(n.as_i64().unwrap())
-                                    } else if n.is_f64() {
-                                        RawVal::Float(OrderedFloat(n.as_f64().unwrap()))
-                                    } else {
-                                        panic!("Unsupported number {}", n)
-                                    }
-                                }
-                                serde_json::Value::String(s) => RawVal::Str(s),
-                                _ => panic!("Unsupported value: {:?}", val),
-                            };
-                            (colname, val)
-                        })
-                        .collect()
-                })
-                .collect(),
-        )
-        .await;
-    log::debug!("Succesfully appended to {}", table);
-    HttpResponse::Ok().json(r#"{"status": "ok"}"#)
-}
+// #[post("/insert")]
+// async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
+//     let total_network_bytes = req_body.0.rows.iter().fold(0, |acc, row| {
+//         acc + row
+//             .iter()
+//             .fold(0, |acc, (k, v)| acc + k.len() + v.to_string().len())
+//     });
+//     data.db
+//         .perf_counter()
+//         .network_read_ingestion(total_network_bytes as u64);
+//     let DataBatch { table, rows } = req_body.0;
+//     log::debug!("Inserting {} rows into {}", rows.len(), table);
+//     data.db
+//         .ingest(
+//             &table,
+//             rows.into_iter()
+//                 .map(|row| {
+//                     row.into_iter()
+//                         .map(|(colname, val)| {
+//                             let val = match val {
+//                                 serde_json::Value::Null => RawVal::Null,
+//                                 serde_json::Value::Number(n) => {
+//                                     if n.is_i64() {
+//                                         RawVal::Int(n.as_i64().unwrap())
+//                                     } else if n.is_f64() {
+//                                         RawVal::Float(OrderedFloat(n.as_f64().unwrap()))
+//                                     } else {
+//                                         panic!("Unsupported number {}", n)
+//                                     }
+//                                 }
+//                                 serde_json::Value::String(s) => RawVal::Str(s),
+//                                 _ => panic!("Unsupported value: {:?}", val),
+//                             };
+//                             (colname, val)
+//                         })
+//                         .collect()
+//                 })
+//                 .collect(),
+//         )
+//         .await;
+//     log::debug!("Succesfully appended to {}", table);
+//     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
+// }
 
 // TODO: even more efficient, push all data-conversions into client
 #[post("/insert_bin")]
@@ -291,7 +289,7 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
         .perf_counter()
         .network_read_ingestion(req_body.len() as u64);
 
-    let mut events: logging_client::EventBuffer = bincode::deserialize(&req_body).unwrap();
+    let events: logging_client::EventBuffer = bincode::deserialize(&req_body).unwrap();
     log::info!(
         "Received request data for {} events",
         events
@@ -300,33 +298,7 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
             .map(|t| t.columns.values().next().map(|c| c.data.len()).unwrap_or(0))
             .sum::<usize>()
     );
-    for (name, table) in &mut events.tables {
-        let len = table.len;
-        log::debug!("Inserting {} rows into {}", table.len, name);
-
-        // TODO: efficiency
-        let mut rows = Vec::new();
-        for i in 0..table.len {
-            let mut row = Vec::new();
-            for (colname, col) in &mut table.columns {
-                match &mut col.data {
-                    logging_client::ColumnData::Dense(data) => {
-                        row.push((colname.to_string(), RawVal::Float(OrderedFloat(data.pop().unwrap()))))
-                    }
-                    logging_client::ColumnData::Sparse(data) => {
-                        if data.last().map(|(j, _)| *j == len - i - 1).unwrap_or(false) {
-                            row.push((colname.to_string(), RawVal::Float(OrderedFloat(data.pop().unwrap().1))));
-                        }
-                    }
-                }
-            }
-            rows.push(row);
-        }
-        rows.reverse();
-
-        data.db.ingest(name, rows).await;
-        log::debug!("Succesfully appended to {}", name);
-    }
+    data.db.ingest_efficient(events).await;
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
 }
 
@@ -375,7 +347,7 @@ pub async fn run(db: Arc<LocustDB>) -> std::io::Result<()> {
             .service(tables)
             .service(query)
             .service(table_handler)
-            .service(insert)
+            // .service(insert)
             .service(insert_bin)
             .service(query_data)
             .service(query_cols)

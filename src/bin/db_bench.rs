@@ -209,3 +209,25 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 // network
 //   ingestion requests: 516
 //   ingestion bytes:    739MiB
+
+// Stats at e33766b
+// $ RUST_BACKTRACE=1 RUST_LOG=info cargo run --bin db_bench -- --load-factor=8
+// elapsed: 48.648535024s
+// total uncompressed data: 256MiB
+// total size on disk: 249MiB (SmallRng output is compressible)
+// total files: 983
+// total events: 73728
+// disk writes
+//   total:      1.14GiB
+//   wal:        867MiB
+//   partition:  277MiB
+//   compaction: 0.000B
+//   meta store: 28.0MiB
+// files created
+//   total:     2025
+//   wal:       1028
+//   partition: 986
+//   meta:      11
+// network
+//   ingestion requests: 4
+//   ingestion bytes:    266MiB

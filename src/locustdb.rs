@@ -8,7 +8,7 @@ use futures::channel::oneshot;
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
-use crate::ingest::raw_val::RawVal;
+use crate::logging_client::EventBuffer;
 use crate::mem_store::*;
 use crate::perf_counter::PerfCounter;
 use crate::scheduler::*;
@@ -101,8 +101,8 @@ impl LocustDB {
         Ok(receiver.await??)
     }
 
-    pub async fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
-        self.inner_locustdb.ingest(table, rows);
+    pub async fn ingest_efficient(&self, events: EventBuffer) {
+        self.inner_locustdb.ingest_efficient(events);
     }
 
     pub async fn gen_table(&self, opts: GenTable) -> Result<(), oneshot::Canceled> {
