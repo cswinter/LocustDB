@@ -106,7 +106,7 @@ impl DiskReadScheduler {
                     run.bytes > chunk_size
                 };
                 if reached_chunk_size {
-                    task_queue.push_back(runs.remove(col).unwrap());
+                    task_queue.push_back(runs.remove(&col.as_str()).unwrap());
                 }
             }
         }
@@ -116,7 +116,7 @@ impl DiskReadScheduler {
         debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
     }
 
-    pub fn get_or_load(&self, handle: &ColumnHandle, perf_counter: &QueryPerfCounter) -> Arc<Column> {
+    pub fn get_or_load(&self, handle: &ColumnHandle, cols: &HashMap<String, HashMap<PartitionID, ColumnHandle>>, perf_counter: &QueryPerfCounter) -> Arc<Column> {
         loop {
             if handle.is_resident() {
                 let mut maybe_column = handle.try_get();
@@ -150,23 +150,29 @@ impl DiskReadScheduler {
                     let _token = self.reader_semaphore.access();
                     self.disk_store.load_column(&handle.key().table, handle.id(), handle.name(), perf_counter)
                 };
-                // Need to hold lock when we put new value into lru
-                // TODO: also populate columns that were colocated in same subpartition
+                let mut result = None;
                 #[allow(unused_mut)]
-                let mut column = columns.into_iter().find(|c| c.name() == handle.name()).unwrap();
-                let mut maybe_column = handle.try_get();
-                self.lru.put(handle.key().clone());
-                #[cfg(feature = "enable_lz4")]
-                {
-                    if self.lz4_decode {
-                        column.lz4_decode();
-                        handle.update_size_bytes(column.heap_size_of_children());
+                for mut column in columns {
+                    let _handle = cols.get(column.name()).unwrap().get(&handle.id()).unwrap();
+                    // Need to hold lock when we put new value into lru
+                    let mut maybe_column = _handle.try_get();
+                    // TODO: if not main handle, put it at back of lru
+                    self.lru.put(_handle.key().clone());
+                    #[cfg(feature = "enable_lz4")]
+                    {
+                        if self.lz4_decode {
+                            column.lz4_decode();
+                            _handle.update_size_bytes(column.heap_size_of_children());
+                        }
+                    }
+                    let column = Arc::new(column);
+                    *maybe_column = Some(column.clone());
+                    _handle.set_resident();
+                    if column.name() == handle.name() {
+                        result = Some(column);
                     }
                 }
-                let column = Arc::new(column);
-                *maybe_column = Some(column.clone());
-                handle.set_resident();
-                return column;
+                return result.unwrap()
             }
         }
     }

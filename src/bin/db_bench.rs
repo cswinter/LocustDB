@@ -332,7 +332,7 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 // Returned 10 columns with 2048 rows in 610.756901ms (10 files opened, 62.1MiB)
 // Querying 10 random columns in large table
 // Returned 10 columns with 2048 rows in 605.867601ms (10 files opened, 68.4MiB)
-
+//
 // elapsed: 27.505325227s
 // total uncompressed data: 256MiB
 // total size on disk: 278MiB (SmallRng output is compressible)
@@ -355,3 +355,49 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 // query
 //   files opened: 454
 //   disk read:    235MiB
+// RELEASE
+// Querying 100 related columns in small table
+// Returned 100 columns with 256 rows in 23.5521ms (100 files opened, 40.1MiB)
+// Querying full small table
+// Returned 257 columns with 256 rows in 61.5311ms (257 files opened, 103MiB)
+// Querying 100 random columns in small table
+// Returned 100 columns with 256 rows in 21.6757ms (85 files opened, 34.1MiB)
+// Querying 10 related columns in large table
+// Returned 10 columns with 2048 rows in 39.8148ms (10 files opened, 69.0MiB)
+// Querying 10 random columns in large table
+// Returned 10 columns with 2048 rows in 35.0397ms (10 files opened, 72.9MiB)
+
+// $ RUST_BACKTRACE=1 cargo run --bin db_bench -- --load-factor=8
+// Querying 100 related columns in small table
+// Returned 100 columns with 256 rows in 8.0145ms (1 files opened, 250KiB)
+// Querying full small table
+// Returned 257 columns with 256 rows in 12.959ms (1 files opened, 250KiB)
+// Querying 100 random columns in small table
+// Returned 100 columns with 256 rows in 6.8562ms (1 files opened, 250KiB)
+// Querying 10 related columns in large table
+// Returned 10 columns with 2048 rows in 154.896201ms (3 files opened, 17.2MiB)
+// Querying 10 random columns in large table
+// Returned 10 columns with 2048 rows in 165.483502ms (2 files opened, 16.1MiB)
+
+// elapsed: 32.362289132s
+// total uncompressed data: 256MiB
+// total size on disk: 277MiB (SmallRng output is compressible)
+// total files: 791
+// total events: 73728
+// disk writes
+//   total:      565MiB
+//   wal:        282MiB
+//   partition:  274MiB
+//   compaction: 0.000B
+//   meta store: 8.76MiB
+// files created
+//   total:     809
+//   wal:       15
+//   partition: 790
+//   meta:      4
+// network
+//   ingestion requests: 15
+//   ingestion bytes:    282MiB
+// query
+//   files opened: 8
+//   disk read:    34.1MiB

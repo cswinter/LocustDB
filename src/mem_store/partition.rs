@@ -20,7 +20,8 @@ pub struct ColumnLocator {
 pub struct Partition {
     pub id: PartitionID,
     len: usize,
-    pub(crate) cols: Vec<ColumnHandle>,
+    // Column name -> PartitionID -> ColumnHandle
+    pub(crate) cols: HashMap<String, HashMap<PartitionID, ColumnHandle>>,
     lru: Lru,
 }
 
@@ -32,19 +33,23 @@ impl Partition {
         lru: Lru,
     ) -> (Partition, Vec<(u64, String)>) {
         let mut keys = Vec::with_capacity(cols.len());
+        let mut column_handles = HashMap::default();
+        let len = cols[0].len();
+        for col in cols {
+            let name = col.name().to_string();
+            // Can't put into lru directly, because then memory limit enforcer might try to evict unreachable column.
+            if !column_handles.contains_key(&name) {
+                column_handles.insert(name.clone(), HashMap::default());
+            }
+            column_handles.get_mut(&name).unwrap().insert(id, ColumnHandle::resident(table, id, col));
+            keys.push((id, name));
+        }
+
         (
             Partition {
                 id,
-                len: cols[0].len(),
-                cols: cols
-                    .into_iter()
-                    .map(|c| {
-                        let key = (id, c.name().to_string());
-                        // Can't put into lru directly, because then memory limit enforcer might try to evict unreachable column.
-                        keys.push(key);
-                        ColumnHandle::resident(table, id, c)
-                    })
-                    .collect(),
+                len,
+                cols: column_handles,
                 lru,
             },
             keys,
@@ -55,27 +60,27 @@ impl Partition {
         table: &str,
         id: PartitionID,
         len: usize,
-        cols: &[SubpartitionMeatadata],
+        spm: &[SubpartitionMeatadata],
         lru: Lru,
     ) -> Partition {
-        Partition {
-            id,
-            len,
-            cols: cols
-                .iter()
-                .flat_map(|subpartition| {
-                    subpartition.column_names.iter().map(|c| {
-                        ColumnHandle::non_resident(
-                            table,
-                            id,
-                            &subpartition.subpartition_key,
-                            c.to_string(),
-                        )
-                    })
-                })
-                .collect(),
-            lru,
+        let mut cols = HashMap::default();
+        for subpartition in spm {
+            for name in &subpartition.column_names {
+                if !cols.contains_key(name) {
+                    cols.insert(name.clone(), HashMap::default());
+                }
+                cols.get_mut(name).unwrap().insert(
+                    id,
+                    ColumnHandle::non_resident(
+                        table,
+                        id,
+                        &subpartition.subpartition_key,
+                        name.clone(),
+                    ),
+                );
+            }
         }
+        Partition { id, len, cols, lru }
     }
 
     pub fn from_buffer(
@@ -103,28 +108,28 @@ impl Partition {
         perf_counter: &QueryPerfCounter,
     ) -> HashMap<String, Arc<dyn DataSource>> {
         let mut columns = HashMap::<String, Arc<dyn DataSource>>::new();
-        for handle in &self.cols {
-            if referenced_cols.contains(handle.name()) {
-                let column = drs.get_or_load(handle, perf_counter);
-                columns.insert(handle.name().to_string(), Arc::new(column));
+        for colname in referenced_cols {
+            if let Some(handles) = self.cols.get(colname) {
+                for handle in handles.values() {
+                    let column = drs.get_or_load(handle, &self.cols, perf_counter);
+                    columns.insert(handle.name().to_string(), Arc::new(column));
+                }
             }
         }
         columns
     }
 
-    pub fn col_names(&self) -> Vec<&str> {
-        let mut names = Vec::new();
-        for handle in &self.cols {
-            names.push(handle.name());
-        }
-        names
+    pub fn col_names(&self) -> impl Iterator<Item = &String> {
+        self.cols.keys()
     }
 
     pub fn non_residents(&self, cols: &HashSet<String>) -> HashSet<String> {
         let mut non_residents = HashSet::new();
-        for handle in &self.cols {
-            if !handle.is_resident() && cols.contains(handle.name()) {
-                non_residents.insert(handle.name().to_string());
+        for handles in self.cols.values() {
+            for handle in handles.values() {
+                if !handle.is_resident() && cols.contains(handle.name()) {
+                    non_residents.insert(handle.name().to_string());
+                }
             }
         }
         non_residents
@@ -135,7 +140,7 @@ impl Partition {
         nonresidents: &HashSet<String>,
         eligible: &HashSet<String>,
     ) -> bool {
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             if handle.is_resident() {
                 if nonresidents.contains(handle.name()) {
                     return false;
@@ -149,7 +154,7 @@ impl Partition {
 
     pub fn promise_load(&self, cols: &HashSet<String>) -> usize {
         let mut total_size = 0;
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             if cols.contains(handle.name()) {
                 handle.load_scheduled.store(true, Ordering::SeqCst);
                 total_size += handle.size_bytes();
@@ -159,7 +164,7 @@ impl Partition {
     }
 
     pub fn restore(&self, col: &Arc<Column>) {
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             if handle.name() == col.name() {
                 let mut maybe_column = handle.col.lock().unwrap();
                 if maybe_column.is_none() {
@@ -173,7 +178,7 @@ impl Partition {
     }
 
     pub fn evict(&self, col: &str) -> usize {
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             if handle.name() == col {
                 let mut maybe_column = handle.col.lock().unwrap();
                 let mem_size = handle.heap_size_of_children();
@@ -194,7 +199,7 @@ impl Partition {
         if depth == 0 {
             return;
         }
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             let col = handle.col.lock().unwrap();
             let coltree = coltrees
                 .entry(handle.name().to_string())
@@ -214,8 +219,7 @@ impl Partition {
     }
 
     pub fn heap_size_per_column(&self) -> Vec<(String, usize)> {
-        self.cols
-            .iter()
+        self.col_handles()
             .map(|handle| {
                 let c = handle.col.lock().unwrap();
                 (
@@ -230,8 +234,7 @@ impl Partition {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        self.cols
-            .iter()
+        self.col_handles()
             .map(|handle| {
                 let c = handle.col.lock().unwrap();
                 match *c {
@@ -240,6 +243,10 @@ impl Partition {
                 }
             })
             .sum()
+    }
+
+    pub fn col_handles(&self) -> impl Iterator<Item = &ColumnHandle> {
+        self.cols.values().flat_map(|x| x.values())
     }
 }
 

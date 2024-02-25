@@ -223,8 +223,7 @@ impl InnerLocustDB {
         for table in tables.values() {
             if let Some(partition) = table.batch() {
                 let columns: Vec<_> = partition
-                    .cols
-                    .iter()
+                    .col_handles()
                     .map(|c| c.try_get().as_ref().unwrap().clone())
                     .sorted_by(|a, b| a.name().cmp(b.name()));
 
