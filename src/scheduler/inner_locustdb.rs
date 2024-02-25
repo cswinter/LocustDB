@@ -236,7 +236,7 @@ impl InnerLocustDB {
                 }
 
                 let mut acc = PartitionBuilder::default();
-                fn push(acc: &mut PartitionBuilder, subpartition_key: String) {
+                fn create_subpartition(acc: &mut PartitionBuilder) {
                     acc.subpartition_metadata.push(SubpartitionMeatadata {
                         column_names: acc
                             .subpartition
@@ -244,7 +244,7 @@ impl InnerLocustDB {
                             .map(|c| c.name().to_string())
                             .collect(),
                         size_bytes: acc.bytes,
-                        subpartition_key,
+                        subpartition_key: "".to_string(),
                     });
                     acc.subpartitions.push(mem::take(&mut acc.subpartition));
                     acc.bytes = 0;
@@ -253,26 +253,30 @@ impl InnerLocustDB {
                 for column in columns {
                     let size_bytes = column.heap_size_of_children() as u64;
                     if acc.bytes + size_bytes > self.opts.max_partition_size_bytes {
-                        push(&mut acc, column.name().to_string());
+                        create_subpartition(&mut acc);
                     }
                     acc.subpartition.push(column);
                     acc.bytes += size_bytes;
                 }
+                create_subpartition(&mut acc);
 
-                let subpartition_key = if acc.subpartitions.is_empty() {
-                    "all".to_string()
-                } else if acc.subpartition.len() == 1 {
-                    // TODO: sanitize
-                    acc.subpartition[0].name().to_string()
+                if acc.subpartitions.len() == 1 {
+                    acc.subpartition_metadata[0].subpartition_key = "all".to_string();
                 } else {
-                    use sha2::{Digest, Sha256};
-                    let mut hasher = Sha256::new();
-                    for col in &acc.subpartition {
-                        hasher.update(col.name());
+                    for meta in &mut acc.subpartition_metadata {
+                        let subpartition_key = if meta.column_names.len() == 1 {
+                            format!("x{}", meta.column_names[0])
+                        } else {
+                            use sha2::{Digest, Sha256};
+                            let mut hasher = Sha256::new();
+                            for col in &meta.column_names {
+                                hasher.update(col);
+                            }
+                            format!("{:x}", hasher.finalize())
+                        };
+                        meta.subpartition_key = subpartition_key;
                     }
-                    format!("{:x}", hasher.finalize())
-                };
-                push(&mut acc, subpartition_key);
+                }
 
                 let partition_metadata = PartitionMetadata {
                     id: partition.id,

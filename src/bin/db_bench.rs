@@ -18,6 +18,9 @@ struct Opts {
     /// Amount of data generated is exponential in this number
     #[structopt(long, name = "N", default_value = "10")]
     load_factor: u64,
+    /// Only generate large tables
+    #[structopt(long)]
+    large_only: bool,
 }
 
 #[tokio::main]
@@ -31,20 +34,22 @@ async fn main() {
     let db = create_locustdb(db_path.path().into());
 
     let addr = "http://localhost:8080";
-    let mut log = locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), addr);
+    let mut log = locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), addr, 64 * (1 << 20));
 
     let start_time = std::time::Instant::now();
 
     let mut rng = rand::rngs::SmallRng::from_entropy();
 
-    log::info!("Starting small table logging");
     let small_tables = small_table_names(load_factor);
-    for _row in 0..1 << load_factor {
-        for table in &small_tables {
-            log.log(
-                table,
-                (0..1 << load_factor).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
-            );
+    if !opts.large_only {
+        log::info!("Starting small table logging");
+        for _row in 0..1 << load_factor {
+            for table in &small_tables {
+                log.log(
+                    table,
+                    (0..1 << load_factor).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
+                );
+            }
         }
     }
 
@@ -89,38 +94,40 @@ async fn main() {
         .sum::<u64>();
 
     println!();
-    query(
-        &db,
-        "Querying 100 related columns in small table",
-        &format!(
-            "SELECT {} FROM {}",
-            (0..100)
-                .map(|c| format!("col_{c}"))
-                .collect::<Vec<String>>()
-                .join(", "),
-            small_tables[0]
-        ),
-    )
-    .await;
-    query(
-        &db,
-        "Querying full small table",
-        &format!("SELECT * FROM {}", small_tables[1]),
-    )
-    .await;
-    query(
-        &db,
-        "Querying 100 random columns in small table",
-        &format!(
-            "SELECT {} FROM {}",
-            (0..100)
-                .map(|_| format!("col_{}", rng.gen_range(0u64, 1 << load_factor)))
-                .collect::<Vec<String>>()
-                .join(", "),
-            small_tables[2]
-        ),
-    )
-    .await;
+    if !opts.large_only {
+        query(
+            &db,
+            "Querying 100 related columns in small table",
+            &format!(
+                "SELECT {} FROM {}",
+                (0..100)
+                    .map(|c| format!("col_{c}"))
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                small_tables[0]
+            ),
+        )
+        .await;
+        query(
+            &db,
+            "Querying full small table",
+            &format!("SELECT * FROM {}", small_tables[1]),
+        )
+        .await;
+        query(
+            &db,
+            "Querying 100 random columns in small table",
+            &format!(
+                "SELECT {} FROM {}",
+                (0..100)
+                    .map(|_| format!("col_{}", rng.gen_range(0u64, 1 << load_factor)))
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                small_tables[2]
+            ),
+        )
+        .await;
+    }
     query(&db, "Querying 10 related columns in large table", "SELECT col_0, col_1, col_2, col_3, col_4, col_5, col_6, col_7, col_8, col_9 FROM event_log")
         .await;
     query(

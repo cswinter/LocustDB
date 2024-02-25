@@ -14,6 +14,7 @@ lazy_static! {
         Arc::new(Mutex::new(LoggingClient::new(
             std::time::Duration::from_secs(1),
             "http://localhost:8080",
+            128 * (1 << 20),
         )))
     };
 }

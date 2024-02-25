@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -34,7 +34,10 @@ pub struct LoggingClient {
     events: Arc<Mutex<EventBuffer>>,
     shutdown: Arc<AtomicBool>,
     flushed: Arc<AtomicBool>,
+    buffer_size: Arc<AtomicU64>,
+    max_buffer_size_bytes: usize,
     pub total_events: u64,
+    flush_interval: Duration,
 }
 
 struct BackgroundWorker {
@@ -44,14 +47,16 @@ struct BackgroundWorker {
     events: Arc<Mutex<EventBuffer>>,
     shutdown: Arc<AtomicBool>,
     flushed: Arc<AtomicBool>,
+    buffer_size: Arc<AtomicU64>,
     request_data: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 impl LoggingClient {
-    pub fn new(flush_interval: Duration, locustdb_url: &str) -> LoggingClient {
+    pub fn new(flush_interval: Duration, locustdb_url: &str, max_buffer_size_bytes: usize) -> LoggingClient {
         let buffer: Arc<Mutex<EventBuffer>> = Arc::default();
         let shutdown = Arc::new(AtomicBool::new(false));
         let flushed = Arc::new(AtomicBool::new(false));
+        let buffer_size = Arc::new(AtomicU64::new(0));
         let worker = BackgroundWorker {
             client: reqwest::Client::new(),
             flush_interval,
@@ -59,6 +64,7 @@ impl LoggingClient {
             events: buffer.clone(),
             shutdown: shutdown.clone(),
             flushed: flushed.clone(),
+            buffer_size: buffer_size.clone(),
             request_data: Arc::default(),
         };
         tokio::spawn(worker.run());
@@ -68,6 +74,9 @@ impl LoggingClient {
             shutdown,
             flushed,
             total_events: 0,
+            max_buffer_size_bytes,
+            buffer_size,
+            flush_interval,
         }
     }
 
@@ -77,9 +86,22 @@ impl LoggingClient {
             .unwrap()
             .as_millis() as f64
             / 1000.0;
+        let mut warncount = 0;
+        loop {
+            if self.buffer_size.load(std::sync::atomic::Ordering::SeqCst) as usize > self.max_buffer_size_bytes  {
+                if warncount % 10 == 0 {
+                    log::warn!("Logging buffer full, waiting for flush");
+                }
+                warncount += 1;
+                std::thread::sleep(self.flush_interval);
+            } else {
+                break;
+            }
+        }
         let mut events = self.events.lock().unwrap();
         let table = events.tables.entry(table.to_string()).or_default();
         for (column_name, value) in row {
+            self.buffer_size.fetch_add(8, std::sync::atomic::Ordering::SeqCst);
             table
                 .columns
                 .entry(column_name.to_string())
@@ -123,6 +145,10 @@ impl BackgroundWorker {
         if request_data.is_some() {
             return;
         }
+        let serialized = bincode::serialize(&*buffer).unwrap();
+        if buffer.tables.is_empty() {
+            return;
+        }
         log::info!(
             "Creating request data for {} events",
             buffer
@@ -131,10 +157,7 @@ impl BackgroundWorker {
                 .map(|t| t.columns.values().next().map(|c| c.data.len()).unwrap_or(0))
                 .sum::<usize>()
         );
-        let serialized = bincode::serialize(&*buffer).unwrap();
-        if buffer.tables.is_empty() {
-            return;
-        }
+        self.buffer_size.store(0, std::sync::atomic::Ordering::SeqCst);
         // TODO: keep all buffers on client, but don't send tables that are empty
         buffer.tables.clear();
         // for table in buffer.tables.values_mut() {

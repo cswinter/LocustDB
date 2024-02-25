@@ -50,7 +50,7 @@ async fn main() {
             )
         })
         .collect();
-    let mut log = locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), &addr);
+    let mut log = locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), &addr, 1 << 28);
     let mut interval = time::interval(Duration::from_millis(interval));
 
     loop {
