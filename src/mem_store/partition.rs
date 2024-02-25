@@ -10,7 +10,7 @@ use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 
 // Table, Partition, Column
-#[derive(Hash, Eq, PartialEq, Clone)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct ColumnLocator {
     pub table: String,
     pub id: PartitionID,
@@ -21,7 +21,7 @@ pub struct Partition {
     pub id: PartitionID,
     len: usize,
     // Column name -> PartitionID -> ColumnHandle
-    pub(crate) cols: HashMap<String, HashMap<PartitionID, ColumnHandle>>,
+    pub(crate) cols: HashMap<String, ColumnHandle>,
     lru: Lru,
 }
 
@@ -32,45 +32,33 @@ impl Partition {
         cols: Vec<Arc<Column>>,
         lru: Lru,
     ) -> (Partition, Vec<(u64, String)>) {
+        // Can't put into lru directly, because then memory limit enforcer might try to evict column that is unreachable because this partition is not yet in the partition map.
+        // Instead, we return the keys to be added to the lru after the partition is added to the partition map.
         let mut keys = Vec::with_capacity(cols.len());
-        let mut column_handles = HashMap::default();
         let len = cols[0].len();
-        for col in cols {
-            let name = col.name().to_string();
-            // Can't put into lru directly, because then memory limit enforcer might try to evict unreachable column.
-            if !column_handles.contains_key(&name) {
-                column_handles.insert(name.clone(), HashMap::default());
-            }
-            column_handles.get_mut(&name).unwrap().insert(id, ColumnHandle::resident(table, id, col));
-            keys.push((id, name));
-        }
+        let cols = cols
+            .into_iter()
+            .map(|c| {
+                keys.push((id, c.name().to_string()));
+                (c.name().to_string(), ColumnHandle::resident(table, id, c))
+            })
+            .collect();
 
-        (
-            Partition {
-                id,
-                len,
-                cols: column_handles,
-                lru,
-            },
-            keys,
-        )
+        (Partition { id, len, cols, lru }, keys)
     }
 
     pub fn nonresident(
         table: &str,
         id: PartitionID,
         len: usize,
-        spm: &[SubpartitionMeatadata],
+        spm: &[SubpartitionMetadata],
         lru: Lru,
     ) -> Partition {
         let mut cols = HashMap::default();
         for subpartition in spm {
             for name in &subpartition.column_names {
-                if !cols.contains_key(name) {
-                    cols.insert(name.clone(), HashMap::default());
-                }
-                cols.get_mut(name).unwrap().insert(
-                    id,
+                cols.insert(
+                    name.to_string(),
                     ColumnHandle::non_resident(
                         table,
                         id,
@@ -109,11 +97,9 @@ impl Partition {
     ) -> HashMap<String, Arc<dyn DataSource>> {
         let mut columns = HashMap::<String, Arc<dyn DataSource>>::new();
         for colname in referenced_cols {
-            if let Some(handles) = self.cols.get(colname) {
-                for handle in handles.values() {
-                    let column = drs.get_or_load(handle, &self.cols, perf_counter);
-                    columns.insert(handle.name().to_string(), Arc::new(column));
-                }
+            if let Some(handle) = self.cols.get(colname) {
+                let column = drs.get_or_load(handle, &self.cols, perf_counter);
+                columns.insert(handle.name().to_string(), Arc::new(column));
             }
         }
         columns
@@ -125,11 +111,9 @@ impl Partition {
 
     pub fn non_residents(&self, cols: &HashSet<String>) -> HashSet<String> {
         let mut non_residents = HashSet::new();
-        for handles in self.cols.values() {
-            for handle in handles.values() {
-                if !handle.is_resident() && cols.contains(handle.name()) {
-                    non_residents.insert(handle.name().to_string());
-                }
+        for handle in self.cols.values() {
+            if !handle.is_resident() && cols.contains(handle.name()) {
+                non_residents.insert(handle.name().to_string());
             }
         }
         non_residents
@@ -178,17 +162,13 @@ impl Partition {
     }
 
     pub fn evict(&self, col: &str) -> usize {
-        for handle in self.col_handles() {
-            if handle.name() == col {
-                let mut maybe_column = handle.col.lock().unwrap();
-                let mem_size = handle.heap_size_of_children();
-                handle.resident.store(false, Ordering::SeqCst);
-                *maybe_column = None;
-                self.lru.remove(&handle.key);
-                return mem_size;
-            }
-        }
-        0
+        let handle = &self.cols[col];
+        let mem_size = handle.heap_size_of_children();
+        let mut maybe_column = handle.col.lock().unwrap();
+        handle.resident.store(false, Ordering::SeqCst);
+        *maybe_column = None;
+        self.lru.remove(&handle.key);
+        mem_size
     }
 
     pub fn len(&self) -> usize {
@@ -246,7 +226,7 @@ impl Partition {
     }
 
     pub fn col_handles(&self) -> impl Iterator<Item = &ColumnHandle> {
-        self.cols.values().flat_map(|x| x.values())
+        self.cols.values()
     }
 }
 
@@ -279,11 +259,11 @@ impl ColumnHandle {
     fn non_resident(
         table: &str,
         id: PartitionID,
-        subpartition_key: &str,
+        _subpartition_key: &str,
         name: String,
     ) -> ColumnHandle {
         ColumnHandle {
-            key: ColumnLocator::new(table, id, subpartition_key),
+            key: ColumnLocator::new(table, id, &name),
             name,
             size_bytes: AtomicUsize::new(0),
             resident: AtomicBool::new(false),
@@ -296,8 +276,9 @@ impl ColumnHandle {
         self.resident.load(Ordering::SeqCst)
     }
 
-    pub fn set_resident(&self) {
+    pub fn set_resident(&self, size_bytes: usize) {
         self.resident.store(true, Ordering::SeqCst);
+        self.size_bytes.store(size_bytes, Ordering::SeqCst);
     }
 
     pub fn is_load_scheduled(&self) -> bool {

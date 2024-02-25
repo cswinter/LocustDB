@@ -4,7 +4,8 @@ use std::thread;
 use std::time::Duration;
 
 use locustdb::LocustDB;
-use rand::{FromEntropy, Rng};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use structopt::StructOpt;
 use tempfile::tempdir;
 
@@ -21,72 +22,46 @@ struct Opts {
     /// Only generate large tables
     #[structopt(long)]
     large_only: bool,
+    /// Database path
+    #[structopt(long, name = "PATH")]
+    db_path: Option<PathBuf>,
+    /// Don't generate data
+    #[structopt(long)]
+    no_ingest: bool,
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
     let opts = Opts::from_args();
-    let load_factor = opts.load_factor;
-
-    let db_path = tempdir().unwrap();
-    log::info!("Creating LocustDB at {:?}", db_path.path());
-    let db = create_locustdb(db_path.path().into());
-
-    let addr = "http://localhost:8080";
-    let mut log = locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), addr, 64 * (1 << 20));
-
     let start_time = std::time::Instant::now();
 
-    let mut rng = rand::rngs::SmallRng::from_entropy();
+    let load_factor = opts.load_factor;
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+
+    let db_path: PathBuf = opts.db_path.clone().unwrap_or(tempdir().unwrap().path().into());
+    log::info!("Creating LocustDB at {:?}", db_path);
+    let db = create_locustdb(db_path.clone());
 
     let small_tables = small_table_names(load_factor);
-    if !opts.large_only {
-        log::info!("Starting small table logging");
-        for _row in 0..1 << load_factor {
-            for table in &small_tables {
-                log.log(
-                    table,
-                    (0..1 << load_factor).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
-                );
-            }
-        }
-    }
-
-    let large_tables = [
-        "event_log",
-        "customer_feedback_items_raw_data_unstructured_json",
-        "advertiser_campaigns",
-        "order_items",
-    ];
-    // large tables have n = 2^(1.5N - 1) rows and 2^(1.5N - 1) columns each
-    log::info!("Starting large table logging");
-    let n = 2f64.powf(1.5 * load_factor as f64 - 1.0).round() as u64;
-    for _row in 0..n {
-        for table in &large_tables {
-            log.log(
-                table,
-                (0..n).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
-            );
-        }
-    }
-
-    let total_events = log.total_events;
-    drop(log);
-    db.force_flush();
+    let total_events = if opts.no_ingest {
+        0
+    } else {
+        ingest(&opts, &db, &small_tables)
+    };
 
     let perf_counter = db.perf_counter();
 
     log::info!("Ingestion done");
 
     // count number of files in db_path and all subdirectories
-    let file_count = walkdir::WalkDir::new(db_path.path())
+    let file_count = walkdir::WalkDir::new(&db_path)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .count();
     // calculate total size of all files in db_path and all subdirectories
-    let size_on_disk = walkdir::WalkDir::new(db_path.path())
+    let size_on_disk = walkdir::WalkDir::new(db_path)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
@@ -128,19 +103,21 @@ async fn main() {
         )
         .await;
     }
-    query(&db, "Querying 10 related columns in large table", "SELECT col_0, col_1, col_2, col_3, col_4, col_5, col_6, col_7, col_8, col_9 FROM event_log")
+    query(&db, "Querying 10 related columns in large table", "SELECT col_000000, col_000001, col_000002, col_000003, col_000004, col_000005, col_000006, col_000007, col_000008, col_000009 FROM event_log")
         .await;
+    let n = 2f64.powf(1.5 * load_factor as f64 - 1.0).round() as u64;
     query(
         &db,
-        "Querying 10 random columns in large table",
+        "Querying 10 unrelated columns in large table",
         &format!(
             "SELECT {} FROM event_log",
             (0..10)
-                .map(|_| format!("col_{}", rng.gen_range(0u64, 1 << load_factor)))
+                .map(|i| format!("col_{:06}", n * i / 10))
                 .collect::<Vec<String>>()
                 .join(", ")
         ),
-    ).await;
+    )
+    .await;
 
     println!();
     println!("elapsed: {:?}", start_time.elapsed());
@@ -193,14 +170,52 @@ async fn main() {
         locustdb::unit_fmt::bite(perf_counter.network_read_ingestion_bytes() as usize)
     );
     println!("query");
-    println!(
-        "  files opened: {}",
-        perf_counter.files_opened_partition(),
-    );
+    println!("  files opened: {}", perf_counter.files_opened_partition(),);
     println!(
         "  disk read:    {}",
         locustdb::unit_fmt::bite(perf_counter.disk_read_partition_bytes() as usize)
     );
+}
+
+fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
+    let load_factor = opts.load_factor;
+    let addr = "http://localhost:8080";
+    let mut log =
+        locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), addr, 64 * (1 << 20));
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+    if !opts.large_only {
+        log::info!("Starting small table logging");
+        for _row in 0..1 << load_factor {
+            for table in small_tables {
+                log.log(
+                    table,
+                    (0..1 << load_factor).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
+                );
+            }
+        }
+    }
+
+    let large_tables = [
+        "event_log",
+        "customer_feedback_items_raw_data_unstructured_json",
+        "advertiser_campaigns",
+        "order_items",
+    ];
+    // large tables have n = 2^(1.5N - 1) rows and 2^(1.5N - 1) columns each
+    log::info!("Starting large table logging");
+    let n = 2f64.powf(1.5 * load_factor as f64 - 1.0).round() as u64;
+    for _row in 0..n {
+        for table in &large_tables {
+            log.log(
+                table,
+                (0..n).map(|c| (format!("col_{c:06}"), rng.gen::<f64>())),
+            );
+        }
+    }
+    let total_events = log.total_events;
+    drop(log);
+    db.force_flush();
+    total_events
 }
 
 async fn query(db: &LocustDB, description: &str, query: &str) {
@@ -234,14 +249,11 @@ fn create_locustdb(db_path: PathBuf) -> Arc<locustdb::LocustDB> {
 }
 
 fn small_table_names(load_factor: u64) -> Vec<String> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    let words = random_word::all(random_word::Lang::En);
     // 2^N small tables with 2^N rows and 2^N columns each
     (0..1 << load_factor)
-        .map(|i| {
-            format!(
-                "{}_{i}",
-                random_word::gen(random_word::Lang::En).to_string()
-            )
-        })
+        .map(|i| format!("{}{i}", words[rng.gen_range(0, words.len())],))
         .collect()
 }
 
@@ -408,3 +420,33 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 // query
 //   files opened: 8
 //   disk read:    34.1MiB
+
+// $ RUST_BACKTRACE=1 RUST_LOG=info cargo run --bin db_bench -- --load-factor=9 --large-only
+//
+// Querying 10 related columns in large table
+// Returned 10 columns with 5793 rows in 771.009211ms (13 files opened, 107MiB)
+// Querying 10 unrelated columns in large table
+// Returned 10 columns with 5793 rows in 1.146029917s (33 files opened, 260MiB)
+//
+// elapsed: 104.06446965s
+// total uncompressed data: 2.00GiB
+// total size on disk: 1.03GiB (SmallRng output is compressible)
+// total files: 170
+// total events: 23172
+// disk writes
+//   total:      2.08GiB
+//   wal:        1.02GiB
+//   partition:  1.03GiB
+//   compaction: 0.000B
+//   meta store: 36.3MiB
+// files created
+//   total:     201
+//   wal:       19
+//   partition: 169
+//   meta:      13
+// network
+//   ingestion requests: 19
+//   ingestion bytes:    1.02GiB
+// query
+//   files opened: 46
+//   disk read:    367MiB

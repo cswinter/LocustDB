@@ -87,7 +87,11 @@ pub struct StorageV2 {
 }
 
 impl StorageV2 {
-    pub fn new(path: &Path, perf_counter: Arc<PerfCounter>, readonly: bool) -> (StorageV2, Vec<WALSegment>) {
+    pub fn new(
+        path: &Path,
+        perf_counter: Arc<PerfCounter>,
+        readonly: bool,
+    ) -> (StorageV2, Vec<WALSegment>) {
         let meta_db_path = path.join("meta");
         let new_meta_db_path = path.join("meta_new");
         let wal_dir = path.join("wal");
@@ -218,13 +222,12 @@ impl Storage for StorageV2 {
                 let table_dir = self.tables_path.join(&partition.tablename);
                 let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
                 let data = bincode::serialize(&cols).unwrap();
-                self.perf_counter.new_partition_file_write(data.len() as u64);
+                self.perf_counter
+                    .new_partition_file_write(data.len() as u64);
                 self.writer
                     .store(
-                        &table_dir.join(format!(
-                            "{}_{}.part",
-                            partition.id, metadata.subpartition_key
-                        )),
+                        &table_dir
+                            .join(partition_filename(partition.id, &metadata.subpartition_key)),
                         &data,
                     )
                     .unwrap();
@@ -235,12 +238,7 @@ impl Storage for StorageV2 {
         // Atomically overwrite meta store file
         let data = bincode::serialize(&*meta_store).unwrap();
         self.perf_counter.disk_write_meta_store(data.len() as u64);
-        self.writer
-            .store(
-                &self.new_meta_db_path,
-                &data,
-            )
-            .unwrap();
+        self.writer.store(&self.new_meta_db_path, &data).unwrap();
         if self.writer.exists(&self.meta_db_path).unwrap() {
             self.writer.delete(&self.meta_db_path).unwrap();
         }
@@ -279,7 +277,7 @@ impl Storage for StorageV2 {
         let path = self
             .tables_path
             .join(table_name)
-            .join(format!("{}_{}.part", partition, subpartition_key));
+            .join(partition_filename(partition, &subpartition_key));
         let data = self.writer.load(&path).unwrap();
         self.perf_counter.disk_read_partition(data.len() as u64);
         perf_counter.disk_read(data.len() as u64);
@@ -356,4 +354,8 @@ impl BlobWriter for FileBlobWriter {
     fn exists(&self, path: &Path) -> Result<bool, Box<dyn Error + Send + Sync + 'static>> {
         Ok(path.exists())
     }
+}
+
+fn partition_filename(id: PartitionID, subpartition_key: &str) -> String {
+    format!("{:05}_{}.part", id, subpartition_key)
 }

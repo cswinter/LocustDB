@@ -116,7 +116,7 @@ impl DiskReadScheduler {
         debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
     }
 
-    pub fn get_or_load(&self, handle: &ColumnHandle, cols: &HashMap<String, HashMap<PartitionID, ColumnHandle>>, perf_counter: &QueryPerfCounter) -> Arc<Column> {
+    pub fn get_or_load(&self, handle: &ColumnHandle, cols: &HashMap<String, ColumnHandle>, perf_counter: &QueryPerfCounter) -> Arc<Column> {
         loop {
             if handle.is_resident() {
                 let mut maybe_column = handle.try_get();
@@ -153,7 +153,7 @@ impl DiskReadScheduler {
                 let mut result = None;
                 #[allow(unused_mut)]
                 for mut column in columns {
-                    let _handle = cols.get(column.name()).unwrap().get(&handle.id()).unwrap();
+                    let _handle = cols.get(column.name()).unwrap();
                     // Need to hold lock when we put new value into lru
                     let mut maybe_column = _handle.try_get();
                     // TODO: if not main handle, put it at back of lru
@@ -167,7 +167,7 @@ impl DiskReadScheduler {
                     }
                     let column = Arc::new(column);
                     *maybe_column = Some(column.clone());
-                    _handle.set_resident();
+                    _handle.set_resident(column.heap_size_of_children());
                     if column.name() == handle.name() {
                         result = Some(column);
                     }

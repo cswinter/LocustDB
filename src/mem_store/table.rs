@@ -135,14 +135,14 @@ impl Table {
             return None;
         }
         let buffer = std::mem::take(buffer.deref_mut());
-        let (mut new_partition, keys) =
-            Partition::from_buffer(self.name(), 0, buffer, self.lru.clone());
+        let part_id = self.max_partition_id() + 1;
+        let (new_partition, keys) =
+            Partition::from_buffer(self.name(), part_id, buffer, self.lru.clone());
         let arc_partition;
         {
             let mut partitions = self.partitions.write().unwrap();
-            new_partition.id = partitions.len() as u64;
             arc_partition = Arc::new(new_partition);
-            partitions.insert(arc_partition.id, arc_partition.clone());
+            partitions.insert(part_id, arc_partition.clone());
         }
         for (id, column) in keys {
             self.lru.put(ColumnLocator::new(self.name(), id, &column));

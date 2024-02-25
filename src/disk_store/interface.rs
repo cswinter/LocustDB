@@ -17,11 +17,11 @@ pub struct PartitionMetadata {
     pub id: PartitionID,
     pub tablename: String,
     pub len: usize,
-    pub subpartitions: Vec<SubpartitionMeatadata>,
+    pub subpartitions: Vec<SubpartitionMetadata>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SubpartitionMeatadata {
+pub struct SubpartitionMetadata {
     pub column_names: Vec<String>,
     pub size_bytes: u64,
     pub subpartition_key: String,

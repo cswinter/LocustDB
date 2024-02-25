@@ -229,7 +229,7 @@ impl InnerLocustDB {
 
                 #[derive(Default)]
                 struct PartitionBuilder {
-                    subpartition_metadata: Vec<SubpartitionMeatadata>,
+                    subpartition_metadata: Vec<SubpartitionMetadata>,
                     subpartitions: Vec<Vec<Arc<Column>>>,
                     subpartition: Vec<Arc<Column>>,
                     bytes: u64,
@@ -237,7 +237,7 @@ impl InnerLocustDB {
 
                 let mut acc = PartitionBuilder::default();
                 fn create_subpartition(acc: &mut PartitionBuilder) {
-                    acc.subpartition_metadata.push(SubpartitionMeatadata {
+                    acc.subpartition_metadata.push(SubpartitionMetadata {
                         column_names: acc
                             .subpartition
                             .iter()
