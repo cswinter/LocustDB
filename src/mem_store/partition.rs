@@ -20,6 +20,7 @@ pub struct ColumnLocator {
 pub struct Partition {
     pub id: PartitionID,
     len: usize,
+    total_size_bytes: usize,
     // Column name -> PartitionID -> ColumnHandle
     pub(crate) cols: HashMap<String, ColumnHandle>,
     lru: Lru,
@@ -36,6 +37,7 @@ impl Partition {
         // Instead, we return the keys to be added to the lru after the partition is added to the partition map.
         let mut keys = Vec::with_capacity(cols.len());
         let len = cols[0].len();
+        let total_size_bytes = cols.iter().map(|c| c.heap_size_of_children()).sum();
         let cols = cols
             .into_iter()
             .map(|c| {
@@ -43,8 +45,7 @@ impl Partition {
                 (c.name().to_string(), ColumnHandle::resident(table, id, c))
             })
             .collect();
-
-        (Partition { id, len, cols, lru }, keys)
+        (Partition { id, len, total_size_bytes, cols, lru }, keys)
     }
 
     pub fn nonresident(
@@ -55,7 +56,9 @@ impl Partition {
         lru: Lru,
     ) -> Partition {
         let mut cols = HashMap::default();
+        let mut total_size_bytes = 0;
         for subpartition in spm {
+            total_size_bytes += subpartition.size_bytes as usize;
             for name in &subpartition.column_names {
                 cols.insert(
                     name.to_string(),
@@ -68,7 +71,7 @@ impl Partition {
                 );
             }
         }
-        Partition { id, len, cols, lru }
+        Partition { id, len, cols, lru, total_size_bytes }
     }
 
     pub fn from_buffer(
@@ -227,6 +230,11 @@ impl Partition {
 
     pub fn col_handles(&self) -> impl Iterator<Item = &ColumnHandle> {
         self.cols.values()
+    }
+
+    /// Total size of all columns in this partition, including non-resident columns.
+    pub fn total_size_bytes(&self) -> usize {
+        self.total_size_bytes
     }
 }
 

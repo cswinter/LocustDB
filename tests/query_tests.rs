@@ -20,11 +20,11 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
             .load_csv(LoadOptions::new("test_data/tiny.csv", "default").with_partition_size(40)),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, true, vec![0, 1, 2])).unwrap()
+        block_on(locustdb.run_query(query, true,  true, vec![0, 1, 2])).unwrap()
     } else {
-        block_on(locustdb.run_query(query, true, vec![])).unwrap()
+        block_on(locustdb.run_query(query, true, true, vec![])).unwrap()
     };
-    assert_eq!(result.unwrap().rows, expected_rows);
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
 }
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
@@ -43,11 +43,11 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
         ),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+        block_on(locustdb.run_query(query, false,  true, vec![0, 1, 2, 3])).unwrap()
     } else {
-        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
     };
-    assert_eq!(result.unwrap().rows, expected_rows);
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
 }
 
 fn test_query_ec_err(query: &str, _expected_err: QueryError) {
@@ -66,9 +66,9 @@ fn test_query_ec_err(query: &str, _expected_err: QueryError) {
         ),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap()
     } else {
-        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
     };
     assert!(result.is_err());
 }
@@ -89,8 +89,8 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
         ),
     );
     load.unwrap();
-    let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
-    let actual_rows = result.unwrap().rows;
+    let result = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
+    let actual_rows = result.unwrap().rows.unwrap();
     assert_eq!(
         &actual_rows[..min(expected_rows.len(), actual_rows.len())],
         expected_rows
@@ -113,9 +113,9 @@ fn test_query_colnames(query: &str, expected_result: Vec<String>) {
         ),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap()
     } else {
-        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
     };
     assert_eq!(result.unwrap().colnames, expected_result);
 }
@@ -992,8 +992,8 @@ fn test_gen_table() {
         [Str("Hazelnut".to_string()), Int(76_356)],
         [Str("Walnut".to_string()), Int(23_868)],
     ];
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
-    assert_eq!(result.unwrap().rows, expected_rows);
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
 }
 
 #[test]
@@ -1020,15 +1020,17 @@ fn test_column_with_null_partitions() {
             ),
         )],
     }));
-    println!("{:?}", block_on(locustdb.run_query("SELECT * FROM test;", true, vec![])).unwrap().unwrap());
+    println!("{:?}", block_on(locustdb.run_query("SELECT * FROM test;", true, true, vec![])).unwrap().unwrap());
     let query = "SELECT partition_sparse FROM test;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
-    assert_eq!(result.rows.iter().filter(|&x| x == &[Null]).count(), 13);
+    assert_eq!(result.rows.as_ref().unwrap().iter().filter(|&x| x == &[Null]).count(), 13);
     assert_eq!(
         result
             .rows
+            .as_ref()
+            .unwrap()
             .iter()
             .filter(|&x| x == &[Str("A".to_string())])
             .count(),
@@ -1037,6 +1039,8 @@ fn test_column_with_null_partitions() {
     assert_eq!(
         result
             .rows
+            .as_ref()
+            .unwrap()
             .iter()
             .filter(|&x| x == &[Str("B".to_string())])
             .count(),
@@ -1064,7 +1068,7 @@ fn test_group_by_string() {
     }));
 
     let query = "SELECT scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true,  vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1074,10 +1078,10 @@ fn test_group_by_string() {
         [Str("04"), Int(4)],
         [Str("05"), Int(3)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     let query = "SELECT scrambled, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1087,10 +1091,10 @@ fn test_group_by_string() {
         [Str("04"), Str("04"), Int(4)],
         [Str("05"), Str("05"), Int(3)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     let query = "SELECT hex, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1100,10 +1104,10 @@ fn test_group_by_string() {
         [Str("000c761329c01138"), Str("69"), Int(1)],
         [Str("000d9e5ae13b57b7"), Str("m"), Int(1)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     let query = "SELECT ints, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1113,7 +1117,7 @@ fn test_group_by_string() {
         [Int(-10), Str("0t"), Int(1)],
         [Int(-10), Str("3"), Int(1)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 }
 
 #[test]
@@ -1155,8 +1159,8 @@ fn test_restore_from_disk() {
     thread::sleep(time::Duration::from_millis(2000));
     let locustdb = LocustDB::new(&opts);
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
-    let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
-    let actual_rows = result.unwrap().rows;
+    let result = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
+    let actual_rows = result.unwrap().rows.unwrap();
     use Value::*;
     assert_eq!(
         &actual_rows[..min(5, actual_rows.len())],

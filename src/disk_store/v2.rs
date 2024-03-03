@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use super::interface::{ColumnLoader, PartitionMetadata};
+use super::interface::{ColumnLoader, PartitionMetadata, SubpartitionMetadata};
 use crate::logging_client::EventBuffer;
 use crate::mem_store::Column;
 use crate::perf_counter::{PerfCounter, QueryPerfCounter};
@@ -41,6 +41,14 @@ pub trait Storage: Send + Sync + 'static {
         column_name: &str,
         perf_counter: &QueryPerfCounter,
     ) -> Vec<Column>;
+    fn compact(
+        &self,
+        table: &str,
+        id: PartitionID,
+        metadata: Vec<SubpartitionMetadata>,
+        subpartitions: Vec<Vec<Arc<Column>>>,
+        old_partitions: &[PartitionID],
+    );
 }
 
 impl ColumnLoader for StorageV2 {
@@ -188,6 +196,36 @@ impl StorageV2 {
 
         (meta_store, wal_segments)
     }
+
+    fn write_metastore(&self, meta_store: &MetaStore) {
+        let data = bincode::serialize(meta_store).unwrap();
+        self.perf_counter.disk_write_meta_store(data.len() as u64);
+        self.writer.store(&self.new_meta_db_path, &data).unwrap();
+        if self.writer.exists(&self.meta_db_path).unwrap() {
+            self.writer.delete(&self.meta_db_path).unwrap();
+        }
+        self.writer
+            .rename(&self.new_meta_db_path, &self.meta_db_path)
+            .unwrap();
+    }
+
+    fn write_subpartitions(&self, partition: &PartitionMetadata, subpartition_cols: Vec<Vec<Arc<Column>>>) {
+        for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
+            // TODO: column names might not be valid for filesystem (too long, disallowed characters). use cleaned prefix + hashcode for column names that are long/have special chars?
+            let table_dir = self.tables_path.join(&partition.tablename);
+            let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
+            let data = bincode::serialize(&cols).unwrap();
+            self.perf_counter
+                .new_partition_file_write(data.len() as u64);
+            self.writer
+                .store(
+                    &table_dir
+                        .join(partition_filename(partition.id, &metadata.subpartition_key)),
+                    &data,
+                )
+                .unwrap();
+        }
+    }
 }
 
 impl Storage for StorageV2 {
@@ -217,38 +255,64 @@ impl Storage for StorageV2 {
 
         // Write out new partition files
         for (partition, subpartition_cols) in partitions {
-            for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
-                // TODO: column names might not be valid for filesystem (too long, disallowed characters). use cleaned prefix + hashcode for column names that are long/have special chars?
-                let table_dir = self.tables_path.join(&partition.tablename);
-                let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
-                let data = bincode::serialize(&cols).unwrap();
-                self.perf_counter
-                    .new_partition_file_write(data.len() as u64);
-                self.writer
-                    .store(
-                        &table_dir
-                            .join(partition_filename(partition.id, &metadata.subpartition_key)),
-                        &data,
-                    )
-                    .unwrap();
-            }
+            self.write_subpartitions(&partition, subpartition_cols);
             meta_store.partitions.push(partition);
         }
 
         // Atomically overwrite meta store file
-        let data = bincode::serialize(&*meta_store).unwrap();
-        self.perf_counter.disk_write_meta_store(data.len() as u64);
-        self.writer.store(&self.new_meta_db_path, &data).unwrap();
-        if self.writer.exists(&self.meta_db_path).unwrap() {
-            self.writer.delete(&self.meta_db_path).unwrap();
-        }
-        self.writer
-            .rename(&self.new_meta_db_path, &self.meta_db_path)
-            .unwrap();
+        self.write_metastore(&meta_store);
 
         // Delete WAL files
         for file in self.writer.list(&self.wal_dir).unwrap() {
             self.writer.delete(&file).unwrap();
+        }
+    }
+
+    // Combine set of partitions into single new partition.
+    fn compact(
+        &self,
+        table: &str,
+        id: PartitionID,
+        metadata: Vec<SubpartitionMetadata>,
+        subpartitions: Vec<Vec<Arc<Column>>>,
+        old_partitions: &[PartitionID],
+    ) {
+        log::debug!("compacting {} parititions into {} for table {}", old_partitions.len(), id, table);
+
+        // Persist new partition files
+        let partition = PartitionMetadata {
+            id,
+            tablename: table.to_string(),
+            len: subpartitions[0].len(),
+            subpartitions: metadata,
+        };
+        self.write_subpartitions(&partition, subpartitions);
+
+        // Atomically update metastore
+        let mut meta_store = self.meta_store.lock().unwrap();
+        // TODO: O(n^2)
+        let to_delete = meta_store
+            .partitions
+            .iter()
+            .filter(|p| p.tablename == table && old_partitions.contains(&p.id))
+            .flat_map(|partition| {
+                partition
+                    .subpartitions
+                    .iter()
+                    .map(|sb| (partition.id, sb.subpartition_key.clone()))
+            })
+            .collect::<Vec<_>>();
+        meta_store
+            .partitions
+            .retain(|p| p.tablename != table || !old_partitions.contains(&p.id));
+        meta_store.partitions.push(partition);
+        self.write_metastore(&meta_store);
+
+        // Delete old partition files
+        let table_dir = self.tables_path.join(table);
+        for (id, key) in to_delete {
+            let path = table_dir.join(partition_filename(id, &key));
+            self.writer.delete(&path).unwrap();
         }
     }
 

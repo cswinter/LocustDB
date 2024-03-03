@@ -222,11 +222,11 @@ async fn query(db: &LocustDB, description: &str, query: &str) {
     let evicted_bytes = db.evict_cache();
     log::info!("Evicted {}", locustdb::unit_fmt::bite(evicted_bytes));
     println!("{}", description);
-    let response = db.run_query(query, false, vec![]).await.unwrap().unwrap();
+    let response = db.run_query(query, false, true, vec![]).await.unwrap().unwrap();
     println!(
         "Returned {} columns with {} rows in {:?} ({} files opened, {})",
-        response.rows.first().map(|r| r.len()).unwrap_or(0),
-        response.rows.len(),
+        response.columns.len(),
+        response.columns.first().map(|c| c.1.len()).unwrap_or(0),
         Duration::from_nanos(response.stats.runtime_ns),
         response.stats.files_opened,
         locustdb::unit_fmt::bite(response.stats.disk_read_bytes as usize),
@@ -450,3 +450,62 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 // query
 //   files opened: 46
 //   disk read:    367MiB
+
+// $ RUST_BACKTRACE=1 RUST_LOG=info cargo run --bin db_bench -- --load-factor=9 --large-only
+//
+// Querying 10 related columns in large table
+// Returned 10 columns with 5793 rows in 96.807795ms (3 files opened, 24.4MiB)
+// Querying 10 unrelated columns in large table
+// Returned 10 columns with 5793 rows in 887.621246ms (22 files opened, 172MiB)
+//
+// elapsed: 139.104648554s
+// total uncompressed data: 2.00GiB
+// total size on disk: 1.01GiB (SmallRng output is compressible)
+// total files: 138
+// total events: 23172
+// disk writes
+//   total:      3.04GiB
+//   wal:        1.02GiB
+//   partition:  1.99GiB
+//   compaction: 0.000B
+//   meta store: 31.2MiB
+// files created
+//   total:     339
+//   wal:       25
+//   partition: 293
+//   meta:      21
+// network
+//   ingestion requests: 25
+//   ingestion bytes:    1.02GiB
+// query
+//   files opened: 25
+//   disk read:    196MiB
+
+// $ RUST_BACKTRACE=1 RUST_LOG=info cargo run --bin db_bench --release -- --load-factor=9 --large-only
+//
+// Querying 10 related columns in large table
+// Returned 10 columns with 5793 rows in 9.5808ms (3 files opened, 24.3MiB)
+// Querying 10 unrelated columns in large table
+// Returned 10 columns with 5793 rows in 63.5807ms (22 files opened, 177MiB)
+//
+// elapsed: 38.21972169s
+// total uncompressed data: 2.00GiB
+// total size on disk: 1.01GiB (SmallRng output is compressible)
+// total files: 138
+// total events: 23172
+// disk writes
+//   total:      3.01GiB
+//   wal:        1.02GiB
+//   partition:  1.96GiB
+//   compaction: 0.000B
+//   meta store: 32.3MiB
+// files created
+//   total:     336
+//   wal:       21
+//   partition: 293
+//   meta:      22
+// network
+//   ingestion requests: 21
+//   ingestion bytes:    1.02GiB
+// query
+//   files opened: 25

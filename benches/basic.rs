@@ -85,7 +85,7 @@ fn gen_table(db: &LocustDB, name: &str, partitions: usize, partition_size: usize
 fn bench_query(b: &mut test::Bencher, query_str: &str) {
     let locustdb = db();
     b.iter(|| {
-        let query = locustdb.run_query(query_str, false, vec![]);
+        let query = locustdb.run_query(query_str, false, false, vec![]);
         block_on(query)
     });
 }

@@ -25,6 +25,7 @@ pub struct QueryTask {
     main_phase: NormalFormQuery,
     final_pass: Option<NormalFormQuery>,
     explain: bool,
+    rowformat: bool,
     show: Vec<usize>,
     partitions: Vec<Arc<Partition>>,
     referenced_cols: HashSet<String>,
@@ -54,9 +55,21 @@ pub struct QueryState<'a> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryOutput {
     pub colnames: Vec<String>,
-    pub rows: Vec<Vec<RawVal>>,
+
+    pub rows: Option<Vec<Vec<RawVal>>>,
+    pub columns: Vec<(String, BasicTypeColumn)>,
+
     pub query_plans: HashMap<String, u32>,
     pub stats: QueryStats,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum BasicTypeColumn {
+    Int(Vec<i64>),
+    Float(Vec<f64>),
+    String(Vec<String>),
+    Null(usize),
+    Mixed(Vec<RawVal>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -70,6 +83,7 @@ pub struct QueryStats {
 impl QueryTask {
     pub fn new(
         mut query: Query,
+        rowformat: bool,
         explain: bool,
         show: Vec<usize>,
         source: Vec<Arc<Partition>>,
@@ -99,6 +113,7 @@ impl QueryTask {
             main_phase,
             final_pass,
             explain,
+            rowformat,
             show,
             partitions: source,
             referenced_cols,
@@ -123,7 +138,8 @@ impl QueryTask {
         if task.completed() {
             task.sender.send(Ok(QueryOutput {
                 colnames: task.output_colnames.clone(),
-                rows: vec![],
+                rows: Some(vec![]),
+                columns: Default::default(),
                 query_plans: Default::default(),
                 stats: QueryStats {
                     runtime_ns: start_time.elapsed().as_nanos() as u64,
@@ -145,7 +161,8 @@ impl QueryTask {
         let mut explains = Vec::new();
         while let Some((partition, id)) = self.next_partition() {
             let show = self.show.iter().any(|&x| x == id);
-            let cols = partition.get_cols(&self.referenced_cols, &self.db, self.perf_counter.as_ref());
+            let cols =
+                partition.get_cols(&self.referenced_cols, &self.db, self.perf_counter.as_ref());
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
             let unsafe_cols = unsafe {
                 mem::transmute::<
@@ -236,10 +253,10 @@ impl QueryTask {
         state.explains.extend(explains);
         self.perf_counter.scanned(rows_scanned as u64);
         state.rows_collected += rows_collected;
-        
-            let result = unsafe { mem::transmute::<_, BatchResult<'static>>(result) };
-            state.partial_results.push(result);
-        
+
+        let result = unsafe { mem::transmute::<_, BatchResult<'static>>(result) };
+        state.partial_results.push(result);
+
         if state.completed_batches == self.partitions.len()
             || self.sufficient_rows(state.rows_collected)
         {
@@ -316,21 +333,30 @@ impl QueryTask {
         full_result: &BatchResult,
         explains: &[String],
     ) -> QueryOutput {
-        let lo = self.final_pass.as_ref().map(|x| &x.limit).unwrap_or(&self.main_phase.limit);
+        let lo = self
+            .final_pass
+            .as_ref()
+            .map(|x| &x.limit)
+            .unwrap_or(&self.main_phase.limit);
         let limit = lo.limit as usize;
         let offset = lo.offset as usize;
-        let mut result_rows = Vec::new();
         let count = cmp::min(limit, full_result.len() - offset);
-        for i in offset..(count + offset) {
-            let mut record = Vec::with_capacity(self.output_colnames.len());
-            // TODO(#99): use column order of original query
-            for &j in &full_result.projection {
-                record.push(full_result.columns[j].get_raw(i));
+
+        let mut rows = None;
+        if self.rowformat {
+            let mut result_rows = Vec::new();
+            for i in offset..(count + offset) {
+                let mut record = Vec::with_capacity(self.output_colnames.len());
+                // TODO(#99): use column order of original query
+                for &j in &full_result.projection {
+                    record.push(full_result.columns[j].get_raw(i));
+                }
+                for &(aggregation, _) in &full_result.aggregations {
+                    record.push(full_result.columns[aggregation].get_raw(i));
+                }
+                result_rows.push(record);
             }
-            for &(aggregation, _) in &full_result.aggregations {
-                record.push(full_result.columns[aggregation].get_raw(i));
-            }
-            result_rows.push(record);
+            rows = Some(result_rows);
         }
 
         let mut query_plans = HashMap::new();
@@ -338,9 +364,18 @@ impl QueryTask {
             *query_plans.entry(plan.to_owned()).or_insert(0) += 1
         }
 
+        let mut columns = vec![];
+        // TODO: this is probably wrong, see above (columns might not all be in the same order as output_colnames or correspond to columns we want to return)
+        for (colname, column) in self.output_colnames.iter().zip(full_result.columns.iter()) {
+            let column = column.slice_box(offset, offset + count);
+            let column = BasicTypeColumn::from_boxed_data(column);
+            columns.push((colname.clone(), column));
+        }
+
         QueryOutput {
             colnames: self.output_colnames.clone(),
-            rows: result_rows,
+            rows,
+            columns,
             query_plans,
             stats: QueryStats {
                 runtime_ns: self.start_time.elapsed().as_nanos() as u64,
@@ -378,4 +413,70 @@ fn find_all_cols(source: &[Arc<Partition>]) -> Vec<String> {
     }
 
     cols.into_iter().collect()
+}
+
+impl BasicTypeColumn {
+    fn from_boxed_data(data: BoxedData) -> BasicTypeColumn {
+        match data.get_type() {
+            EncodingType::Str => {
+                BasicTypeColumn::String(data.cast_ref_str().iter().map(|s| s.to_string()).collect())
+            }
+            EncodingType::I64 => BasicTypeColumn::Int(data.cast_ref_i64().to_vec()),
+            EncodingType::U8 => {
+                BasicTypeColumn::Int(data.cast_ref_u8().iter().map(|&i| i as i64).collect())
+            }
+            EncodingType::U16 => {
+                BasicTypeColumn::Int(data.cast_ref_u16().iter().map(|&i| i as i64).collect())
+            }
+            EncodingType::U32 => {
+                BasicTypeColumn::Int(data.cast_ref_u32().iter().map(|&i| i as i64).collect())
+            }
+            EncodingType::U64 => {
+                BasicTypeColumn::Int(data.cast_ref_u64().iter().map(|&i| i as i64).collect())
+            }
+            EncodingType::USize => {
+                BasicTypeColumn::Int(data.cast_ref_usize().iter().map(|&i| i as i64).collect())
+            }
+            EncodingType::F64 => {
+                BasicTypeColumn::Float(data.cast_ref_f64().iter().map(|&f| f.0).collect())
+            }
+            EncodingType::Null => todo!(),
+
+            EncodingType::Val
+            | EncodingType::NullableStr
+            | EncodingType::NullableI64
+            | EncodingType::NullableU8
+            | EncodingType::NullableU16
+            | EncodingType::NullableU32
+            | EncodingType::NullableU64
+            | EncodingType::NullableF64
+            | EncodingType::OptStr => {
+                let mut vals = vec![];
+                for i in 0..data.len() {
+                    vals.push(data.get_raw(i));
+                }
+                BasicTypeColumn::Mixed(vals)
+            }
+            EncodingType::ScalarI64
+            | EncodingType::ScalarStr
+            | EncodingType::ScalarString
+            | EncodingType::ConstVal
+            | EncodingType::ValRows
+            | EncodingType::ByteSlices(_)
+            | EncodingType::Premerge
+            | EncodingType::MergeOp => {
+                panic!("Unsupported type {:?}", data.get_type())
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            BasicTypeColumn::Int(v) => v.len(),
+            BasicTypeColumn::Float(v) => v.len(),
+            BasicTypeColumn::String(v) => v.len(),
+            BasicTypeColumn::Null(v) => *v,
+            BasicTypeColumn::Mixed(v) => v.len(),
+        }
+    }
 }

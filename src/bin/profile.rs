@@ -15,6 +15,6 @@ fn main() {
     }
     println!("Load completed");
     loop {
-        let _ = block_on(locustdb.run_query("select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from test;", false, vec![]));
+        let _ = block_on(locustdb.run_query("select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from test;", false, false, vec![]));
     }
 }

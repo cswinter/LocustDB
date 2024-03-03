@@ -115,6 +115,7 @@ fn main() {
         seq_disk_read,
         max_wal_size_bytes,
         max_partition_size_bytes,
+        partition_combine_factor: 4,
     };
 
     if options.readahead > options.mem_size_limit_tables {
@@ -295,7 +296,7 @@ fn repl(locustdb: &LocustDB) {
             continue;
         }
 
-        let query = locustdb.run_query(s, explain, show);
+        let query = locustdb.run_query(s, explain, true, show);
         match block_on(query) {
             Ok(result) => match result {
                 Ok(output) => print_results::print_query_result(&output),

@@ -1,8 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use std::str;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
+
+use itertools::Itertools;
 
 use crate::disk_store::interface::*;
 use crate::disk_store::v2::{Storage, StorageV2, WALSegment};
@@ -16,6 +19,7 @@ use crate::mem_store::*;
 pub struct Table {
     name: String,
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
+    next_partition_id: AtomicU64,
     buffer: Mutex<Buffer>,
     /// LRU that keeps track of when each (table, partition, column) segment was last accessed.
     lru: Lru,
@@ -26,6 +30,7 @@ impl Table {
         Table {
             name: name.to_string(),
             partitions: RwLock::new(HashMap::new()),
+            next_partition_id: AtomicU64::new(0),
             buffer: Mutex::new(Buffer::default()),
             lru,
         }
@@ -38,6 +43,18 @@ impl Table {
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
         let mut partitions: Vec<_> = partitions.values().cloned().collect();
+        let buffer = self.buffer.lock().unwrap();
+        if buffer.len() > 0 {
+            partitions.push(Arc::new(
+                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone()).0,
+            ));
+        }
+        partitions
+    }
+
+    pub fn snapshot_parts(&self, parts: &[PartitionID]) -> Vec<Arc<Partition>> {
+        let partitions = self.partitions.read().unwrap();
+        let mut partitions: Vec<_> = parts.iter().map(|id| partitions[id].clone()).collect();
         let buffer = self.buffer.lock().unwrap();
         if buffer.len() > 0 {
             partitions.push(Arc::new(
@@ -106,6 +123,7 @@ impl Table {
         ));
         let mut partitions = self.partitions.write().unwrap();
         partitions.insert(md.id, partition);
+        self.next_partition_id.fetch_max(md.id + 1, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn ingest(&self, row: Vec<(String, RawVal)>) {
@@ -135,7 +153,7 @@ impl Table {
             return None;
         }
         let buffer = std::mem::take(buffer.deref_mut());
-        let part_id = self.max_partition_id() + 1;
+        let part_id = self.next_partition_id();
         let (new_partition, keys) =
             Partition::from_buffer(self.name(), part_id, buffer, self.lru.clone());
         let arc_partition;
@@ -148,6 +166,48 @@ impl Table {
             self.lru.put(ColumnLocator::new(self.name(), id, &column));
         }
         Some(arc_partition)
+    }
+
+    /// Determines if partitions should be compacted. If so, returns the maximal list of partitions to compact.
+    /// A subset of partitions is eligible for compaction if the size of each
+    /// partition in the subset is at least `combine_factor` times the total size of all partitions in the subset.
+    pub fn plan_compaction(&self, combine_factor: u64) -> Option<Vec<PartitionID>> {
+        // TODO: max partition size
+        let partitions = self.partitions.read().unwrap();
+        let by_size_desc: Vec<Arc<Partition>> = partitions
+            .values()
+            .cloned()
+            .sorted_by(|p1, p2| p2.total_size_bytes().cmp(&p1.total_size_bytes()));
+        let cumulative = by_size_desc
+            .iter()
+            .rev()
+            .scan(0, |acc, p| {
+                *acc += p.total_size_bytes() as u64;
+                Some(*acc)
+            })
+            .collect::<Vec<_>>();
+
+        for (i, cum) in cumulative.iter().rev().enumerate() {
+            if by_size_desc[i].total_size_bytes() as u64 * combine_factor < *cum {
+                return Some(by_size_desc[i..].iter().map(|p| p.id).collect());
+            }
+        }
+
+        None
+    }
+
+    pub fn compact(&self, id: PartitionID, columns: Vec<Arc<Column>>, old_partitions: &[PartitionID]) {
+        let (partition, keys) = Partition::new(self.name(), id, columns, self.lru.clone());
+        {
+            let mut partitions = self.partitions.write().unwrap();
+            for old_id in old_partitions {
+                partitions.remove(old_id);
+            }
+            partitions.insert(id, Arc::new(partition));
+        }
+        for (id, column) in keys {
+            self.lru.put(ColumnLocator::new(self.name(), id, &column));
+        }
     }
 
     pub fn mem_tree(&self, depth: usize) -> MemTreeTable {
@@ -204,11 +264,6 @@ impl Table {
         batches_size + buffer_size
     }
 
-    pub fn max_partition_id(&self) -> u64 {
-        let partitions = self.partitions.read().unwrap();
-        partitions.keys().max().cloned().unwrap_or(0)
-    }
-
     fn size_per_column(partitions: &[Arc<Partition>]) -> Vec<(String, usize)> {
         let mut sizes: HashMap<String, usize> = HashMap::default();
         for partition in partitions {
@@ -220,6 +275,21 @@ impl Table {
             .iter()
             .map(|(name, size)| (name.to_string(), *size))
             .collect()
+    }
+
+    pub fn column_names(&self, parts: &[u64]) -> Vec<String> {
+        let partitions = self.partitions.read().unwrap();
+        let mut columns = HashSet::new();
+        for pid in parts {
+            for col in partitions[pid].col_names() {
+                columns.insert(col.clone());
+            }
+        }
+        columns.into_iter().sorted()
+    }
+
+    pub fn next_partition_id(&self) -> u64 {
+        self.next_partition_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
 }
 

@@ -603,4 +603,17 @@ impl Query {
         self.filter.add_colnames(&mut colnames);
         colnames
     }
+
+    pub fn read_column(table: &str, column: &str) -> Query {
+        Query {
+            select: vec![ColumnInfo {
+                expr: Expr::ColName(column.to_string()),
+                name: Some("col".to_string()),
+            }],
+            table: table.to_string(),
+            filter: Expr::Const(RawVal::Int(1)),
+            order_by: vec![],
+            limit: LimitClause { limit: u64::MAX, offset: 0 },
+        }
+    }
 }

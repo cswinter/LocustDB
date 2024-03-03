@@ -85,6 +85,7 @@ async fn table_handler(path: web::Path<String>, data: web::Data<AppState>) -> im
         .run_query(
             &format!("SELECT * FROM \"{}\" LIMIT 0", path.as_str()),
             false,
+            true,
             vec![],
         )
         .await
@@ -154,14 +155,14 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
     log::debug!("Query: {:?}", req_body);
     let result = data
         .db
-        .run_query(&req_body.query, false, vec![])
+        .run_query(&req_body.query, false, true, vec![])
         .await
         .unwrap()
         .unwrap();
 
     let response = json!({
         "colnames": result.colnames,
-        "rows": result.rows.iter().map(|row| row.iter().map(|val| match val {
+        "rows": result.rows.unwrap().iter().map(|row| row.iter().map(|val| match val {
             Value::Int(int) => json!(int),
             Value::Str(str) => json!(str),
             Value::Null => json!(null),
@@ -178,7 +179,8 @@ async fn query_cols(
     req_body: web::Json<QueryRequest>,
 ) -> impl Responder {
     log::debug!("Query: {:?}", req_body);
-    let x = data.db.run_query(&req_body.query, false, vec![]).await;
+    // TODO: dont' go through row format
+    let x = data.db.run_query(&req_body.query, false, true, vec![]).await;
     match flatmap_err_response(x) {
         Ok(result) => {
             let response = query_output_to_json_cols(result);
@@ -193,11 +195,12 @@ async fn multi_query_cols(
     data: web::Data<AppState>,
     req_body: web::Json<MultiQueryRequest>,
 ) -> impl Responder {
+    // TODO: don't go through row format
     log::debug!("Multi Query: {:?}", req_body);
     let mut results = vec![];
     for q in &req_body.queries {
         // Run query immediately starts executing without awaiting future
-        let result = data.db.run_query(q, false, vec![]);
+        let result = data.db.run_query(q, false, true, vec![]);
         results.push(result);
     }
     let mut json_results = vec![];
@@ -311,7 +314,7 @@ fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
     for col in &result.colnames {
         cols.insert(col.to_string(), vec![]);
     }
-    for row in result.rows {
+    for row in result.rows.unwrap() {
         for (val, colname) in row.iter().zip(result.colnames.iter()) {
             cols.get_mut(colname).unwrap().push(match val {
                 Value::Int(int) => json!(int),

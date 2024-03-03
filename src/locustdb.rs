@@ -38,6 +38,7 @@ impl LocustDB {
         &self,
         query: &str,
         explain: bool,
+        rowformat: bool,
         show: Vec<usize>,
     ) -> Result<QueryResult, oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
@@ -74,6 +75,7 @@ impl LocustDB {
 
         let query_task = QueryTask::new(
             query,
+            rowformat,
             explain,
             show,
             data,
@@ -198,6 +200,8 @@ pub struct Options {
     pub max_wal_size_bytes: u64,
     /// Maximum size of partition
     pub max_partition_size_bytes: u64,
+    /// Combine partitions when the size of every original partition is less than this factor of the combined partition size
+    pub partition_combine_factor: u64,
 }
 
 impl Default for Options {
@@ -212,6 +216,7 @@ impl Default for Options {
             seq_disk_read: false,
             max_wal_size_bytes: 64 * 1024 * 1024, // 64 MiB
             max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
+            partition_combine_factor: 4,
         }
     }
 }
