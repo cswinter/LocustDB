@@ -197,20 +197,24 @@ impl InnerLocustDB {
             });
             *wal_size += bytes_written;
         }
+        // TODO: code duplicated in Table::restore_tables_from_disk
         for (table, data) in events.tables {
             self.create_if_empty(&table);
             let tables = self.tables.read().unwrap();
             let table = tables.get(&table).unwrap();
+            let rows = data.len;
             // TODO: eliminate conversion
             let columns = data
                 .columns
                 .into_iter()
                 .map(|(k, v)| {
                     let col = match v.data {
-                        ColumnData::Dense(data) => InputColumn::Float(data),
-                        ColumnData::Sparse(_) => {
-                            todo!("INGESTION OF SPARSE VALUES NOT IMPLEMENTED")
-                        }
+                        ColumnData::Dense(data) => if (data.len() as u64) < rows {
+                            InputColumn::NullableFloat(rows, data.into_iter().enumerate().map(|(i, v)| (i as u64, v)).collect())
+                        } else {
+                            InputColumn::Float(data)
+                        },
+                        ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
                     };
                     (k, col)
                 })

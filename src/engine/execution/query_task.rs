@@ -440,7 +440,7 @@ impl BasicTypeColumn {
             EncodingType::F64 => {
                 BasicTypeColumn::Float(data.cast_ref_f64().iter().map(|&f| f.0).collect())
             }
-            EncodingType::Null => todo!(),
+            EncodingType::Null => BasicTypeColumn::Null(data.len()),
 
             EncodingType::Val
             | EncodingType::NullableStr

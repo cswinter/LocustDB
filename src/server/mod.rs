@@ -292,7 +292,13 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
         .perf_counter()
         .network_read_ingestion(req_body.len() as u64);
 
-    let events: logging_client::EventBuffer = bincode::deserialize(&req_body).unwrap();
+    let events: logging_client::EventBuffer = match bincode::deserialize(&req_body){
+        Ok(events) => events,
+        Err(e) => {
+            log::error!("Failed to deserialize /insert_bin request: {}", e);
+            return HttpResponse::BadRequest().json(format!("Failed to deserialize request: {}", e));
+        }
+    };
     log::info!(
         "Received request data for {} events",
         events

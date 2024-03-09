@@ -11,7 +11,7 @@ pub struct EventBuffer {
     pub tables: HashMap<String, TableBuffer>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct TableBuffer {
     pub len: u64,
     pub columns: HashMap<String, ColumnBuffer>,
@@ -19,7 +19,6 @@ pub struct TableBuffer {
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct ColumnBuffer {
-    pub column_name: String,
     pub data: ColumnData,
 }
 

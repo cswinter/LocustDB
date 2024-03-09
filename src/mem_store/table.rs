@@ -78,6 +78,7 @@ impl Table {
         }
         for wal_segment in wal_segments {
             for (table_name, table_data) in wal_segment.data.into_owned().tables {
+                let rows = table_data.len;
                 let table = tables
                     .entry(table_name.clone())
                     .or_insert_with(|| Table::new(&table_name, lru.clone()));
@@ -86,10 +87,12 @@ impl Table {
                     .into_iter()
                     .map(|(k, v)| {
                         let col = match v.data {
-                            ColumnData::Dense(data) => InputColumn::Float(data),
-                            ColumnData::Sparse(_) => {
-                                todo!("INGESTION OF SPARSE VALUES NOT IMPLEMENTED")
-                            }
+                            ColumnData::Dense(data) => if (data.len() as u64) < rows {
+                                InputColumn::NullableFloat(rows, data.into_iter().enumerate().map(|(i, v)| (i as u64, v)).collect())
+                            } else {
+                                InputColumn::Float(data)
+                            },
+                            ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
                         };
                         (k, col)
                     })
