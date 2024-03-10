@@ -390,21 +390,21 @@ mod tests {
     #[test]
     fn test_select_star() {
         assert_eq!(
-            format!("{:?}", parse_query("select * from default")),
+            format!("{:?}", parse_query("select * from default limit 100")),
             "Ok(Query { select: [ColumnInfo { expr: ColName(\"*\"), name: None }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_alias() {
         assert_eq!(
-            format!("{:?}", parse_query("select trip_id as id from default")),
+            format!("{:?}", parse_query("select trip_id as id from default limit 100")),
             "Ok(Query { select: [ColumnInfo { expr: ColName(\"trip_id\"), name: Some(\"id\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_to_year() {
         assert_eq!(
-            format!("{:?}", parse_query("select to_year(ts) from default")),
+            format!("{:?}", parse_query("select to_year(ts) from default limit 100")),
             "Ok(Query { select: [ColumnInfo { expr: Func1(ToYear, ColName(\"ts\")), name: Some(\"to_year(ts)\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }
