@@ -38,13 +38,13 @@ impl Comparator<i64> for CmpLessThan {
 impl Comparator<u64> for CmpLessThan {
     fn cmp(left: u64, right: u64) -> bool { left < right }
     fn cmp_eq(left: u64, right: u64) -> bool { left <= right }
-    fn is_less_than() -> bool { false }
+    fn is_less_than() -> bool { true }
 }
 
 impl Comparator<OrderedFloat<f64>> for CmpLessThan {
     fn cmp(left: OrderedFloat<f64>, right: OrderedFloat<f64>) -> bool { left < right }
     fn cmp_eq(left: OrderedFloat<f64>, right: OrderedFloat<f64>) -> bool { left <= right }
-    fn is_less_than() -> bool { false }
+    fn is_less_than() -> bool { true }
 }
 
 impl<'a> Comparator<&'a str> for CmpLessThan {

@@ -324,6 +324,16 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
         ASTNode::IsNotNull(ref node) => {
             Expr::Func1(Func1Type::IsNotNull, convert_to_native_expr(node)?)
         }
+        ASTNode::Like { negated, expr, pattern, escape_char } => {
+            if escape_char.is_some() {
+                return Err(QueryError::NotImplemented("LIKE with escape character".to_string()));
+            }
+            Expr::Func2(
+                if *negated { Func2Type::NotLike } else { Func2Type::Like },
+                convert_to_native_expr(expr)?,
+                convert_to_native_expr(pattern)?,
+            )
+        }
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
     }))
 }

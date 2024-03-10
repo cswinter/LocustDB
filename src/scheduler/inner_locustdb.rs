@@ -11,8 +11,8 @@ use futures::channel::oneshot;
 use futures::executor::block_on;
 use itertools::Itertools;
 
-use crate::disk_store::*;
 use crate::disk_store::storage::{Storage, WALSegment};
+use crate::disk_store::*;
 use crate::engine::query_task::{BasicTypeColumn, QueryTask};
 use crate::engine::Query;
 use crate::ingest::colgen::GenTable;
@@ -28,7 +28,6 @@ use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 use crate::{mem_store::*, NoopStorage};
 
-use self::partition::ColumnLocator;
 use self::raw_col::MixedCol;
 
 pub struct InnerLocustDB {
@@ -163,20 +162,6 @@ impl InnerLocustDB {
         self.idle_queue.notify_one();
     }
 
-    pub fn store_partition(&self, tablename: &str, partition: Vec<Arc<Column>>) {
-        self.create_if_empty(tablename);
-        let tables = self.tables.read().unwrap();
-        let table = tables.get(tablename).unwrap();
-        if self.storage.is_some() {
-            todo!();
-        }
-        let (new_partition, keys) = Partition::new(table.name(), table.next_partition_id(), partition, self.lru.clone());
-        table.load_partition(new_partition);
-        for (id, column) in keys {
-            self.lru.put(ColumnLocator::new(table.name(), id, &column));
-        }
-    }
-
     pub fn ingest_single(&self, table: &str, row: Vec<(String, RawVal)>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
@@ -209,11 +194,19 @@ impl InnerLocustDB {
                 .into_iter()
                 .map(|(k, v)| {
                     let col = match v.data {
-                        ColumnData::Dense(data) => if (data.len() as u64) < rows {
-                            InputColumn::NullableFloat(rows, data.into_iter().enumerate().map(|(i, v)| (i as u64, v)).collect())
-                        } else {
-                            InputColumn::Float(data)
-                        },
+                        ColumnData::Dense(data) => {
+                            if (data.len() as u64) < rows {
+                                InputColumn::NullableFloat(
+                                    rows,
+                                    data.into_iter()
+                                        .enumerate()
+                                        .map(|(i, v)| (i as u64, v))
+                                        .collect(),
+                                )
+                            } else {
+                                InputColumn::Float(data)
+                            }
+                        }
                         ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
                     };
                     (k, col)
@@ -221,7 +214,7 @@ impl InnerLocustDB {
                 .collect();
             table.ingest_homogeneous(columns);
         }
-        
+
         wal_condvar.notify_all();
     }
 
@@ -252,10 +245,9 @@ impl InnerLocustDB {
             }
         }
 
-        self.storage
-            .as_ref()
-            .unwrap()
-            .persist_partitions_delete_wal(new_partitions);
+        if let Some(s) = self.storage.as_ref() {
+            s.persist_partitions_delete_wal(new_partitions)
+        }
 
         for (table, id, parts) in compactions {
             // get table, create new merged partition/sub-partitions (not registered with table)
@@ -277,7 +269,8 @@ impl InnerLocustDB {
                     data.clone(),
                     self.disk_read_scheduler().clone(),
                     SharedSender::new(sender),
-                ).unwrap();
+                )
+                .unwrap();
                 self.schedule(query_task);
                 let result = block_on(receiver).unwrap().unwrap();
                 let mut column_builder = MixedCol::default();
@@ -287,13 +280,18 @@ impl InnerLocustDB {
                     BasicTypeColumn::Float(floats) => column_builder.push_floats(floats),
                     BasicTypeColumn::String(strings) => column_builder.push_strings(strings),
                     BasicTypeColumn::Null(count) => column_builder.push_nulls(count),
-                    BasicTypeColumn::Mixed(raws) => raws.into_iter().for_each(|r| column_builder.push(r)),
+                    BasicTypeColumn::Mixed(raws) => {
+                        raws.into_iter().for_each(|r| column_builder.push(r))
+                    }
                 }
                 columns.push(column_builder.finalize(column));
             }
             let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
             // write subpartitions to disk, update metastore unlinking old partitions, delete old partitions
-            self.storage.as_ref().unwrap().compact(table, id, metadata, subpartitions, &parts);
+            self.storage
+                .as_ref()
+                .unwrap()
+                .compact(table, id, metadata, subpartitions, &parts);
 
             // replace old partitions with new partition
             tables[table].compact(id, columns, &parts);
@@ -409,7 +407,9 @@ impl InnerLocustDB {
         let mut wal_size = wal_size.lock().unwrap();
         while self.running.load(Ordering::SeqCst) {
             if *wal_size < self.opts.max_wal_size_bytes {
-                (wal_size, _) = wal_condvar.wait_timeout(wal_size, Duration::from_secs(1)).unwrap();
+                (wal_size, _) = wal_condvar
+                    .wait_timeout(wal_size, Duration::from_secs(1))
+                    .unwrap();
             } else {
                 self.wal_flush();
                 *wal_size = 0;
@@ -453,8 +453,10 @@ struct PartitionBuilder {
     bytes: u64,
 }
 
-fn subpartition(opts: &Options, columns: Vec<Arc<Column>>) -> (Vec<SubpartitionMetadata>, Vec<Vec<Arc<Column>>>) {
-
+fn subpartition(
+    opts: &Options,
+    columns: Vec<Arc<Column>>,
+) -> (Vec<SubpartitionMetadata>, Vec<Vec<Arc<Column>>>) {
     let mut acc = PartitionBuilder::default();
     fn create_subpartition(acc: &mut PartitionBuilder) {
         acc.subpartition_metadata.push(SubpartitionMetadata {

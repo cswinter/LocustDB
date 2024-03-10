@@ -53,19 +53,15 @@ impl EncodingType {
 
     pub fn nullable(&self) -> EncodingType {
         match self {
-            EncodingType::Str => EncodingType::NullableStr,
-            EncodingType::I64 => EncodingType::NullableI64,
-            EncodingType::U8 => EncodingType::NullableU8,
-            EncodingType::U16 => EncodingType::NullableU16,
-            EncodingType::U32 => EncodingType::NullableU32,
-            EncodingType::U64 => EncodingType::NullableU64,
-            EncodingType::OptStr => EncodingType::NullableStr,
-            EncodingType::NullableStr => EncodingType::NullableStr,
-            EncodingType::NullableI64 => EncodingType::NullableI64,
-            EncodingType::NullableU8 => EncodingType::NullableU8,
-            EncodingType::NullableU16 => EncodingType::NullableU16,
-            EncodingType::NullableU32 => EncodingType::NullableU32,
-            EncodingType::NullableU64 => EncodingType::NullableU64,
+            EncodingType::Str | EncodingType::NullableStr | EncodingType::OptStr => {
+                EncodingType::NullableStr
+            }
+            EncodingType::I64 | EncodingType::NullableI64 => EncodingType::NullableI64,
+            EncodingType::U8 | EncodingType::NullableU8 => EncodingType::NullableU8,
+            EncodingType::U16 | EncodingType::NullableU16 => EncodingType::NullableU16,
+            EncodingType::U32 | EncodingType::NullableU32 => EncodingType::NullableU32,
+            EncodingType::U64 | EncodingType::NullableU64 => EncodingType::NullableU64,
+            EncodingType::F64 | EncodingType::NullableF64 => EncodingType::NullableF64,
             EncodingType::Val => EncodingType::Val,
             _ => panic!("{:?} does not have a corresponding nullable type", &self),
         }

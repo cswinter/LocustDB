@@ -145,11 +145,6 @@ impl Table {
         buffer.push_untyped_cols(columns);
     }
 
-    pub fn load_partition(&self, partition: Partition) {
-        let mut partitions = self.partitions.write().unwrap();
-        partitions.insert(partition.id, Arc::new(partition));
-    }
-
     pub(crate) fn batch(&self) -> Option<Arc<Partition>> {
         let mut buffer = self.buffer.lock().unwrap();
         if buffer.len() == 0 {

@@ -53,3 +53,42 @@ pub mod syntax {
         super::RawVal::Str(s.to_string())
     }
 }
+
+impl From<f64> for RawVal {
+    fn from(val: f64) -> Self {
+        RawVal::Float(OrderedFloat(val))
+    }
+}
+
+impl From<String> for RawVal {
+    fn from(val: String) -> Self {
+        RawVal::Str(val)
+    }
+}
+
+impl From<()> for RawVal {
+    fn from(_: ()) -> Self {
+        RawVal::Null
+    }
+}
+
+impl<T: Into<RawVal>> From<Option<T>> for RawVal {
+    fn from(val: Option<T>) -> Self {
+        match val {
+            Some(val) => val.into(),
+            None => RawVal::Null,
+        }
+    }
+}
+
+impl<'a> From<&'a str> for RawVal {
+    fn from(val: &str) -> RawVal {
+        RawVal::Str(val.to_string())
+    }
+}
+
+impl From<i64> for RawVal {
+    fn from(val: i64) -> RawVal {
+        RawVal::Int(val)
+    }
+}

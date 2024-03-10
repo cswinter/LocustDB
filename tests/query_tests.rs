@@ -15,6 +15,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
+    // TODO: with_partition_size doesn't do anything anymore, should implement a new way to test partition boundaries
     let _ = block_on(
         locustdb
             .load_csv(LoadOptions::new("test_data/tiny.csv", "default").with_partition_size(40)),
