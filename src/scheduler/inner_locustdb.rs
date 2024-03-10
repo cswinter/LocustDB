@@ -486,7 +486,11 @@ fn subpartition(
         acc.subpartition_metadata[0].subpartition_key = "all".to_string();
     } else {
         for meta in &mut acc.subpartition_metadata {
-            let subpartition_key = if meta.column_names.len() == 1 {
+            let is_column_name_filesystem_safe = meta.column_names[0].len() <= 64
+                && meta.column_names[0]
+                    .chars()
+                    .all(|c| (c.is_alphanumeric() && c.is_lowercase()) || c == '_');
+            let subpartition_key = if meta.column_names.len() == 1 && is_column_name_filesystem_safe {
                 format!("x{}", meta.column_names[0])
             } else {
                 use sha2::{Digest, Sha256};
