@@ -1,13 +1,11 @@
 use std::borrow::Cow;
-use std::error::Error;
-use std::fs::{create_dir_all, File};
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use super::interface::{ColumnLoader, PartitionMetadata, SubpartitionMetadata};
+use super::file_writer::{BlobWriter, FileBlobWriter};
+use super::{ColumnLoader, PartitionMetadata, SubpartitionMetadata};
 use crate::logging_client::EventBuffer;
 use crate::mem_store::Column;
 use crate::perf_counter::{PerfCounter, QueryPerfCounter};
@@ -26,36 +24,11 @@ pub struct MetaStore {
 
 type PartitionID = u64;
 
-pub trait Storage: Send + Sync + 'static {
-    /// Persists a WAL segment and returns the number of bytes written
-    fn persist_wal_segment(&self, segment: WALSegment) -> u64;
-    fn persist_partitions_delete_wal(
-        &self,
-        partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
-    );
-    fn meta_store(&self) -> &Mutex<MetaStore>;
+impl ColumnLoader for Storage {
     fn load_column(
         &self,
+        table_name: &str,
         partition: PartitionID,
-        table_name: &str,
-        column_name: &str,
-        perf_counter: &QueryPerfCounter,
-    ) -> Vec<Column>;
-    fn compact(
-        &self,
-        table: &str,
-        id: PartitionID,
-        metadata: Vec<SubpartitionMetadata>,
-        subpartitions: Vec<Vec<Arc<Column>>>,
-        old_partitions: &[PartitionID],
-    );
-}
-
-impl ColumnLoader for StorageV2 {
-    fn load_column(
-        &self,
-        table_name: &str,
-        partition: super::interface::PartitionID,
         column_name: &str,
         perf_counter: &QueryPerfCounter,
     ) -> Vec<Column> {
@@ -64,8 +37,8 @@ impl ColumnLoader for StorageV2 {
 
     fn load_column_range(
         &self,
-        _start: super::interface::PartitionID,
-        _end: super::interface::PartitionID,
+        _start: PartitionID,
+        _end: PartitionID,
         _column_name: &str,
         _ldb: &crate::scheduler::InnerLocustDB,
     ) {
@@ -73,18 +46,7 @@ impl ColumnLoader for StorageV2 {
     }
 }
 
-trait BlobWriter {
-    fn store(&self, path: &Path, data: &[u8])
-        -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
-    fn load(&self, path: &Path) -> Result<Vec<u8>, Box<dyn Error + Send + Sync + 'static>>;
-    fn delete(&self, path: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
-    fn rename(&self, src: &Path, dst: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
-    /// Returns absolute paths of files in the directory
-    fn list(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
-    fn exists(&self, path: &Path) -> Result<bool, Box<dyn Error + Send + Sync + 'static>>;
-}
-
-pub struct StorageV2 {
+pub struct Storage {
     wal_dir: PathBuf,
     meta_db_path: PathBuf,
     new_meta_db_path: PathBuf,
@@ -94,18 +56,18 @@ pub struct StorageV2 {
     perf_counter: Arc<PerfCounter>,
 }
 
-impl StorageV2 {
+impl Storage {
     pub fn new(
         path: &Path,
         perf_counter: Arc<PerfCounter>,
         readonly: bool,
-    ) -> (StorageV2, Vec<WALSegment>) {
+    ) -> (Storage, Vec<WALSegment>) {
         let meta_db_path = path.join("meta");
         let new_meta_db_path = path.join("meta_new");
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
         let writer = Box::new(FileBlobWriter::new());
-        let (meta_store, wal_segments) = StorageV2::recover(
+        let (meta_store, wal_segments) = Storage::recover(
             &writer,
             &meta_db_path,
             &new_meta_db_path,
@@ -115,7 +77,7 @@ impl StorageV2 {
         );
         let meta_store = Arc::new(Mutex::new(meta_store));
         (
-            StorageV2 {
+            Storage {
                 wal_dir,
                 meta_db_path,
                 new_meta_db_path,
@@ -226,14 +188,12 @@ impl StorageV2 {
                 .unwrap();
         }
     }
-}
 
-impl Storage for StorageV2 {
-    fn meta_store(&self) -> &Mutex<MetaStore> {
+    pub fn meta_store(&self) -> &Mutex<MetaStore> {
         &self.meta_store
     }
 
-    fn persist_wal_segment(&self, mut segment: WALSegment) -> u64 {
+    pub fn persist_wal_segment(&self, mut segment: WALSegment) -> u64 {
         {
             let mut meta_store = self.meta_store.lock().unwrap();
             segment.id = meta_store.next_wal_id;
@@ -246,7 +206,7 @@ impl Storage for StorageV2 {
         data.len() as u64
     }
 
-    fn persist_partitions_delete_wal(
+    pub fn persist_partitions_delete_wal(
         &self,
         partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
     ) {
@@ -269,7 +229,7 @@ impl Storage for StorageV2 {
     }
 
     // Combine set of partitions into single new partition.
-    fn compact(
+    pub fn compact(
         &self,
         table: &str,
         id: PartitionID,
@@ -316,7 +276,7 @@ impl Storage for StorageV2 {
         }
     }
 
-    fn load_column(
+    pub fn load_column(
         &self,
         partition: PartitionID,
         table_name: &str,
@@ -346,77 +306,6 @@ impl Storage for StorageV2 {
         self.perf_counter.disk_read_partition(data.len() as u64);
         perf_counter.disk_read(data.len() as u64);
         bincode::deserialize(&data).unwrap()
-    }
-}
-
-struct FileBlobWriter;
-
-impl FileBlobWriter {
-    fn new() -> FileBlobWriter {
-        FileBlobWriter
-    }
-}
-
-impl BlobWriter for FileBlobWriter {
-    fn store(
-        &self,
-        path: &Path,
-        data: &[u8],
-    ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-        // Create the directory if it doesn't exist
-        if let Some(parent) = path.parent() {
-            create_dir_all(parent)?;
-        }
-
-        // Write the data to the file
-        let mut file = File::create(path)?;
-        file.write_all(data)?;
-
-        Ok(())
-    }
-
-    fn load(&self, path: &Path) -> Result<Vec<u8>, Box<dyn Error + Send + Sync + 'static>> {
-        let mut file = File::open(path)?;
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
-        Ok(data)
-    }
-
-    fn delete(&self, path: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-        std::fs::remove_file(path)?;
-        Ok(())
-    }
-
-    fn rename(&self, src: &Path, dst: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-        std::fs::rename(src, dst)?;
-        Ok(())
-    }
-
-    fn list(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error + Send + Sync + 'static>> {
-        let mut entries = Vec::new();
-        match path.read_dir() {
-            Ok(paths) => {
-                for entry in paths {
-                    let entry = entry?;
-                    let path = entry.path();
-                    if path.is_file() {
-                        entries.push(path);
-                    }
-                }
-                Ok(entries)
-            }
-            Err(err) => {
-                if err.kind() == std::io::ErrorKind::NotFound {
-                    Ok(entries)
-                } else {
-                    Err(Box::new(err))
-                }
-            }
-        }
-    }
-
-    fn exists(&self, path: &Path) -> Result<bool, Box<dyn Error + Send + Sync + 'static>> {
-        Ok(path.exists())
     }
 }
 

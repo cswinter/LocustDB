@@ -6,8 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex};
 use std_semaphore::Semaphore;
 
-use crate::disk_store::interface::ColumnLoader;
-use crate::disk_store::interface::PartitionID;
+use crate::disk_store::*;
 use crate::mem_store::partition::ColumnHandle;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::*;

@@ -7,8 +7,8 @@ use std::sync::{Mutex, RwLock};
 
 use itertools::Itertools;
 
-use crate::disk_store::interface::*;
-use crate::disk_store::v2::{Storage, StorageV2, WALSegment};
+use crate::disk_store::*;
+use crate::disk_store::storage::{Storage, WALSegment};
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
@@ -65,7 +65,7 @@ impl Table {
     }
 
     pub fn restore_tables_from_disk(
-        storage: &StorageV2,
+        storage: &Storage,
         wal_segments: Vec<WALSegment>,
         lru: &Lru,
     ) -> HashMap<String, Table> {

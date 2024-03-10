@@ -50,9 +50,3 @@ pub mod unit_fmt;
 pub mod python;
 
 pub type QueryResult = Result<QueryOutput, QueryError>;
-
-#[allow(warnings)]
-#[cfg(feature = "enable_rocksdb")]
-pub(crate) mod storage_format_capnp {
-    include!(concat!(env!("OUT_DIR"), "/storage_format_capnp.rs"));
-}

@@ -9,16 +9,12 @@ name = "locustdb"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[build-dependencies]
-capnpc = {version = "0.14", optional = true}
-
 [dependencies]
 actix-web = "4"
 actix-cors = "0.6"
 aliasmethod = "0.1"
 bit-vec = "0.4"
 byteorder = "1.2"
-capnp = {version = "0.14", optional = true}
 chrono = "0.4"
 clap = "2.32"
 csv = "1"
@@ -39,7 +35,6 @@ num = "0.4"
 num_cpus = "1.0"
 rand = "0.5"
 regex = "1"
-rocksdb = {version = "0.19", optional = true}
 blake2 = "0.10"
 rustyline = "1.0"
 scoped_threadpool = "0.1"
@@ -67,7 +62,6 @@ walkdir = "2.4.0"
 [features]
 default = []
 enable_lz4 = ["lz4"]
-enable_rocksdb = ["rocksdb", "capnp", "capnpc"]
 python = ["pyo3"]
 
 

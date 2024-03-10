@@ -11,8 +11,8 @@ use futures::channel::oneshot;
 use futures::executor::block_on;
 use itertools::Itertools;
 
-use crate::disk_store::interface::*;
-use crate::disk_store::v2::{Storage, StorageV2, WALSegment};
+use crate::disk_store::*;
+use crate::disk_store::storage::{Storage, WALSegment};
 use crate::engine::query_task::{BasicTypeColumn, QueryTask};
 use crate::engine::Query;
 use crate::ingest::colgen::GenTable;
@@ -36,7 +36,7 @@ pub struct InnerLocustDB {
     lru: Lru,
     disk_read_scheduler: Arc<DiskReadScheduler>,
 
-    storage_v2: Option<Arc<StorageV2>>,
+    storage: Option<Arc<Storage>>,
 
     wal_size: (Mutex<u64>, Condvar),
 
@@ -53,11 +53,11 @@ impl InnerLocustDB {
     pub fn new(opts: &Options) -> InnerLocustDB {
         let lru = Lru::default();
         let perf_counter = Arc::new(PerfCounter::default());
-        let storage_v2 = opts.db_v2_path.as_ref().map(|path| {
-            let (storage, wal) = StorageV2::new(path, perf_counter.clone(), false);
+        let storage = opts.db_path.as_ref().map(|path| {
+            let (storage, wal) = Storage::new(path, perf_counter.clone(), false);
             (Arc::new(storage), wal)
         });
-        let (storage_v2, existing_tables) = match storage_v2 {
+        let (storage, existing_tables) = match storage {
             Some((storage, wal_segments)) => {
                 let tables = Table::restore_tables_from_disk(&storage, wal_segments, &lru);
                 (Some(storage), tables)
@@ -65,7 +65,7 @@ impl InnerLocustDB {
             None => (None, HashMap::new()),
         };
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
-            storage_v2
+            storage
                 .clone()
                 .map(|s| s as Arc<dyn ColumnLoader>)
                 .unwrap_or(Arc::new(NoopStorage)),
@@ -80,7 +80,7 @@ impl InnerLocustDB {
             disk_read_scheduler,
             running: AtomicBool::new(true),
 
-            storage_v2,
+            storage,
 
             // TODO: doesn't take into account size of existing wal after restart
             wal_size: (Mutex::new(0), Condvar::new()),
@@ -167,7 +167,7 @@ impl InnerLocustDB {
         self.create_if_empty(tablename);
         let tables = self.tables.read().unwrap();
         let table = tables.get(tablename).unwrap();
-        if self.storage_v2.is_some() {
+        if self.storage.is_some() {
             todo!();
         }
         let (new_partition, keys) = Partition::new(table.name(), table.next_partition_id(), partition, self.lru.clone());
@@ -190,7 +190,7 @@ impl InnerLocustDB {
             wal_size = wal_condvar.wait(wal_size).unwrap();
         }
 
-        if let Some(storage) = &self.storage_v2 {
+        if let Some(storage) = &self.storage {
             let bytes_written = storage.persist_wal_segment(WALSegment {
                 id: 0,
                 data: Cow::Borrowed(&events),
@@ -252,7 +252,7 @@ impl InnerLocustDB {
             }
         }
 
-        self.storage_v2
+        self.storage
             .as_ref()
             .unwrap()
             .persist_partitions_delete_wal(new_partitions);
@@ -293,7 +293,7 @@ impl InnerLocustDB {
             }
             let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
             // write subpartitions to disk, update metastore unlinking old partitions, delete old partitions
-            self.storage_v2.as_ref().unwrap().compact(table, id, metadata, subpartitions, &parts);
+            self.storage.as_ref().unwrap().compact(table, id, metadata, subpartitions, &parts);
 
             // replace old partitions with new partition
             tables[table].compact(id, columns, &parts);

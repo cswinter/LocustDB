@@ -129,13 +129,6 @@ cargo run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-tri
 
 `cargo bench`
 
-### Storage backend
-LocustDB has support for persisting data to disk and running queries on data stored on disk.
-This feature is disabled by default, and has to be enabled explicitly by passing `--features "enable_rocksdb"` to cargo during compilation.
-The database backend uses RocksDB, which is a somewhat complex C++ dependency that has to be compiled from source and requires gcc and various libraries to be available.
-You will have to manually install those on your system, instructions can be found [here][rocksdb-dependencies].
-You may also have to install various other random tools until compilation succeeds.
-
 ### LZ4
 
 Compile with `--features "enable_lz4"` to enable an additional lz4 compression pass which can significantly reduce data size both on disk and in-memory, at the cost of slightly slower in-memory queries.
@@ -145,5 +138,4 @@ Compile with `--features "enable_lz4"` to enable an additional lz4 compression p
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/
 [blogpost-2]: https://clemenswinter.com/2018/08/13/how-read-100s-of-millions-of-records-per-second-from-a-single-disk/
 [rustup]: https://rustup.rs/
-[rocksdb-dependencies]: https://github.com/facebook/rocksdb/blob/master/INSTALL.md#dependencies
 [latest-release]: https://github.com/cswinter/LocustDB/releases/download/v0.1.0-alpha/locustdb-0.1.0-alpha-x64-linux.0-alpha

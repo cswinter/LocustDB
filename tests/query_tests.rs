@@ -1141,7 +1141,7 @@ fn test_restore_from_disk() {
     let _ = env_logger::try_init();
     let tmp_dir = TempDir::new().unwrap();
     let opts = Options {
-        db_v2_path: Some(tmp_dir.path().to_path_buf()),
+        db_path: Some(tmp_dir.path().to_path_buf()),
         ..Default::default()
     };
     {

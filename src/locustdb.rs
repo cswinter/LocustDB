@@ -191,7 +191,7 @@ impl LocustDB {
 pub struct Options {
     pub threads: usize,
     pub read_threads: usize,
-    pub db_v2_path: Option<PathBuf>,
+    pub db_path: Option<PathBuf>,
     pub mem_size_limit_tables: usize,
     pub mem_lz4: bool,
     pub readahead: usize,
@@ -209,7 +209,7 @@ impl Default for Options {
         Options {
             threads: num_cpus::get(),
             read_threads: num_cpus::get(),
-            db_v2_path: None,
+            db_path: None,
             mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
             mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::disk_store::interface::*;
+use crate::disk_store::*;
 use crate::ingest::buffer::Buffer;
 use crate::mem_store::*;
 use crate::perf_counter::QueryPerfCounter;

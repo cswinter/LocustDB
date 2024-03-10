@@ -20,9 +20,9 @@ mod unicode;
     author = "Clemens Winter <clemenswinter1@gmail.com>"
 )]
 struct Opt {
-    /// Path to data directory based on v2 storage format
-    #[structopt(long, name = "PATH_V2", parse(from_os_str))]
-    db_v2_path: Option<PathBuf>,
+    /// Database path
+    #[structopt(long, name = "PATH", parse(from_os_str))]
+    db_path: Option<PathBuf>,
 
     /// Load .csv or .csv.gz files into the database
     #[structopt(long, name = "FILES", parse(from_os_str))]
@@ -40,7 +40,7 @@ struct Opt {
     #[structopt(long, name = "WAL_SIZE", default_value = "16777216")]
     max_wal_size_bytes: u64,
 
-    /// Maximum size of WAL in bytes
+    /// Maximum size of partition files in bytes
     #[structopt(long, name = "PART_SIZE", default_value = "8388608")]
     max_partition_size_bytes: u64,
 
@@ -88,7 +88,7 @@ fn main() {
     env_logger::init();
 
     let Opt {
-        db_v2_path,
+        db_path,
         load,
         table,
         mem_limit_tables,
@@ -108,7 +108,7 @@ fn main() {
     let options = locustdb::Options {
         threads: threads.unwrap_or_else(num_cpus::get),
         read_threads: if seq_disk_read { 1 } else { num_cpus::get() },
-        db_v2_path: db_v2_path.clone(),
+        db_path: db_path.clone(),
         mem_size_limit_tables: mem_limit_tables * 1024 * 1024 * 1024,
         mem_lz4,
         readahead: readahead * 1024 * 1024,

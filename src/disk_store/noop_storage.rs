@@ -1,5 +1,5 @@
 use crate::mem_store::column::Column;
-use crate::disk_store::interface::*;
+use crate::disk_store::*;
 use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 

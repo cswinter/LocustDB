@@ -235,7 +235,7 @@ async fn query(db: &LocustDB, description: &str, query: &str) {
 
 fn create_locustdb(db_path: PathBuf) -> Arc<locustdb::LocustDB> {
     let options = locustdb::Options {
-        db_v2_path: Some(db_path),
+        db_path: Some(db_path),
         ..locustdb::Options::default()
     };
     let db = Arc::new(locustdb::LocustDB::new(&options));
