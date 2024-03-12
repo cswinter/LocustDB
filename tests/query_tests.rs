@@ -21,7 +21,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
             .load_csv(LoadOptions::new("test_data/tiny.csv", "default").with_partition_size(40)),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, true,  true, vec![0, 1, 2])).unwrap()
+        block_on(locustdb.run_query(query, true, true, vec![0, 1, 2])).unwrap()
     } else {
         block_on(locustdb.run_query(query, true, true, vec![])).unwrap()
     };
@@ -43,12 +43,22 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
                 .allow_nulls_all_columns(),
         ),
     );
-    let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false,  true, vec![0, 1, 2, 3])).unwrap()
+    let result1;
+    let result2 = if env::var("DEBUG_TESTS").is_ok() {
+        result1 = block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap();
+        locustdb.force_flush();
+        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap()
     } else {
+        result1 = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
+        locustdb.force_flush();
         block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
     };
-    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+    assert_eq!(
+        result1.as_ref().unwrap().rows,
+        result2.as_ref().unwrap().rows,
+        "Query results differ after flush"
+    );
+    assert_eq!(result1.unwrap().rows.unwrap(), expected_rows);
 }
 
 fn test_query_ec_err(query: &str, _expected_err: QueryError) {
@@ -303,7 +313,7 @@ fn test_sum() {
         &[
             vec![Str("aa"), Float(OrderedFloat(-123.87628600000001))],
             vec![Str("bb"), Float(OrderedFloat(1.234e29))],
-            vec![Str("cc"), Float(OrderedFloat(-1.0))]
+            vec![Str("cc"), Float(OrderedFloat(-1.0))],
         ],
     );
 }
@@ -431,7 +441,6 @@ fn test_not_equals_2() {
     )
 }
 
-
 #[test]
 fn test_order_by_float() {
     test_query_ec(
@@ -550,9 +559,21 @@ fn test_min_max() {
     test_query_ec(
         "select enum, max(float), min(float) from default;",
         &[
-            vec![Str("aa"), Float(OrderedFloat(0.123412)), Float(OrderedFloat(-124.0))],
-            vec![Str("bb"), Float(OrderedFloat(1.234e29)), Float(OrderedFloat(3.15159))],
-            vec![Str("cc"), Float(OrderedFloat(0.0)), Float(OrderedFloat(-1.0))]
+            vec![
+                Str("aa"),
+                Float(OrderedFloat(0.123412)),
+                Float(OrderedFloat(-124.0)),
+            ],
+            vec![
+                Str("bb"),
+                Float(OrderedFloat(1.234e29)),
+                Float(OrderedFloat(3.15159)),
+            ],
+            vec![
+                Str("cc"),
+                Float(OrderedFloat(0.0)),
+                Float(OrderedFloat(-1.0)),
+            ],
         ],
     );
 }
@@ -1021,12 +1042,26 @@ fn test_column_with_null_partitions() {
             ),
         )],
     }));
-    println!("{:?}", block_on(locustdb.run_query("SELECT * FROM test;", true, true, vec![])).unwrap().unwrap());
+    println!(
+        "{:?}",
+        block_on(locustdb.run_query("SELECT * FROM test;", true, true, vec![]))
+            .unwrap()
+            .unwrap()
+    );
     let query = "SELECT partition_sparse FROM test;";
     let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
-    assert_eq!(result.rows.as_ref().unwrap().iter().filter(|&x| x == &[Null]).count(), 13);
+    assert_eq!(
+        result
+            .rows
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|&x| x == &[Null])
+            .count(),
+        13
+    );
     assert_eq!(
         result
             .rows
@@ -1069,7 +1104,7 @@ fn test_group_by_string() {
     }));
 
     let query = "SELECT scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, true,  vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1133,6 +1168,62 @@ fn test_group_by_float() {
             vec![Int(1), Float(OrderedFloat(0.0003))],
         ],
     );
+}
+
+#[test]
+fn test_or_nullcheck_and_filter() {
+    test_query_ec(
+        "SELECT nullable_int2, float FROM default WHERE nullable_int2 IS NOT NULL OR float IS NOT NULL ORDER BY id LIMIT 100000;",
+        &[
+            vec![Null, Float(OrderedFloat(0.123412))],
+            vec![Int(-40), Float(OrderedFloat(0.0003))],
+            vec![Null, Float(OrderedFloat(-124.0))],
+            vec![Int(0), Float(OrderedFloat(3.15159))],
+            vec![Int(9), Float(OrderedFloat(1.234e29))],
+            vec![Int(6), Float(OrderedFloat(1e-6))],
+            vec![Null, Float(OrderedFloat(0.0))],
+            vec![Null, Float(OrderedFloat(1e-6))],
+            vec![Int(1), Float(OrderedFloat(-1.0))],
+            vec![Int(14), Float(OrderedFloat(1234124.51325))]
+        ]
+    );
+    // Tests aliasing of OR inputs (both resolve to same constant expand)
+    test_query_ec(
+        "SELECT id FROM default WHERE id IS NULL OR float IS NULL ORDER BY id LIMIT 100000;",
+        &[],
+    );
+    test_query_ec(
+        "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) ORDER BY id LIMIT 100000;",
+        &[
+            vec![Int(14), Float(OrderedFloat(1.123124e30))],
+        ]
+    );
+    test_query_ec(
+        "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) LIMIT 100000;",
+        &[
+            vec![Int(14), Float(OrderedFloat(1.123124e30))],
+        ]
+    );
+}
+
+#[test]
+fn test_select_0_of_everything() {
+    test_query_ec("SELECT * FROM default LIMIT 0;", &[])
+}
+
+#[test]
+fn test_filter_nonexistant_columns() {
+    test_query_ec(
+        "SELECT nullable_int2, lolololol, also_doesnt_exist FROM default WHERE nullable_int2 IS NOT NULL;",
+        &[
+            vec![Int(-40), Null, Null],
+            vec![Int(0), Null, Null],
+            vec![Int(9), Null, Null],
+            vec![Int(6), Null, Null],
+            vec![Int(1), Null, Null],
+            vec![Int(14), Null, Null]
+        ],
+    )
 }
 
 #[test]

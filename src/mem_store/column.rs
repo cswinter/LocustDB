@@ -163,12 +163,13 @@ impl Column {
             codec_tree.codec = signature;
             codec_tree.size_bytes += size_bytes;
             codec_tree.rows += self.len;
-            if depth > 2 && self.data.len() > 1 {
+            if depth > 2 {
                 for (i, d) in self.data.iter().enumerate() {
                     if codec_tree.sections.len() == i {
                         codec_tree.sections.push(MemTreeSection {
                             id: i,
                             size_bytes: 0,
+                            datatype: format!("{:?}", d.encoding_type()),
                         });
                     }
                     codec_tree.sections[i].size_bytes += d.heap_size_of_children();

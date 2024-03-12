@@ -341,6 +341,7 @@ impl QueryTask {
         let limit = lo.limit as usize;
         let offset = lo.offset as usize;
         let count = cmp::min(limit, full_result.len() - offset);
+        full_result.validate().unwrap();
 
         let mut rows = None;
         if self.rowformat {
@@ -450,7 +451,8 @@ impl BasicTypeColumn {
             | EncodingType::NullableU32
             | EncodingType::NullableU64
             | EncodingType::NullableF64
-            | EncodingType::OptStr => {
+            | EncodingType::OptStr 
+            | EncodingType::OptF64 => {
                 let mut vals = vec![];
                 for i in 0..data.len() {
                     vals.push(data.get_raw(i));

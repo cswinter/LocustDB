@@ -36,6 +36,7 @@ pub struct MemTreeEncoding {
 pub struct MemTreeSection {
     pub id: usize,
     pub size_bytes: usize,
+    pub datatype: String,
 }
 
 impl MemTreeTable {
@@ -151,7 +152,7 @@ impl fmt::Display for MemTreeEncoding {
 
 impl fmt::Display for MemTreeSection {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, ".{} {:30}  {:>8}", self.id, "", format!("{:.2}", bite(self.size_bytes)))
+        write!(f, ".{} {:30}  {:>8}", self.id, self.datatype, format!("{:.2}", bite(self.size_bytes)))
     }
 }
 

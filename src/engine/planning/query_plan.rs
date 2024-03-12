@@ -66,8 +66,8 @@ pub enum QueryPlan {
         #[output(t = "base=data;null=_always")]
         nullable: TypedBufferRef,
     },
-    /// Converts NullableI64 or NullableStr into a representation where nulls are encoded as part
-    /// of the data (i64 with i64::MIN representing null for NullableI64, and Option<&str> for NullableStr).
+    /// Converts NullableI64 or NullableStr NullableF64 into a representation where nulls are encoded as part
+    /// of the data (i64 with i64::MIN representing null for NullableI64, Option<&str> for NullableStr, and Option<OrderedFloat<f64> for NullableF64).
     FuseNulls {
         nullable: TypedBufferRef,
         #[output(t = "base=nullable;null=_fused")]
@@ -478,6 +478,13 @@ pub enum QueryPlan {
         #[output(t = "base=provided")]
         nulls: TypedBufferRef,
     },
+    NullVecLike {
+        plan: TypedBufferRef,
+        // 0: use input length, 1: non-zero elements in u8 input, 2: non-zero non-null elements in nullalb u8 input
+        source_type: u8,
+        #[output(t = "base=provided")]
+        nulls: TypedBufferRef,
+    },
     ScalarI64 {
         value: i64,
         hide_value: bool,
@@ -786,18 +793,22 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
         (
             Func2Type::Multiply,
             vec![
-                Function2::integer_op(Box::new(|qp, lhs, rhs| {
-                    qp.checked_multiply(lhs, rhs)
-                })),
-                Function2::float_op(Box::new(|qp, lhs, rhs| {
-                    qp.multiply(lhs, rhs, EncodingType::F64)
-                }), BasicType::Integer, BasicType::Float),
-                Function2::float_op(Box::new(|qp, lhs, rhs| {
-                    qp.multiply(lhs, rhs, EncodingType::F64)
-                }), BasicType::Float, BasicType::Integer),
-                Function2::float_op(Box::new(|qp, lhs, rhs| {
-                    qp.multiply(lhs, rhs, EncodingType::F64)
-                }), BasicType::Float, BasicType::Float),
+                Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_multiply(lhs, rhs))),
+                Function2::float_op(
+                    Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs, EncodingType::F64)),
+                    BasicType::Integer,
+                    BasicType::Float,
+                ),
+                Function2::float_op(
+                    Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs, EncodingType::F64)),
+                    BasicType::Float,
+                    BasicType::Integer,
+                ),
+                Function2::float_op(
+                    Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs, EncodingType::F64)),
+                    BasicType::Float,
+                    BasicType::Float,
+                ),
             ],
         ),
         (
@@ -924,10 +935,21 @@ impl QueryPlan {
                     };
                     (plan, t)
                 }
-                None => (
-                    planner.null_vec(column_len, EncodingType::Null),
-                    Type::new(BasicType::Null, None),
-                ),
+                None => {
+                    let plan = match filter {
+                        Filter::None => planner.null_vec(column_len, EncodingType::Null),
+                        Filter::U8(filter) => {
+                            planner.null_vec_like(filter.into(), 1, EncodingType::Null)
+                        }
+                        Filter::NullableU8(filter) => {
+                            planner.null_vec_like(filter.into(), 2, EncodingType::Null)
+                        }
+                        Filter::Indices(filter) => {
+                            planner.null_vec_like(filter.into(), 0, EncodingType::Null)
+                        }
+                    };
+                    (plan, Type::new(BasicType::Null, None))
+                }
             },
             Func2(Or, ref lhs, ref rhs) => {
                 let (plan_lhs, type_lhs) =
@@ -936,11 +958,25 @@ impl QueryPlan {
                     QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean
                 {
+                    log::info!(
+                        "Found {:?} -> ({:?}: {:?}) OR {:?} -> ({:?}: {:?}), expected bool OR bool",
+                        lhs,
+                        plan_lhs,
+                        type_lhs,
+                        rhs,
+                        plan_rhs,
+                        type_rhs,
+                    );
                     bail!(
                         QueryError::TypeError,
-                        "Found {} OR {}, expected bool OR bool"
+                        "Found ({:?}: {:?}) OR ({:?}: {:?}), expected bool OR bool",
+                        plan_lhs,
+                        type_lhs,
+                        plan_rhs,
+                        type_rhs,
                     )
                 }
+                log::info!("{:?} OR {:?}", plan_lhs, plan_rhs);
                 (planner.or(plan_lhs, plan_rhs), Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
@@ -952,7 +988,9 @@ impl QueryPlan {
                 {
                     bail!(
                         QueryError::TypeError,
-                        "Found {} AND {}, expected bool AND bool"
+                        "Found {:?} AND {:?}, expected bool AND bool",
+                        type_lhs.decoded,
+                        type_rhs.decoded,
                     )
                 }
                 (planner.and(plan_lhs, plan_rhs), Type::bit_vec())
@@ -1127,7 +1165,7 @@ impl QueryPlan {
             Func1(ftype, ref inner) => {
                 let (plan, t) =
                     QueryPlan::compile_expr(inner, filter, columns, column_len, planner)?;
-                let plan = match ftype {
+                match ftype {
                     Func1Type::ToYear => {
                         let decoded = match t.codec.clone() {
                             Some(codec) => codec.decode(plan, planner),
@@ -1140,7 +1178,7 @@ impl QueryPlan {
                                 &t
                             )
                         }
-                        planner.to_year(decoded)
+                        (planner.to_year(decoded), Type::integer())
                     }
                     Func1Type::Length => {
                         let decoded = match t.codec.clone() {
@@ -1154,7 +1192,7 @@ impl QueryPlan {
                                 &t
                             )
                         }
-                        planner.length(decoded.str()?).into()
+                        (planner.length(decoded.str()?).into(), Type::integer())
                     }
                     Func1Type::Not => {
                         let decoded = match t.codec.clone() {
@@ -1168,27 +1206,39 @@ impl QueryPlan {
                                 &t
                             )
                         }
-                        planner.not(decoded.u8()?).into()
+                        (planner.not(decoded.u8()?).into(), Type::bit_vec())
                     }
                     Func1Type::IsNull => {
                         if plan.is_nullable() {
-                            planner.is_null(plan.nullable_any()?).into()
+                            (
+                                planner.is_null(plan.nullable_any()?).into(),
+                                Type::bit_vec(),
+                            )
                         } else {
-                            planner.constant_expand(
-                                (false as u8) as i64,
-                                column_len,
-                                EncodingType::U8,
+                            (
+                                planner.constant_expand(
+                                    (false as u8) as i64,
+                                    column_len,
+                                    EncodingType::U8,
+                                ),
+                                Type::bit_vec(),
                             )
                         }
                     }
                     Func1Type::IsNotNull => {
                         if plan.is_nullable() {
-                            planner.is_not_null(plan.nullable_any()?).into()
+                            (
+                                planner.is_not_null(plan.nullable_any()?).into(),
+                                Type::bit_vec(),
+                            )
                         } else {
-                            planner.constant_expand(
-                                (true as u8) as i64,
-                                column_len,
-                                EncodingType::U8,
+                            (
+                                planner.constant_expand(
+                                    (true as u8) as i64,
+                                    column_len,
+                                    EncodingType::U8,
+                                ),
+                                Type::bit_vec(),
                             )
                         }
                     }
@@ -1198,8 +1248,7 @@ impl QueryPlan {
                             "Unary minus not implemented for arbitrary expressions."
                         )
                     }
-                };
-                (plan, t.decoded())
+                }
             }
             Const(RawVal::Int(i)) => (
                 planner.scalar_i64(i, false).into(),
@@ -1632,6 +1681,11 @@ pub(super) fn prepare<'a>(
             scalar_str,
         } => operator::scalar_str(value, pinned_string, scalar_str),
         QueryPlan::NullVec { len, nulls } => operator::null_vec(len, nulls.any()),
+        QueryPlan::NullVecLike {
+            plan,
+            source_type,
+            nulls,
+        } => operator::null_vec_like(plan.any(), nulls.any(), source_type),
         QueryPlan::ConstantExpand {
             value,
             len,
@@ -1710,11 +1764,13 @@ pub(super) fn prepare<'a>(
             max_index,
             aggregator,
             aggregate,
-        } => if aggregate.tag == EncodingType::F64 {
-            operator::aggregate_f64(plan, grouping_key, max_index, aggregator, aggregate)?
-        } else {
-            operator::aggregate(plan, grouping_key, max_index, aggregator, aggregate)?
-        },
+        } => {
+            if aggregate.tag == EncodingType::F64 {
+                operator::aggregate_f64(plan, grouping_key, max_index, aggregator, aggregate)?
+            } else {
+                operator::aggregate(plan, grouping_key, max_index, aggregator, aggregate)?
+            }
+        }
         QueryPlan::CheckedAggregate {
             plan,
             grouping_key,
@@ -1817,9 +1873,7 @@ pub(super) fn prepare<'a>(
             present,
             difference,
         } => operator::nullable_checked_subtraction(lhs, rhs, present, difference)?,
-        QueryPlan::Multiply { lhs, rhs, product } => {
-            operator::multiplication(lhs, rhs, product)?
-        }
+        QueryPlan::Multiply { lhs, rhs, product } => operator::multiplication(lhs, rhs, product)?,
         QueryPlan::CheckedMultiply { lhs, rhs, product } => {
             operator::checked_multiplication(lhs, rhs, product.i64()?)?
         }

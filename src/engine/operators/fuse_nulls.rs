@@ -1,3 +1,5 @@
+use ordered_float::OrderedFloat;
+
 use crate::bitvec::*;
 use crate::engine::*;
 use std::i64;
@@ -236,3 +238,80 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for UnfuseIntNulls<T> {
     }
 }
 
+
+pub struct FuseNullsF64 {
+    pub input: BufferRef<Nullable<OrderedFloat<f64>>>,
+    pub fused: BufferRef<Option<OrderedFloat<f64>>>,
+}
+
+impl<'a> VecOperator<'a> for FuseNullsF64 {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
+        let (input, present) = scratchpad.get_nullable(self.input);
+        let mut fused = scratchpad.get_mut(self.fused);
+        if stream { fused.clear(); }
+        for i in 0..input.len() {
+            if (&*present).is_set(i) {
+                fused.push(Some(input[i]));
+            } else {
+                fused.push(None);
+            }
+        }
+        Ok(())
+    }
+
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.set(self.fused, Vec::with_capacity(batch_size));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.fused.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
+    fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("FuseNullsF64({})", self.fused)
+    }
+}
+
+pub struct UnfuseNullsF64 {
+    pub fused: BufferRef<Option<OrderedFloat<f64>>>,
+    pub data: BufferRef<OrderedFloat<f64>>,
+    pub present: BufferRef<u8>,
+    pub unfused: BufferRef<Nullable<OrderedFloat<f64>>>,
+}
+
+impl<'a> VecOperator<'a> for UnfuseNullsF64 {
+    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
+        let present = {
+            let fused = scratchpad.get(self.fused);
+            let mut data = scratchpad.get_mut(self.data);
+            let mut present = vec![0; fused.len() / 8 + 1];
+            if stream { data.clear() }
+            for i in 0..fused.len() {
+                data.push(fused[i].unwrap_or(OrderedFloat(0.0)));
+                if fused[i].is_some() {
+                    present.set(i);
+                }
+            }
+            present
+        };
+        scratchpad.set(self.present, present);
+        Ok(())
+    }
+
+    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
+        scratchpad.assemble_nullable(self.data, self.present, self.unfused);
+        scratchpad.set(self.data, Vec::with_capacity(batch_size));
+    }
+
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.fused.any()] }
+    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.unfused.any()] }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
+    fn allocates(&self) -> bool { true }
+
+    fn display_op(&self, _: bool) -> String {
+        format!("UnfuseNullsF64({})", self.fused)
+    }
+}

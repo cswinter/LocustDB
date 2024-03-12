@@ -158,3 +158,5 @@ impl<'a> Cast<&'a str> for Val<'a> {
 }
 
 impl<'a> Cast<Option<&'a str>> for &'a str { fn cast(self) -> Option<&'a str> { Some(self) } }
+
+impl Cast<Option<OrderedFloat<f64>>> for OrderedFloat<f64> { fn cast(self) -> Option<OrderedFloat<f64>> { Some(self) } }

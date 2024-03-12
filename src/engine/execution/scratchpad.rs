@@ -295,6 +295,10 @@ impl<'a> Scratchpad<'a> {
         self.null_maps[alias.i] = self.null_maps[original.i];
     }
 
+    pub fn is_alias<T>(&self, i: BufferRef<T>, j: BufferRef<T>) -> bool {
+        self.resolve(&i) == self.resolve(&j)
+    }
+
     pub fn assemble_nullable<T>(
         &mut self,
         original: BufferRef<T>,

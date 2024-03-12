@@ -47,6 +47,12 @@ impl Comparator<OrderedFloat<f64>> for CmpLessThan {
     fn is_less_than() -> bool { true }
 }
 
+impl Comparator<Option<OrderedFloat<f64>> > for CmpLessThan {
+    fn cmp(left: Option<OrderedFloat<f64>>, right: Option<OrderedFloat<f64>>) -> bool { left < right }
+    fn cmp_eq(left: Option<OrderedFloat<f64>>, right: Option<OrderedFloat<f64>>) -> bool { left <= right }
+    fn is_less_than() -> bool { true }
+}
+
 impl<'a> Comparator<&'a str> for CmpLessThan {
     fn cmp(left: &str, right: &str) -> bool { left < right }
     fn cmp_eq(left: &str, right: &str) -> bool { left <= right }
@@ -96,6 +102,12 @@ impl Comparator<i64> for CmpGreaterThan {
 impl Comparator<OrderedFloat<f64>> for CmpGreaterThan {
     fn cmp(left: OrderedFloat<f64>, right: OrderedFloat<f64>) -> bool { left > right }
     fn cmp_eq(left: OrderedFloat<f64>, right: OrderedFloat<f64>) -> bool { left >= right }
+    fn is_less_than() -> bool { false }
+}
+
+impl Comparator<Option<OrderedFloat<f64>> > for CmpGreaterThan {
+    fn cmp(left: Option<OrderedFloat<f64>>, right: Option<OrderedFloat<f64>>) -> bool { left > right }
+    fn cmp_eq(left: Option<OrderedFloat<f64>>, right: Option<OrderedFloat<f64>>) -> bool { left >= right }
     fn is_less_than() -> bool { false }
 }
 

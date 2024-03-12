@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use locustdb_derive::reify_types;
-use regex::Regex;
 use ordered_float::OrderedFloat;
+use regex::Regex;
 
 use crate::engine::Aggregator;
 use crate::engine::*;
@@ -30,6 +30,7 @@ use super::dict_lookup::*;
 use super::encode_const::*;
 use super::exists::Exists;
 use super::filter::{Filter, NullableFilter};
+use super::filter_nullable::{FilterNullable, NullableFilterNullable};
 use super::functions::*;
 use super::fuse_nulls::*;
 use super::get_null_map::GetNullMap;
@@ -51,6 +52,7 @@ use super::merge_partitioned::MergePartitioned;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
 use super::null_vec::NullVec;
+use super::null_vec_like::NullVecLike;
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
@@ -164,6 +166,11 @@ pub mod operator {
                 present,
                 nullable_data: nullable_data.nullable_str()?,
             })),
+            EncodingType::F64 => Ok(Box::new(AssembleNullable {
+                data: data.f64()?,
+                present,
+                nullable_data: nullable_data.nullable_f64()?,
+            })),
             _ => Err(fatal!("nullable not implemented for type {:?}", data.tag)),
         }
     }
@@ -250,16 +257,23 @@ pub mod operator {
         input: TypedBufferRef,
         fused: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        if input.tag == EncodingType::NullableI64 {
-            Ok(Box::new(FuseNullsI64 {
+        match input.tag {
+            EncodingType::NullableI64 => Ok(Box::new(FuseNullsI64 {
                 input: input.nullable_i64()?,
                 fused: fused.i64()?,
-            }))
-        } else {
-            Ok(Box::new(FuseNullsStr {
+            })),
+            EncodingType::NullableStr => Ok(Box::new(FuseNullsStr {
                 input: input.nullable_str()?,
                 fused: fused.opt_str()?,
-            }))
+            })),
+            EncodingType::NullableF64 => Ok(Box::new(FuseNullsF64 {
+                input: input.nullable_f64()?,
+                fused: fused.opt_f64()?,
+            })),
+            _ => Err(fatal!(
+                "fuse_nulls not implemented for type {:?}",
+                input.tag
+            )),
         }
     }
 
@@ -345,19 +359,28 @@ pub mod operator {
         present: BufferRef<u8>,
         unfused: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        if fused.tag == EncodingType::I64 {
-            Ok(Box::new(UnfuseNullsI64 {
+        match fused.tag {
+            EncodingType::I64 => Ok(Box::new(UnfuseNullsI64 {
                 fused: fused.i64()?,
                 present,
                 unfused: unfused.nullable_i64()?,
-            }))
-        } else {
-            Ok(Box::new(UnfuseNullsStr {
+            })),
+            EncodingType::OptStr => Ok(Box::new(UnfuseNullsStr {
                 fused: fused.opt_str()?,
                 data: data.str()?,
                 present,
                 unfused: unfused.nullable_str()?,
-            }))
+            })),
+            EncodingType::OptF64 => Ok(Box::new(UnfuseNullsF64 {
+                fused: fused.opt_f64()?,
+                data: data.f64()?,
+                present,
+                unfused: unfused.nullable_f64()?,
+            })),
+            _ => Err(fatal!(
+                "unfuse_nulls not implemented for type {:?}",
+                fused.tag
+            )),
         }
     }
 
@@ -492,10 +515,18 @@ pub mod operator {
         filter: BufferRef<u8>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "filter";
-            input, output: PrimitiveUSize;
-            Ok(Box::new(Filter { input, filter, output }))
+        if input.is_nullable() {
+            reify_types! {
+                "filter_nullable";
+                input, output: NullablePrimitive;
+                Ok(Box::new(FilterNullable { input, filter, output }))
+            }
+        } else {
+            reify_types! {
+                "filter";
+                input, output: PrimitiveUSize;
+                Ok(Box::new(Filter { input, filter, output }))
+            }
         }
     }
 
@@ -504,10 +535,18 @@ pub mod operator {
         filter: BufferRef<Nullable<u8>>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "nullable_filter";
-            input, output: PrimitiveUSize;
-            Ok(Box::new(NullableFilter { input, filter, output }))
+        if input.is_nullable() {
+            reify_types! {
+                "nullable_filter_nullable";
+                input, output: NullablePrimitive;
+                Ok(Box::new(NullableFilterNullable { input, filter, output }))
+            }
+        } else {
+            reify_types! {
+                "nullable_filter";
+                input, output: PrimitiveUSize;
+                Ok(Box::new(NullableFilter { input, filter, output }))
+            }
         }
     }
 
@@ -563,6 +602,10 @@ pub mod operator {
 
     pub fn null_vec<'a>(len: usize, output: BufferRef<Any>) -> BoxedOperator<'a> {
         Box::new(NullVec { len, output })
+    }
+
+    pub fn null_vec_like<'a>(input: BufferRef<Any>, output: BufferRef<Any>, source_type: u8) -> BoxedOperator<'a> {
+        Box::new(NullVecLike { input, output, source_type })
     }
 
     pub fn constant_expand<'a>(
@@ -1102,6 +1145,12 @@ pub mod operator {
                 return Ok(Box::new(TypeConversionOperator {
                     input: input.str()?,
                     output: output.opt_str()?,
+                }));
+            }
+            if input.tag == EncodingType::F64 && output.tag == EncodingType::OptF64 {
+                return Ok(Box::new(TypeConversionOperator {
+                    input: input.f64()?,
+                    output: output.opt_f64()?,
                 }));
             }
             reify_types! {

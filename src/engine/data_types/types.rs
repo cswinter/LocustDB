@@ -2,16 +2,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::mem_store::*;
 
+// WARNING: Changing this enum will break backwards compatibility with existing data
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum EncodingType {
     Str,
-    OptStr,
     I64,
     U8,
     U16,
     U32,
     U64,
     F64,
+
+    OptStr,
+    OptF64,
 
     NullableStr,
     NullableI64,
@@ -61,7 +64,9 @@ impl EncodingType {
             EncodingType::U16 | EncodingType::NullableU16 => EncodingType::NullableU16,
             EncodingType::U32 | EncodingType::NullableU32 => EncodingType::NullableU32,
             EncodingType::U64 | EncodingType::NullableU64 => EncodingType::NullableU64,
-            EncodingType::F64 | EncodingType::NullableF64 => EncodingType::NullableF64,
+            EncodingType::F64 | EncodingType::NullableF64 | EncodingType::OptF64 => {
+                EncodingType::NullableF64
+            }
             EncodingType::Val => EncodingType::Val,
             _ => panic!("{:?} does not have a corresponding nullable type", &self),
         }
@@ -70,6 +75,7 @@ impl EncodingType {
     pub fn nullable_fused(&self) -> EncodingType {
         match self {
             EncodingType::NullableStr => EncodingType::OptStr,
+            EncodingType::NullableF64 => EncodingType::OptF64,
             EncodingType::NullableI64 => EncodingType::I64,
             _ => panic!(
                 "{:?} does not have a corresponding fused nullable type",
@@ -79,27 +85,64 @@ impl EncodingType {
     }
 
     pub fn is_nullable(&self) -> bool {
-        matches!(
-            self,
+        match self {
             EncodingType::NullableStr
-                | EncodingType::NullableI64
-                | EncodingType::NullableU8
-                | EncodingType::NullableU16
-                | EncodingType::NullableU32
-                | EncodingType::NullableU64
-        )
+            | EncodingType::NullableI64
+            | EncodingType::NullableU8
+            | EncodingType::NullableU16
+            | EncodingType::NullableU32
+            | EncodingType::NullableU64
+            | EncodingType::NullableF64
+            | EncodingType::OptStr
+            | EncodingType::OptF64 => true,
+            EncodingType::Str
+            | EncodingType::I64
+            | EncodingType::U8
+            | EncodingType::U16
+            | EncodingType::U32
+            | EncodingType::U64
+            | EncodingType::F64
+            | EncodingType::USize
+            | EncodingType::Val
+            | EncodingType::Null
+            | EncodingType::ScalarI64
+            | EncodingType::ScalarStr
+            | EncodingType::ScalarString
+            | EncodingType::ConstVal
+            | EncodingType::ByteSlices(_)
+            | EncodingType::ValRows
+            | EncodingType::Premerge
+            | EncodingType::MergeOp => false,
+        }
     }
 
     pub fn non_nullable(&self) -> EncodingType {
         match self {
-            EncodingType::NullableStr => EncodingType::Str,
+            EncodingType::NullableStr | EncodingType::OptStr => EncodingType::Str,
             EncodingType::NullableI64 => EncodingType::I64,
             EncodingType::NullableU8 => EncodingType::U8,
             EncodingType::NullableU16 => EncodingType::U16,
             EncodingType::NullableU32 => EncodingType::U32,
             EncodingType::NullableU64 => EncodingType::U64,
-            EncodingType::OptStr => EncodingType::Str,
-            _ => *self,
+            EncodingType::OptF64 | EncodingType::NullableF64 => EncodingType::F64,
+            EncodingType::Str
+            | EncodingType::I64
+            | EncodingType::U8
+            | EncodingType::U16
+            | EncodingType::U32
+            | EncodingType::U64
+            | EncodingType::F64
+            | EncodingType::USize
+            | EncodingType::Val
+            | EncodingType::Null
+            | EncodingType::ScalarI64
+            | EncodingType::ScalarStr
+            | EncodingType::ScalarString
+            | EncodingType::ConstVal
+            | EncodingType::ByteSlices(_)
+            | EncodingType::ValRows
+            | EncodingType::Premerge
+            | EncodingType::MergeOp => *self,
         }
     }
 
@@ -112,6 +155,8 @@ impl EncodingType {
                 (_, EncodingType::Val) => EncodingType::Val,
                 (EncodingType::OptStr, EncodingType::Str) => EncodingType::OptStr,
                 (EncodingType::Str, EncodingType::OptStr) => EncodingType::OptStr,
+                (EncodingType::OptF64, EncodingType::F64) => EncodingType::OptF64,
+                (EncodingType::F64, EncodingType::OptF64) => EncodingType::OptF64,
                 _ => unimplemented!("lub not implemented for {:?} and {:?}", self, other),
             }
         }
@@ -199,6 +244,10 @@ impl Type {
 
     pub fn bit_vec() -> Type {
         Type::new(BasicType::Boolean, None).mutable()
+    }
+
+    pub fn integer() -> Type {
+        Type::new(BasicType::Integer, None)
     }
 
     pub fn is_encoded(&self) -> bool {

@@ -525,9 +525,11 @@ impl<'a> QueryExecutor<'a> {
         while has_more {
             has_more = false;
             for &(op, streamable) in &self.stages[stage].ops {
-                self.ops[op].execute(stream && streamable, scratchpad)?;
                 if show && iters == 0 {
                     println!("{}", self.ops[op].display(true));
+                }
+                self.ops[op].execute(stream && streamable, scratchpad)?;
+                if show && iters == 0 {
                     for output in self.ops[op].outputs() {
                         let data = scratchpad.get_any(output);
                         println!("{}", data.display());
