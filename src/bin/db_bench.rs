@@ -39,7 +39,10 @@ async fn main() {
     let load_factor = opts.load_factor;
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
 
-    let db_path: PathBuf = opts.db_path.clone().unwrap_or(tempdir().unwrap().path().into());
+    let db_path: PathBuf = opts
+        .db_path
+        .clone()
+        .unwrap_or(tempdir().unwrap().path().into());
     log::info!("Creating LocustDB at {:?}", db_path);
     let db = create_locustdb(db_path.clone());
 
@@ -222,7 +225,11 @@ async fn query(db: &LocustDB, description: &str, query: &str) {
     let evicted_bytes = db.evict_cache();
     log::info!("Evicted {}", locustdb::unit_fmt::bite(evicted_bytes));
     println!("{}", description);
-    let response = db.run_query(query, false, true, vec![]).await.unwrap().unwrap();
+    let response = db
+        .run_query(query, false, true, vec![])
+        .await
+        .unwrap()
+        .unwrap();
     println!(
         "Returned {} columns with {} rows in {:?} ({} files opened, {})",
         response.columns.len(),
@@ -242,7 +249,12 @@ fn create_locustdb(db_path: PathBuf) -> Arc<locustdb::LocustDB> {
     let _locustdb = db.clone();
     thread::spawn(move || {
         actix_web::rt::System::new()
-            .block_on(locustdb::server::run(_locustdb, false, vec![]))
+            .block_on(locustdb::server::run(
+                _locustdb,
+                false,
+                vec![],
+                "localhost:8080".to_string(),
+            ))
             .unwrap();
     });
     db

@@ -90,6 +90,10 @@ struct Opt {
     /// CORS allowed origins
     #[structopt(long, name = "ORIGINS")]
     cors_allow_origin: Vec<String>,
+
+    /// Address to bind the server to
+    #[structopt(long, default_value = "127.0.0.1:8080")]
+    addrs: String,
 }
 
 fn main() {
@@ -113,6 +117,7 @@ fn main() {
         max_partition_size_bytes,
         cors_allow_all,
         cors_allow_origin,
+        addrs,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -171,7 +176,12 @@ fn main() {
 
     if server {
         actix_web::rt::System::new()
-            .block_on(locustdb::server::run(Arc::new(locustdb), cors_allow_all, cors_allow_origin))
+            .block_on(locustdb::server::run(
+                Arc::new(locustdb),
+                cors_allow_all,
+                cors_allow_origin,
+                addrs,
+            ))
             .unwrap();
     } else {
         repl(&locustdb);

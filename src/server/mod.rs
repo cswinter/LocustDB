@@ -337,7 +337,7 @@ fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
     })
 }
 
-pub async fn run(db: Arc<LocustDB>, cors_allow_all: bool, cors_allow_origin: Vec<String>) -> std::io::Result<()> {
+pub async fn run(db: Arc<LocustDB>, cors_allow_all: bool, cors_allow_origin: Vec<String>, addrs: String) -> std::io::Result<()> {
     HttpServer::new(move || {
         let cors = if cors_allow_all {
             Cors::permissive()
@@ -370,7 +370,7 @@ pub async fn run(db: Arc<LocustDB>, cors_allow_all: bool, cors_allow_origin: Vec
             .service(plot)
             .route("/hey", web::get().to(manual_hello))
     })
-    .bind("127.0.0.1:8080")?
+    .bind(&addrs)?
     .run()
     .await
 }
