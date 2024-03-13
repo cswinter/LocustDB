@@ -977,7 +977,6 @@ impl QueryPlan {
                         type_rhs,
                     )
                 }
-                log::info!("{:?} OR {:?}", plan_lhs, plan_rhs);
                 (planner.or(plan_lhs, plan_rhs), Type::bit_vec())
             }
             Func2(And, ref lhs, ref rhs) => {
