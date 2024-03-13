@@ -172,8 +172,6 @@ fn main() {
         );
     }
 
-    table_stats(&locustdb);
-
     if server {
         actix_web::rt::System::new()
             .block_on(locustdb::server::run(
@@ -228,6 +226,7 @@ fn repl(locustdb: &LocustDB) {
                       :memtree(<N>) - Display breakdown of memory usage up to a depth of N (at most 4).
                       :explain <QUERY> - Run and display the query plan for QUERY.
                       :show(<N>) <QUERY> - Run QUERY and show all intermediary results in partition N.:w
+                      :table_stats - Print columns and basic statistics for all tables.
 
                       :ast <QUERY> - Show the abstract syntax tree for QUERY.
                       ");
@@ -255,6 +254,10 @@ fn repl(locustdb: &LocustDB) {
                 }
                 _ => println!("Error: Query execution was canceled!"),
             }
+            continue;
+        }
+        if s.starts_with(":table_stats") {
+            table_stats(locustdb);
             continue;
         }
         if s.starts_with(":restore") {
