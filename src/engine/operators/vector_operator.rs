@@ -134,11 +134,13 @@ pub mod operator {
         colname: String,
         section_index: usize,
         output: BufferRef<Any>,
+        is_bitvec: bool,
     ) -> BoxedOperator<'a> {
         Box::new(ReadColumnData {
             colname,
             section_index,
             output,
+            is_bitvec,
             batch_size: 0,
             current_index: 0,
             has_more: true,

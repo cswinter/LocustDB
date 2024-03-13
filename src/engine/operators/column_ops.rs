@@ -5,6 +5,7 @@ pub struct ReadColumnData {
     pub colname: String,
     pub section_index: usize,
     pub output: BufferRef<Any>,
+    pub is_bitvec: bool,
 
     pub current_index: usize,
     pub batch_size: usize,
@@ -14,8 +15,17 @@ pub struct ReadColumnData {
 impl<'a> VecOperator<'a> for ReadColumnData {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let data_section = scratchpad.get_column_data(&self.colname, self.section_index);
+        if self.is_bitvec {
+            // Basic sanity check, this will panic if the data is not u8
+            data_section.cast_ref_u8();
+            assert!(self.current_index & 7 == 0, "Bitvec read must be aligned to byte boundary");
+        }
         let end = if streaming { self.current_index + self.batch_size } else { data_section.len() };
-        let result = data_section.slice_box(self.current_index, end);
+        let result = if self.is_bitvec {
+            data_section.slice_box((self.current_index + 7) / 8, (end + 7) / 8)
+        } else {
+            data_section.slice_box(self.current_index, end)
+        };
         self.current_index += self.batch_size;
         scratchpad.set_any(self.output, result);
         self.has_more = end < data_section.len();

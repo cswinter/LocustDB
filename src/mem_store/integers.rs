@@ -57,14 +57,14 @@ impl IntegerColumn {
                         name,
                         values.len(),
                         original_range,
-                        vec![CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1), CodecOp::Nullable],
+                        vec![CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1, true), CodecOp::Nullable],
                         vec![values.into(), present.into()])
                 } else {
                     Column::new(
                         name,
                         values.len(),
                         original_range,
-                        vec![CodecOp::PushDataSection(1), CodecOp::Nullable],
+                        vec![CodecOp::PushDataSection(1, true), CodecOp::Nullable],
                         vec![values.into(), present.into()])
                 }
                 None => if delta_encode {
@@ -101,10 +101,10 @@ impl IntegerColumn {
         let len = values.len();
         let codec = if null_map.is_some() {
             match (offset == 0, delta_encode) {
-                (true, true) => vec![CodecOp::Delta(t), CodecOp::PushDataSection(1), CodecOp::Nullable],
-                (true, false) => vec![CodecOp::PushDataSection(1), CodecOp::Nullable, CodecOp::ToI64(t)],
-                (false, true) => vec![CodecOp::Add(t, offset), CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1), CodecOp::Nullable],
-                (false, false) => vec![CodecOp::PushDataSection(1), CodecOp::Nullable, CodecOp::Add(t, offset)],
+                (true, true) => vec![CodecOp::Delta(t), CodecOp::PushDataSection(1, true), CodecOp::Nullable],
+                (true, false) => vec![CodecOp::PushDataSection(1, true), CodecOp::Nullable, CodecOp::ToI64(t)],
+                (false, true) => vec![CodecOp::Add(t, offset), CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1, true), CodecOp::Nullable],
+                (false, false) => vec![CodecOp::PushDataSection(1, true), CodecOp::Nullable, CodecOp::Add(t, offset)],
             }
         } else {
             match (offset == 0, delta_encode) {

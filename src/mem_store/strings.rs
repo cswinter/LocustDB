@@ -45,7 +45,7 @@ where
                 (string_pack_codec(), DataSection::U8(packed.into_vec()))
             };
             let mut column = if let Some(present) = present {
-                codec.push(CodecOp::PushDataSection(1));
+                codec.push(CodecOp::PushDataSection(1, true));
                 codec.push(CodecOp::Nullable);
                 Column::new(name, len, None, codec, vec![data, DataSection::U8(present)])
             } else {
@@ -120,7 +120,7 @@ where
         )
     };
     if let Some(present) = present {
-        codec.insert(0, CodecOp::PushDataSection(3));
+        codec.insert(0, CodecOp::PushDataSection(3, true));
         codec.insert(1, CodecOp::Nullable);
         data_sections.push(DataSection::U8(present));
     }
@@ -131,8 +131,8 @@ where
 
 pub fn dict_codec(index_type: EncodingType) -> Vec<CodecOp> {
     vec![
-        CodecOp::PushDataSection(1),
-        CodecOp::PushDataSection(2),
+        CodecOp::PushDataSection(1, false),
+        CodecOp::PushDataSection(2, false),
         CodecOp::DictLookup(index_type),
     ]
 }

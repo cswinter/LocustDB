@@ -23,6 +23,7 @@ pub enum QueryPlan {
     ColumnSection {
         name: String,
         section: usize,
+        is_bitvec: bool,
         #[nohash]
         range: Option<(i64, i64)>,
         #[output(t = "base=provided")]
@@ -920,7 +921,7 @@ impl QueryPlan {
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    let mut plan = planner.column_section(name, 0, c.range(), c.encoding_type());
+                    let mut plan = planner.column_section(name, 0, false, c.range(), c.encoding_type());
                     let mut t = c.full_type();
                     if !c.codec().is_elementwise_decodable() {
                         let (codec, fixed_width) = c.codec().ensure_fixed_width(plan, planner);
@@ -1615,9 +1616,10 @@ pub(super) fn prepare<'a>(
         QueryPlan::ColumnSection {
             name,
             section,
+            is_bitvec,
             column_section,
             ..
-        } => operator::read_column_data(name, section, column_section.any()),
+        } => operator::read_column_data(name, section, column_section.any(), is_bitvec),
         QueryPlan::AssembleNullable {
             data,
             present,

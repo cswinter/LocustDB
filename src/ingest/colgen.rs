@@ -40,6 +40,13 @@ pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<dyn ColumnGenera
     })
 }
 
+pub fn nullable_ints(values: Vec<Option<i64>>, weights: Vec<f64>) -> Box<dyn ColumnGenerator> {
+    Box::new(Weighted {
+        elem: values,
+        weights,
+    })
+}
+
 pub fn incrementing_int() -> Box<dyn ColumnGenerator> {
     Box::new(IncrementingInteger)
 }
