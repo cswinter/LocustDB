@@ -242,7 +242,7 @@ fn create_locustdb(db_path: PathBuf) -> Arc<locustdb::LocustDB> {
     let _locustdb = db.clone();
     thread::spawn(move || {
         actix_web::rt::System::new()
-            .block_on(locustdb::server::run(_locustdb))
+            .block_on(locustdb::server::run(_locustdb, false, vec![]))
             .unwrap();
     });
     db

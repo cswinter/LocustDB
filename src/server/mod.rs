@@ -337,16 +337,22 @@ fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
     })
 }
 
-pub async fn run(db: Arc<LocustDB>) -> std::io::Result<()> {
+pub async fn run(db: Arc<LocustDB>, cors_allow_all: bool, cors_allow_origin: Vec<String>) -> std::io::Result<()> {
     HttpServer::new(move || {
+        let cors = if cors_allow_all {
+            Cors::permissive()
+        } else {
+            let mut cors = Cors::default()
+                .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+                .allowed_headers(vec!["Authorization", "Accept"])
+                .allowed_header(actix_web::http::header::CONTENT_TYPE)
+                .max_age(3600);
+            for origin in &cors_allow_origin {
+                cors = cors.allowed_origin(origin);
+            }
+            cors
+        };
         let app_state = AppState { db: db.clone() };
-        let cors = Cors::default()
-            .allowed_origin("http://localhost:5173")
-            .allowed_origin("http://localhost:8080")
-            .allowed_methods(vec!["GET", "POST", "OPTIONS"]) // Ensure OPTIONS is allowed
-            .allowed_headers(vec!["Authorization", "Accept"])
-            .allowed_header(actix_web::http::header::CONTENT_TYPE)
-            .max_age(3600);
         App::new()
             .wrap(cors)
             .app_data(Data::new(app_state))

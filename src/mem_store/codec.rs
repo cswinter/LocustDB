@@ -383,6 +383,7 @@ impl CodecOp {
         }
     }
 
+    // TODO: what exactly does this property mean? why doesn't it apply to Nullable?
     fn is_elementwise_decodable(&self) -> bool {
         match self {
             CodecOp::Nullable => false,
