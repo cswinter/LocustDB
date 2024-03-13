@@ -1108,7 +1108,51 @@ fn test_long_nullable() {
     let expected_rows : Vec<[Value; 1]> = vec![];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
     assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+
+    let query = "SELECT nullable_int, count(1) FROM test;";
+    let expected_rows = vec![
+        [Null, Int(235917)],
+        [Int(-10), Int(13296)],
+        [Int(1), Int(12931)],
+    ];
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+
+    locustdb.force_flush();
+    let query = "SELECT nullable_int FROM test WHERE nullable_int IS NOT NULL;";
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap().len(), 26227);
 }
+
+#[test]
+fn test_sequential_int_sort() {
+    let _ = env_logger::try_init();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 1,
+        partition_size: 64,
+        columns: vec![(
+            "_step".to_string(),
+            locustdb::colgen::incrementing_int(),
+        )],
+    }));
+    let query = "SELECT _step FROM test WHERE _step IS NOT NULL ORDER BY _step;";
+    let expected_rows : Vec<[Value; 1]> = vec![
+        [Int(0)],
+        [Int(1)],
+        [Int(2)],
+        [Int(3)],
+        [Int(4)],
+        [Int(5)],
+        [Int(6)],
+        [Int(7)],
+        [Int(8)],
+    ];
+    let result = block_on(locustdb.run_query(query, true, true, vec![0, 1, 2, 3])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap()[0..9], expected_rows);
+}
+
 
 #[test]
 fn test_group_by_string() {

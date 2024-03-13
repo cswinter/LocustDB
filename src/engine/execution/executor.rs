@@ -160,20 +160,29 @@ impl<'a> QueryExecutor<'a> {
         // Disable streaming output for operators that have streaming + nonstreaming consumers
         let mut streaming_disabled = vec![false; self.ops.len()];
         for (i, op) in self.ops.iter().enumerate() {
+            log::debug!("DETERMINING STREAMING FOR {}", op.display(true));
             for output in op.outputs() {
+                log::debug!("  DETERMINING STREAMING FOR OUTPUT {}", output);
                 if op.can_stream_output(output.i) {
+                    log::debug!("  CHECKING STREAMABLE");
+                    // Are there any ops consuming this output that are streaming?
                     let mut streaming = false;
+                    // Are there any ops consuming this output that are not streaming?
                     let mut block = false;
+                    log::debug!("  CONSUMERS: {:?}", &consumers[output.i]);
                     for &p in &consumers[output.i] {
                         streaming |= self.ops[p].can_stream_input(output.i);
                         block |= !self.ops[p].can_stream_input(output.i);
+                        log::debug!("  CONSUMER: {} CAN STREAM INPUT: {}, STREAMING: {}, BLOCK: {}", self.ops[p].display(true), self.ops[p].can_stream_input(output.i), streaming, block);
                     }
                     streaming_disabled[i] = streaming & block;
+                    log::debug!("  STREAMING: {}, BLOCK: {}, DISABLED: {}", streaming, block, streaming_disabled[i]);
                 }
             }
         }
 
         // Group operators into stages
+        // This is done by taking an operator, and adding all operators that can be streamed to/from
         let mut visited = vec![false; self.ops.len()];
         let mut dependencies_visited = vec![false; self.ops.len()];
         let mut topo_pushed = vec![false; self.ops.len()];
@@ -202,6 +211,7 @@ impl<'a> QueryExecutor<'a> {
             while let Some(current) = to_visit.pop() {
                 let op = &self.ops[current];
                 let current_stage = stages.len() as i32;
+                log::debug!("VISITING {} IN STAGE {}", op.display(true), current_stage);
                 stage[current] = current_stage;
                 ops.push(current);
                 // Mark any new transitive inputs/outputs
@@ -256,6 +266,7 @@ impl<'a> QueryExecutor<'a> {
 
                             visited[p] = true;
                             to_visit.push(p);
+                            log::debug!("  ADDING STREAMING PRODUCER {} TO STAGE {}", self.ops[p].display(true), current_stage);
                             stream = stream || self.ops[p].allocates();
                         }
                     }
@@ -271,7 +282,7 @@ impl<'a> QueryExecutor<'a> {
                                 continue;
                             }
                             // Including op in this stage would introduce a cycle if any of the
-                            // inputs is produces by a transitive output to stage
+                            // inputs is produced by a transitive output to stage
                             for input in self.ops[consumer].inputs() {
                                 for &p in &producers[input.i] {
                                     if transitive_output[p] && stage[p] != current_stage {
@@ -283,6 +294,7 @@ impl<'a> QueryExecutor<'a> {
 
                             visited[consumer] = true;
                             to_visit.push(consumer);
+                            log::debug!("  ADDING STREAMING CONSUMER {} TO STAGE {}", self.ops[consumer].display(true), current_stage);
                             stream = stream || self.ops[consumer].allocates();
                         }
                     }
@@ -305,6 +317,7 @@ impl<'a> QueryExecutor<'a> {
                         visited[p] = true;
                         to_visit.push(p);
                         stream = stream || self.ops[p].allocates();
+                        log::debug!("  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING PRODUCER {} TO STAGE {}", self.ops[p].display(true), current_stage);
                     }
                     let ctr = std::mem::take(&mut consumers_to_revisit);
                     'l4: for consumer in ctr {
@@ -318,6 +331,7 @@ impl<'a> QueryExecutor<'a> {
                         }
                         visited[consumer] = true;
                         to_visit.push(consumer);
+                        log::debug!("  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING CONSUMER {} TO STAGE {}", self.ops[consumer].display(true), current_stage);
                         stream = stream || self.ops[consumer].allocates();
                     }
                 }
@@ -354,10 +368,12 @@ impl<'a> QueryExecutor<'a> {
 
             // Determine if stage/ops should be streaming
             let mut has_streaming_producer = false;
+            // TODO: should prevent group with nonstreaming input to be formed in first place? insert op that allows non-streaming input to be streamed?
+            let mut has_nonstreaming_input = false;
             let ops = total_order
                 .into_iter()
                 .map(|op| {
-                    has_streaming_producer |= self.ops[op].is_streaming_producer();
+                    has_streaming_producer |= self.ops[op].is_streaming_producer() && !streaming_disabled[op];
                     let mut streaming_consumers = false;
                     let mut block_consumers = false;
                     for output in self.ops[op].outputs() {
@@ -369,14 +385,22 @@ impl<'a> QueryExecutor<'a> {
                             }
                         }
                     }
+                    for input in self.ops[op].inputs() {
+                        let hni = producers[input.i].iter().any(|&p| streaming_disabled[p]);
+                        if hni {
+                            log::debug!("{} has nonstreaming input {} produced by streaming disabled producer {}", self.ops[op].display(true), input.i, producers[input.i].iter().find(|&&p| streaming_disabled[p]).unwrap());
+                        }
+                        has_nonstreaming_input |= hni;
+                    }
                     (op, streaming_consumers && !block_consumers)
                 })
                 .collect::<Vec<_>>();
 
+            log::debug!("STAGE {} STREAMING: stream={} has_streaming_producer={} !has_nonstreaming_input={}", stages.len(), stream, has_streaming_producer, !has_nonstreaming_input);
             // TODO(#98): Make streaming possible for stages reading from temp results
             stages.push(ExecutorStage {
                 ops,
-                stream: stream && has_streaming_producer,
+                stream: stream && has_streaming_producer && !has_nonstreaming_input,
             })
         }
 
@@ -526,7 +550,7 @@ impl<'a> QueryExecutor<'a> {
             has_more = false;
             for &(op, streamable) in &self.stages[stage].ops {
                 if show && iters == 0 {
-                    println!("{}", self.ops[op].display(true));
+                    println!("{} streamable={streamable}", self.ops[op].display(true));
                 }
                 self.ops[op].execute(stream && streamable, scratchpad)?;
                 if show && iters == 0 {
