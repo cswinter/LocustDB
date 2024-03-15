@@ -43,6 +43,8 @@ mod merge_partitioned;
 mod nonzero_compact;
 mod nonzero_indices;
 mod null_vec;
+mod null_to_vec;
+mod null_to_val;
 mod null_vec_like;
 mod numeric_operators;
 mod parameterized_vec_vec_int_op;
@@ -69,4 +71,3 @@ mod slice_pack;
 mod slice_unpack;
 
 mod aggregator;
-

@@ -1,5 +1,7 @@
 use ordered_float::OrderedFloat;
 
+use crate::mem_store::Val;
+
 pub trait Comparator<T> {
     fn cmp(left: T, right: T) -> bool;
     fn cmp_eq(left: T, right: T) -> bool;
@@ -65,6 +67,39 @@ impl<'a> Comparator<Option<&'a str>> for CmpLessThan {
     fn is_less_than() -> bool { true }
 }
 
+// Null < Bool < Integer < Str < Float
+impl<'a> Comparator<Val<'a>> for CmpLessThan {
+    fn cmp(left: Val<'a>, right: Val<'a>) -> bool {
+        match (left, right) {
+            (Val::Null, _) => true,
+            (_, Val::Null) => false,
+            (Val::Bool(l), Val::Bool(r)) => !l & r,
+            (Val::Bool(_), _) => true,
+            (_, Val::Bool(_)) => false,
+            (Val::Integer(l), Val::Integer(r)) => l < r,
+            (Val::Integer(_), _) => true,
+            (_, Val::Integer(_)) => false,
+            (Val::Str(l), Val::Str(r)) => l < r,
+            (Val::Str(_), _) => true,
+            (_, Val::Str(_)) => false,
+            (Val::Float(l), Val::Float(r)) => l < r,
+        }
+    }
+
+    fn cmp_eq(left: Val<'a>, right: Val<'a>) -> bool {
+        match (left, right) {
+            (Val::Null, Val::Null) => true,
+            (Val::Bool(l), Val::Bool(r)) => l == r,
+            (Val::Integer(l), Val::Integer(r)) => l == r,
+            (Val::Str(l), Val::Str(r)) => l == r,
+            (Val::Float(l), Val::Float(r)) => l == r,
+            _ => false,
+        }
+    }
+
+    fn is_less_than() -> bool { true }
+}
+
 
 #[derive(Debug)]
 pub struct CmpGreaterThan;
@@ -120,5 +155,37 @@ impl<'a> Comparator<&'a str> for CmpGreaterThan {
 impl<'a> Comparator<Option<&'a str>> for CmpGreaterThan {
     fn cmp(left: Option<&str>, right: Option<&str>) -> bool { left > right }
     fn cmp_eq(left: Option<&str>, right: Option<&str>) -> bool { left >= right }
+    fn is_less_than() -> bool { false }
+}
+
+impl<'a> Comparator<Val<'a>> for CmpGreaterThan {
+    fn cmp(left: Val<'a>, right: Val<'a>) -> bool {
+        match (left, right) {
+            (Val::Null, _) => false,
+            (_, Val::Null) => true,
+            (Val::Bool(l), Val::Bool(r)) => l & !r,
+            (Val::Bool(_), _) => false,
+            (_, Val::Bool(_)) => true,
+            (Val::Integer(l), Val::Integer(r)) => l > r,
+            (Val::Integer(_), _) => false,
+            (_, Val::Integer(_)) => true,
+            (Val::Str(l), Val::Str(r)) => l > r,
+            (Val::Str(_), _) => false,
+            (_, Val::Str(_)) => true,
+            (Val::Float(l), Val::Float(r)) => l > r,
+        }
+    }
+
+    fn cmp_eq(left: Val<'a>, right: Val<'a>) -> bool {
+        match (left, right) {
+            (Val::Null, Val::Null) => true,
+            (Val::Bool(l), Val::Bool(r)) => l >= r,
+            (Val::Integer(l), Val::Integer(r)) => l >= r,
+            (Val::Str(l), Val::Str(r)) => l >= r,
+            (Val::Float(l), Val::Float(r)) => l >= r,
+            _ => false,
+        }
+    }
+
     fn is_less_than() -> bool { false }
 }

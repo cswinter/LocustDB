@@ -224,6 +224,8 @@ impl TypedBufferRef {
 
     pub fn is_nullable(&self) -> bool { self.tag.is_nullable() }
 
+    pub fn is_constant(&self) -> bool { self.tag.is_constant() }
+
     pub fn nullable_any(&self) -> Result<BufferRef<Nullable<Any>>, QueryError> {
         ensure!(self.tag.is_nullable(), "{:?} is not nullable", self.tag);
         Ok(self.buffer.cast_nullable_any())

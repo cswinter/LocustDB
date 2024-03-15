@@ -73,20 +73,18 @@ impl NormalFormQuery {
 
             // PERF: better criterion for using top_n
             // PERF: top_n for multiple columns?
-            sort_indices = Some(if limit < partition_len / 2 && self.order_by.len() == 1 {
+            let indices = if limit < partition_len / 2 && self.order_by.len() == 1 {
                 planner.top_n(ranking, limit, *desc)
             } else {
                 // PERF: sort directly if only single column selected
-                match sort_indices {
-                    None => {
-                        let indices = planner.indices(ranking);
-                        planner.sort_by(ranking, indices, *desc, false /* unstable sort */)
-                    }
-                    Some(indices) => {
-                        planner.sort_by(ranking, indices, *desc, true /* stable sort */)
-                    }
+                let indices = sort_indices.unwrap_or_else(|| planner.indices(ranking));
+                if ranking.is_constant() {
+                    indices
+                } else {
+                    planner.sort_by(ranking, indices, *desc, true /* stable sort */)
                 }
-            });
+            };
+            sort_indices = Some(indices)
         }
         if let Some(sort_indices) = sort_indices {
             filter = match filter {
@@ -269,9 +267,12 @@ impl NormalFormQuery {
                                       input_nullable: bool| {
                 let compacted = match aggregator {
                     // PERF: if summation column is strictly positive, can use NonzeroCompact
-                    Aggregator::SumI64 | Aggregator::MaxI64 | Aggregator::MinI64 | Aggregator::SumF64 | Aggregator::MaxF64 | Aggregator::MinF64 => {
-                        qp.compact(aggregate, selector)
-                    }
+                    Aggregator::SumI64
+                    | Aggregator::MaxI64
+                    | Aggregator::MinI64
+                    | Aggregator::SumF64
+                    | Aggregator::MaxF64
+                    | Aggregator::MinF64 => qp.compact(aggregate, selector),
                     Aggregator::Count => {
                         if input_nullable {
                             qp.compact(aggregate, selector)
@@ -613,7 +614,10 @@ impl Query {
             table: table.to_string(),
             filter: Expr::Const(RawVal::Int(1)),
             order_by: vec![],
-            limit: LimitClause { limit: u64::MAX, offset: 0 },
+            limit: LimitClause {
+                limit: u64::MAX,
+                offset: 0,
+            },
         }
     }
 }

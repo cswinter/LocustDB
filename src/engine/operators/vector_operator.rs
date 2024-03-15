@@ -51,6 +51,8 @@ use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
+use super::null_to_val::NullToVal;
+use super::null_to_vec::NullToVec;
 use super::null_vec::NullVec;
 use super::null_vec_like::NullVecLike;
 use super::numeric_operators::*;
@@ -1113,6 +1115,12 @@ pub mod operator {
                         Ok(Box::new(NullableIntToVal { input, vals: output }) as BoxedOperator<'a>)
                     }
                 }
+            } else if input.tag == EncodingType::Null {
+                Ok(Box::new(NullToVal {
+                    input: input.any(),
+                    output,
+                    batch_size: 0, 
+                }))
             } else {
                 reify_types! {
                     "type_conversion";
@@ -1141,6 +1149,12 @@ pub mod operator {
                     output: PrimitiveNoU64;
                     Ok(Box::new(TypeConversionOperator { input, output }) as BoxedOperator<'a>)
                 }
+            }
+        } else if input.tag == EncodingType::Null {
+            reify_types! {
+                "null_to_vec";
+                output: NullablePrimitive;
+                Ok(Box::new(NullToVec { input: input.any(), output, batch_size: 0 }))
             }
         } else {
             if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
@@ -1389,13 +1403,13 @@ pub mod operator {
         }
         if ranking.is_nullable() {
             reify_types! {
-                "sort_indices";
+                "sort_by_nullable";
                 ranking: NullablePrimitive;
                 Ok(Box::new(SortByNullable { ranking, output, indices, descending, stable }))
             }
         } else {
             reify_types! {
-                "sort_indices";
+                "sort_by";
                 ranking: Primitive;
                 Ok(Box::new(SortBy { ranking, output, indices, descending, stable }))
             }
@@ -1569,13 +1583,13 @@ pub mod operator {
         if desc {
             reify_types! {
                 "merge_desc";
-                left, right, merged_out: Primitive;
+                left, right, merged_out: PrimitiveOrVal;
                 Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
-                "merge_desc";
-                left, right, merged_out: Primitive;
+                "merge_asc";
+                left, right, merged_out: PrimitiveOrVal;
                 Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpLessThan> }))
             }
         }

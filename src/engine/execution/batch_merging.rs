@@ -206,7 +206,15 @@ pub fn combine<'a>(
             let (merge_ops, merged_final_sort_col) = if batch1.order_by.len() == 1 {
                 let (index1, desc) = batch1.order_by[0];
                 let (index2, _) = batch2.order_by[0];
-                let (left, right) = unify_types(&mut qp, left[index1], right[index2]);
+                let mut left = left[index1];
+                let mut right = right[index2];
+                if left.tag == EncodingType::Null {
+                    left = qp.cast(left, EncodingType::Val);
+                }
+                if right.tag == EncodingType::Null {
+                    right = qp.cast(right, EncodingType::Val);
+                }
+                let (left, right) = unify_types(&mut qp, left, right);
                 qp.merge(left, right, limit, desc)
             } else {
                 let (first_sort_col_index1, desc) = batch1.order_by[0];

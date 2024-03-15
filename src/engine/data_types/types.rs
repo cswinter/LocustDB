@@ -92,10 +92,10 @@ impl EncodingType {
             | EncodingType::NullableU16
             | EncodingType::NullableU32
             | EncodingType::NullableU64
-            | EncodingType::NullableF64
-            | EncodingType::OptStr
-            | EncodingType::OptF64 => true,
-            EncodingType::Str
+            | EncodingType::NullableF64 => true,
+            EncodingType::OptStr
+            | EncodingType::OptF64
+            | EncodingType::Str
             | EncodingType::I64
             | EncodingType::U8
             | EncodingType::U16
@@ -143,6 +143,38 @@ impl EncodingType {
             | EncodingType::ValRows
             | EncodingType::Premerge
             | EncodingType::MergeOp => *self,
+        }
+    }
+
+    pub fn is_constant(&self) -> bool {
+        match *self {
+            EncodingType::NullableStr
+            | EncodingType::NullableI64
+            | EncodingType::NullableU8
+            | EncodingType::NullableU16
+            | EncodingType::NullableU32
+            | EncodingType::NullableU64
+            | EncodingType::NullableF64
+            | EncodingType::OptStr
+            | EncodingType::OptF64
+            | EncodingType::Str
+            | EncodingType::I64
+            | EncodingType::U8
+            | EncodingType::U16
+            | EncodingType::U32
+            | EncodingType::U64
+            | EncodingType::F64
+            | EncodingType::USize
+            | EncodingType::Val
+            | EncodingType::ByteSlices(_)
+            | EncodingType::ValRows
+            | EncodingType::Premerge
+            | EncodingType::MergeOp => false,
+            | EncodingType::ScalarI64
+            | EncodingType::ScalarStr
+            | EncodingType::ScalarString
+            | EncodingType::Null
+            | EncodingType::ConstVal => true,
         }
     }
 

@@ -809,6 +809,22 @@ fn test_sort_by_nullable() {
             vec![Int(14), Str("Germany")],
         ],
     );
+    // Sort by null/nonexistant column
+    test_query_ec(
+        "SELECT column_does_not_exist FROM default ORDER BY column_does_not_exist;",
+        &[
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+        ],
+    );
 }
 
 #[test]
@@ -1094,18 +1110,11 @@ fn test_long_nullable() {
         partition_size: 2 << 14,
         columns: vec![(
             "nullable_int".to_string(),
-            locustdb::colgen::nullable_ints(
-                vec![
-                    None,
-                    Some(1),
-                    Some(-10),
-                ],
-                vec![0.9, 0.05, 0.05],
-            ),
+            locustdb::colgen::nullable_ints(vec![None, Some(1), Some(-10)], vec![0.9, 0.05, 0.05]),
         )],
     }));
     let query = "SELECT nullable_int FROM test LIMIT 0;";
-    let expected_rows : Vec<[Value; 1]> = vec![];
+    let expected_rows: Vec<[Value; 1]> = vec![];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
     assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
 
@@ -1132,13 +1141,10 @@ fn test_sequential_int_sort() {
         name: "test".to_string(),
         partitions: 1,
         partition_size: 64,
-        columns: vec![(
-            "_step".to_string(),
-            locustdb::colgen::incrementing_int(),
-        )],
+        columns: vec![("_step".to_string(), locustdb::colgen::incrementing_int())],
     }));
     let query = "SELECT _step FROM test WHERE _step IS NOT NULL ORDER BY _step;";
-    let expected_rows : Vec<[Value; 1]> = vec![
+    let expected_rows: Vec<[Value; 1]> = vec![
         [Int(0)],
         [Int(1)],
         [Int(2)],
@@ -1152,7 +1158,6 @@ fn test_sequential_int_sort() {
     let result = block_on(locustdb.run_query(query, true, true, vec![0, 1, 2, 3])).unwrap();
     assert_eq!(result.unwrap().rows.unwrap()[0..9], expected_rows);
 }
-
 
 #[test]
 fn test_group_by_string() {
