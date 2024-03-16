@@ -96,6 +96,7 @@ struct Opt {
     addrs: String,
 
     /// Maximum length of temporary buffer used in streaming stages during query execution
+    #[structopt(long, default_value = "1024")]
     batch_size: usize,
 }
 
