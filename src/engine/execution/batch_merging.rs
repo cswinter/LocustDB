@@ -66,6 +66,7 @@ pub fn combine<'a>(
     batch1: BatchResult<'a>,
     batch2: BatchResult<'a>,
     limit: usize,
+    batch_size: usize,
 ) -> Result<BatchResult<'a>, QueryError> {
     ensure!(
         batch1.projection.len() == batch2.projection.len(),
@@ -155,7 +156,7 @@ pub fn combine<'a>(
             aggregates.push((aggregated.any(), aggregator));
         }
 
-        let mut executor = qp.prepare(data)?;
+        let mut executor = qp.prepare(data, batch_size)?;
         let mut results = executor.prepare_no_columns();
         executor.run(1, &mut results, batch1.show || batch2.show)?;
 
@@ -261,7 +262,7 @@ pub fn combine<'a>(
             }
             order_by.push((merged_final_sort_col.any(), final_desc));
 
-            let mut executor = qp.prepare(data)?;
+            let mut executor = qp.prepare(data, batch_size)?;
             let mut results = executor.prepare_no_columns();
             executor.run(1, &mut results, batch1.show || batch2.show)?;
             let (columns, projection, _, order_by) =

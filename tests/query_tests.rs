@@ -30,35 +30,44 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    #[allow(unused_mut)]
-    let mut opts = Options::default();
-    if env::var("DEBUG_TESTS").is_ok() {
-        opts.threads = 1;
+    let optss = [
+        Options::default(),
+        Options {
+            batch_size: 8,
+            ..Options::default()
+        },
+    ];
+
+    for mut opts in optss {
+        if env::var("DEBUG_TESTS").is_ok() {
+            opts.threads = 1;
+        }
+        let locustdb = LocustDB::new(&opts);
+        let _ = block_on(
+            locustdb.load_csv(
+                LoadOptions::new("test_data/edge_cases.csv", "default")
+                    .with_partition_size(3)
+                    .allow_nulls_all_columns(),
+            ),
+        );
+
+        let show = if env::var("DEBUG_TESTS").is_ok() {
+            vec![0, 1, 2, 3]
+        } else {
+            vec![]
+        };
+
+        let result1 = block_on(locustdb.run_query(query, false, true, show.clone())).unwrap();
+        locustdb.force_flush();
+        let result2 = block_on(locustdb.run_query(query, false, true, show)).unwrap();
+
+        assert_eq!(
+            result1.as_ref().unwrap().rows,
+            result2.as_ref().unwrap().rows,
+            "Query results differ after flush"
+        );
+        assert_eq!(result1.unwrap().rows.unwrap(), expected_rows);
     }
-    let locustdb = LocustDB::new(&opts);
-    let _ = block_on(
-        locustdb.load_csv(
-            LoadOptions::new("test_data/edge_cases.csv", "default")
-                .with_partition_size(3)
-                .allow_nulls_all_columns(),
-        ),
-    );
-    let result1;
-    let result2 = if env::var("DEBUG_TESTS").is_ok() {
-        result1 = block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap();
-        locustdb.force_flush();
-        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap()
-    } else {
-        result1 = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
-        locustdb.force_flush();
-        block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
-    };
-    assert_eq!(
-        result1.as_ref().unwrap().rows,
-        result2.as_ref().unwrap().rows,
-        "Query results differ after flush"
-    );
-    assert_eq!(result1.unwrap().rows.unwrap(), expected_rows);
 }
 
 fn test_query_ec_err(query: &str, _expected_err: QueryError) {

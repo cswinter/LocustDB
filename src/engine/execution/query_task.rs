@@ -33,6 +33,7 @@ pub struct QueryTask {
     start_time: Instant,
     db: Arc<DiskReadScheduler>,
     perf_counter: Arc<QueryPerfCounter>,
+    batch_size: usize,
 
     // Lifetime is not actually static, but tied to the lifetime of this struct.
     // There is currently no good way to express this constraint in Rust.
@@ -81,6 +82,7 @@ pub struct QueryStats {
 }
 
 impl QueryTask {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         mut query: Query,
         rowformat: bool,
@@ -89,6 +91,7 @@ impl QueryTask {
         source: Vec<Arc<Partition>>,
         db: Arc<DiskReadScheduler>,
         sender: SharedSender<QueryResult>,
+        batch_size: usize,
     ) -> Result<QueryTask, QueryError> {
         let start_time = Instant::now();
         if query.is_select_star() {
@@ -121,6 +124,7 @@ impl QueryTask {
             start_time,
             db,
             perf_counter: Arc::default(),
+            batch_size,
 
             unsafe_state: Mutex::new(QueryState {
                 partial_results: Vec::new(),
@@ -171,11 +175,17 @@ impl QueryTask {
                 >(&cols)
             };
             let (mut batch_result, explain) = match if self.main_phase.aggregate.is_empty() {
-                self.main_phase
-                    .run(unsafe_cols, self.explain, show, id, partition.len())
+                self.main_phase.run(
+                    unsafe_cols,
+                    self.explain,
+                    show,
+                    id,
+                    partition.len(),
+                    self.batch_size,
+                )
             } else {
                 self.main_phase
-                    .run_aggregate(unsafe_cols, self.explain, show, id, partition.len())
+                    .run_aggregate(unsafe_cols, self.explain, show, id, partition.len(), self.batch_size)
             } {
                 Ok(result) => result,
                 Err(error) => {
@@ -192,7 +202,7 @@ impl QueryTask {
             // Merge only with previous batch results of same level to get O(n log n) complexity
             while let Some(br) = batch_results.pop() {
                 if br.level == batch_result.level {
-                    match combine(br, batch_result, self.combined_limit()) {
+                    match combine(br, batch_result, self.combined_limit(), self.batch_size) {
                         Ok(result) => batch_result = result,
                         Err(error) => {
                             self.fail_with(error);
@@ -214,7 +224,7 @@ impl QueryTask {
             }
         }
 
-        match QueryTask::combine_results(batch_results, self.combined_limit()) {
+        match QueryTask::combine_results(batch_results, self.combined_limit(), self.batch_size) {
             Ok(Some(result)) => self.push_result(result, rows_scanned, rows_collected, explains),
             Err(error) => self.fail_with(error),
             _ => {}
@@ -226,11 +236,12 @@ impl QueryTask {
     fn combine_results(
         batch_results: Vec<BatchResult>,
         limit: usize,
+        batch_size: usize,
     ) -> Result<Option<BatchResult>, QueryError> {
         let mut full_result = None;
         for batch_result in batch_results {
             if let Some(partial) = full_result {
-                full_result = Some(combine(partial, batch_result, limit)?);
+                full_result = Some(combine(partial, batch_result, limit, batch_size)?);
             } else {
                 full_result = Some(batch_result);
             }
@@ -262,8 +273,11 @@ impl QueryTask {
         {
             let mut owned_results = Vec::with_capacity(0);
             mem::swap(&mut owned_results, &mut state.partial_results);
-            let full_result = match QueryTask::combine_results(owned_results, self.combined_limit())
-            {
+            let full_result = match QueryTask::combine_results(
+                owned_results,
+                self.combined_limit(),
+                self.batch_size,
+            ) {
                 Ok(result) => result.unwrap(),
                 Err(error) => {
                     self.fail_with_no_lock(error);
@@ -285,6 +299,7 @@ impl QueryTask {
                         !self.show.is_empty(),
                         0xdead_beef,
                         cols.iter().next().map(|(_, c)| c.len()).unwrap_or(0),
+                        self.batch_size,
                     )
                     .unwrap()
                     .0;
@@ -451,7 +466,7 @@ impl BasicTypeColumn {
             | EncodingType::NullableU32
             | EncodingType::NullableU64
             | EncodingType::NullableF64
-            | EncodingType::OptStr 
+            | EncodingType::OptStr
             | EncodingType::OptF64 => {
                 let mut vals = vec![];
                 for i in 0..data.len() {

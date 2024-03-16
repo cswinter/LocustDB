@@ -94,6 +94,9 @@ struct Opt {
     /// Address to bind the server to
     #[structopt(long, default_value = "127.0.0.1:8080")]
     addrs: String,
+
+    /// Maximum length of temporary buffer used in streaming stages during query execution
+    batch_size: usize,
 }
 
 fn main() {
@@ -118,6 +121,7 @@ fn main() {
         cors_allow_all,
         cors_allow_origin,
         addrs,
+        batch_size,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -131,6 +135,7 @@ fn main() {
         max_wal_size_bytes,
         max_partition_size_bytes,
         partition_combine_factor: 4,
+        batch_size,
     };
 
     if options.readahead > options.mem_size_limit_tables {

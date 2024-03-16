@@ -19,10 +19,10 @@ pub struct QueryPlanner {
 }
 
 impl QueryPlanner {
-    pub fn prepare<'a>(&mut self, mut constant_vecs: Vec<BoxedData<'a>>) -> Result<QueryExecutor<'a>, QueryError> {
+    pub fn prepare<'a>(&mut self, mut constant_vecs: Vec<BoxedData<'a>>, batch_size: usize) -> Result<QueryExecutor<'a>, QueryError> {
         self.perform_rewrites();
 
-        let mut result = QueryExecutor::default();
+        let mut result = QueryExecutor::new(batch_size);
         result.set_buffer_count(self.buffer_provider.buffer_count());
         for operation in &self.operations {
             prepare(operation.clone(), &mut constant_vecs, &mut result)?;

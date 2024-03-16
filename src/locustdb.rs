@@ -27,6 +27,7 @@ impl LocustDB {
     }
 
     pub fn new(opts: &Options) -> LocustDB {
+        opts.validate().expect("Invalid options");
         let locustdb = Arc::new(InnerLocustDB::new(opts));
         InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB {
@@ -81,6 +82,7 @@ impl LocustDB {
             data,
             self.inner_locustdb.disk_read_scheduler().clone(),
             SharedSender::new(sender),
+            self.inner_locustdb.opts().batch_size,
         );
 
         match query_task {
@@ -202,6 +204,8 @@ pub struct Options {
     pub max_partition_size_bytes: u64,
     /// Combine partitions when the size of every original partition is less than this factor of the combined partition size
     pub partition_combine_factor: u64,
+    /// Maximum length of temporary buffer used in streaming stages during query execution
+    pub batch_size: usize,
 }
 
 impl Default for Options {
@@ -217,7 +221,26 @@ impl Default for Options {
             max_wal_size_bytes: 64 * 1024 * 1024, // 64 MiB
             max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
             partition_combine_factor: 4,
+            batch_size: 1024,
         }
+    }
+}
+
+impl Options {
+    fn validate(&self) -> Result<(), String> {
+        if self.threads == 0 {
+            return Err("threads must be greater than 0".to_string());
+        }
+        if self.read_threads == 0 {
+            return Err("read_threads must be greater than 0".to_string());
+        }
+        if self.partition_combine_factor == 0 {
+            return Err("partition_combine_factor must be greater than 0".to_string());
+        }
+        if self.batch_size % 8 != 0 {
+            return Err("batch_size must be a multiple of 8".to_string());
+        }
+        Ok(())
     }
 }
 

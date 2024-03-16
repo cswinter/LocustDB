@@ -46,6 +46,7 @@ impl NormalFormQuery {
         show: bool,
         partition: usize,
         partition_len: usize,
+        batch_size: usize,
     ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let limit = (self.limit.limit + self.limit.offset) as usize;
         let mut planner = QueryPlanner::default();
@@ -138,7 +139,7 @@ impl NormalFormQuery {
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = planner.prepare(vec![])?;
+        let mut executor = planner.prepare(vec![], batch_size)?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(partition_len, &mut results, show)?;
@@ -171,6 +172,7 @@ impl NormalFormQuery {
         show: bool,
         partition: usize,
         partition_len: usize,
+        batch_size: usize,
     ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let mut qp = QueryPlanner::default();
 
@@ -370,7 +372,7 @@ impl NormalFormQuery {
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = qp.prepare(vec![])?;
+        let mut executor = qp.prepare(vec![], batch_size)?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(partition_len, &mut results, show)?;

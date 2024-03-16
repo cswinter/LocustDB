@@ -269,6 +269,7 @@ impl InnerLocustDB {
                     data.clone(),
                     self.disk_read_scheduler().clone(),
                     SharedSender::new(sender),
+                    self.opts.batch_size,
                 )
                 .unwrap();
                 self.schedule(query_task);

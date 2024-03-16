@@ -12,6 +12,7 @@ pub struct QueryExecutor<'a> {
     count: usize,
     last_buffer: TypedBufferRef,
     shared_buffers: HashMap<&'static str, TypedBufferRef>,
+    batch_size: usize,
 }
 
 #[derive(Default, Clone)]
@@ -22,6 +23,17 @@ struct ExecutorStage {
 }
 
 impl<'a> QueryExecutor<'a> {
+    pub fn new(batch_size: usize) -> QueryExecutor<'a> {
+        QueryExecutor {
+            ops: vec![],
+            stages: vec![],
+            count: 0,
+            last_buffer: TypedBufferRef::new(error_buffer_ref("ERROR"), EncodingType::Null),
+            shared_buffers: HashMap::default(),
+            batch_size,
+        }
+    }
+
     pub fn set_buffer_count(&mut self, count: usize) {
         self.count = count
     }
@@ -173,10 +185,21 @@ impl<'a> QueryExecutor<'a> {
                     for &p in &consumers[output.i] {
                         streaming |= self.ops[p].can_stream_input(output.i);
                         block |= !self.ops[p].can_stream_input(output.i);
-                        log::debug!("  CONSUMER: {} CAN STREAM INPUT: {}, STREAMING: {}, BLOCK: {}", self.ops[p].display(true), self.ops[p].can_stream_input(output.i), streaming, block);
+                        log::debug!(
+                            "  CONSUMER: {} CAN STREAM INPUT: {}, STREAMING: {}, BLOCK: {}",
+                            self.ops[p].display(true),
+                            self.ops[p].can_stream_input(output.i),
+                            streaming,
+                            block
+                        );
                     }
                     streaming_disabled[i] = streaming & block;
-                    log::debug!("  STREAMING: {}, BLOCK: {}, DISABLED: {}", streaming, block, streaming_disabled[i]);
+                    log::debug!(
+                        "  STREAMING: {}, BLOCK: {}, DISABLED: {}",
+                        streaming,
+                        block,
+                        streaming_disabled[i]
+                    );
                 }
             }
         }
@@ -266,7 +289,11 @@ impl<'a> QueryExecutor<'a> {
 
                             visited[p] = true;
                             to_visit.push(p);
-                            log::debug!("  ADDING STREAMING PRODUCER {} TO STAGE {}", self.ops[p].display(true), current_stage);
+                            log::debug!(
+                                "  ADDING STREAMING PRODUCER {} TO STAGE {}",
+                                self.ops[p].display(true),
+                                current_stage
+                            );
                             stream = stream || self.ops[p].allocates();
                         }
                     }
@@ -294,7 +321,11 @@ impl<'a> QueryExecutor<'a> {
 
                             visited[consumer] = true;
                             to_visit.push(consumer);
-                            log::debug!("  ADDING STREAMING CONSUMER {} TO STAGE {}", self.ops[consumer].display(true), current_stage);
+                            log::debug!(
+                                "  ADDING STREAMING CONSUMER {} TO STAGE {}",
+                                self.ops[consumer].display(true),
+                                current_stage
+                            );
                             stream = stream || self.ops[consumer].allocates();
                         }
                     }
@@ -317,7 +348,11 @@ impl<'a> QueryExecutor<'a> {
                         visited[p] = true;
                         to_visit.push(p);
                         stream = stream || self.ops[p].allocates();
-                        log::debug!("  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING PRODUCER {} TO STAGE {}", self.ops[p].display(true), current_stage);
+                        log::debug!(
+                            "  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING PRODUCER {} TO STAGE {}",
+                            self.ops[p].display(true),
+                            current_stage
+                        );
                     }
                     let ctr = std::mem::take(&mut consumers_to_revisit);
                     'l4: for consumer in ctr {
@@ -331,7 +366,11 @@ impl<'a> QueryExecutor<'a> {
                         }
                         visited[consumer] = true;
                         to_visit.push(consumer);
-                        log::debug!("  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING CONSUMER {} TO STAGE {}", self.ops[consumer].display(true), current_stage);
+                        log::debug!(
+                            "  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING CONSUMER {} TO STAGE {}",
+                            self.ops[consumer].display(true),
+                            current_stage
+                        );
                         stream = stream || self.ops[consumer].allocates();
                     }
                 }
@@ -386,9 +425,12 @@ impl<'a> QueryExecutor<'a> {
                         }
                     }
                     for input in self.ops[op].inputs() {
-                        let hni = producers[input.i].iter().any(|&p| streaming_disabled[p]);
+                        let hni = producers[input.i].iter().any(|&p| streaming_disabled[p] || !self.ops[p].can_stream_output(input.i));
                         if hni {
-                            log::debug!("{} has nonstreaming input {} produced by streaming disabled producer {}", self.ops[op].display(true), input.i, producers[input.i].iter().find(|&&p| streaming_disabled[p]).unwrap());
+                            log::debug!(
+                                "{} has nonstreaming input {} produced by streaming disabled producer {}",
+                                self.ops[op].display(true), input.i, producers[input.i].iter().find(|&&p| streaming_disabled[p] || !self.ops[p].can_stream_output(input.i)).unwrap()
+                            );
                         }
                         has_nonstreaming_input |= hni;
                     }
@@ -513,7 +555,7 @@ impl<'a> QueryExecutor<'a> {
             max_input_length = column_length;
         }
         let batch_size = if self.stages[stage].stream {
-            1024
+            self.batch_size
         } else {
             max_input_length
         };
@@ -581,18 +623,6 @@ impl<'a> QueryExecutor<'a> {
             println!("\n[{} more iterations]", iters - 1);
         }
         Ok(())
-    }
-}
-
-impl<'a> Default for QueryExecutor<'a> {
-    fn default() -> QueryExecutor<'a> {
-        QueryExecutor {
-            ops: vec![],
-            stages: vec![],
-            count: 0,
-            last_buffer: TypedBufferRef::new(error_buffer_ref("ERROR"), EncodingType::Null),
-            shared_buffers: HashMap::default(),
-        }
     }
 }
 
