@@ -202,6 +202,7 @@ fn types(t: &Ident) -> Option<Vec<Type>> {
         "IntegerNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64]),
         "NumberNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64, Type::F64]),
         "Integer" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64]),
+        "Number" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::F64]),
         "Float" => Some(vec![Type::F64]),
         "NullableInteger" => Some(vec![Type::NullableU8, Type::NullableU16, Type::NullableU32, Type::NullableI64]),
         "NullableFloat" => Some(vec![Type::NullableF64]),

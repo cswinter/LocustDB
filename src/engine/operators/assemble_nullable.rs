@@ -17,8 +17,9 @@ impl<'a, T: VecData<T>> VecOperator<'a> for AssembleNullable<T> {
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any(), self.present.any()] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.nullable_data.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { true }
-    fn can_stream_output(&self, _: usize) -> bool { true }
+    // TODO: make streaming again?
+    fn can_stream_input(&self, _: usize) -> bool { false }
+    fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }
     fn display_op(&self, _: bool) -> String { format!("nullable({}, {})", self.data, self.present) }
 }

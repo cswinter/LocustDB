@@ -433,7 +433,7 @@ pub mod operator {
         let reader: Box<dyn Read> = Box::new(&[] as &[u8]);
         reify_types! {
             "lz4_decode";
-            decoded: Integer;
+            decoded: Number;
             Ok(Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true }))
         }
     }
