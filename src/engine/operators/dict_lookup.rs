@@ -33,9 +33,11 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for DictLookup<'a, T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.indices.any(), self.dict_indices.any(), self.dict_data.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.indices.i, &mut self.dict_indices.i, &mut self.dict_data.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, buffer: usize) -> bool { buffer == self.indices.i }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -74,6 +76,7 @@ impl<'a> VecOperator<'a> for InverseDictLookup<'a> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.constant.any(), self.dict_indices.any(), self.dict_data.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.constant.i, &mut self.dict_indices.i, &mut self.dict_data.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }

@@ -17,6 +17,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MakeNullable<T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.data.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.data.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.nullable_data.any(), self.present.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }

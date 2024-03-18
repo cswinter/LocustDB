@@ -56,9 +56,11 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.packed.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.packed.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.unpacked.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
     fn is_streaming_producer(&self) -> bool { true }
     fn has_more(&self) -> bool { self.has_more }

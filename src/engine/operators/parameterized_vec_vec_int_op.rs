@@ -30,9 +30,11 @@ impl<'a, Op: ParameterizedIntegerOperation + fmt::Debug> VecOperator<'a> for Par
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.lhs.any(), self.rhs.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.lhs.i, &mut self.rhs.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, alternate: bool) -> String {

@@ -76,6 +76,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.indices.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { false }

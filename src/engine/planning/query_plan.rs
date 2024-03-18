@@ -23,7 +23,6 @@ pub enum QueryPlan {
     ColumnSection {
         name: String,
         section: usize,
-        is_bitvec: bool,
         #[nohash]
         range: Option<(i64, i64)>,
         #[output(t = "base=provided")]
@@ -594,6 +593,14 @@ pub enum QueryPlan {
         #[output(t = "base=lhs")]
         merged: TypedBufferRef,
     },
+    /// Pseudo-op that returns identity option and ensures we don't stream final outputs
+    /// but collect them in a single buffer.
+    Collect {
+        input: TypedBufferRef,
+        name: String,
+        #[output(t = "base=input")]
+        collected: TypedBufferRef,
+    }
 }
 
 // TODO: return struct
@@ -921,7 +928,7 @@ impl QueryPlan {
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    let mut plan = planner.column_section(name, 0, false, c.range(), c.encoding_type());
+                    let mut plan = planner.column_section(name, 0, c.range(), c.encoding_type());
                     let mut t = c.full_type();
                     if !c.codec().is_elementwise_decodable() {
                         let (codec, fixed_width) = c.codec().ensure_fixed_width(plan, planner);
@@ -1615,10 +1622,9 @@ pub(super) fn prepare<'a>(
         QueryPlan::ColumnSection {
             name,
             section,
-            is_bitvec,
             column_section,
             ..
-        } => operator::read_column_data(name, section, column_section.any(), is_bitvec),
+        } => operator::read_column_data(name, section, column_section.any(), column_section.tag),
         QueryPlan::AssembleNullable {
             data,
             present,
@@ -2000,6 +2006,11 @@ pub(super) fn prepare<'a>(
             std::mem::replace(&mut constant_vecs[index], empty_data(1)),
             constant_vec.any(),
         ),
+        QueryPlan::Collect {
+            input,
+            collected,
+            name,
+        } => operator::collect(input, collected, name),
     };
     result.push(operation);
     Ok(result.last_buffer())

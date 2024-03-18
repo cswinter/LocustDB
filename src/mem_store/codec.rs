@@ -133,10 +133,9 @@ impl Codec {
                 }
                 CodecOp::Delta(_) => planner.delta_decode(stack.pop().unwrap()).into(),
                 CodecOp::ToI64(_) => planner.cast(stack.pop().unwrap(), EncodingType::I64),
-                CodecOp::PushDataSection(section_index, is_bitvec) => planner.column_section(
+                CodecOp::PushDataSection(section_index) => planner.column_section(
                     &self.column_name,
                     section_index,
-                    is_bitvec,
                     None,
                     self.section_types[section_index],
                 ),
@@ -213,13 +212,14 @@ impl Codec {
         planner: &mut QueryPlanner,
     ) -> BufferRef<Scalar<i64>> {
         match self.ops[..] {
-            [CodecOp::PushDataSection(1, false), CodecOp::PushDataSection(2, false), CodecOp::DictLookup(_)] => {
+            [CodecOp::PushDataSection(1), CodecOp::PushDataSection(2), CodecOp::DictLookup(_)] =>
+            {
                 let offset_len = planner
-                    .column_section(&self.column_name, 1, false, None, EncodingType::U64)
+                    .column_section(&self.column_name, 1, None, EncodingType::U64)
                     .u64()
                     .unwrap();
                 let backing_store = planner
-                    .column_section(&self.column_name, 2, false, None, EncodingType::U8)
+                    .column_section(&self.column_name, 2, None, EncodingType::U8)
                     .u8()
                     .unwrap();
                 planner.inverse_dict_lookup(offset_len, backing_store, string_const)
@@ -310,8 +310,7 @@ pub enum CodecOp {
     Add(EncodingType, i64),
     Delta(EncodingType),
     ToI64(EncodingType),
-    // (section_index, is_bitvec)
-    PushDataSection(usize, bool),
+    PushDataSection(usize),
     DictLookup(EncodingType),
     LZ4(EncodingType, usize),
     UnpackStrings,
@@ -347,7 +346,7 @@ impl CodecOp {
                 CodecOp::LZ4(t, _) => *t,
                 CodecOp::UnpackStrings => EncodingType::Str,
                 CodecOp::UnhexpackStrings(_, _) => EncodingType::Str,
-                CodecOp::PushDataSection(i, _) => section_types[*i],
+                CodecOp::PushDataSection(i) => section_types[*i],
                 CodecOp::Unknown => panic!("Unknown.output_type()"),
             };
             type_stack.push(t);
@@ -361,7 +360,7 @@ impl CodecOp {
             CodecOp::Add(_, x) => *x == 0,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
-            CodecOp::PushDataSection(_, _) => true,
+            CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => false,
             CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
@@ -376,7 +375,7 @@ impl CodecOp {
             CodecOp::Add(_, _) => true,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
-            CodecOp::PushDataSection(_, _) => true,
+            CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
             CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
@@ -392,7 +391,7 @@ impl CodecOp {
             CodecOp::Add(_, _) => true,
             CodecOp::Delta(_) => false,
             CodecOp::ToI64(_) => true,
-            CodecOp::PushDataSection(_, _) => true,
+            CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
             CodecOp::LZ4(_, _) => false,
             CodecOp::UnpackStrings => false,
@@ -407,7 +406,7 @@ impl CodecOp {
             CodecOp::Add(_, _) => 1,
             CodecOp::Delta(_) => 1,
             CodecOp::ToI64(_) => 1,
-            CodecOp::PushDataSection(_, _) => 0,
+            CodecOp::PushDataSection(_) => 0,
             CodecOp::DictLookup(_) => 3,
             CodecOp::LZ4(_, _) => 1,
             CodecOp::UnpackStrings => 1,
@@ -428,7 +427,7 @@ impl CodecOp {
             }
             CodecOp::Delta(t) => format!("Delta({:?})", t),
             CodecOp::ToI64(t) => format!("ToI64({:?})", t),
-            CodecOp::PushDataSection(i, is_bitvec) => format!("Data({}{})", i, if *is_bitvec { " bitvec" } else { "" }),
+            CodecOp::PushDataSection(i) => format!("Data({i})"),
             CodecOp::DictLookup(t) => format!("Dict({:?})", t),
             CodecOp::LZ4(t, decoded_len) => {
                 if alternate {
@@ -452,9 +451,9 @@ mod tests {
     fn test_ensure_property() {
         let codec = vec![
             CodecOp::LZ4(EncodingType::U16, 20),
-            CodecOp::PushDataSection(1, false),
+            CodecOp::PushDataSection(1),
             CodecOp::LZ4(EncodingType::U64, 1),
-            CodecOp::PushDataSection(2, false),
+            CodecOp::PushDataSection(2),
             CodecOp::LZ4(EncodingType::U8, 3),
             CodecOp::DictLookup(EncodingType::U16),
         ];
@@ -467,9 +466,9 @@ mod tests {
         assert_eq!(
             rest,
             vec![
-                CodecOp::PushDataSection(1, false),
+                CodecOp::PushDataSection(1),
                 CodecOp::LZ4(EncodingType::U64, 1),
-                CodecOp::PushDataSection(2, false),
+                CodecOp::PushDataSection(2),
                 CodecOp::LZ4(EncodingType::U8, 3),
                 CodecOp::DictLookup(EncodingType::U16),
             ]

@@ -18,6 +18,8 @@ use super::assemble_nullable::AssembleNullable;
 use super::binary_operator::*;
 use super::bit_unpack::BitUnpackOperator;
 use super::bool_op::*;
+use super::buffer_stream::*;
+use super::collect::Collect;
 use super::column_ops::*;
 use super::combine_null_maps::CombineNullMaps;
 use super::compact::Compact;
@@ -67,6 +69,7 @@ use super::slice_unpack::*;
 use super::sort_by::*;
 use super::sort_by_slices::SortBySlices;
 use super::sort_by_val_rows::SortByValRows;
+use super::stream_buffer::{StreamBuffer, StreamBufferNullable, StreamNullVec};
 use super::subpartition::SubPartition;
 use super::to_val::*;
 use super::top_n::TopN;
@@ -79,21 +82,60 @@ use super::val_rows_unpack::*;
 pub type BoxedOperator<'a> = Box<dyn VecOperator<'a> + 'a>;
 
 pub trait VecOperator<'a> {
+    /// Called at every iteration of stage execution.
+    /// Stages can be in either _streaming_ or _block_ mode.
+    /// In streaming mode, the operator receives a slices of the input on every iteration.
+    /// If `stream` is true, the output should be the streamed as well.
+    /// If `stream` is false, the operator should retain outputs of all iterations.
+    /// The execution engine may set `stream=false` if `can_block_output() == true` and there are only block operators consuming the output of this operator to avoid inserting a buffering operator.
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>;
-    fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
+
+    /// Called once before starting to execute a stage.
+    /// Typically used to initialize output buffers.
+    /// The `total_count` is the number of rows in the input, and `batch_size` is the number of rows to be processed in each iteration.
     fn init(&mut self, _total_count: usize, _batch_size: usize, _scratchpad: &mut Scratchpad<'a>) {}
 
+    /// Called once after stage execution is complete.
+    fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
+
+    fn inputs_mut(&mut self) -> Vec<&mut usize>;
     fn inputs(&self) -> Vec<BufferRef<Any>>;
     fn outputs(&self) -> Vec<BufferRef<Any>>;
+    /// Whether the operator can stream a particular input buffer.
     fn can_stream_input(&self, i: usize) -> bool;
+    /// Whether the operator can stream a particular output buffer.
     fn can_stream_output(&self, i: usize) -> bool;
+    /// Whether the operator can return non-streamed output when receiving streamed input.
+    fn can_block_output(&self) -> bool {
+        false
+    }
+    /// Whether the operator mutates a particular input buffer.
     fn mutates(&self, _i: usize) -> bool {
         false
     }
+    /// Whether the operator allocates new buffers.
+    /// Stages with operators that allocate new buffers may be streamed.
+    /// If none of the operators in a stage allocate new buffers, the stage can be efficiently executed in nonstreaming mode.
     fn allocates(&self) -> bool;
+
+    fn update_input(&mut self, old: usize, new: usize) {
+        let mut replaced = false;
+        for input in self.inputs_mut() {
+            if *input == old {
+                *input = new;
+                replaced = true;
+            }
+        }
+        assert!(replaced);
+    }
+
+    /// A streaming producer is an op that may not take any streaming inputs, but still produces streaming output.
+    /// This is used to determine whether a stage should be streamed.
+    /// Only stages with ops that either have an input that can stream or are streaming producers themselves can be streamed.
     fn is_streaming_producer(&self) -> bool {
         false
     }
+    // If a stage is streaming, at least one of the operators in the stage must return true for this function as long as there is further input to be processed.
     fn has_more(&self) -> bool {
         false
     }
@@ -136,16 +178,13 @@ pub mod operator {
         colname: String,
         section_index: usize,
         output: BufferRef<Any>,
-        is_bitvec: bool,
+        tag: EncodingType,
     ) -> BoxedOperator<'a> {
         Box::new(ReadColumnData {
             colname,
             section_index,
             output,
-            is_bitvec,
-            batch_size: 0,
-            current_index: 0,
-            has_more: true,
+            tag,
         })
     }
 
@@ -409,6 +448,18 @@ pub mod operator {
         })
     }
 
+    pub fn collect<'a>(
+        input: TypedBufferRef,
+        output: TypedBufferRef,
+        name: String,
+    ) -> BoxedOperator<'a> {
+        Box::new(Collect {
+            input: input.any(),
+            name,
+            output: output.any(),
+        })
+    }
+
     pub fn dict_lookup(
         indices: TypedBufferRef,
         dict_indices: BufferRef<u64>,
@@ -608,8 +659,17 @@ pub mod operator {
         Box::new(NullVec { len, output })
     }
 
-    pub fn null_vec_like<'a>(input: BufferRef<Any>, output: BufferRef<Any>, source_type: u8) -> BoxedOperator<'a> {
-        Box::new(NullVecLike { input, output, source_type })
+    pub fn null_vec_like<'a>(
+        input: BufferRef<Any>,
+        output: BufferRef<Any>,
+        source_type: u8,
+    ) -> BoxedOperator<'a> {
+        Box::new(NullVecLike {
+            input,
+            output,
+            source_type,
+            count: 0,
+        })
     }
 
     pub fn constant_expand<'a>(
@@ -1093,6 +1153,10 @@ pub mod operator {
             stride,
             offset,
             output,
+
+            curr_index: 0,
+            batch_size: 0,
+            has_more: true,
         })
     }
 
@@ -1119,7 +1183,7 @@ pub mod operator {
                 Ok(Box::new(NullToVal {
                     input: input.any(),
                     output,
-                    batch_size: 0, 
+                    batch_size: 0,
                 }))
             } else {
                 reify_types! {
@@ -1313,7 +1377,7 @@ pub mod operator {
         reify_types! {
             "nonzero_indices";
             input: Integer, output: Integer;
-            Ok(Box::new(NonzeroIndices { input, output }))
+            Ok(Box::new(NonzeroIndices { input, output, offset: 0, }))
         }
     }
 
@@ -1608,5 +1672,76 @@ pub mod operator {
                 left, right, merged_out: Primitive;
                 Ok(Box::new(MergeKeep { merge_ops, left, right, merged: merged_out }))
         }
+    }
+
+    pub fn buffer<'a>(
+        streaming_input: TypedBufferRef,
+        block_output: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        if streaming_input.tag == EncodingType::Null {
+            Ok(Box::new(BufferStreamNull {
+                input: streaming_input.any(),
+                output: block_output.any(),
+                count: 0,
+            }))
+        } else {
+            reify_types! {
+                "buffer";
+                streaming_input, block_output: NullablePrimitive;
+                Ok(Box::new(BufferStreamNullable { input: streaming_input, output: block_output }));
+                streaming_input, block_output: VecData;
+                Ok(Box::new(BufferStream { input: streaming_input, output: block_output }))
+            }
+        }
+    }
+
+    pub fn stream<'a>(
+        streaming_input: TypedBufferRef,
+        block_output: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        let is_bitvec = streaming_input.tag == EncodingType::Bitvec;
+        reify_types! {
+            "stream";
+            streaming_input, block_output: VecData;
+            Ok(Box::new(StreamBuffer {
+                input: streaming_input,
+                output: block_output,
+                is_bitvec,
+                batch_size: 0,
+                current_index: 0,
+                has_more: true,
+            }))
+        }
+    }
+
+    pub fn stream_nullable<'a>(
+        streaming_input: TypedBufferRef,
+        output_data: TypedBufferRef,
+        output_present: BufferRef<u8>,
+        block_output: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "stream_nullable";
+            streaming_input, block_output: NullablePrimitive;
+            Ok(Box::new(StreamBufferNullable {
+                input: streaming_input,
+                output_data: output_data.any(),
+                output_present,
+                output: block_output,
+                batch_size: 0,
+                current_index: 0,
+                has_more: true,
+            }))
+        }
+    }
+
+    pub fn stream_null_vec<'a>(input: BufferRef<Any>, output: BufferRef<Any>) -> BoxedOperator<'a> {
+        Box::new(StreamNullVec {
+            input,
+            output,
+            batch_size: 0,
+            current_index: 0,
+            has_more: true,
+        })
     }
 }

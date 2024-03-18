@@ -64,6 +64,7 @@ impl<'a> VecOperator<'a> for HashMapGroupingValRows<'a> {
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.input.any()]
     }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![
             self.unique_out.any(),
@@ -77,6 +78,7 @@ impl<'a> VecOperator<'a> for HashMapGroupingValRows<'a> {
     fn can_stream_output(&self, output: usize) -> bool {
         output != self.unique_out.i
     }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool {
         true
     }

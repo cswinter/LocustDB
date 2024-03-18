@@ -4,8 +4,8 @@ use crate::engine::*;
 #[derive(Debug)]
 pub struct Exists<T> {
     pub input: BufferRef<T>,
-    pub output: BufferRef<u8>,
     pub max_index: BufferRef<Scalar<i64>>,
+    pub output: BufferRef<u8>,
 }
 
 impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
@@ -29,7 +29,8 @@ impl<'a, T: GenericIntVec<T> + CastUsize> VecOperator<'a> for Exists<T> {
         scratchpad.set(self.output, Vec::with_capacity(0));
     }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any(), self.max_index.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { false }

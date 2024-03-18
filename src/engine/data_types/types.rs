@@ -5,6 +5,7 @@ use crate::mem_store::*;
 // WARNING: Changing this enum will break backwards compatibility with existing data
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum EncodingType {
+    // Straightforward vector or slice of basic types
     Str,
     I64,
     U8,
@@ -12,10 +13,11 @@ pub enum EncodingType {
     U32,
     U64,
     F64,
+    Val,
+    USize,
+    Bitvec, // this has the same representation as U8, but will have 1/8th the length
 
-    OptStr,
-    OptF64,
-
+    // Nullable versions of basic types which include both a vector/slize and a Vec<u8>/&[u8] bitvec mask
     NullableStr,
     NullableI64,
     NullableU8,
@@ -24,17 +26,24 @@ pub enum EncodingType {
     NullableU64,
     NullableF64,
 
-    USize,
-    Val,
+    // Vector of optional basic types. Used for grouping or sorting
+    OptStr,
+    OptF64,
+
+    // Represents null column as single `usize` value that is the length of the column
     Null,
 
+    // Single scalar value
     ScalarI64,
     ScalarStr,
     ScalarString,
     ConstVal,
 
     ByteSlices(usize),
+
+    // Used as grouping key during aggregation/sorting operation when we cannot bit or byte pack the columns that make up the grouping key
     ValRows,
+
     Premerge,
     MergeOp,
 }
@@ -103,6 +112,7 @@ impl EncodingType {
             | EncodingType::U64
             | EncodingType::F64
             | EncodingType::USize
+            | EncodingType::Bitvec
             | EncodingType::Val
             | EncodingType::Null
             | EncodingType::ScalarI64
@@ -133,6 +143,7 @@ impl EncodingType {
             | EncodingType::U64
             | EncodingType::F64
             | EncodingType::USize
+            | EncodingType::Bitvec
             | EncodingType::Val
             | EncodingType::Null
             | EncodingType::ScalarI64
@@ -166,6 +177,7 @@ impl EncodingType {
             | EncodingType::F64
             | EncodingType::USize
             | EncodingType::Val
+            | EncodingType::Bitvec
             | EncodingType::ByteSlices(_)
             | EncodingType::ValRows
             | EncodingType::Premerge
@@ -174,6 +186,39 @@ impl EncodingType {
             | EncodingType::ScalarStr
             | EncodingType::ScalarString
             | EncodingType::Null
+            | EncodingType::ConstVal => true,
+        }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        match *self {
+            EncodingType::NullableStr
+            | EncodingType::NullableI64
+            | EncodingType::NullableU8
+            | EncodingType::NullableU16
+            | EncodingType::NullableU32
+            | EncodingType::NullableU64
+            | EncodingType::NullableF64
+            | EncodingType::OptStr
+            | EncodingType::OptF64
+            | EncodingType::Str
+            | EncodingType::I64
+            | EncodingType::U8
+            | EncodingType::U16
+            | EncodingType::U32
+            | EncodingType::U64
+            | EncodingType::F64
+            | EncodingType::USize
+            | EncodingType::Val
+            | EncodingType::Bitvec
+            | EncodingType::ByteSlices(_)
+            | EncodingType::ValRows
+            | EncodingType::Premerge
+            | EncodingType::Null
+            | EncodingType::MergeOp => false,
+            | EncodingType::ScalarI64
+            | EncodingType::ScalarStr
+            | EncodingType::ScalarString
             | EncodingType::ConstVal => true,
         }
     }

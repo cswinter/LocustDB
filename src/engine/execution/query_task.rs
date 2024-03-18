@@ -438,7 +438,7 @@ impl BasicTypeColumn {
                 BasicTypeColumn::String(data.cast_ref_str().iter().map(|s| s.to_string()).collect())
             }
             EncodingType::I64 => BasicTypeColumn::Int(data.cast_ref_i64().to_vec()),
-            EncodingType::U8 => {
+            EncodingType::U8 | EncodingType::Bitvec => {
                 BasicTypeColumn::Int(data.cast_ref_u8().iter().map(|&i| i as i64).collect())
             }
             EncodingType::U16 => {

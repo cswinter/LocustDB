@@ -119,6 +119,22 @@ impl<'a> Scratchpad<'a> {
         (data, present)
     }
 
+    pub fn get_pinned_nullable<T: VecData<T> + 'a>(
+        &mut self,
+        index: BufferRef<Nullable<T>>,
+    ) -> (&'a [T], &'a [u8]) {
+        let i = self.resolve(&index);
+        self.pinned[i] = true;
+        let buffer = self.get(index.cast_non_nullable());
+        let present = self.get_null_map(index.nullable_any());
+        unsafe {
+            (
+                mem::transmute::<&[T], &'a [T]>(&*buffer),
+                mem::transmute::<&[u8], &'a [u8]>(&*present),
+            )
+        }
+    }
+
     pub fn get_null_map(&self, index: BufferRef<Nullable<Any>>) -> Ref<[u8]> {
         match self.null_maps[index.i] {
             Some(null_map_index) => {
@@ -304,6 +320,17 @@ impl<'a> Scratchpad<'a> {
         original: BufferRef<T>,
         null_map: BufferRef<u8>,
         nullable: BufferRef<Nullable<T>>,
+    ) {
+        // should probably do cycle check
+        self.aliases[nullable.i] = Some(original.i);
+        self.null_maps[nullable.i] = Some(null_map.i);
+    }
+
+    pub fn assemble_nullable_any(
+        &mut self,
+        original: BufferRef<Any>,
+        null_map: BufferRef<u8>,
+        nullable: BufferRef<Nullable<Any>>,
     ) {
         // should probably do cycle check
         self.aliases[nullable.i] = Some(original.i);

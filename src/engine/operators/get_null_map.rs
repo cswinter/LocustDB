@@ -14,6 +14,7 @@ impl<'a> VecOperator<'a> for GetNullMap {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.from.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.from.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.present.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }

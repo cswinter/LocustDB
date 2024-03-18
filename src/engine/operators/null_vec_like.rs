@@ -7,11 +7,13 @@ pub struct NullVecLike {
     pub output: BufferRef<Any>,
     // 0: use input length, 1: non-zero elements in u8 input, 2: non-zero non-null elements in nullalb u8 input
     pub source_type: u8,
+    pub count: usize,
 }
 
 impl<'a> VecOperator<'a> for NullVecLike {
-    fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
-        let count = match self.source_type {
+    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
+        if streaming { self.count = 0 };
+        self.count += match self.source_type {
             0 => scratchpad.get_any(self.input).len(),
             1 => scratchpad.get(self.input.u8()).iter().filter(|&&x| x != 0).count(),
             2 => {
@@ -27,27 +29,21 @@ impl<'a> VecOperator<'a> for NullVecLike {
             _ => unreachable!(),
         };
         let mut output = scratchpad.get_any_mut(self.output);
-        *output.cast_ref_mut_null() = count;
+        *output.cast_ref_mut_null() = self.count;
         Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, _: &mut Scratchpad<'a>) { }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> {
-        vec![]
-    }
+    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }
-    fn can_stream_input(&self, _: usize) -> bool {
-        false
-    }
-    fn can_stream_output(&self, _: usize) -> bool {
-        true
-    }
-    fn allocates(&self) -> bool {
-        false
-    }
+    fn can_stream_input(&self, _: usize) -> bool { true }
+    fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
+    fn allocates(&self) -> bool { false }
     fn display_op(&self, _: bool) -> String {
         format!("NullVecLike({})", self.input)
     }

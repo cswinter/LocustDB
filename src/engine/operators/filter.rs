@@ -34,6 +34,7 @@ where
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.input.any(), self.filter.any()]
     }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i, &mut self.filter.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }
@@ -43,6 +44,7 @@ where
     fn can_stream_output(&self, _: usize) -> bool {
         true
     }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool {
         true
     }
@@ -85,6 +87,7 @@ where
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.input.any(), self.filter.any()]
     }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i, &mut self.filter.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }

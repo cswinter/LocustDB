@@ -206,6 +206,7 @@ pub enum DataSection {
     I64(Vec<i64>),
     F64(Vec<OrderedFloat<f64>>),
     Null(usize),
+    Bitvec(Vec<u8>),
 }
 
 impl DataSection {
@@ -218,6 +219,7 @@ impl DataSection {
             DataSection::I64(ref x) => x,
             DataSection::F64(ref x) => x,
             DataSection::Null(ref x) => x,
+            DataSection::Bitvec(ref x) => x,
         }
     }
 
@@ -230,6 +232,7 @@ impl DataSection {
             DataSection::I64(ref x) => x.len(),
             DataSection::F64(ref x) => x.len(),
             DataSection::Null(ref x) => *x,
+            DataSection::Bitvec(ref x) => x.len(),
         }
     }
 
@@ -242,6 +245,7 @@ impl DataSection {
             DataSection::I64(ref x) => x.capacity(),
             DataSection::F64(ref x) => x.capacity(),
             DataSection::Null(ref x) => *x,
+            DataSection::Bitvec(ref x) => x.capacity(),
         }
     }
 
@@ -254,13 +258,14 @@ impl DataSection {
             DataSection::I64(_) => EncodingType::I64,
             DataSection::F64(_) => EncodingType::F64,
             DataSection::Null(_) => EncodingType::Null,
+            DataSection::Bitvec(_) => EncodingType::Bitvec,
         }
     }
 
     pub fn lz4_encode(&self) -> (DataSection, bool) {
         let min_reduction = 90;
         match self {
-            DataSection::U8(ref x) => {
+            DataSection::U8(ref x) | DataSection::Bitvec(ref x) => {
                 let mut encoded = lz4::encode(x);
                 encoded.shrink_to_fit();
                 let len = encoded.len();
@@ -356,7 +361,7 @@ impl DataSection {
     pub fn shrink_to_fit_ish(&mut self) {
         if self.capacity() / 10 > self.len() / 9 {
             match self {
-                DataSection::U8(ref mut x) => x.shrink_to_fit(),
+                DataSection::U8(ref mut x) | DataSection::Bitvec(ref mut x) => x.shrink_to_fit(),
                 DataSection::U16(ref mut x) => x.shrink_to_fit(),
                 DataSection::U32(ref mut x) => x.shrink_to_fit(),
                 DataSection::U64(ref mut x) => x.shrink_to_fit(),
@@ -369,7 +374,7 @@ impl DataSection {
 
     pub fn heap_size_of_children(&self) -> usize {
         match self {
-            DataSection::U8(ref x) => x.capacity() * mem::size_of::<u8>(),
+            DataSection::U8(ref x) | DataSection::Bitvec(ref x) => x.capacity() * mem::size_of::<u8>(),
             DataSection::U16(ref x) => x.capacity() * mem::size_of::<u16>(),
             DataSection::U32(ref x) => x.capacity() * mem::size_of::<u32>(),
             DataSection::U64(ref x) => x.capacity() * mem::size_of::<u64>(),

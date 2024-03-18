@@ -107,7 +107,7 @@ impl NormalFormQuery {
         }
 
         let mut select = Vec::new();
-        for col_info in &self.projection {
+        for (i, col_info) in self.projection.iter().enumerate() {
             let (mut plan, plan_type) = QueryPlan::compile_expr(
                 &col_info.expr,
                 filter,
@@ -121,10 +121,17 @@ impl NormalFormQuery {
             if plan.is_nullable() {
                 plan = planner.fuse_nulls(plan);
             }
+            plan = planner.collect(
+                plan,
+                &col_info
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("select_{}", i)),
+            );
             select.push(plan.any());
         }
         let mut order_by = Vec::new();
-        for (expr, desc) in &self.order_by {
+        for (i, (expr, desc)) in self.order_by.iter().enumerate() {
             let (mut plan, plan_type) =
                 QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
             if let Some(codec) = plan_type.codec {
@@ -133,6 +140,7 @@ impl NormalFormQuery {
             if plan.is_nullable() {
                 plan = planner.fuse_nulls(plan);
             }
+            plan = planner.collect(plan, &format!("order_by_{}", i));
             order_by.push((plan.any(), *desc));
         }
 
@@ -352,7 +360,8 @@ impl NormalFormQuery {
 
             let mut aggregations2 = Vec::new();
             for &(a, aggregator) in &aggregation_cols {
-                aggregations2.push((qp.select(a, sort_indices), aggregator));
+                let plan = qp.select(a, sort_indices);
+                aggregations2.push((plan, aggregator));
             }
             aggregation_cols = aggregations2;
 
@@ -363,10 +372,17 @@ impl NormalFormQuery {
             grouping_columns = grouping_columns2;
         }
 
-        for plan in &mut grouping_columns {
+        for (i, plan) in grouping_columns.iter_mut().enumerate() {
             if plan.is_nullable() {
                 *plan = qp.fuse_nulls(*plan);
             }
+            *plan = qp.collect(*plan, &format!("grouping_{}", i));
+        }
+        for (i, (plan, _)) in aggregation_cols.iter_mut().enumerate() {
+            if plan.is_nullable() {
+                *plan = qp.fuse_nulls(*plan);
+            }
+            *plan = qp.collect(*plan, &format!("aggregation_{}", i));
         }
 
         for c in columns {

@@ -57,15 +57,15 @@ impl IntegerColumn {
                         name,
                         values.len(),
                         original_range,
-                        vec![CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1, true), CodecOp::Nullable],
-                        vec![values.into(), present.into()])
+                        vec![CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1), CodecOp::Nullable],
+                        vec![values.into(), DataSection::Bitvec(present)])
                 } else {
                     Column::new(
                         name,
                         values.len(),
                         original_range,
-                        vec![CodecOp::PushDataSection(1, true), CodecOp::Nullable],
-                        vec![values.into(), present.into()])
+                        vec![CodecOp::PushDataSection(1), CodecOp::Nullable],
+                        vec![values.into(), DataSection::Bitvec(present)])
                 }
                 None => if delta_encode {
                     Column::new(
@@ -101,10 +101,10 @@ impl IntegerColumn {
         let len = values.len();
         let codec = if null_map.is_some() {
             match (offset == 0, delta_encode) {
-                (true, true) => vec![CodecOp::Delta(t), CodecOp::PushDataSection(1, true), CodecOp::Nullable],
-                (true, false) => vec![CodecOp::PushDataSection(1, true), CodecOp::Nullable, CodecOp::ToI64(t)],
-                (false, true) => vec![CodecOp::Add(t, offset), CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1, true), CodecOp::Nullable],
-                (false, false) => vec![CodecOp::PushDataSection(1, true), CodecOp::Nullable, CodecOp::Add(t, offset)],
+                (true, true) => vec![CodecOp::Delta(t), CodecOp::PushDataSection(1), CodecOp::Nullable],
+                (true, false) => vec![CodecOp::PushDataSection(1), CodecOp::Nullable, CodecOp::ToI64(t)],
+                (false, true) => vec![CodecOp::Add(t, offset), CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1), CodecOp::Nullable],
+                (false, false) => vec![CodecOp::PushDataSection(1), CodecOp::Nullable, CodecOp::Add(t, offset)],
             }
         } else {
             match (offset == 0, delta_encode) {
@@ -120,7 +120,7 @@ impl IntegerColumn {
             len,
             Some((min - offset, max - offset)),
             codec,
-            if let Some(present) = null_map { vec![values.into(), present.into()] } else { vec![values.into()] })
+            if let Some(present) = null_map { vec![values.into(), DataSection::Bitvec(present)] } else { vec![values.into()] })
     }
 
     pub fn encode<T: GenericIntVec<T>>(values: Vec<i64>, offset: i64) -> Vec<T> {

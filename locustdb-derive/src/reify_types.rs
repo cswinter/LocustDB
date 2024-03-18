@@ -208,6 +208,7 @@ fn types(t: &Ident) -> Option<Vec<Type>> {
         "NullableFloat" => Some(vec![Type::NullableF64]),
         "Primitive" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::F64, Type::Str, Type::OptStr, Type::OptF64]),
         "PrimitiveOrVal" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::F64, Type::Str, Type::OptStr, Type::OptF64, Type::Val]),
+        "VecData" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::F64, Type::USize, Type::Str, Type::OptStr, Type::OptF64, Type::Val, Type::Bitvec]),
         "NullablePrimitive" => Some(vec![Type::NullableU8, Type::NullableU16, Type::NullableU32, Type::NullableI64, Type::NullableF64, Type::NullableStr]),
         "PrimitiveUSize" => Some(vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::I64, Type::F64, Type::Str, Type::USize]),
         "PrimitiveNoU64" => Some(vec![Type::U8, Type::U16, Type::U32, Type::I64, Type::F64, Type::Str]),
@@ -230,6 +231,7 @@ enum Type {
     F64,
     Str,
     Val,
+    Bitvec,
 
     OptStr, // Option<&str>, used when sorting instead of representation of raw valls + present bit vec
     OptF64, // Option<OrderedFloat<f64>>, used when sorting
@@ -265,6 +267,7 @@ impl Type {
             Type::F64 => parse_quote!(EncodingType::F64),
             Type::Str => parse_quote!(EncodingType::Str),
             Type::Val => parse_quote!(EncodingType::Val),
+            Type::Bitvec => parse_quote!(EncodingType::Bitvec),
             Type::OptStr => parse_quote!(EncodingType::OptStr),
             Type::OptF64 => parse_quote!(EncodingType::OptF64),
             Type::NullableU8 => parse_quote!(EncodingType::NullableU8),
@@ -296,6 +299,7 @@ impl Type {
             Type::F64 => parse_quote!( let #variable = #variable.buffer.f64(); ),
             Type::Str => parse_quote!( let #variable = #variable.buffer.str(); ),
             Type::Val => parse_quote!( let #variable = #variable.buffer.val(); ),
+            Type::Bitvec => parse_quote!( let #variable = #variable.buffer.u8(); ),
             Type::OptStr => parse_quote!( let #variable = #variable.buffer.opt_str(); ),
             Type::OptF64 => parse_quote!( let #variable = #variable.buffer.opt_f64(); ),
             Type::NullableU8 => parse_quote!( let #variable = #variable.buffer.nullable_u8(); ),

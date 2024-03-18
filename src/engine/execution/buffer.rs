@@ -33,14 +33,6 @@ pub struct Scalar<T> { t: PhantomData<T> }
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Nullable<T> { t: PhantomData<T> }
 
-pub fn error_buffer_ref(name: &'static str) -> BufferRef<Any> {
-    BufferRef {
-        i: 0xdead_beef,
-        name,
-        t: PhantomData,
-    }
-}
-
 impl BufferRef<Any> {
     pub fn merge_op(self) -> BufferRef<MergeOp> { self.transmute() }
     pub fn premerge(self) -> BufferRef<Premerge> { self.transmute() }
@@ -267,7 +259,7 @@ impl TypedBufferRef {
     }
 
     pub fn u8(&self) -> Result<BufferRef<u8>, QueryError> {
-        ensure!(self.tag == EncodingType::U8, "{:?} != U8", self.tag);
+        ensure!(self.tag == EncodingType::U8 || self.tag == EncodingType::Bitvec, "{:?} != U8", self.tag);
         Ok(self.buffer.u8())
     }
 
@@ -354,5 +346,13 @@ impl TypedBufferRef {
     pub fn scalar_string(&self) -> Result<BufferRef<Scalar<String>>, QueryError> {
         ensure!(self.tag == EncodingType::ScalarString, "{:?} != ScalaString", self.tag);
         Ok(self.buffer.scalar_string())
+    }
+}
+
+pub fn error_buffer_ref(name: &'static str) -> BufferRef<Any> {
+    BufferRef {
+        i: 0xdead_beef,
+        name,
+        t: PhantomData,
     }
 }

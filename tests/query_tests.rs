@@ -109,7 +109,12 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
         ),
     );
     load.unwrap();
-    let result = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
+    let show = if env::var("DEBUG_TESTS").is_ok() {
+        vec![0, 1, 2, 3]
+    } else {
+        vec![]
+    };
+    let result = block_on(locustdb.run_query(query, false, true, show)).unwrap();
     let actual_rows = result.unwrap().rows.unwrap();
     assert_eq!(
         &actual_rows[..min(expected_rows.len(), actual_rows.len())],

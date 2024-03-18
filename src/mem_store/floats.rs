@@ -17,8 +17,8 @@ impl FloatColumn {
                 name,
                 values.len(),
                 None,
-                vec![CodecOp::PushDataSection(1, true), CodecOp::Nullable],
-                vec![values.into(), present.into()],
+                vec![CodecOp::PushDataSection(1), CodecOp::Nullable],
+                vec![values.into(), DataSection::Bitvec(present)],
             ),
             None => Column::new(
                 name,

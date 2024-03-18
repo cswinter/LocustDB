@@ -127,6 +127,7 @@ impl<'a, T, U, V, A: Aggregator<T, V>> VecOperator<'a> for Aggregate<T, U, V, A>
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.input.any(), self.max_index.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.grouping.i, &mut self.input.i, &mut self.max_index.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { false }
@@ -172,6 +173,7 @@ impl<'a, T, U, V, A: Aggregator<T, V>> VecOperator<'a> for AggregateNullable<T, 
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.input.any(), self.max_index.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.grouping.i, &mut self.input.i, &mut self.max_index.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { false }
@@ -219,6 +221,7 @@ impl<'a, T, U, V, A: CheckedAggregator<T, V>> VecOperator<'a> for CheckedAggrega
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.input.any(), self.max_index.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.grouping.i, &mut self.input.i, &mut self.max_index.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { false }
@@ -267,6 +270,7 @@ impl<'a, T, U, V, A: CheckedAggregator<T, V>> VecOperator<'a> for CheckedAggrega
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.input.any(), self.max_index.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.grouping.i, &mut self.input.i, &mut self.max_index.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { false }

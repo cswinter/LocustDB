@@ -22,6 +22,7 @@ impl<'a> VecOperator<'a> for EncodeIntConstant {
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.constant.any()]
     }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.constant.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }

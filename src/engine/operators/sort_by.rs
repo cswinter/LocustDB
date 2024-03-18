@@ -30,6 +30,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortBy<T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any(), self.indices.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.ranking.i, &mut self.indices.i] } 
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
@@ -89,6 +90,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for SortByNullable<T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.ranking.any(), self.indices.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.ranking.i, &mut self.indices.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
