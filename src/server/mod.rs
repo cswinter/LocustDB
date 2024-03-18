@@ -233,8 +233,13 @@ async fn columns(
     for table in &req_body.tables {
         cols.extend(data.db.search_column_names(table, &pattern));
     }
+    let len = cols.len();
+    let limit = req_body.limit.unwrap_or(usize::MAX);
+    let offset = req_body.offset.unwrap_or(0).min(len.saturating_sub(limit));
     HttpResponse::Ok().json(json!({
-        "columns": cols.iter().cloned().sorted(),
+        "columns": cols.iter().cloned().sorted().into_iter().skip(offset).take(limit).collect::<Vec<_>>(),
+        "offset": offset,
+        "len": len,
     }))
 }
 
