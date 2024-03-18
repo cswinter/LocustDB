@@ -133,6 +133,10 @@ impl LocustDB {
         }
     }
 
+    pub fn search_column_names(&self, table: &str, query: &str) -> Vec<String> {
+        self.inner_locustdb.search_column_names(table, query)
+    }
+
     pub async fn bulk_load(&self) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         for table in self.inner_locustdb.full_snapshot() {
             self.inner_locustdb

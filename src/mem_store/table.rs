@@ -7,8 +7,8 @@ use std::sync::{Mutex, RwLock};
 
 use itertools::Itertools;
 
-use crate::disk_store::*;
 use crate::disk_store::storage::{Storage, WALSegment};
+use crate::disk_store::*;
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
@@ -23,6 +23,9 @@ pub struct Table {
     buffer: Mutex<Buffer>,
     /// LRU that keeps track of when each (table, partition, column) segment was last accessed.
     lru: Lru,
+
+    // Set of every column name that is present in any partition
+    column_names: RwLock<HashSet<String>>,
 }
 
 impl Table {
@@ -33,6 +36,7 @@ impl Table {
             next_partition_id: AtomicU64::new(0),
             buffer: Mutex::new(Buffer::default()),
             lru,
+            column_names: RwLock::default(),
         }
     }
 
@@ -87,11 +91,19 @@ impl Table {
                     .into_iter()
                     .map(|(k, v)| {
                         let col = match v.data {
-                            ColumnData::Dense(data) => if (data.len() as u64) < rows {
-                                InputColumn::NullableFloat(rows, data.into_iter().enumerate().map(|(i, v)| (i as u64, v)).collect())
-                            } else {
-                                InputColumn::Float(data)
-                            },
+                            ColumnData::Dense(data) => {
+                                if (data.len() as u64) < rows {
+                                    InputColumn::NullableFloat(
+                                        rows,
+                                        data.into_iter()
+                                            .enumerate()
+                                            .map(|(i, v)| (i as u64, v))
+                                            .collect(),
+                                    )
+                                } else {
+                                    InputColumn::Float(data)
+                                }
+                            }
                             ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
                         };
                         (k, col)
@@ -125,23 +137,50 @@ impl Table {
             self.lru.clone(),
         ));
         let mut partitions = self.partitions.write().unwrap();
+        let mut column_names = self.column_names.write().unwrap();
         partitions.insert(md.id, partition);
-        self.next_partition_id.fetch_max(md.id + 1, std::sync::atomic::Ordering::SeqCst);
+        for sp in &md.subpartitions {
+            for col in &sp.column_names {
+                if !column_names.contains(col) {
+                    column_names.insert(col.clone());
+                }
+            }
+        }
+        self.next_partition_id
+            .fetch_max(md.id + 1, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn ingest(&self, row: Vec<(String, RawVal)>) {
         log::debug!("Ingesting row: {:?}", row);
         let mut buffer = self.buffer.lock().unwrap();
+        let mut column_names = self.column_names.write().unwrap();
+        for (col, _) in &row {
+            if !column_names.contains(col) {
+                column_names.insert(col.clone());
+            }
+        }
         buffer.push_row(row);
     }
 
     pub fn ingest_homogeneous(&self, columns: HashMap<String, InputColumn>) {
         let mut buffer = self.buffer.lock().unwrap();
+        let mut column_names = self.column_names.write().unwrap();
+        for col in columns.keys() {
+            if !column_names.contains(col) {
+                column_names.insert(col.clone());
+            }
+        }
         buffer.push_typed_cols(columns);
     }
 
     pub fn ingest_heterogeneous(&self, columns: HashMap<String, Vec<RawVal>>) {
         let mut buffer = self.buffer.lock().unwrap();
+        let mut column_names = self.column_names.write().unwrap();
+        for col in columns.keys() {
+            if !column_names.contains(col) {
+                column_names.insert(col.clone());
+            }
+        }
         buffer.push_untyped_cols(columns);
     }
 
@@ -194,7 +233,12 @@ impl Table {
         None
     }
 
-    pub fn compact(&self, id: PartitionID, columns: Vec<Arc<Column>>, old_partitions: &[PartitionID]) {
+    pub fn compact(
+        &self,
+        id: PartitionID,
+        columns: Vec<Arc<Column>>,
+        old_partitions: &[PartitionID],
+    ) {
         let (partition, keys) = Partition::new(self.name(), id, columns, self.lru.clone());
         {
             let mut partitions = self.partitions.write().unwrap();
@@ -286,8 +330,25 @@ impl Table {
         columns.into_iter().sorted()
     }
 
+    pub fn search_column_names(&self, pattern: &str) -> Vec<String> {
+        let column_names = self.column_names.read().unwrap();
+        match regex::Regex::new(pattern) {
+            Ok(re) => column_names
+                .iter()
+                .filter(|col| re.is_match(col))
+                .cloned()
+                .sorted(),
+            Err(_) => column_names
+                .iter()
+                .filter(|col| col.contains(pattern))
+                .cloned()
+                .sorted(),
+        }
+    }
+
     pub fn next_partition_id(&self) -> u64 {
-        self.next_partition_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        self.next_partition_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
 }
 

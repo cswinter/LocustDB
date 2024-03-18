@@ -438,6 +438,11 @@ impl InnerLocustDB {
         }
         bytes_evicted
     }
+
+    pub fn search_column_names(&self, table: &str, column: &str) -> Vec<String> {
+        let tables = self.tables.read().unwrap();
+        tables.get(table).map_or(vec![], |t| t.search_column_names(column))
+    }
 }
 
 impl Drop for InnerLocustDB {

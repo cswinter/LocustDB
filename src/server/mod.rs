@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -6,6 +6,7 @@ use actix_cors::Cors;
 use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::channel::oneshot::Canceled;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
@@ -42,6 +43,14 @@ struct AppState {
 #[derive(Serialize, Deserialize, Debug)]
 struct QueryRequest {
     query: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ColumnNameRequest {
+    tables: Vec<String>,
+    pattern: Option<String>,
+    offset: Option<usize>,
+    limit: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -214,6 +223,21 @@ async fn multi_query_cols(
     HttpResponse::Ok().json(json_results)
 }
 
+#[post("/columns")]
+async fn columns(
+    data: web::Data<AppState>,
+    req_body: web::Json<ColumnNameRequest>,
+) -> impl Responder {
+    let mut cols = HashSet::new();
+    let pattern = req_body.pattern.clone().unwrap_or("".to_string());
+    for table in &req_body.tables {
+        cols.extend(data.db.search_column_names(table, &pattern));
+    }
+    HttpResponse::Ok().json(json!({
+        "columns": cols.iter().cloned().sorted(),
+    }))
+}
+
 fn flatmap_err_response(
     err: Result<Result<QueryOutput, QueryError>, Canceled>,
 ) -> Result<QueryOutput, HttpResponse> {
@@ -367,6 +391,7 @@ pub async fn run(db: Arc<LocustDB>, cors_allow_all: bool, cors_allow_origin: Vec
             .service(query_data)
             .service(query_cols)
             .service(multi_query_cols)
+            .service(columns)
             .service(plot)
             .route("/hey", web::get().to(manual_hello))
     })
