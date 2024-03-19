@@ -1437,3 +1437,12 @@ fn test_merge_keep_null_column() {
         ],
     );
 }
+
+#[test]
+fn test_top_n_of_null() {
+    test_query_ec(
+        "SELECT id, nonexistant, ne2 FROM default WHERE nonexistant IS NOT NULL AND ne2 IS NOT NULL ORDER BY id LIMIT 4;",
+        &[
+        ],
+    );
+}

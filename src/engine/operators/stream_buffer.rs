@@ -150,7 +150,7 @@ impl<'a> VecOperator<'a> for StreamNullVec {
         let len = scratchpad.get_any(self.input).len();
         let count = if streaming {
             assert!(
-                len > self.current_index,
+                self.current_index == 0 || len > self.current_index,
                 "StreamNullVec: index out of bounds len={} current_index={} batch_size={} has_more={}",
                 len, self.current_index, self.batch_size, self.has_more,
             );

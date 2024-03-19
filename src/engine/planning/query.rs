@@ -75,7 +75,8 @@ impl NormalFormQuery {
 
             // PERF: better criterion for using top_n
             // PERF: top_n for multiple columns?
-            let indices = if limit < partition_range.len() / 2 && self.order_by.len() == 1 {
+            // TODO: efficient PERF top_n for null or constant vec (construct indices of size min(ranking.len(), limit))
+            let indices = if limit < partition_range.len() / 2 && self.order_by.len() == 1 && !ranking.is_constant() {
                 planner.top_n(ranking, limit, *desc)
             } else {
                 // PERF: sort directly if only single column selected
