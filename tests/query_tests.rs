@@ -10,12 +10,14 @@ use std::env;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    let mut opts = Options::default();
+    let mut opts = Options {
+        //partition_combine_factor: 99999999999,
+        ..Options::default()
+    };
     if env::var("DEBUG_TESTS").is_ok() {
         opts.threads = 1;
     }
     let locustdb = LocustDB::new(&opts);
-    // TODO: with_partition_size doesn't do anything anymore, should implement a new way to test partition boundaries
     let _ = block_on(
         locustdb
             .load_csv(LoadOptions::new("test_data/tiny.csv", "default").with_partition_size(40)),
@@ -36,6 +38,17 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
             batch_size: 8,
             ..Options::default()
         },
+        Options {
+            partition_combine_factor: 999,
+            batch_size: 8,
+            max_partition_length: 9,
+            ..Options::default()
+        },
+        Options {
+            partition_combine_factor: 999,
+            max_partition_length: 3,
+            ..Options::default()
+        },
     ];
 
     for mut opts in optss {
@@ -46,7 +59,7 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
         let _ = block_on(
             locustdb.load_csv(
                 LoadOptions::new("test_data/edge_cases.csv", "default")
-                    .with_partition_size(3)
+                    .with_partition_size(opts.max_partition_length)
                     .allow_nulls_all_columns(),
             ),
         );
@@ -1260,7 +1273,7 @@ fn test_group_by_float() {
 }
 
 #[test]
-fn test_or_nullcheck_and_filter() {
+fn test_or_nullcheck_and_filter1() {
     test_query_ec(
         "SELECT nullable_int2, float FROM default WHERE nullable_int2 IS NOT NULL OR float IS NOT NULL ORDER BY id LIMIT 100000;",
         &[
@@ -1276,17 +1289,29 @@ fn test_or_nullcheck_and_filter() {
             vec![Int(14), Float(OrderedFloat(1234124.51325))]
         ]
     );
+}
+
+#[test]
+fn test_or_nullcheck_and_filter2() {
     // Tests aliasing of OR inputs (both resolve to same constant expand)
     test_query_ec(
         "SELECT id FROM default WHERE id IS NULL OR float IS NULL ORDER BY id LIMIT 100000;",
         &[],
     );
+}
+
+#[test]
+fn test_or_nullcheck_and_filter3() {
     test_query_ec(
         "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) ORDER BY id LIMIT 100000;",
         &[
             vec![Int(14), Float(OrderedFloat(1.123124e30))],
         ]
     );
+}
+
+#[test]
+fn test_or_nullcheck_and_filter4() {
     test_query_ec(
         "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) LIMIT 100000;",
         &[
@@ -1325,7 +1350,7 @@ fn test_restore_from_disk() {
         db_path: Some(tmp_dir.path().to_path_buf()),
         ..Default::default()
     };
-    {
+    let old_db_contents = {
         let locustdb = LocustDB::new(&opts);
         let load = block_on(
             locustdb.load_csv(
@@ -1334,7 +1359,12 @@ fn test_restore_from_disk() {
             ),
         );
         load.unwrap();
-    }
+        block_on(locustdb.run_query("SELECT * FROM default;", true, true, vec![]))
+            .unwrap()
+            .unwrap()
+            .rows
+            .unwrap()
+    };
     // Dropping the LocustDB object will cause all threads to be stopped
     // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
     thread::sleep(time::Duration::from_millis(2000));
@@ -1353,6 +1383,20 @@ fn test_restore_from_disk() {
             vec![Int(1), Int(2013), Int(2), Int(824)]
         ]
     );
+    let restored_db_contents = {
+        let query = "SELECT * FROM default;";
+        let result = block_on(locustdb.run_query(query, true, true, vec![]))
+            .unwrap()
+            .unwrap()
+            .rows
+            .unwrap();
+        result
+    };
+    assert_eq!(old_db_contents.len(), restored_db_contents.len());
+    // TODO: column order is not preserved/deterministic
+    // for (i, (old, new)) in old_db_contents.iter().zip(restored_db_contents.iter()).enumerate() {
+    //     assert_eq!(old, new, "Row {} differs", i);
+    // }
 }
 
 #[test]
@@ -1380,5 +1424,16 @@ fn test_colnames() {
     test_query_colnames(
         "SELECT \"u8_offset_encoded\" FROM \"default\" WHERE \"u8_offset_encoded\" = 256;",
         vec!["u8_offset_encoded".to_string()],
+    );
+}
+
+#[test]
+fn test_merge_keep_null_column() {
+    test_query_ec(
+        "SELECT id, nonexistant_column FROM default ORDER BY id LIMIT 2;",
+        &[
+            vec![Int(0), Null],
+            vec![Int(1), Null],
+        ],
     );
 }

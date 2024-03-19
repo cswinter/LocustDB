@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -19,7 +20,7 @@ pub struct ColumnLocator {
 
 pub struct Partition {
     pub id: PartitionID,
-    len: usize,
+    range: Range<usize>,
     total_size_bytes: usize,
     // Column name -> PartitionID -> ColumnHandle
     pub(crate) cols: HashMap<String, ColumnHandle>,
@@ -32,6 +33,8 @@ impl Partition {
         id: PartitionID,
         cols: Vec<Arc<Column>>,
         lru: Lru,
+        // Offset of this partition in the table
+        offset: usize
     ) -> (Partition, Vec<(u64, String)>) {
         // Can't put into lru directly, because then memory limit enforcer might try to evict column that is unreachable because this partition is not yet in the partition map.
         // Instead, we return the keys to be added to the lru after the partition is added to the partition map.
@@ -45,13 +48,13 @@ impl Partition {
                 (c.name().to_string(), ColumnHandle::resident(table, id, c))
             })
             .collect();
-        (Partition { id, len, total_size_bytes, cols, lru }, keys)
+        (Partition { id, range: offset..(offset+len), total_size_bytes, cols, lru }, keys)
     }
 
     pub fn nonresident(
         table: &str,
         id: PartitionID,
-        len: usize,
+        range: Range<usize>,
         spm: &[SubpartitionMetadata],
         lru: Lru,
     ) -> Partition {
@@ -71,7 +74,7 @@ impl Partition {
                 );
             }
         }
-        Partition { id, len, cols, lru, total_size_bytes }
+        Partition { id, range, cols, lru, total_size_bytes }
     }
 
     pub fn from_buffer(
@@ -79,6 +82,7 @@ impl Partition {
         id: PartitionID,
         buffer: Buffer,
         lru: Lru,
+        offset: usize,
     ) -> (Partition, Vec<(u64, String)>) {
         Partition::new(
             table,
@@ -89,6 +93,7 @@ impl Partition {
                 .map(|(name, raw_col)| raw_col.finalize(&name))
                 .collect(),
             lru,
+            offset,
         )
     }
 
@@ -175,7 +180,11 @@ impl Partition {
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.range.len()
+    }
+    
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
     }
 
     pub fn mem_tree(&self, coltrees: &mut HashMap<String, MemTreeColumn>, depth: usize) {

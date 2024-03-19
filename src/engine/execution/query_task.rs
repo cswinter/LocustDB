@@ -1,4 +1,5 @@
 use std::cmp;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
@@ -47,7 +48,7 @@ pub struct QueryTask {
 
 pub struct QueryState<'a> {
     completed_batches: usize,
-    partial_results: Vec<BatchResult<'a>>,
+    partial_results: BTreeMap<usize, BatchResult<'a>>,
     explains: Vec<String>,
     rows_collected: usize,
     colstacks: Vec<Vec<HashMap<String, Arc<dyn DataSource>>>>,
@@ -127,7 +128,7 @@ impl QueryTask {
             batch_size,
 
             unsafe_state: Mutex::new(QueryState {
-                partial_results: Vec::new(),
+                partial_results: BTreeMap::new(),
                 completed_batches: 0,
                 explains: Vec::new(),
                 rows_collected: 0,
@@ -161,7 +162,7 @@ impl QueryTask {
         let mut rows_scanned = 0;
         let mut rows_collected = 0;
         let mut colstack = Vec::new();
-        let mut batch_results = Vec::<BatchResult>::new();
+        let mut batch_results = BTreeMap::<usize, BatchResult>::new();
         let mut explains = Vec::new();
         while let Some((partition, id)) = self.next_partition() {
             let show = self.show.iter().any(|&x| x == id);
@@ -174,18 +175,24 @@ impl QueryTask {
                     &'static HashMap<String, Arc<dyn DataSource>>,
                 >(&cols)
             };
-            let (mut batch_result, explain) = match if self.main_phase.aggregate.is_empty() {
+            let (batch_result, explain) = match if self.main_phase.aggregate.is_empty() {
                 self.main_phase.run(
                     unsafe_cols,
                     self.explain,
                     show,
                     id,
-                    partition.len(),
+                    partition.range(),
                     self.batch_size,
                 )
             } else {
-                self.main_phase
-                    .run_aggregate(unsafe_cols, self.explain, show, id, partition.len(), self.batch_size)
+                self.main_phase.run_aggregate(
+                    unsafe_cols,
+                    self.explain,
+                    show,
+                    id,
+                    partition.range(),
+                    self.batch_size,
+                )
             } {
                 Ok(result) => result,
                 Err(error) => {
@@ -199,54 +206,71 @@ impl QueryTask {
                 explains.push(explain);
             }
 
-            // Merge only with previous batch results of same level to get O(n log n) complexity
-            while let Some(br) = batch_results.pop() {
-                if br.level == batch_result.level {
-                    match combine(br, batch_result, self.combined_limit(), self.batch_size) {
-                        Ok(result) => batch_result = result,
-                        Err(error) => {
-                            self.fail_with(error);
-                            return;
-                        }
-                    };
-                } else {
-                    batch_results.push(br);
-                    break;
-                }
+            batch_results.insert(batch_result.scanned_range.start, batch_result);
+            // Merge only with contiguous previous batch results of same level to get O(n log n) complexity and deterministic order.
+            // Find any adjacent batch results of same level and merge them
+            if let Err(error) = QueryTask::combine_results(
+                &mut batch_results,
+                self.combined_limit(),
+                self.batch_size,
+                true,
+            ) {
+                self.fail_with(error);
+                return;
             }
-            batch_results.push(batch_result);
-
             if self.completed.load(Ordering::SeqCst) {
                 return;
             }
-            if self.sufficient_rows(rows_collected) {
-                break;
-            }
+            // TODO: abort early if we have selected sufficient number of rows from initial partition
         }
 
-        match QueryTask::combine_results(batch_results, self.combined_limit(), self.batch_size) {
-            Ok(Some(result)) => self.push_result(result, rows_scanned, rows_collected, explains),
-            Err(error) => self.fail_with(error),
-            _ => {}
+        // TODO: parallelize combining results from different threads
+        for (_, result) in batch_results {
+            self.push_result(result, rows_scanned, rows_collected, explains.clone());
+            rows_scanned = 0;
+            rows_collected = 0;
+            explains.clear();
         }
+
         // need to keep colstack alive, otherwise results may reference freed data
         self.push_colstack(colstack);
     }
 
     fn combine_results(
-        batch_results: Vec<BatchResult>,
-        limit: usize,
+        batch_results: &mut BTreeMap<usize, BatchResult>,
+        combined_limit: usize,
         batch_size: usize,
-    ) -> Result<Option<BatchResult>, QueryError> {
-        let mut full_result = None;
-        for batch_result in batch_results {
-            if let Some(partial) = full_result {
-                full_result = Some(combine(partial, batch_result, limit, batch_size)?);
-            } else {
-                full_result = Some(batch_result);
+        require_same_level: bool,
+    ) -> Result<(), QueryError> {
+        fn eligible_pair(
+            batch_results: &BTreeMap<usize, BatchResult>,
+            require_same_level: bool,
+        ) -> Option<(usize, usize)> {
+            let mut iter = batch_results.iter();
+            let mut prev = iter.next()?;
+            for (offset, curr) in iter {
+                if (prev.1.level == curr.level || !require_same_level)
+                    && prev.1.scanned_range.end == curr.scanned_range.start
+                {
+                    return Some((*prev.0, *offset));
+                }
+                prev = (offset, curr);
             }
+            None
         }
-        Ok(full_result)
+        while let Some((key1, key2)) =
+            eligible_pair(batch_results, true).or_else(|| if !require_same_level {
+                eligible_pair(batch_results, false)
+            } else {
+                None
+            })
+        {
+            let br1 = batch_results.remove(&key1).unwrap();
+            let br2 = batch_results.remove(&key2).unwrap();
+            let result = combine(br1, br2, combined_limit, batch_size)?;
+            batch_results.insert(key1, result);
+        }
+        Ok(())
     }
 
     fn push_result(
@@ -266,24 +290,33 @@ impl QueryTask {
         state.rows_collected += rows_collected;
 
         let result = unsafe { mem::transmute::<_, BatchResult<'static>>(result) };
-        state.partial_results.push(result);
+        state
+            .partial_results
+            .insert(result.scanned_range.start, result);
 
-        if state.completed_batches == self.partitions.len()
-            || self.sufficient_rows(state.rows_collected)
-        {
-            let mut owned_results = Vec::with_capacity(0);
-            mem::swap(&mut owned_results, &mut state.partial_results);
-            let full_result = match QueryTask::combine_results(
-                owned_results,
+        if state.completed_batches == self.partitions.len() {
+            let mut owned_results = mem::take(&mut state.partial_results);
+            if let Err(error) = QueryTask::combine_results(
+                &mut owned_results,
                 self.combined_limit(),
                 self.batch_size,
+                false,
             ) {
-                Ok(result) => result.unwrap(),
-                Err(error) => {
-                    self.fail_with_no_lock(error);
-                    return;
-                }
+                self.fail_with_no_lock(error);
+                return;
             };
+            if owned_results.len() != 1 {
+                let error = fatal!(
+                    "Expected exactly one remaining partition. Ranges and levels: {:?}",
+                    owned_results
+                        .values()
+                        .map(|v| (v.scanned_range.clone(), v.level))
+                        .collect::<Vec<_>>()
+                );
+                self.fail_with_no_lock(error);
+                return;
+            }
+            let full_result = owned_results.into_iter().next().unwrap().1;
             let final_result = if let Some(final_pass) = &self.final_pass {
                 let data_sources = full_result.into_columns();
                 let cols = unsafe {
@@ -298,7 +331,7 @@ impl QueryTask {
                         self.explain,
                         !self.show.is_empty(),
                         0xdead_beef,
-                        cols.iter().next().map(|(_, c)| c.len()).unwrap_or(0),
+                        0..cols.iter().next().map(|(_, c)| c.len()).unwrap_or(0),
                         self.batch_size,
                     )
                     .unwrap()
@@ -330,12 +363,6 @@ impl QueryTask {
         self.batch_index
             .store(self.partitions.len(), Ordering::SeqCst);
         self.sender.send(Err(error));
-    }
-
-    fn sufficient_rows(&self, rows_collected: usize) -> bool {
-        let unordered_select =
-            self.main_phase.aggregate.is_empty() && self.main_phase.order_by.is_empty();
-        unordered_select && self.combined_limit() < rows_collected
     }
 
     fn next_partition(&self) -> Option<(&Arc<Partition>, usize)> {

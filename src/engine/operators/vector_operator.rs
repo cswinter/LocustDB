@@ -56,7 +56,7 @@ use super::nonzero_indices::NonzeroIndices;
 use super::null_to_val::NullToVal;
 use super::null_to_vec::NullToVec;
 use super::null_vec::NullVec;
-use super::null_vec_like::NullVecLike;
+use super::null_vec_like::{LengthSource, NullVecLike};
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
@@ -570,7 +570,13 @@ pub mod operator {
         filter: BufferRef<u8>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        if input.is_nullable() {
+        if input.is_null() {
+            Ok(null_vec_like(
+                filter.any(),
+                output.any(),
+                LengthSource::NonZeroU8ElementCount,
+            ))
+        } else if input.is_nullable() {
             reify_types! {
                 "filter_nullable";
                 input, output: NullablePrimitive;
@@ -579,7 +585,7 @@ pub mod operator {
         } else {
             reify_types! {
                 "filter";
-                input, output: PrimitiveUSize;
+                input, output: VecData;
                 Ok(Box::new(Filter { input, filter, output }))
             }
         }
@@ -610,12 +616,16 @@ pub mod operator {
         indices: BufferRef<usize>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "select";
-            input, output: PrimitiveUSize;
-            Ok(Box::new(Select { input, indices, output }));
-            input, output: NullablePrimitive;
-            Ok(Box::new(SelectNullable { input, indices, output }))
+        if input.is_null() {
+            Ok(null_vec_like(input.any(), output.any(), LengthSource::InputLength))
+        } else {
+            reify_types! {
+                "select";
+                input, output: PrimitiveUSize;
+                Ok(Box::new(Select { input, indices, output }));
+                input, output: NullablePrimitive;
+                Ok(Box::new(SelectNullable { input, indices, output }))
+            }
         }
     }
 
@@ -662,7 +672,7 @@ pub mod operator {
     pub fn null_vec_like<'a>(
         input: BufferRef<Any>,
         output: BufferRef<Any>,
-        source_type: u8,
+        source_type: LengthSource,
     ) -> BoxedOperator<'a> {
         Box::new(NullVecLike {
             input,
@@ -1188,7 +1198,7 @@ pub mod operator {
             } else {
                 reify_types! {
                     "type_conversion";
-                    input: PrimitiveNoU64;
+                    input: VecDataNoU64;
                     Ok(Box::new(TypeConversionOperator { input, output }) as BoxedOperator<'a>)
                 }
             }
@@ -1669,7 +1679,7 @@ pub mod operator {
                 "merge_keep";
                 left, right, merged_out: NullablePrimitive;
                 Ok(Box::new(MergeKeepNullable { merge_ops, left, right, merged: merged_out }));
-                left, right, merged_out: Primitive;
+                left, right, merged_out: VecData;
                 Ok(Box::new(MergeKeep { merge_ops, left, right, merged: merged_out }))
         }
     }

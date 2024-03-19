@@ -137,6 +137,7 @@ fn main() {
         max_partition_size_bytes,
         partition_combine_factor: 4,
         batch_size,
+        max_partition_length: 1024 * 1024,
     };
 
     if options.readahead > options.mem_size_limit_tables {

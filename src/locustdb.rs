@@ -88,7 +88,8 @@ impl LocustDB {
         match query_task {
             Ok(task) => {
                 self.schedule(task);
-                Ok(receiver.await?)
+                let result = receiver.await?;
+                Ok(result)
             }
             Err(err) => Ok(Err(err)),
         }
@@ -210,6 +211,8 @@ pub struct Options {
     pub partition_combine_factor: u64,
     /// Maximum length of temporary buffer used in streaming stages during query execution
     pub batch_size: usize,
+    /// Maximum number of rows in a partitions. Not implemented.
+    pub max_partition_length: usize,
 }
 
 impl Default for Options {
@@ -226,6 +229,7 @@ impl Default for Options {
             max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
             partition_combine_factor: 4,
             batch_size: 1024,
+            max_partition_length: 1024 * 1024,
         }
     }
 }

@@ -28,7 +28,7 @@ impl<'a> VecOperator<'a> for ConstantVec<'a> {
         false
     }
     fn can_stream_output(&self, _: usize) -> bool {
-        true
+        false
     }
     fn allocates(&self) -> bool {
         false

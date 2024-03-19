@@ -556,11 +556,17 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for &'a [T] {
     default fn cast_ref_opt_f64(&self) -> &[Option<OrderedFloat<f64>>] {
         panic!("{}", self.type_error("cast_ref_opt_f64"))
     }
+    default fn to_mixed(&self) -> Vec<Val<'a>> {
+        panic!("{}", self.type_error("to_mixed"))
+    }
 }
 
 impl<'a> Data<'a> for &'a [&'a str] {
     fn cast_ref_str(&self) -> &[&'a str] {
         self
+    }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter().map(|s| Val::Str(s)).collect()
     }
 }
 
@@ -568,11 +574,22 @@ impl<'a> Data<'a> for &'a [Option<&'a str>] {
     fn cast_ref_opt_str(&self) -> &[Option<&'a str>] {
         self
     }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter()
+            .map(|s| match s {
+                None => Val::Null,
+                Some(s) => Val::Str(s),
+            })
+            .collect()
+    }
 }
 
 impl<'a> Data<'a> for &'a [Val<'a>] {
     fn cast_ref_mixed(&self) -> &[Val<'a>] {
         self
+    }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.to_vec()
     }
 }
 
@@ -585,6 +602,9 @@ impl<'a> Data<'a> for &'a [usize] {
 impl<'a> Data<'a> for &'a [i64] {
     fn cast_ref_i64(&self) -> &[i64] {
         self
+    }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter().map(|i| Val::Integer(*i)).collect()
     }
 }
 
@@ -616,11 +636,24 @@ impl<'a> Data<'a> for &'a [OrderedFloat<f64>] {
     fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
         self
     }
+
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter().map(|i| Val::Float(*i)).collect()
+    }
 }
 
 impl<'a> Data<'a> for &'a [Option<OrderedFloat<f64>>] {
     fn cast_ref_opt_f64(&self) -> &[Option<OrderedFloat<f64>>] {
         self
+    }
+
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.iter()
+            .map(|s| match s {
+                None => Val::Null,
+                Some(s) => Val::Float(*s),
+            })
+            .collect()
     }
 }
 

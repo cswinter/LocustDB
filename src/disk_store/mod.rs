@@ -21,6 +21,7 @@ pub type PartitionID = u64;
 pub struct PartitionMetadata {
     pub id: PartitionID,
     pub tablename: String,
+    pub offset: usize,
     pub len: usize,
     pub subpartitions: Vec<SubpartitionMetadata>,
 }

@@ -5,6 +5,7 @@ use locustdb_derive::ASTBuilder;
 use regex;
 use regex::Regex;
 
+use crate::engine::operators::LengthSource;
 use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::column::DataSource;
@@ -600,7 +601,7 @@ pub enum QueryPlan {
         name: String,
         #[output(t = "base=input")]
         collected: TypedBufferRef,
-    }
+    },
 }
 
 // TODO: return struct
@@ -1224,7 +1225,7 @@ impl QueryPlan {
                         } else {
                             (
                                 planner.constant_expand(
-                                    (false as u8) as i64,
+                                    (plan.is_null() as u8) as i64,
                                     column_len,
                                     EncodingType::U8,
                                 ),
@@ -1241,7 +1242,7 @@ impl QueryPlan {
                         } else {
                             (
                                 planner.constant_expand(
-                                    (true as u8) as i64,
+                                    (!plan.is_null() as u8) as i64,
                                     column_len,
                                     EncodingType::U8,
                                 ),
@@ -1692,7 +1693,16 @@ pub(super) fn prepare<'a>(
             plan,
             source_type,
             nulls,
-        } => operator::null_vec_like(plan.any(), nulls.any(), source_type),
+        } => operator::null_vec_like(
+            plan.any(),
+            nulls.any(),
+            match source_type {
+                0 => LengthSource::InputLength,
+                1 => LengthSource::NonZeroU8ElementCount,
+                2 => LengthSource::NonNullElementCount,
+                _ => unreachable!(),
+            },
+        ),
         QueryPlan::ConstantExpand {
             value,
             len,

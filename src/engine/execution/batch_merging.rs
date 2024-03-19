@@ -3,6 +3,7 @@ use crate::errors::QueryError;
 use crate::mem_store::column::DataSource;
 use std::cmp::min;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::result::Result;
 use std::sync::Arc;
 use std::usize;
@@ -14,6 +15,7 @@ pub struct BatchResult<'a> {
     pub aggregations: Vec<(usize, Aggregator)>,
     pub order_by: Vec<(usize, bool)>,
     pub level: u32,
+    pub scanned_range: Range<usize>,
     pub batch_count: usize,
     pub show: bool,
     // Buffers that are referenced by query result - unsafe to drop before results are converted into owned values
@@ -68,6 +70,12 @@ pub fn combine<'a>(
     limit: usize,
     batch_size: usize,
 ) -> Result<BatchResult<'a>, QueryError> {
+    ensure!(
+        batch1.scanned_range.end == batch2.scanned_range.start,
+        "Scanned ranges do not match in left ({:?}) and right ({:?}) batch result.",
+        batch1.scanned_range,
+        batch2.scanned_range,
+    );
     ensure!(
         batch1.projection.len() == batch2.projection.len(),
         "Unequal number of projections in left ({}) and right ({}) batch result.",
@@ -168,6 +176,7 @@ pub fn combine<'a>(
             aggregations,
             order_by: vec![],
             level: batch1.level + 1,
+            scanned_range: batch1.scanned_range.start..batch2.scanned_range.end,
             batch_count: batch1.batch_count + batch2.batch_count,
             show: batch1.show && batch2.show,
             unsafe_referenced_buffers: {
@@ -207,24 +216,16 @@ pub fn combine<'a>(
             let (merge_ops, merged_final_sort_col) = if batch1.order_by.len() == 1 {
                 let (index1, desc) = batch1.order_by[0];
                 let (index2, _) = batch2.order_by[0];
-                let mut left = left[index1];
-                let mut right = right[index2];
-                if left.tag == EncodingType::Null {
-                    left = qp.cast(left, EncodingType::Val);
-                }
-                if right.tag == EncodingType::Null {
-                    right = qp.cast(right, EncodingType::Val);
-                }
+                let left = null_to_val(&mut qp, left[index1]);
+                let right = null_to_val(&mut qp, right[index2]);
                 let (left, right) = unify_types(&mut qp, left, right);
                 qp.merge(left, right, limit, desc)
             } else {
                 let (first_sort_col_index1, desc) = batch1.order_by[0];
                 let (first_sort_col_index2, _) = batch2.order_by[0];
-                let (l, r) = unify_types(
-                    &mut qp,
-                    left[first_sort_col_index1],
-                    right[first_sort_col_index2],
-                );
+                let l = null_to_val(&mut qp, left[first_sort_col_index1]);
+                let r = null_to_val(&mut qp, right[first_sort_col_index2]);
+                let (l, r) = unify_types(&mut qp, l, r);
                 let mut partitioning = qp.partition(l, r, limit, desc);
 
                 for i in 1..(left.len() - 1) {
@@ -233,11 +234,9 @@ pub fn combine<'a>(
                     let (l, r) = unify_types(&mut qp, left[index1], right[index2]);
                     partitioning = qp.subpartition(partitioning, l, r, desc);
                 }
-                let (l, r) = unify_types(
-                    &mut qp,
-                    left[final_sort_col_index1],
-                    right[final_sort_col_index2],
-                );
+                let l = null_to_val(&mut qp, left[final_sort_col_index1]);
+                let r = null_to_val(&mut qp, right[final_sort_col_index2]);
+                let (l, r) = unify_types(&mut qp, l, r);
                 qp.merge_partitioned(partitioning, l, r, limit, batch1.order_by.last().unwrap().1)
             };
 
@@ -246,7 +245,9 @@ pub fn combine<'a>(
                 if ileft == final_sort_col_index1 && iright == final_sort_col_index2 {
                     projection.push(merged_final_sort_col.any());
                 } else {
-                    let (l, r) = unify_types(&mut qp, left[ileft], right[iright]);
+                    let l = null_to_val(&mut qp, left[ileft]);
+                    let r = null_to_val(&mut qp, right[iright]);
+                    let (l, r) = unify_types(&mut qp, l, r);
                     let merged = qp.merge_keep(merge_ops, l, r);
                     projection.push(merged.any());
                 }
@@ -256,7 +257,9 @@ pub fn combine<'a>(
                 .iter()
                 .zip(batch2.order_by.iter())
             {
-                let (l, r) = unify_types(&mut qp, left[ileft], right[iright]);
+                let l = null_to_val(&mut qp, left[ileft]);
+                let r = null_to_val(&mut qp, right[iright]);
+                let (l, r) = unify_types(&mut qp, l, r);
                 let merged = qp.merge_keep(merge_ops, l, r);
                 order_by.push((merged.any(), desc));
             }
@@ -276,6 +279,7 @@ pub fn combine<'a>(
                 level: batch1.level + 1,
                 batch_count: batch1.batch_count + batch2.batch_count,
                 show: batch1.show && batch2.show,
+                scanned_range: batch1.scanned_range.start..batch2.scanned_range.end,
                 unsafe_referenced_buffers: {
                     let mut urb = batch1.unsafe_referenced_buffers;
                     urb.extend(batch2.unsafe_referenced_buffers);
@@ -322,6 +326,7 @@ pub fn combine<'a>(
                 aggregations: vec![],
                 order_by: vec![],
                 level: batch1.level + 1,
+                scanned_range: batch1.scanned_range.start..batch2.scanned_range.end,
                 batch_count: batch1.batch_count + batch2.batch_count,
                 show: batch1.show && batch2.show,
                 unsafe_referenced_buffers: {
@@ -347,4 +352,12 @@ fn unify_types(
         right = qp.cast(right, lub);
     }
     (left, right)
+}
+
+fn null_to_val(qp: &mut QueryPlanner, plan: TypedBufferRef) -> TypedBufferRef {
+    if plan.tag == EncodingType::Null {
+        qp.cast(plan, EncodingType::Val)
+    } else {
+        plan
+    }
 }

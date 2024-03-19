@@ -216,6 +216,8 @@ impl TypedBufferRef {
 
     pub fn is_nullable(&self) -> bool { self.tag.is_nullable() }
 
+    pub fn is_null(&self) -> bool { self.tag == EncodingType::Null }
+
     pub fn is_constant(&self) -> bool { self.tag.is_constant() }
 
     pub fn nullable_any(&self) -> Result<BufferRef<Nullable<Any>>, QueryError> {

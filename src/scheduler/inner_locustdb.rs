@@ -116,10 +116,17 @@ impl InnerLocustDB {
     pub fn stop(&self) {
         // Acquire task_queue_guard to make sure that there are no threads that have checked self.running but not waited on idle_queue yet.
         info!("Stopping database...");
-        let _guard = self.task_queue.lock();
+        info!("Flushing WAL...");
+        // TODO: have to flush all ingestion requests and reject new ones with error, otherwise we might lose data that is ingested after the wal flush
+        // Have to flush WAL before shutting down workers, otherwise there are no workers to perform compactions and we block forever.
         self.running.store(false, Ordering::SeqCst);
-        self.idle_queue.notify_all();
         self.wal_flush();
+        info!("Acquiring task queue lock...");
+        let _guard = self.task_queue.lock();
+        info!("Signal workers to stop...");
+        self.running.store(false, Ordering::SeqCst);
+        info!("Notify all workers...");
+        self.idle_queue.notify_all();
     }
 
     fn worker_loop(locustdb: Arc<InnerLocustDB>) {
@@ -235,6 +242,7 @@ impl InnerLocustDB {
                     id: partition.id,
                     tablename: table.name().to_string(),
                     len: partition.len(),
+                    offset: partition.range().start,
                     subpartitions: metadata,
                 };
                 new_partitions.push((partition_metadata, subpartitions));
@@ -249,12 +257,12 @@ impl InnerLocustDB {
             s.persist_partitions_delete_wal(new_partitions)
         }
 
-        for (table, id, parts) in compactions {
+        for (table, id, (range, parts)) in compactions {
             // get table, create new merged partition/sub-partitions (not registered with table)
             // - get names of all columns
             // - run query for each column, construct Column
             // - create subpartitions
-            // TODO: retain order of rows
+            println!("Compacting table {} id {} range {:?} composed of {:?}", table, id, range, parts);
             let colnames = tables[table].column_names(&parts);
             let mut columns = Vec::with_capacity(colnames.len());
             let data = tables[table].snapshot_parts(&parts);
@@ -285,17 +293,22 @@ impl InnerLocustDB {
                         raws.into_iter().for_each(|r| column_builder.push(r))
                     }
                 }
+                assert_eq!(
+                    range.len(),
+                    column_builder.len(),
+                    "range={range:?}, column_builder.len() = {}",
+                    column_builder.len()
+                );
                 columns.push(column_builder.finalize(column));
             }
             let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
             // write subpartitions to disk, update metastore unlinking old partitions, delete old partitions
-            self.storage
-                .as_ref()
-                .unwrap()
-                .compact(table, id, metadata, subpartitions, &parts);
+            if let Some(storage) = self.storage.as_ref() {
+                storage.compact(table, id, metadata, subpartitions, &parts, range.start);
+            }
 
             // replace old partitions with new partition
-            tables[table].compact(id, columns, &parts);
+            tables[table].compact(id, range.start, columns, &parts);
         }
 
         log::info!("Performed wal flush in {:?}", start_time.elapsed());
@@ -441,7 +454,9 @@ impl InnerLocustDB {
 
     pub fn search_column_names(&self, table: &str, column: &str) -> Vec<String> {
         let tables = self.tables.read().unwrap();
-        tables.get(table).map_or(vec![], |t| t.search_column_names(column))
+        tables
+            .get(table)
+            .map_or(vec![], |t| t.search_column_names(column))
     }
 }
 
@@ -496,7 +511,8 @@ fn subpartition(
                 && meta.column_names[0]
                     .chars()
                     .all(|c| (c.is_alphanumeric() && c.is_lowercase()) || c == '_');
-            let subpartition_key = if meta.column_names.len() == 1 && is_column_name_filesystem_safe {
+            let subpartition_key = if meta.column_names.len() == 1 && is_column_name_filesystem_safe
+            {
                 format!("x{}", meta.column_names[0])
             } else {
                 use sha2::{Digest, Sha256};

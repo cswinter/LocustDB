@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::ops::DerefMut;
+use std::ops::{DerefMut, Range};
 use std::str;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
@@ -20,6 +20,7 @@ pub struct Table {
     name: String,
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     next_partition_id: AtomicU64,
+    next_partition_offset: AtomicUsize,
     buffer: Mutex<Buffer>,
     /// LRU that keeps track of when each (table, partition, column) segment was last accessed.
     lru: Lru,
@@ -34,6 +35,7 @@ impl Table {
             name: name.to_string(),
             partitions: RwLock::new(HashMap::new()),
             next_partition_id: AtomicU64::new(0),
+            next_partition_offset: AtomicUsize::new(0),
             buffer: Mutex::new(Buffer::default()),
             lru,
             column_names: RwLock::default(),
@@ -47,10 +49,11 @@ impl Table {
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
         let mut partitions: Vec<_> = partitions.values().cloned().collect();
+        let offset = partitions.iter().map(|p| p.len()).sum::<usize>();
         let buffer = self.buffer.lock().unwrap();
         if buffer.len() > 0 {
             partitions.push(Arc::new(
-                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone()).0,
+                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone(), offset).0,
             ));
         }
         partitions
@@ -59,10 +62,11 @@ impl Table {
     pub fn snapshot_parts(&self, parts: &[PartitionID]) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
         let mut partitions: Vec<_> = parts.iter().map(|id| partitions[id].clone()).collect();
+        let offset = partitions.iter().map(|p| p.len()).sum::<usize>();
         let buffer = self.buffer.lock().unwrap();
         if buffer.len() > 0 {
             partitions.push(Arc::new(
-                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone()).0,
+                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone(), offset).0,
             ));
         }
         partitions
@@ -132,7 +136,7 @@ impl Table {
         let partition = Arc::new(Partition::nonresident(
             self.name(),
             md.id,
-            md.len,
+            md.offset..(md.offset+md.len),
             &md.subpartitions,
             self.lru.clone(),
         ));
@@ -191,8 +195,9 @@ impl Table {
         }
         let buffer = std::mem::take(buffer.deref_mut());
         let part_id = self.next_partition_id();
+        let partition_offset = self.next_partition_offset.fetch_add(buffer.len(), std::sync::atomic::Ordering::SeqCst);
         let (new_partition, keys) =
-            Partition::from_buffer(self.name(), part_id, buffer, self.lru.clone());
+            Partition::from_buffer(self.name(), part_id, buffer, self.lru.clone(), partition_offset);
         let arc_partition;
         {
             let mut partitions = self.partitions.write().unwrap();
@@ -208,14 +213,19 @@ impl Table {
     /// Determines if partitions should be compacted. If so, returns the maximal list of partitions to compact.
     /// A subset of partitions is eligible for compaction if the size of each
     /// partition in the subset is at least `combine_factor` times the total size of all partitions in the subset.
-    pub fn plan_compaction(&self, combine_factor: u64) -> Option<Vec<PartitionID>> {
+    /// Additionally, partitions can only be compacted if they are contiguous.
+    pub fn plan_compaction(&self, combine_factor: u64) -> Option<(Range<usize>, Vec<PartitionID>)> {
         // TODO: max partition size
         let partitions = self.partitions.read().unwrap();
-        let by_size_desc: Vec<Arc<Partition>> = partitions
+        // let by_size_desc: Vec<Arc<Partition>> = partitions
+        //     .values()
+        //     .cloned()
+        //     .sorted_by(|p1, p2| p2.total_size_bytes().cmp(&p1.total_size_bytes()));
+        let by_offset: Vec<Arc<Partition>> = partitions
             .values()
             .cloned()
-            .sorted_by(|p1, p2| p2.total_size_bytes().cmp(&p1.total_size_bytes()));
-        let cumulative = by_size_desc
+            .sorted_by(|p1, p2| p1.range().start.cmp(&p2.range().start));
+        let cumulative = by_offset
             .iter()
             .rev()
             .scan(0, |acc, p| {
@@ -225,8 +235,9 @@ impl Table {
             .collect::<Vec<_>>();
 
         for (i, cum) in cumulative.iter().rev().enumerate() {
-            if by_size_desc[i].total_size_bytes() as u64 * combine_factor < *cum {
-                return Some(by_size_desc[i..].iter().map(|p| p.id).collect());
+            if by_offset[i].total_size_bytes() as u64 * combine_factor < *cum {
+                let range = by_offset[i].range().start..by_offset.last().unwrap().range().end;
+                return Some((range, by_offset[i..].iter().map(|p| p.id).collect()));
             }
         }
 
@@ -236,10 +247,11 @@ impl Table {
     pub fn compact(
         &self,
         id: PartitionID,
+        offset: usize,
         columns: Vec<Arc<Column>>,
         old_partitions: &[PartitionID],
     ) {
-        let (partition, keys) = Partition::new(self.name(), id, columns, self.lru.clone());
+        let (partition, keys) = Partition::new(self.name(), id, columns, self.lru.clone(), offset);
         {
             let mut partitions = self.partitions.write().unwrap();
             for old_id in old_partitions {

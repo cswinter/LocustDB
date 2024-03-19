@@ -113,6 +113,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NullableIntToVal<'a, T> {
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.vals.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -157,10 +158,10 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for ValToNullableInt<'a, T> {
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.nullable.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
         format!("UnfuseNulls<{:?}>({})", T::t(), self.vals)
     }
 }
-

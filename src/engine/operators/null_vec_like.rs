@@ -2,11 +2,17 @@ use crate::engine::*;
 use crate::bitvec::BitVec;
 
 #[derive(Debug)]
+pub enum LengthSource {
+    InputLength,
+    NonZeroU8ElementCount,
+    NonNullElementCount,
+}
+
+#[derive(Debug)]
 pub struct NullVecLike {
     pub input: BufferRef<Any>,
     pub output: BufferRef<Any>,
-    // 0: use input length, 1: non-zero elements in u8 input, 2: non-zero non-null elements in nullalb u8 input
-    pub source_type: u8,
+    pub source_type: LengthSource,
     pub count: usize,
 }
 
@@ -14,9 +20,9 @@ impl<'a> VecOperator<'a> for NullVecLike {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         if streaming { self.count = 0 };
         self.count += match self.source_type {
-            0 => scratchpad.get_any(self.input).len(),
-            1 => scratchpad.get(self.input.u8()).iter().filter(|&&x| x != 0).count(),
-            2 => {
+            LengthSource::InputLength => scratchpad.get_any(self.input).len(),
+            LengthSource::NonZeroU8ElementCount => scratchpad.get(self.input.u8()).iter().filter(|&&x| x != 0).count(),
+            LengthSource::NonNullElementCount => {
                 let mut count = 0;
                 let (data, present) = scratchpad.get_nullable(self.input.nullable_u8());
                 for (i, d) in data.iter().enumerate() {
@@ -26,7 +32,6 @@ impl<'a> VecOperator<'a> for NullVecLike {
                 }
                 count
             },
-            _ => unreachable!(),
         };
         let mut output = scratchpad.get_any_mut(self.output);
         *output.cast_ref_mut_null() = self.count;

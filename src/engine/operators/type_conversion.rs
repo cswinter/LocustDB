@@ -103,7 +103,27 @@ impl<'a> Cast<Val<'a>> for i64 { fn cast(self) -> Val<'a> { Val::Integer(self) }
 
 impl<'a> Cast<Val<'a>> for &'a str { fn cast(self) -> Val<'a> { Val::Str(self) } }
 
+impl<'a> Cast<Val<'a>> for Option<&'a str> {
+    fn cast(self) -> Val<'a> {
+        match self {
+            Some(s) => Val::Str(s),
+            None => Val::Null,
+        }
+    }
+}
+
 impl<'a> Cast<Val<'a>> for OrderedFloat<f64> { fn cast(self) -> Val<'a> { Val::Float(self) } }
+
+impl<'a> Cast<Val<'a>> for Option<OrderedFloat<f64>> {
+    fn cast(self) -> Val<'a> {
+        match self {
+            Some(f) => Val::Float(f),
+            None => Val::Null,
+        }
+    }
+}
+
+impl<'a> Cast<Val<'a>> for usize { fn cast(self) -> Val<'a> { Val::Integer(self as i64) } }
 
 impl<'a> Cast<u8> for Val<'a> {
     fn cast(self) -> u8 {
@@ -162,3 +182,13 @@ impl<'a> Cast<&'a str> for Val<'a> {
 impl<'a> Cast<Option<&'a str>> for &'a str { fn cast(self) -> Option<&'a str> { Some(self) } }
 
 impl Cast<Option<OrderedFloat<f64>>> for OrderedFloat<f64> { fn cast(self) -> Option<OrderedFloat<f64>> { Some(self) } }
+
+impl<'a> Cast<Option<OrderedFloat<f64>>> for Val<'a> {
+    fn cast(self) -> Option<OrderedFloat<f64>> {
+        match self {
+            Val::Float(f) => Some(f),
+            Val::Null => None,
+            _ => panic!("Cast::<Option<f64>>{:?}", self)
+        }
+    }
+}

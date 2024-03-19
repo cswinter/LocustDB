@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::file_writer::{BlobWriter, FileBlobWriter};
 use super::{ColumnLoader, PartitionMetadata, SubpartitionMetadata};
 use crate::logging_client::EventBuffer;
-use crate::mem_store::Column;
+use crate::mem_store::{Column, DataSource};
 use crate::perf_counter::{PerfCounter, QueryPerfCounter};
 
 #[derive(Serialize, Deserialize)]
@@ -236,6 +236,7 @@ impl Storage {
         metadata: Vec<SubpartitionMetadata>,
         subpartitions: Vec<Vec<Arc<Column>>>,
         old_partitions: &[PartitionID],
+        offset: usize,
     ) {
         log::debug!("compacting {} parititions into {} for table {}", old_partitions.len(), id, table);
 
@@ -243,7 +244,8 @@ impl Storage {
         let partition = PartitionMetadata {
             id,
             tablename: table.to_string(),
-            len: subpartitions[0].len(),
+            len: subpartitions[0][0].len(),
+            offset,
             subpartitions: metadata,
         };
         self.write_subpartitions(&partition, subpartitions);

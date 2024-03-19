@@ -74,3 +74,5 @@ mod slice_pack;
 mod slice_unpack;
 
 mod aggregator;
+
+pub use null_vec_like::LengthSource;

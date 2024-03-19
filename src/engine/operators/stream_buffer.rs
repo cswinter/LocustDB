@@ -149,6 +149,11 @@ impl<'a> VecOperator<'a> for StreamNullVec {
     fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let len = scratchpad.get_any(self.input).len();
         let count = if streaming {
+            assert!(
+                len > self.current_index,
+                "StreamNullVec: index out of bounds len={} current_index={} batch_size={} has_more={}",
+                len, self.current_index, self.batch_size, self.has_more,
+            );
             min(self.batch_size, len - self.current_index)
         } else {
             len
@@ -156,7 +161,7 @@ impl<'a> VecOperator<'a> for StreamNullVec {
         let mut output = scratchpad.get_any_mut(self.output);
         *output.cast_ref_mut_null() = count;
         self.current_index += self.batch_size;
-        self.has_more = len < self.current_index;
+        self.has_more = self.current_index < len;
         Ok(())
     }
 

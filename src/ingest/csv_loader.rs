@@ -201,6 +201,7 @@ where
         if row_num % opts.partition_size == opts.partition_size - 1 {
             let cols = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
             ldb.ingest_heterogeneous(&opts.tablename, cols);
+            ldb.wal_flush();
         }
         row_num += 1;
     }
