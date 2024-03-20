@@ -263,50 +263,6 @@ fn flatmap_err_response(
     }
 }
 
-// #[post("/insert")]
-// async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
-//     let total_network_bytes = req_body.0.rows.iter().fold(0, |acc, row| {
-//         acc + row
-//             .iter()
-//             .fold(0, |acc, (k, v)| acc + k.len() + v.to_string().len())
-//     });
-//     data.db
-//         .perf_counter()
-//         .network_read_ingestion(total_network_bytes as u64);
-//     let DataBatch { table, rows } = req_body.0;
-//     log::debug!("Inserting {} rows into {}", rows.len(), table);
-//     data.db
-//         .ingest(
-//             &table,
-//             rows.into_iter()
-//                 .map(|row| {
-//                     row.into_iter()
-//                         .map(|(colname, val)| {
-//                             let val = match val {
-//                                 serde_json::Value::Null => RawVal::Null,
-//                                 serde_json::Value::Number(n) => {
-//                                     if n.is_i64() {
-//                                         RawVal::Int(n.as_i64().unwrap())
-//                                     } else if n.is_f64() {
-//                                         RawVal::Float(OrderedFloat(n.as_f64().unwrap()))
-//                                     } else {
-//                                         panic!("Unsupported number {}", n)
-//                                     }
-//                                 }
-//                                 serde_json::Value::String(s) => RawVal::Str(s),
-//                                 _ => panic!("Unsupported value: {:?}", val),
-//                             };
-//                             (colname, val)
-//                         })
-//                         .collect()
-//                 })
-//                 .collect(),
-//         )
-//         .await;
-//     log::debug!("Succesfully appended to {}", table);
-//     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
-// }
-
 // TODO: even more efficient, push all data-conversions into client
 #[post("/insert_bin")]
 async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responder {
