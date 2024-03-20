@@ -14,7 +14,7 @@ use serde_json::json;
 use tera::{Context, Tera};
 use tokio::sync::oneshot;
 
-use crate::{logging_client, LocustDB};
+use crate::{logging_client, BasicTypeColumn, LocustDB};
 use crate::{QueryError, QueryOutput, Value};
 
 lazy_static! {
@@ -191,10 +191,9 @@ async fn query_cols(
     req_body: web::Json<QueryRequest>,
 ) -> impl Responder {
     log::debug!("Query: {:?}", req_body);
-    // TODO: dont' go through row format
     let x = data
         .db
-        .run_query(&req_body.query, false, true, vec![])
+        .run_query(&req_body.query, false, false, vec![])
         .await;
     match flatmap_err_response(x) {
         Ok(result) => {
@@ -210,12 +209,11 @@ async fn multi_query_cols(
     data: web::Data<AppState>,
     req_body: web::Json<MultiQueryRequest>,
 ) -> impl Responder {
-    // TODO: don't go through row format
     log::debug!("Multi Query: {:?}", req_body);
     let mut results = vec![];
     for q in &req_body.queries {
-        // Run query immediately starts executing without awaiting future
-        let result = data.db.run_query(q, false, true, vec![]);
+        // Run query starts executing immediately even without awaiting future
+        let result = data.db.run_query(q, false, false, vec![]);
         results.push(result);
     }
     let mut json_results = vec![];
@@ -307,19 +305,24 @@ async fn manual_hello() -> impl Responder {
 }
 
 fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
-    let mut cols: HashMap<String, Vec<serde_json::Value>> = HashMap::default();
-    for col in &result.colnames {
-        cols.insert(col.to_string(), vec![]);
-    }
-    for row in result.rows.unwrap() {
-        for (val, colname) in row.iter().zip(result.colnames.iter()) {
-            cols.get_mut(colname).unwrap().push(match val {
-                Value::Int(int) => json!(int),
-                Value::Str(str) => json!(str),
-                Value::Null => json!(null),
-                Value::Float(f) => json!(f.0),
-            });
-        }
+    let mut cols: HashMap<String, serde_json::Value> = HashMap::default();
+    for (colname, data) in result.columns {
+        let json_data = match data {
+            BasicTypeColumn::Int(xs) => json!(xs),
+            BasicTypeColumn::Float(xs) => json!(xs),
+            BasicTypeColumn::String(xs) => json!(xs),
+            BasicTypeColumn::Null(xs) => json!(xs),
+            BasicTypeColumn::Mixed(xs) => json!(xs
+                .into_iter()
+                .map(|val| match val {
+                    Value::Int(int) => json!(int),
+                    Value::Str(str) => json!(str),
+                    Value::Null => json!(null),
+                    Value::Float(f) => json!(f.0),
+                })
+                .collect::<Vec<_>>()),
+        };
+        cols.insert(colname, json_data);
     }
     json!({
         "colnames": result.colnames,
