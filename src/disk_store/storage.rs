@@ -49,7 +49,6 @@ impl ColumnLoader for Storage {
 pub struct Storage {
     wal_dir: PathBuf,
     meta_db_path: PathBuf,
-    new_meta_db_path: PathBuf,
     tables_path: PathBuf,
     meta_store: Arc<Mutex<MetaStore>>,
     writer: Box<dyn BlobWriter + Send + Sync + 'static>,
@@ -63,14 +62,12 @@ impl Storage {
         readonly: bool,
     ) -> (Storage, Vec<WALSegment>) {
         let meta_db_path = path.join("meta");
-        let new_meta_db_path = path.join("meta_new");
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
         let writer = Box::new(FileBlobWriter::new());
         let (meta_store, wal_segments) = Storage::recover(
             &writer,
             &meta_db_path,
-            &new_meta_db_path,
             &wal_dir,
             readonly,
             perf_counter.as_ref(),
@@ -80,7 +77,6 @@ impl Storage {
             Storage {
                 wal_dir,
                 meta_db_path,
-                new_meta_db_path,
                 tables_path,
                 meta_store,
                 writer,
@@ -90,35 +86,13 @@ impl Storage {
         )
     }
 
-    fn recover<'a>(
+    fn recover(
         writer: &FileBlobWriter,
-        mut meta_db_path: &'a Path,
-        new_meta_db_path: &'a Path,
+        meta_db_path: &Path,
         wal_dir: &Path,
         readonly: bool,
         perf_counter: &PerfCounter,
     ) -> (MetaStore, Vec<WALSegment<'static>>) {
-        // If db crashed during wal flush, might have new state at new_meta_db_path and potentially
-        // old state at meta_db_path. If both exist, delete old state and rename new state to old.
-        if writer.exists(new_meta_db_path).unwrap() {
-            log::info!(
-                "Found new unfinalized meta db at {}",
-                new_meta_db_path.display()
-            );
-            if writer.exists(meta_db_path).unwrap() {
-                log::info!("Found old meta db at {}, deleting", meta_db_path.display());
-                if !readonly {
-                    writer.delete(meta_db_path).unwrap();
-                }
-            }
-            log::info!("Renaming new meta db to {}", meta_db_path.display());
-            if readonly {
-                meta_db_path = new_meta_db_path;
-            } else {
-                writer.rename(new_meta_db_path, meta_db_path).unwrap();
-            }
-        }
-
         let mut meta_store: MetaStore = if writer.exists(meta_db_path).unwrap() {
             let data = writer.load(meta_db_path).unwrap();
             perf_counter.disk_read_meta_store(data.len() as u64);
@@ -166,13 +140,7 @@ impl Storage {
     fn write_metastore(&self, meta_store: &MetaStore) {
         let data = bincode::serialize(meta_store).unwrap();
         self.perf_counter.disk_write_meta_store(data.len() as u64);
-        self.writer.store(&self.new_meta_db_path, &data).unwrap();
-        if self.writer.exists(&self.meta_db_path).unwrap() {
-            self.writer.delete(&self.meta_db_path).unwrap();
-        }
-        self.writer
-            .rename(&self.new_meta_db_path, &self.meta_db_path)
-            .unwrap();
+        self.writer.store(&self.meta_db_path, &data).unwrap();
     }
 
     fn write_subpartitions(
@@ -181,7 +149,6 @@ impl Storage {
         subpartition_cols: Vec<Vec<Arc<Column>>>,
     ) {
         for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
-            // TODO: column names might not be valid for filesystem (too long, disallowed characters). use cleaned prefix + hashcode for column names that are long/have special chars?
             let table_dir = self.tables_path.join(&partition.tablename);
             let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
             let data = bincode::serialize(&cols).unwrap();

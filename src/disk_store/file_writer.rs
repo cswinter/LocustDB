@@ -24,6 +24,7 @@ impl FileBlobWriter {
 }
 
 impl BlobWriter for FileBlobWriter {
+    /// Atomically writes the data to the file at the given path
     fn store(
         &self,
         path: &Path,
@@ -34,9 +35,13 @@ impl BlobWriter for FileBlobWriter {
             create_dir_all(parent)?;
         }
 
-        // Write the data to the file
-        let mut file = File::create(path)?;
+        // Write the data to a temporary file and then rename it to the target path
+        let tmp_path = path.with_extension(".INCOMPLETE");
+        let mut file = File::create(&tmp_path)?;
         file.write_all(data)?;
+        file.sync_all()?;
+        std::fs::rename(tmp_path, path)
+            .map_err(|e| format!("Failed to rename file: {}", e))?;
 
         Ok(())
     }
