@@ -3,7 +3,10 @@ use crate::BitWriter;
 pub fn encode(floats: &[f32], max_regret: u32, mantissa: Option<u32>) -> Box<[u8]> {
     let mut writer = BitWriter::new();
     writer.write_bits(floats.len() as u64, 64);
-    writer.write_bits(floats[0].to_bits() as u64, 32);
+    match floats.first() {
+        Some(first) => writer.write_bits(first.to_bits() as u64, 64),
+        None => return writer.close(),
+    }
     let mut last_value = floats[0];
     let mut last_leading_zeros = 65;
     let mut last_trailing_zeros = 65;

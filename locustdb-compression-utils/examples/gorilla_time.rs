@@ -40,6 +40,10 @@ struct Opt {
     /// Time compression of this many MiB of random data.
     #[clap(short, long)]
     benchmark: Option<usize>,
+
+    /// Filter the test data by name.
+    #[clap(long)]
+    filter: Option<String>,
 }
 
 fn main() {
@@ -81,6 +85,11 @@ fn main() {
         }
     } else {
         for (data, name) in test_data::FLOATS.iter() {
+            if let Some(filter) = &opt.filter {
+                if !name.contains(filter) {
+                    continue;
+                }
+            }
             for max_regret in &opt.max_regret {
                 if opt.single {
                     let data_f32 = data.iter().map(|&f| f as f32).collect::<Vec<_>>();
