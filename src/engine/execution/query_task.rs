@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
 
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::*;
@@ -521,6 +522,23 @@ impl BasicTypeColumn {
             BasicTypeColumn::String(v) => v.len(),
             BasicTypeColumn::Null(v) => *v,
             BasicTypeColumn::Mixed(v) => v.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl PartialEq for BasicTypeColumn {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (BasicTypeColumn::Int(a), BasicTypeColumn::Int(b)) => a == b,
+            (BasicTypeColumn::Float(a), BasicTypeColumn::Float(b)) => a.len() == b.len() && (0..a.len()).all(|i| OrderedFloat(a[i]) == OrderedFloat(b[i])),
+            (BasicTypeColumn::String(a), BasicTypeColumn::String(b)) => a == b,
+            (BasicTypeColumn::Null(a), BasicTypeColumn::Null(b)) => a == b,
+            (BasicTypeColumn::Mixed(a), BasicTypeColumn::Mixed(b)) => a == b,
+            _ => false,
         }
     }
 }

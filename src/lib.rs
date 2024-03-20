@@ -18,7 +18,7 @@ extern crate lazy_static;
 extern crate log;
 pub use crate::disk_store::noop_storage::NoopStorage;
 
-pub use crate::engine::query_task::QueryOutput;
+pub use crate::engine::query_task::{QueryOutput, BasicTypeColumn};
 pub use crate::errors::QueryError;
 pub use crate::ingest::colgen;
 pub use crate::ingest::csv_loader::Options as LoadOptions;

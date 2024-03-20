@@ -1,10 +1,12 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use tokio::select;
 use tokio::time::{self, MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct EventBuffer {
@@ -31,8 +33,8 @@ pub enum ColumnData {
 pub struct LoggingClient {
     // Table -> Rows
     events: Arc<Mutex<EventBuffer>>,
-    shutdown: Arc<AtomicBool>,
-    flushed: Arc<AtomicBool>,
+    shutdown: CancellationToken,
+    flushed: Arc<(Mutex<bool>, Condvar)>,
     buffer_size: Arc<AtomicU64>,
     max_buffer_size_bytes: usize,
     pub total_events: u64,
@@ -44,8 +46,8 @@ struct BackgroundWorker {
     url: String,
     flush_interval: Duration,
     events: Arc<Mutex<EventBuffer>>,
-    shutdown: Arc<AtomicBool>,
-    flushed: Arc<AtomicBool>,
+    shutdown: CancellationToken,
+    flushed: Arc<(Mutex<bool>, Condvar)>,
     buffer_size: Arc<AtomicU64>,
     request_data: Arc<Mutex<Option<Vec<u8>>>>,
 }
@@ -53,8 +55,8 @@ struct BackgroundWorker {
 impl LoggingClient {
     pub fn new(flush_interval: Duration, locustdb_url: &str, max_buffer_size_bytes: usize) -> LoggingClient {
         let buffer: Arc<Mutex<EventBuffer>> = Arc::default();
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let flushed = Arc::new(AtomicBool::new(false));
+        let shutdown = CancellationToken::new();
+        let flushed = Arc::new((Mutex::new(false), Condvar::new()));
         let buffer_size = Arc::new(AtomicU64::new(0));
         let worker = BackgroundWorker {
             client: reqwest::Client::new(),
@@ -122,8 +124,8 @@ impl BackgroundWorker {
         log::debug!("Starting log worker...");
         let mut interval = time::interval(self.flush_interval);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        while !self.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
-            interval.tick().await;
+        while !self.shutdown.is_cancelled() {
+            select!(_ = interval.tick() => (), _ = self.shutdown.cancelled() => break);
             log::debug!("TICK!");
             self.flush().await;
         }
@@ -134,8 +136,10 @@ impl BackgroundWorker {
             }
         }
         self.flush().await;
-        self.flushed
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let (flushed, cvar) = &*self.flushed;
+        *flushed.lock().unwrap() = true;
+        cvar.notify_all();
     }
 
     fn create_request_data(&self) {
@@ -178,10 +182,14 @@ impl BackgroundWorker {
             match result {
                 Err(err) => {
                     log::warn!("Failed to send data batch ({} B): {}", bytes, err);
+                    let backoff = time::Duration::from_secs(1);
+                    tokio::time::sleep(backoff).await;
                 }
                 Ok(response) => {
                     if let Err(err) = response.error_for_status_ref() {
                         log::warn!("Failed to send data batch ({} B): {}", bytes, err);
+                        let backoff = time::Duration::from_secs(1);
+                        tokio::time::sleep(backoff).await;
                     } else {
                         self.request_data.lock().unwrap().take();
                         log::info!("Succesfully sent data batch ({} B)", bytes);
@@ -225,10 +233,11 @@ impl ColumnBuffer {
 
 impl Drop for LoggingClient {
     fn drop(&mut self) {
-        self.shutdown
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        while !self.flushed.load(std::sync::atomic::Ordering::SeqCst) {
-            std::thread::sleep(Duration::from_millis(100));
+        self.shutdown.cancel();
+        let (flushed, cvar) = &*self.flushed;
+        let mut flushed = flushed.lock().unwrap();
+        while !*flushed {
+            flushed = cvar.wait(flushed).unwrap();
         }
         log::info!("Logging client dropped");
     }

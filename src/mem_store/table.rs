@@ -84,7 +84,12 @@ impl Table {
                 .or_insert_with(|| Table::new(&md.tablename, lru.clone()));
             table.insert_nonresident_partition(md);
         }
+        let mut next_id = None;
         for wal_segment in wal_segments {
+            if let Some(id) = next_id {
+                assert_eq!(wal_segment.id, id, "WAL segments are not contiguous");
+            }
+            next_id = Some(wal_segment.id + 1);
             for (table_name, table_data) in wal_segment.data.into_owned().tables {
                 let rows = table_data.len;
                 let table = tables

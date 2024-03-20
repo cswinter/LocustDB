@@ -158,7 +158,7 @@ impl Storage {
             }
         }
 
-        wal_segments.sort_by_key(|s| u64::MAX - s.id);
+        wal_segments.sort_by_key(|s| s.id);
 
         (meta_store, wal_segments)
     }

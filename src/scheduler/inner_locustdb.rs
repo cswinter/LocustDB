@@ -256,7 +256,6 @@ impl InnerLocustDB {
             // - get names of all columns
             // - run query for each column, construct Column
             // - create subpartitions
-            println!("Compacting table {} id {} range {:?} composed of {:?}", table, id, range, parts);
             let colnames = tables[table].column_names(&parts);
             let mut columns = Vec::with_capacity(colnames.len());
             let data = tables[table].snapshot_parts(&parts);
