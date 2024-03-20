@@ -53,7 +53,14 @@ impl Table {
         let buffer = self.buffer.lock().unwrap();
         if buffer.len() > 0 {
             partitions.push(Arc::new(
-                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone(), offset).0,
+                Partition::from_buffer(
+                    self.name(),
+                    u64::MAX,
+                    buffer.clone(),
+                    self.lru.clone(),
+                    offset,
+                )
+                .0,
             ));
         }
         partitions
@@ -66,7 +73,14 @@ impl Table {
         let buffer = self.buffer.lock().unwrap();
         if buffer.len() > 0 {
             partitions.push(Arc::new(
-                Partition::from_buffer(self.name(), u64::MAX, buffer.clone(), self.lru.clone(), offset).0,
+                Partition::from_buffer(
+                    self.name(),
+                    u64::MAX,
+                    buffer.clone(),
+                    self.lru.clone(),
+                    offset,
+                )
+                .0,
             ));
         }
         partitions
@@ -78,11 +92,13 @@ impl Table {
         lru: &Lru,
     ) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
-        for md in &storage.meta_store().lock().unwrap().partitions {
-            let table = tables
-                .entry(md.tablename.clone())
-                .or_insert_with(|| Table::new(&md.tablename, lru.clone()));
-            table.insert_nonresident_partition(md);
+        for partitions in storage.meta_store().read().unwrap().partitions.values() {
+            for md in partitions.values() {
+                let table = tables
+                    .entry(md.tablename.clone())
+                    .or_insert_with(|| Table::new(&md.tablename, lru.clone()));
+                table.insert_nonresident_partition(md);
+            }
         }
         let mut next_id = None;
         for wal_segment in wal_segments {
@@ -138,21 +154,13 @@ impl Table {
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
-        let partition = Arc::new(Partition::nonresident(
-            self.name(),
-            md.id,
-            md.offset..(md.offset+md.len),
-            &md.subpartitions,
-            self.lru.clone(),
-        ));
+        let partition = Arc::new(Partition::nonresident(self.name(), md, self.lru.clone()));
         let mut partitions = self.partitions.write().unwrap();
         let mut column_names = self.column_names.write().unwrap();
         partitions.insert(md.id, partition);
-        for sp in &md.subpartitions {
-            for col in &sp.column_names {
-                if !column_names.contains(col) {
-                    column_names.insert(col.clone());
-                }
+        for col in md.column_name_to_subpartition_index.keys() {
+            if !column_names.contains(col) {
+                column_names.insert(col.clone());
             }
         }
         self.next_partition_id
@@ -202,9 +210,16 @@ impl Table {
         }
         let buffer = std::mem::take(buffer.deref_mut());
         let part_id = self.next_partition_id();
-        let partition_offset = self.next_partition_offset.fetch_add(buffer.len(), std::sync::atomic::Ordering::SeqCst);
-        let (new_partition, keys) =
-            Partition::from_buffer(self.name(), part_id, buffer, self.lru.clone(), partition_offset);
+        let partition_offset = self
+            .next_partition_offset
+            .fetch_add(buffer.len(), std::sync::atomic::Ordering::SeqCst);
+        let (new_partition, keys) = Partition::from_buffer(
+            self.name(),
+            part_id,
+            buffer,
+            self.lru.clone(),
+            partition_offset,
+        );
         let arc_partition;
         {
             let mut partitions = self.partitions.write().unwrap();

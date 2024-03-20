@@ -1,6 +1,7 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -16,10 +17,12 @@ pub struct WALSegment<'a> {
     pub data: Cow<'a, EventBuffer>,
 }
 
+type TableName = String;
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MetaStore {
     pub next_wal_id: u64,
-    pub partitions: Vec<PartitionMetadata>,
+    pub partitions: HashMap<TableName, HashMap<PartitionID, PartitionMetadata>>,
 }
 
 type PartitionID = u64;
@@ -50,7 +53,7 @@ pub struct Storage {
     wal_dir: PathBuf,
     meta_db_path: PathBuf,
     tables_path: PathBuf,
-    meta_store: Arc<Mutex<MetaStore>>,
+    meta_store: Arc<RwLock<MetaStore>>,
     writer: Box<dyn BlobWriter + Send + Sync + 'static>,
     perf_counter: Arc<PerfCounter>,
 }
@@ -72,7 +75,7 @@ impl Storage {
             readonly,
             perf_counter.as_ref(),
         );
-        let meta_store = Arc::new(Mutex::new(meta_store));
+        let meta_store = Arc::new(RwLock::new(meta_store));
         (
             Storage {
                 wal_dir,
@@ -100,7 +103,7 @@ impl Storage {
         } else {
             MetaStore {
                 next_wal_id: 0,
-                partitions: Vec::new(),
+                partitions: HashMap::new(),
             }
         };
 
@@ -127,8 +130,9 @@ impl Storage {
                 }
             } else {
                 wal_segments.push(wal_segment);
-                meta_store.next_wal_id =
-                    meta_store.next_wal_id.max(wal_segments.last().unwrap().id + 1);
+                meta_store.next_wal_id = meta_store
+                    .next_wal_id
+                    .max(wal_segments.last().unwrap().id + 1);
             }
         }
 
@@ -163,13 +167,13 @@ impl Storage {
         }
     }
 
-    pub fn meta_store(&self) -> &Mutex<MetaStore> {
+    pub fn meta_store(&self) -> &RwLock<MetaStore> {
         &self.meta_store
     }
 
     pub fn persist_wal_segment(&self, mut segment: WALSegment) -> u64 {
         {
-            let mut meta_store = self.meta_store.lock().unwrap();
+            let mut meta_store = self.meta_store.write().unwrap();
             segment.id = meta_store.next_wal_id;
             meta_store.next_wal_id += 1;
         }
@@ -185,12 +189,16 @@ impl Storage {
         partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
     ) {
         // Lock meta store
-        let mut meta_store = self.meta_store.lock().unwrap();
+        let mut meta_store = self.meta_store.write().unwrap();
 
         // Write out new partition files
         for (partition, subpartition_cols) in partitions {
             self.write_subpartitions(&partition, subpartition_cols);
-            meta_store.partitions.push(partition);
+            meta_store
+                .partitions
+                .entry(partition.tablename.clone())
+                .or_default()
+                .insert(partition.id, partition);
         }
 
         // Atomically overwrite meta store file
@@ -219,6 +227,15 @@ impl Storage {
             table
         );
 
+        let column_name_to_subpartition_index = subpartitions
+            .iter()
+            .enumerate()
+            .flat_map(|(i, cols)| {
+                cols.iter()
+                    .map(|col| col.name().to_string())
+                    .map(move |name| (name, i))
+            })
+            .collect();
         // Persist new partition files
         let partition = PartitionMetadata {
             id,
@@ -226,27 +243,32 @@ impl Storage {
             len: subpartitions[0][0].len(),
             offset,
             subpartitions: metadata,
+            column_name_to_subpartition_index,
         };
         self.write_subpartitions(&partition, subpartitions);
 
         // Atomically update metastore
-        let mut meta_store = self.meta_store.lock().unwrap();
-        // TODO: O(n^2)
-        let to_delete = meta_store
-            .partitions
+        let mut meta_store = self.meta_store.write().unwrap();
+        let all_partitions = meta_store.partitions.get_mut(table).unwrap();
+        let to_delete: Vec<(u64, String)> = old_partitions
             .iter()
-            .filter(|p| p.tablename == table && old_partitions.contains(&p.id))
+            .map(|id| all_partitions.remove(id).unwrap())
             .flat_map(|partition| {
+                let id = partition.id;
                 partition
                     .subpartitions
                     .iter()
-                    .map(|sb| (partition.id, sb.subpartition_key.clone()))
+                    .map(move |sb| (id, (*sb.subpartition_key).to_string()))
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
         meta_store
             .partitions
-            .retain(|p| p.tablename != table || !old_partitions.contains(&p.id));
-        meta_store.partitions.push(partition);
+            .get_mut(table)
+            .unwrap()
+            .insert(partition.id, partition);
+        drop(meta_store);
+        let meta_store = self.meta_store.read().unwrap();
         self.write_metastore(&meta_store);
 
         // Delete old partition files
@@ -264,21 +286,8 @@ impl Storage {
         column_name: &str,
         perf_counter: &QueryPerfCounter,
     ) -> Vec<Column> {
-        // TODO: efficient access
-        let subpartition_key = self
-            .meta_store()
-            .lock()
-            .unwrap()
-            .partitions
-            .iter()
-            .find(|p| p.id == partition && p.tablename == table_name)
-            .unwrap()
-            .subpartitions
-            .iter()
-            .find(|sp| sp.column_names.contains(&column_name.to_string()))
-            .unwrap()
-            .subpartition_key
-            .clone();
+        let subpartition_key = self.meta_store.read().unwrap().partitions[table_name][&partition]
+            .subpartition_key(column_name);
         let path = self
             .tables_path
             .join(table_name)

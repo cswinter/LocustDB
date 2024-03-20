@@ -34,7 +34,7 @@ impl Partition {
         cols: Vec<Arc<Column>>,
         lru: Lru,
         // Offset of this partition in the table
-        offset: usize
+        offset: usize,
     ) -> (Partition, Vec<(u64, String)>) {
         // Can't put into lru directly, because then memory limit enforcer might try to evict column that is unreachable because this partition is not yet in the partition map.
         // Instead, we return the keys to be added to the lru after the partition is added to the partition map.
@@ -48,33 +48,42 @@ impl Partition {
                 (c.name().to_string(), ColumnHandle::resident(table, id, c))
             })
             .collect();
-        (Partition { id, range: offset..(offset+len), total_size_bytes, cols, lru }, keys)
+        (
+            Partition {
+                id,
+                range: offset..(offset + len),
+                total_size_bytes,
+                cols,
+                lru,
+            },
+            keys,
+        )
     }
 
-    pub fn nonresident(
-        table: &str,
-        id: PartitionID,
-        range: Range<usize>,
-        spm: &[SubpartitionMetadata],
-        lru: Lru,
-    ) -> Partition {
+    pub fn nonresident(table: &str, md: &PartitionMetadata, lru: Lru) -> Partition {
+        let range = md.offset..(md.offset + md.len);
         let mut cols = HashMap::default();
         let mut total_size_bytes = 0;
-        for subpartition in spm {
+        for subpartition in &md.subpartitions {
             total_size_bytes += subpartition.size_bytes as usize;
-            for name in &subpartition.column_names {
-                cols.insert(
-                    name.to_string(),
-                    ColumnHandle::non_resident(
-                        table,
-                        id,
-                        &subpartition.subpartition_key,
-                        name.clone(),
-                    ),
-                );
-            }
         }
-        Partition { id, range, cols, lru, total_size_bytes }
+        for name in md.column_name_to_subpartition_index.keys() {
+            cols.insert(
+                name.clone(),
+                ColumnHandle::non_resident(
+                    table,
+                    md.id,
+                    name.clone(),
+                ),
+            );
+        }
+        Partition {
+            id: md.id,
+            range,
+            cols,
+            lru,
+            total_size_bytes,
+        }
     }
 
     pub fn from_buffer(
@@ -182,7 +191,7 @@ impl Partition {
     pub fn len(&self) -> usize {
         self.range.len()
     }
-    
+
     pub fn range(&self) -> Range<usize> {
         self.range.clone()
     }
@@ -276,7 +285,6 @@ impl ColumnHandle {
     fn non_resident(
         table: &str,
         id: PartitionID,
-        _subpartition_key: &str,
         name: String,
     ) -> ColumnHandle {
         ColumnHandle {

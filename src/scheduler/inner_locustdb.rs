@@ -232,12 +232,22 @@ impl InnerLocustDB {
                     .map(|c| c.try_get().as_ref().unwrap().clone())
                     .sorted_by(|a, b| a.name().cmp(b.name()));
                 let (metadata, subpartitions) = subpartition(&self.opts, columns);
+                let column_name_to_subpartition_index = subpartitions
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, subpartition)| {
+                        subpartition
+                            .iter()
+                            .map(move |column| (column.name().to_string(), i))
+                    })
+                    .collect();
                 let partition_metadata = PartitionMetadata {
                     id: partition.id,
                     tablename: table.name().to_string(),
                     len: partition.len(),
                     offset: partition.range().start,
                     subpartitions: metadata,
+                    column_name_to_subpartition_index,
                 };
                 new_partitions.push((partition_metadata, subpartitions));
             }
@@ -461,7 +471,7 @@ impl Drop for InnerLocustDB {
 
 #[derive(Default)]
 struct PartitionBuilder {
-    subpartition_metadata: Vec<SubpartitionMetadata>,
+    subpartition_metadata: Vec<(Vec<String>, u64)>,
     subpartitions: Vec<Vec<Arc<Column>>>,
     subpartition: Vec<Arc<Column>>,
     bytes: u64,
@@ -473,15 +483,10 @@ fn subpartition(
 ) -> (Vec<SubpartitionMetadata>, Vec<Vec<Arc<Column>>>) {
     let mut acc = PartitionBuilder::default();
     fn create_subpartition(acc: &mut PartitionBuilder) {
-        acc.subpartition_metadata.push(SubpartitionMetadata {
-            column_names: acc
-                .subpartition
-                .iter()
-                .map(|c| c.name().to_string())
-                .collect(),
-            size_bytes: acc.bytes,
-            subpartition_key: "".to_string(),
-        });
+        acc.subpartition_metadata.push((
+            acc.subpartition.iter().map(|c| c.name().to_string()).collect(),
+            acc.bytes,
+        ));
         acc.subpartitions.push(mem::take(&mut acc.subpartition));
         acc.bytes = 0;
     }
@@ -496,27 +501,37 @@ fn subpartition(
     }
     create_subpartition(&mut acc);
 
-    if acc.subpartitions.len() == 1 {
-        acc.subpartition_metadata[0].subpartition_key = "all".to_string();
+    let subpartition_metadata = if acc.subpartitions.len() == 1 {
+        vec![SubpartitionMetadata {
+            subpartition_key: "all".to_string(),
+            size_bytes: acc.subpartition_metadata[0].1,
+        }]
     } else {
-        for meta in &mut acc.subpartition_metadata {
-            let is_column_name_filesystem_safe = meta.column_names[0].len() <= 64
-                && meta.column_names[0]
-                    .chars()
-                    .all(|c| (c.is_alphanumeric() && c.is_lowercase()) || c == '_');
-            let subpartition_key = if meta.column_names.len() == 1 && is_column_name_filesystem_safe
-            {
-                format!("x{}", meta.column_names[0])
-            } else {
-                use sha2::{Digest, Sha256};
-                let mut hasher = Sha256::new();
-                for col in &meta.column_names {
-                    hasher.update(col);
+        acc.subpartition_metadata
+            .iter()
+            .map(|(column_names, size)| {
+                let first_col = column_names.iter().next().unwrap();
+                let is_column_name_filesystem_safe = first_col.len() <= 64
+                    && first_col
+                        .chars()
+                        .all(|c| (c.is_alphanumeric() && c.is_lowercase()) || c == '_');
+                let subpartition_key =
+                    if column_names.len() == 1 && is_column_name_filesystem_safe {
+                        format!("x{}", first_col)
+                    } else {
+                        use sha2::{Digest, Sha256};
+                        let mut hasher = Sha256::new();
+                        for col in column_names {
+                            hasher.update(col);
+                        }
+                        format!("{:x}", hasher.finalize())
+                    };
+                SubpartitionMetadata {
+                    subpartition_key,
+                    size_bytes: *size,
                 }
-                format!("{:x}", hasher.finalize())
-            };
-            meta.subpartition_key = subpartition_key;
-        }
-    }
-    (acc.subpartition_metadata, acc.subpartitions)
+            })
+            .collect()
+    };
+    (subpartition_metadata, acc.subpartitions)
 }

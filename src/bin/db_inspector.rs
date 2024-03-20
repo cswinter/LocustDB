@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -36,21 +37,17 @@ async fn main() {
     let (storage, wal) = Storage::new(&opts.db_path, Arc::new(PerfCounter::default()), true);
 
     {
-        let meta = storage.meta_store().lock().unwrap();
+        let meta = storage.meta_store().read().unwrap();
         println!("### META STORE ###");
         println!("Next WAL ID: {}", meta.next_wal_id);
         println!("Number of partitions: {:?}", meta.partitions.len());
         if opts.meta > 0 {
-            for partition in &meta.partitions {
-                if opts
-                    .table
-                    .as_ref()
-                    .map(|t| *t != partition.tablename)
-                    .unwrap_or(false)
-                {
+            for (table, partitions) in &meta.partitions {
+                if let Some(filter) = &opts.table && filter != table {
                     continue;
                 }
-                println!(
+                for partition in partitions.values() {
+                    println!(
                     "Partition {} for table {} has {} subpartitions and {} rows ({}..{}, {} bytes)",
                     partition.id,
                     partition.tablename,
@@ -64,16 +61,17 @@ async fn main() {
                         .map(|sp| sp.size_bytes)
                         .sum::<u64>()
                 );
-                if opts.meta > 1 {
-                    for (i, subpartition) in partition.subpartitions.iter().enumerate() {
-                        println!(
-                            "  Subpartition {} has {} columns ({} bytes)",
-                            i,
-                            subpartition.column_names.len(),
-                            subpartition.size_bytes,
-                        );
-                        if opts.meta > 2 {
-                            println!("    {:?}", subpartition.column_names);
+                    if opts.meta > 1 {
+                        for (i, subpartition) in partition.subpartitions.iter().enumerate() {
+                            println!(
+                                "  Subpartition {} has {} columns ({} bytes)",
+                                i,
+                                partition.column_name_to_subpartition_index.values().filter(|&&idx| idx == i).count(),
+                                subpartition.size_bytes,
+                            );
+                            if opts.meta > 2 {
+                                println!("    {:?}", partition.column_name_to_subpartition_index.iter().filter(|(_, &idx)| idx == i).map(|(name, _)| name).collect::<Vec<_>>());
+                            }
                         }
                     }
                 }
@@ -86,7 +84,11 @@ async fn main() {
             println!("Number of WAL segments: {:?}", wal.len());
             if opts.wal > 1 {
                 for segment in &wal {
-                    println!("Segment {} has {} tables", segment.id, segment.data.tables.len());
+                    println!(
+                        "Segment {} has {} tables",
+                        segment.id,
+                        segment.data.tables.len()
+                    );
                     if opts.wal > 2 {
                         for (name, table) in &segment.data.as_ref().tables {
                             println!("  Table {} has {} columns", name, table.columns.len());

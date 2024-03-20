@@ -49,7 +49,6 @@ async fn test_ingestion() {
 
     handle.stop(true).await;
     drop(db);
-
     let (mut db, mut handle) = create_locustdb(db_path.clone());
     let new_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
     assert_eq!(new_all.rows.unwrap().len(), total_rows);
@@ -92,6 +91,21 @@ async fn test_ingestion() {
     }
 
     test_db(&db, total_rows, &tables).await;
+
+
+    let old_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
+    handle.stop(true).await;
+    drop(db);
+    let (db, _) = create_locustdb(db_path.clone());
+    let new_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
+    assert_eq!(new_all.rows.unwrap().len(), total_rows);
+    assert_eq!(old_all.colnames.len(), new_all.colnames.len());
+    let row_col = &new_all.columns.iter().find(|(name, _)| name == "row").unwrap().1;
+    assert_eq!(*row_col, BasicTypeColumn::Float((0..total_rows).map(|i| i as f64).collect()));
+    let old_columns: HashMap<_, _> = old_all.columns.into_iter().collect();
+    for (name, column) in &new_all.columns {
+        assert_eq!(old_columns[name], *column, "Mismatch in column {}", name);
+    }
 }
 
 async fn test_db(db: &LocustDB, nrow: usize, tables: &[String]) {
