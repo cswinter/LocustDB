@@ -114,18 +114,12 @@ impl InnerLocustDB {
     }
 
     pub fn stop(&self) {
+        // TODO: ensure all pending ingestion tasks are completed and new requests are rejected
         // Acquire task_queue_guard to make sure that there are no threads that have checked self.running but not waited on idle_queue yet.
         info!("Stopping database...");
-        info!("Flushing WAL...");
-        // TODO: have to flush all ingestion requests and reject new ones with error, otherwise we might lose data that is ingested after the wal flush
-        // Have to flush WAL before shutting down workers, otherwise there are no workers to perform compactions and we block forever.
         self.running.store(false, Ordering::SeqCst);
-        self.wal_flush();
-        info!("Acquiring task queue lock...");
         let _guard = self.task_queue.lock();
-        info!("Signal workers to stop...");
         self.running.store(false, Ordering::SeqCst);
-        info!("Notify all workers...");
         self.idle_queue.notify_all();
     }
 

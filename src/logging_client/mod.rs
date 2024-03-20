@@ -168,11 +168,12 @@ impl BackgroundWorker {
     }
 
     async fn flush(&self) {
-        // TODO: not holding lock, could result in reordering of events (issue is that MutexGuard is not sent and can't be held across await point)
+        // TODO: not holding lock, could result in reordering of events (issue is that MutexGuard is not `Send` and can't be held across await point)
         self.create_request_data();
         let request_data = self.request_data.lock().unwrap().clone();
         if let Some(request_data) = request_data {
             let bytes = request_data.len();
+            log::info!("Sending data ({} B)", bytes);
             let result = self.client.post(&self.url).body(request_data).send().await;
             match result {
                 Err(err) => {
@@ -183,7 +184,7 @@ impl BackgroundWorker {
                         log::warn!("Failed to send data batch ({} B): {}", bytes, err);
                     } else {
                         self.request_data.lock().unwrap().take();
-                        log::info!("Sent data");
+                        log::info!("Succesfully sent data batch ({} B)", bytes);
                     }
                     log::debug!("{:?}", response);
                 }
@@ -229,6 +230,7 @@ impl Drop for LoggingClient {
         while !self.flushed.load(std::sync::atomic::Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(100));
         }
+        log::info!("Logging client dropped");
     }
 }
 

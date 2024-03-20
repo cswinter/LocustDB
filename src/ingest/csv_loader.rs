@@ -210,6 +210,8 @@ where
         let cols = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
         ldb.ingest_heterogeneous(&opts.tablename, cols);
     }
+    // ingest_heterogeneous does not write to WAL, so need to flush to ensure data is persisted as partitions
+    ldb.wal_flush();
     Ok(())
 }
 

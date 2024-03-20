@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::Arc;
+use std::thread;
 
 use actix_cors::Cors;
+use actix_web::dev::ServerHandle;
 use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::channel::oneshot::Canceled;
@@ -10,6 +12,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
+use tokio::sync::oneshot;
 
 use crate::{logging_client, LocustDB};
 use crate::{QueryError, QueryOutput, Value};
@@ -189,7 +192,10 @@ async fn query_cols(
 ) -> impl Responder {
     log::debug!("Query: {:?}", req_body);
     // TODO: dont' go through row format
-    let x = data.db.run_query(&req_body.query, false, true, vec![]).await;
+    let x = data
+        .db
+        .run_query(&req_body.query, false, true, vec![])
+        .await;
     match flatmap_err_response(x) {
         Ok(result) => {
             let response = query_output_to_json_cols(result);
@@ -316,16 +322,16 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
     }
     log::debug!("Inserting bytes: {} ({})", s, req_body.len());
 
-
     data.db
         .perf_counter()
         .network_read_ingestion(req_body.len() as u64);
 
-    let events: logging_client::EventBuffer = match bincode::deserialize(&req_body){
+    let events: logging_client::EventBuffer = match bincode::deserialize(&req_body) {
         Ok(events) => events,
         Err(e) => {
             log::error!("Failed to deserialize /insert_bin request: {}", e);
-            return HttpResponse::BadRequest().json(format!("Failed to deserialize request: {}", e));
+            return HttpResponse::BadRequest()
+                .json(format!("Failed to deserialize request: {}", e));
         }
     };
     log::info!(
@@ -366,8 +372,13 @@ fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
     })
 }
 
-pub async fn run(db: Arc<LocustDB>, cors_allow_all: bool, cors_allow_origin: Vec<String>, addrs: String) -> std::io::Result<()> {
-    HttpServer::new(move || {
+pub fn run(
+    db: Arc<LocustDB>,
+    cors_allow_all: bool,
+    cors_allow_origin: Vec<String>,
+    addrs: String,
+) -> std::io::Result<(ServerHandle, oneshot::Receiver<()>)> {
+    let server = HttpServer::new(move || {
         let cors = if cors_allow_all {
             Cors::permissive()
         } else {
@@ -401,6 +412,15 @@ pub async fn run(db: Arc<LocustDB>, cors_allow_all: bool, cors_allow_origin: Vec
             .route("/hey", web::get().to(manual_hello))
     })
     .bind(&addrs)?
-    .run()
-    .await
+    .run();
+
+    let (tx, rx) = oneshot::channel();
+
+    let handle = server.handle();
+    thread::spawn(move || {
+        actix_web::rt::System::new().block_on(server).unwrap();
+        let _ = tx.send(());
+    });
+
+    Ok((handle, rx))
 }

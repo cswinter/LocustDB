@@ -51,11 +51,13 @@ async fn main() {
                     continue;
                 }
                 println!(
-                    "Partition {} for table {} has {} subpartitions and {} rows ({} bytes)",
+                    "Partition {} for table {} has {} subpartitions and {} rows ({}..{}, {} bytes)",
                     partition.id,
                     partition.tablename,
                     partition.subpartitions.len(),
                     partition.len,
+                    partition.offset,
+                    partition.offset + partition.len,
                     partition
                         .subpartitions
                         .iter()

@@ -152,6 +152,8 @@ impl Table {
         }
         self.next_partition_id
             .fetch_max(md.id + 1, std::sync::atomic::Ordering::SeqCst);
+        self.next_partition_offset
+            .fetch_max(md.offset + md.len, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn ingest(&self, row: Vec<(String, RawVal)>) {

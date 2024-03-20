@@ -1,5 +1,4 @@
 use futures::executor::block_on;
-use ordered_float::OrderedFloat;
 
 use crate::value_syntax::*;
 use locustdb::nyc_taxi_data;
@@ -338,9 +337,9 @@ fn test_sum() {
     test_query_ec(
         "select enum, sum(float) from default;",
         &[
-            vec![Str("aa"), Float(OrderedFloat(-123.87628600000001))],
-            vec![Str("bb"), Float(OrderedFloat(1.234e29))],
-            vec![Str("cc"), Float(OrderedFloat(-1.0))],
+            vec![Str("aa"), Float(-123.87628600000001)],
+            vec![Str("bb"), Float(1.234e29)],
+            vec![Str("cc"), Float(-1.0)],
         ],
     );
 }
@@ -473,19 +472,19 @@ fn test_order_by_float() {
     test_query_ec(
         "SELECT string_packed, float FROM default ORDER BY float DESC LIMIT 5;",
         &[
-            vec![Str("azy"), Float(OrderedFloat(1.234e29))],
-            vec![Str("😈"), Float(OrderedFloat(1234124.51325))],
-            vec![Str("AXY"), Float(OrderedFloat(3.15159))],
-            vec![Str("xyz"), Float(OrderedFloat(0.123412))],
-            vec![Str("abc"), Float(OrderedFloat(0.0003))],
+            vec![Str("azy"), Float(1.234e29)],
+            vec![Str("😈"), Float(1234124.51325)],
+            vec![Str("AXY"), Float(3.15159)],
+            vec![Str("xyz"), Float(0.123412)],
+            vec![Str("abc"), Float(0.0003)],
         ],
     );
     test_query_ec(
         "SELECT string_packed, float FROM default ORDER BY float ASC LIMIT 3;",
         &[
-            vec![Str("axz"), Float(OrderedFloat(-124.0))],
-            vec![Str("t"), Float(OrderedFloat(-1.0))],
-            vec![Str("asd"), Float(OrderedFloat(0.0))],
+            vec![Str("axz"), Float(-124.0)],
+            vec![Str("t"), Float(-1.0)],
+            vec![Str("asd"), Float(0.0)],
         ],
     );
 }
@@ -588,18 +587,18 @@ fn test_min_max() {
         &[
             vec![
                 Str("aa"),
-                Float(OrderedFloat(0.123412)),
-                Float(OrderedFloat(-124.0)),
+                Float(0.123412),
+                Float(-124.0),
             ],
             vec![
                 Str("bb"),
-                Float(OrderedFloat(1.234e29)),
-                Float(OrderedFloat(3.15159)),
+                Float(1.234e29),
+                Float(3.15159),
             ],
             vec![
                 Str("cc"),
-                Float(OrderedFloat(0.0)),
-                Float(OrderedFloat(-1.0)),
+                Float(0.0),
+                Float(-1.0),
             ],
         ],
     );
@@ -1263,11 +1262,11 @@ fn test_group_by_float() {
     test_query_ec(
         "SELECT count(0), float FROM default ORDER BY float ASC LIMIT 5;",
         &[
-            vec![Int(1), Float(OrderedFloat(-124.0))],
-            vec![Int(1), Float(OrderedFloat(-1.0))],
-            vec![Int(1), Float(OrderedFloat(0.0))],
-            vec![Int(2), Float(OrderedFloat(1e-6))],
-            vec![Int(1), Float(OrderedFloat(0.0003))],
+            vec![Int(1), Float(-124.0)],
+            vec![Int(1), Float(-1.0)],
+            vec![Int(1), Float(0.0)],
+            vec![Int(2), Float(1e-6)],
+            vec![Int(1), Float(0.0003)],
         ],
     );
 }
@@ -1277,16 +1276,16 @@ fn test_or_nullcheck_and_filter1() {
     test_query_ec(
         "SELECT nullable_int2, float FROM default WHERE nullable_int2 IS NOT NULL OR float IS NOT NULL ORDER BY id LIMIT 100000;",
         &[
-            vec![Null, Float(OrderedFloat(0.123412))],
-            vec![Int(-40), Float(OrderedFloat(0.0003))],
-            vec![Null, Float(OrderedFloat(-124.0))],
-            vec![Int(0), Float(OrderedFloat(3.15159))],
-            vec![Int(9), Float(OrderedFloat(1.234e29))],
-            vec![Int(6), Float(OrderedFloat(1e-6))],
-            vec![Null, Float(OrderedFloat(0.0))],
-            vec![Null, Float(OrderedFloat(1e-6))],
-            vec![Int(1), Float(OrderedFloat(-1.0))],
-            vec![Int(14), Float(OrderedFloat(1234124.51325))]
+            vec![Null, Float(0.123412)],
+            vec![Int(-40), Float(0.0003)],
+            vec![Null, Float(-124.0)],
+            vec![Int(0), Float(3.15159)],
+            vec![Int(9), Float(1.234e29)],
+            vec![Int(6), Float(1e-6)],
+            vec![Null, Float(0.0)],
+            vec![Null, Float(1e-6)],
+            vec![Int(1), Float(-1.0)],
+            vec![Int(14), Float(1234124.51325)]
         ]
     );
 }
@@ -1305,7 +1304,7 @@ fn test_or_nullcheck_and_filter3() {
     test_query_ec(
         "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) ORDER BY id LIMIT 100000;",
         &[
-            vec![Int(14), Float(OrderedFloat(1.123124e30))],
+            vec![Int(14), Float(1.123124e30)],
         ]
     );
 }
@@ -1315,7 +1314,7 @@ fn test_or_nullcheck_and_filter4() {
     test_query_ec(
         "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) LIMIT 100000;",
         &[
-            vec![Int(14), Float(OrderedFloat(1.123124e30))],
+            vec![Int(14), Float(1.123124e30)],
         ]
     );
 }
@@ -1342,7 +1341,6 @@ fn test_filter_nonexistant_columns() {
 
 #[test]
 fn test_restore_from_disk() {
-    use std::{thread, time};
     use tempfile::TempDir;
     let _ = env_logger::try_init();
     let tmp_dir = TempDir::new().unwrap();
@@ -1365,9 +1363,7 @@ fn test_restore_from_disk() {
             .rows
             .unwrap()
     };
-    // Dropping the LocustDB object will cause all threads to be stopped
-    // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
-    thread::sleep(time::Duration::from_millis(2000));
+
     let locustdb = LocustDB::new(&opts);
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
     let result = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
@@ -1397,6 +1393,8 @@ fn test_restore_from_disk() {
     // for (i, (old, new)) in old_db_contents.iter().zip(restored_db_contents.iter()).enumerate() {
     //     assert_eq!(old, new, "Row {} differs", i);
     // }
+
+    
 }
 
 #[test]

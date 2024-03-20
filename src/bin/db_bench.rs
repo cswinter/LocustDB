@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use locustdb::LocustDB;
@@ -247,16 +246,7 @@ fn create_locustdb(db_path: PathBuf) -> Arc<locustdb::LocustDB> {
     };
     let db = Arc::new(locustdb::LocustDB::new(&options));
     let _locustdb = db.clone();
-    thread::spawn(move || {
-        actix_web::rt::System::new()
-            .block_on(locustdb::server::run(
-                _locustdb,
-                false,
-                vec![],
-                "localhost:8080".to_string(),
-            ))
-            .unwrap();
-    });
+    locustdb::server::run(_locustdb, false, vec![], "localhost:8888".to_string()).unwrap();
     db
 }
 

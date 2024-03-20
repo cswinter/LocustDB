@@ -180,14 +180,10 @@ fn main() {
     }
 
     if server {
-        actix_web::rt::System::new()
-            .block_on(locustdb::server::run(
-                Arc::new(locustdb),
-                cors_allow_all,
-                cors_allow_origin,
-                addrs,
-            ))
-            .unwrap();
+        let (_, rx) =
+            locustdb::server::run(Arc::new(locustdb), cors_allow_all, cors_allow_origin, addrs)
+                .unwrap();
+        block_on(rx).unwrap();
     } else {
         repl(&locustdb);
     }

@@ -138,9 +138,11 @@ impl Storage {
             perf_counter.disk_read_wal(wal_data.len() as u64);
             let wal_segment: WALSegment = bincode::deserialize(&wal_data).unwrap();
             log::info!(
-                "Found wal segment {} with id {}",
+                "Found wal segment {} with id {} and {} rows in {} tables",
                 wal_file.display(),
-                wal_segment.id
+                wal_segment.id,
+                wal_segment.data.tables.values().map(|t| t.len).sum::<u64>(),
+                wal_segment.data.tables.len(),
             );
             if wal_segment.id < next_wal_id {
                 if !readonly {
@@ -152,9 +154,11 @@ impl Storage {
             } else {
                 wal_segments.push(wal_segment);
                 meta_store.next_wal_id =
-                    meta_store.next_wal_id.max(wal_segments.last().unwrap().id);
+                    meta_store.next_wal_id.max(wal_segments.last().unwrap().id + 1);
             }
         }
+
+        wal_segments.sort_by_key(|s| u64::MAX - s.id);
 
         (meta_store, wal_segments)
     }
@@ -171,7 +175,11 @@ impl Storage {
             .unwrap();
     }
 
-    fn write_subpartitions(&self, partition: &PartitionMetadata, subpartition_cols: Vec<Vec<Arc<Column>>>) {
+    fn write_subpartitions(
+        &self,
+        partition: &PartitionMetadata,
+        subpartition_cols: Vec<Vec<Arc<Column>>>,
+    ) {
         for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
             // TODO: column names might not be valid for filesystem (too long, disallowed characters). use cleaned prefix + hashcode for column names that are long/have special chars?
             let table_dir = self.tables_path.join(&partition.tablename);
@@ -181,8 +189,7 @@ impl Storage {
                 .new_partition_file_write(data.len() as u64);
             self.writer
                 .store(
-                    &table_dir
-                        .join(partition_filename(partition.id, &metadata.subpartition_key)),
+                    &table_dir.join(partition_filename(partition.id, &metadata.subpartition_key)),
                     &data,
                 )
                 .unwrap();
@@ -238,7 +245,12 @@ impl Storage {
         old_partitions: &[PartitionID],
         offset: usize,
     ) {
-        log::debug!("compacting {} parititions into {} for table {}", old_partitions.len(), id, table);
+        log::debug!(
+            "compacting {} parititions into {} for table {}",
+            old_partitions.len(),
+            id,
+            table
+        );
 
         // Persist new partition files
         let partition = PartitionMetadata {
