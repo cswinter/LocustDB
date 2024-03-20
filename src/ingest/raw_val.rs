@@ -46,10 +46,54 @@ impl fmt::Display for RawVal {
 }
 
 pub mod syntax {
-    pub use super::RawVal::{Int, Null, Float};
+    pub use super::RawVal::{Int, Null};
 
     #[allow(non_snake_case)]
     pub fn Str(s: &str) -> super::RawVal {
         super::RawVal::Str(s.to_string())
+    }
+
+    #[allow(non_snake_case)]
+    pub fn Float(x: f64) -> super::RawVal {
+        super::RawVal::Float(x.into())
+    }
+}
+
+impl From<f64> for RawVal {
+    fn from(val: f64) -> Self {
+        RawVal::Float(OrderedFloat(val))
+    }
+}
+
+impl From<String> for RawVal {
+    fn from(val: String) -> Self {
+        RawVal::Str(val)
+    }
+}
+
+impl From<()> for RawVal {
+    fn from(_: ()) -> Self {
+        RawVal::Null
+    }
+}
+
+impl<T: Into<RawVal>> From<Option<T>> for RawVal {
+    fn from(val: Option<T>) -> Self {
+        match val {
+            Some(val) => val.into(),
+            None => RawVal::Null,
+        }
+    }
+}
+
+impl<'a> From<&'a str> for RawVal {
+    fn from(val: &str) -> RawVal {
+        RawVal::Str(val.to_string())
+    }
+}
+
+impl From<i64> for RawVal {
+    fn from(val: i64) -> RawVal {
+        RawVal::Int(val)
     }
 }

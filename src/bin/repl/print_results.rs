@@ -13,7 +13,7 @@ pub fn print_query_result(results: &QueryOutput) {
              short_scale(results.stats.rows_scanned as f64),
              ns(rt as usize),
              billion(results.stats.rows_scanned as f64 / rt as f64));
-    println!("\n{}", format_results(&results.colnames, &results.rows));
+    println!("\n{}", format_results(&results.colnames, results.rows.as_ref().unwrap()));
     println!();
 }
 

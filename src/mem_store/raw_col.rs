@@ -4,13 +4,14 @@ use std::ops::BitOr;
 use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::column_builder::*;
 use crate::mem_store::*;
 
 // Can eliminate this? Used by in-memory buffer.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct MixedCol {
     types: ColType,
     data: Vec<RawVal>,
@@ -44,8 +45,10 @@ impl MixedCol {
     }
 
     pub fn push_nulls(&mut self, count: usize) {
-        self.types = self.types | ColType::null();
-        self.data.extend(repeat(RawVal::Null).take(count));
+        if count > 0 {
+            self.types = self.types | ColType::null();
+            self.data.extend(repeat(RawVal::Null).take(count));
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -53,6 +56,17 @@ impl MixedCol {
     }
 
     pub fn finalize(self, name: &str) -> Arc<Column> {
+        let present =  if self.types.contains_null {
+            let mut present = vec![0u8; (self.data.len() + 7) / 8];
+            for (i, v) in self.data.iter().enumerate() {
+                if *v != RawVal::Null {
+                    present[i / 8] |= 1 << (i % 8);
+                }
+            }
+            Some(present)
+        } else {
+            None
+        };
         if self.types.contains_string {
             let mut builder = StringColBuilder::default();
             for v in self.data {
@@ -63,7 +77,7 @@ impl MixedCol {
                     RawVal::Float(f) => builder.push(&f.to_string()),
                 }
             }
-            ColumnBuilder::<String>::finalize(builder, name, None)
+            ColumnBuilder::<String>::finalize(builder, name, present)
         } else if self.types.contains_float {
             let mut builder = FloatColBuilder::default();
             for v in self.data {
@@ -74,7 +88,7 @@ impl MixedCol {
                     RawVal::Float(f) => builder.push(&Some(f.into_inner())),
                 }
             }
-            builder.finalize(name, None)
+            builder.finalize(name, present)
         } else if self.types.contains_int {
             let mut builder = IntColBuilder::default();
             for v in self.data {
@@ -85,7 +99,7 @@ impl MixedCol {
                     RawVal::Float(_) => todo!("Unexpected float in int column!"),
                 }
             }
-            builder.finalize(name, None)
+            builder.finalize(name, present)
         } else {
             Arc::new(Column::null(name, self.data.len()))
         }
@@ -113,7 +127,7 @@ impl Default for MixedCol {
     }
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 struct ColType {
     contains_string: bool,
     contains_int: bool,
@@ -170,17 +184,5 @@ impl BitOr for ColType {
             contains_float: self.contains_float | rhs.contains_float,
             contains_null: self.contains_null | rhs.contains_null,
         }
-    }
-}
-
-impl<'a> From<&'a str> for RawVal {
-    fn from(val: &str) -> RawVal {
-        RawVal::Str(val.to_string())
-    }
-}
-
-impl From<i64> for RawVal {
-    fn from(val: i64) -> RawVal {
-        RawVal::Int(val)
     }
 }

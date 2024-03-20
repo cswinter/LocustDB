@@ -1,19 +1,15 @@
-use std::marker::PhantomData;
-use std::sync::Arc;
-
 use crate::ingest::alias_method_fork::*;
+use crate::ingest::raw_val::RawVal;
 use hex;
 use rand;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::Rng;
 use rand::SeedableRng;
 
-use crate::mem_store::column::*;
-use crate::mem_store::column_builder::{ColumnBuilder, IntColBuilder, StringColBuilder};
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub trait ColumnGenerator: Sync + Send {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column>;
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal>;
 }
 
 pub fn int_markov_chain(
@@ -21,9 +17,8 @@ pub fn int_markov_chain(
     transition_probabilities: Vec<Vec<f64>>,
 ) -> Box<dyn ColumnGenerator> {
     Box::new(MarkovChain {
-        elem: elements.into_iter().map(Some).collect(),
+        elem: elements,
         p_transition: transition_probabilities,
-        s: PhantomData::<IntColBuilder>,
     })
 }
 
@@ -40,9 +35,15 @@ pub fn splayed(offset: i64, coefficient: i64) -> Box<dyn ColumnGenerator> {
 
 pub fn int_weighted(values: Vec<i64>, weights: Vec<f64>) -> Box<dyn ColumnGenerator> {
     Box::new(Weighted {
-        elem: values.into_iter().map(Some).collect(),
+        elem: values,
         weights,
-        s: PhantomData::<IntColBuilder>,
+    })
+}
+
+pub fn nullable_ints(values: Vec<Option<i64>>, weights: Vec<f64>) -> Box<dyn ColumnGenerator> {
+    Box::new(Weighted {
+        elem: values,
+        weights,
     })
 }
 
@@ -57,7 +58,6 @@ pub fn string_markov_chain(
     Box::new(MarkovChain {
         elem: elements,
         p_transition: transition_probabilities,
-        s: PhantomData::<StringColBuilder>,
     })
 }
 
@@ -65,7 +65,6 @@ pub fn string_weighted(values: Vec<String>, weights: Vec<f64>) -> Box<dyn Column
     Box::new(Weighted {
         elem: values,
         weights,
-        s: PhantomData::<StringColBuilder>,
     })
 }
 
@@ -91,20 +90,18 @@ pub fn partition_sparse(
 }
 
 #[derive(Clone)]
-struct MarkovChain<T, S> {
+struct MarkovChain<T> {
     elem: Vec<T>,
     p_transition: Vec<Vec<f64>>,
-    s: PhantomData<S>,
 }
 
-unsafe impl<T: Send, S: ColumnBuilder<T>> Send for MarkovChain<T, S> {}
-
-unsafe impl<T: Sync, S: ColumnBuilder<T>> Sync for MarkovChain<T, S> {}
-
-impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+impl<T: Sync + Send> ColumnGenerator for MarkovChain<T>
+where
+    T: Clone + Into<RawVal>,
+{
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(seed);
-        let mut builder = S::default();
+        let mut builder = Vec::new();
         let mut state = rng.gen_range(0, self.elem.len());
         let p = self
             .p_transition
@@ -114,34 +111,32 @@ impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for MarkovChain<T, S> 
         let mut alias_method = AliasMethod::new(rng);
         for _ in 0..length {
             state = alias_method.random(&p[state]);
-            builder.push(&self.elem[state]);
+            builder.push(self.elem[state].clone().into());
         }
-        builder.finalize(name, None)
+        builder
     }
 }
 
 #[derive(Clone)]
-struct Weighted<T, S> {
+struct Weighted<T> {
     elem: Vec<T>,
     weights: Vec<f64>,
-    s: PhantomData<S>,
 }
 
-unsafe impl<T: Send, S: ColumnBuilder<T>> Send for Weighted<T, S> {}
-
-unsafe impl<T: Sync, S: ColumnBuilder<T>> Sync for Weighted<T, S> {}
-
-impl<T: Sync + Send, S: ColumnBuilder<T>> ColumnGenerator for Weighted<T, S> {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+impl<T: Sync + Send> ColumnGenerator for Weighted<T>
+where
+    T: Clone + Into<RawVal>,
+{
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let rng = seeded_rng(seed);
-        let mut builder = S::default();
+        let mut builder = Vec::new();
         let p = new_alias_table(&self.weights).unwrap();
         let mut alias_method = AliasMethod::new(rng);
         for _ in 0..length {
             let i = alias_method.random(&p);
-            builder.push(&self.elem[i]);
+            builder.push(self.elem[i].clone().into());
         }
-        builder.finalize(name, None)
+        builder
     }
 }
 
@@ -151,13 +146,13 @@ struct UniformInteger {
 }
 
 impl ColumnGenerator for UniformInteger {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(seed);
-        let mut builder = IntColBuilder::default();
+        let mut builder = Vec::new();
         for _ in 0..length {
-            builder.push(&Some(rng.gen_range::<i64>(self.low, self.high)));
+            builder.push(rng.gen_range::<i64>(self.low, self.high).into());
         }
-        ColumnBuilder::<Option<i64>>::finalize(builder, name, None)
+        builder
     }
 }
 
@@ -167,16 +162,19 @@ struct Splayed {
 }
 
 impl ColumnGenerator for Splayed {
-    fn generate(&self, length: usize, name: &str, partition: u64) -> Arc<Column> {
+    fn generate(&self, length: usize, partition: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(partition);
-        let mut builder = IntColBuilder::default();
+        let mut builder = Vec::new();
         for _ in 0..length {
-            builder.push(&Some(rng.gen_range::<i64>(
-                self.offset + self.coefficient * length as i64 * partition as i64,
-                self.offset + self.coefficient * length as i64 * (partition as i64 + 1),
-            )));
+            builder.push(
+                rng.gen_range::<i64>(
+                    self.offset + self.coefficient * length as i64 * partition as i64,
+                    self.offset + self.coefficient * length as i64 * (partition as i64 + 1),
+                )
+                .into(),
+            );
         }
-        ColumnBuilder::<Option<i64>>::finalize(builder, name, None)
+        builder
     }
 }
 
@@ -186,12 +184,12 @@ struct PartitionSparse {
 }
 
 impl ColumnGenerator for PartitionSparse {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(seed);
         if rng.gen::<f64>() < self.null_probability {
-            Arc::new(Column::null(name, length))
+            vec![RawVal::Null; length]
         } else {
-            self.generator.generate(length, name, seed)
+            self.generator.generate(length, seed)
         }
     }
 }
@@ -201,14 +199,14 @@ struct HexString {
 }
 
 impl ColumnGenerator for HexString {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(seed);
-        let mut builder = StringColBuilder::default();
+        let mut builder = Vec::new();
         for _ in 0..length {
             let bytes: Vec<u8> = rng.sample_iter(&Standard).take(self.length).collect();
-            builder.push(&hex::encode(&bytes));
+            builder.push(hex::encode(&bytes).into());
         }
-        ColumnBuilder::<&str>::finalize(builder, name, None)
+        builder
     }
 }
 
@@ -218,30 +216,30 @@ struct RandomString {
 }
 
 impl ColumnGenerator for RandomString {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(seed);
-        let mut builder = StringColBuilder::default();
+        let mut builder = Vec::new();
         for _ in 0..length {
             let len = rng.gen_range(self.min_length, self.max_length + 1);
             let string: String = rng
                 .sample_iter::<char, _>(&Alphanumeric)
                 .take(len)
                 .collect();
-            builder.push(&string);
+            builder.push(string.into());
         }
-        ColumnBuilder::<&str>::finalize(builder, name, None)
+        builder
     }
 }
 
 struct IncrementingInteger;
 
 impl ColumnGenerator for IncrementingInteger {
-    fn generate(&self, length: usize, name: &str, seed: u64) -> Arc<Column> {
-        let mut builder = IntColBuilder::default();
+    fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
+        let mut builder = Vec::new();
         for i in seed as i64 * length as i64..length as i64 * (seed as i64 + 1) {
-            builder.push(&Some(i));
+            builder.push(i.into());
         }
-        builder.finalize(name, None)
+        builder
     }
 }
 
@@ -254,12 +252,17 @@ pub struct GenTable {
 
 impl GenTable {
     pub fn gen(&self, db: &InnerLocustDB, partition_number: u64) {
-        let partition = self
+        let cols = self
             .columns
             .iter()
-            .map(|(name, c)| c.generate(self.partition_size, name, partition_number))
+            .map(|(name, c)| {
+                (
+                    name.to_string(),
+                    c.generate(self.partition_size, partition_number),
+                )
+            })
             .collect();
-        db.store_partition(&self.name, partition);
+        db.ingest_heterogeneous(&self.name, cols);
     }
 }
 

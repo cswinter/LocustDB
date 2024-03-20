@@ -28,6 +28,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.partitioning.any(), self.left.any(), self.right.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.partitioning.i, &mut self.left.i, &mut self.right.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.merged.any(), self.take_left.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }

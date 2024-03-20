@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::engine::planning::QueryPlanner;
 use crate::engine::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Codec {
     ops: Vec<CodecOp>,
     column_name: String,
@@ -210,7 +212,8 @@ impl Codec {
         planner: &mut QueryPlanner,
     ) -> BufferRef<Scalar<i64>> {
         match self.ops[..] {
-            [CodecOp::PushDataSection(1), CodecOp::PushDataSection(2), CodecOp::DictLookup(_)] => {
+            [CodecOp::PushDataSection(1), CodecOp::PushDataSection(2), CodecOp::DictLookup(_)] =>
+            {
                 let offset_len = planner
                     .column_section(&self.column_name, 1, None, EncodingType::U64)
                     .u64()
@@ -301,7 +304,7 @@ impl Codec {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum CodecOp {
     Nullable,
     Add(EncodingType, i64),
@@ -381,6 +384,7 @@ impl CodecOp {
         }
     }
 
+    // TODO: what exactly does this property mean? why doesn't it apply to Nullable?
     fn is_elementwise_decodable(&self) -> bool {
         match self {
             CodecOp::Nullable => false,
@@ -423,7 +427,7 @@ impl CodecOp {
             }
             CodecOp::Delta(t) => format!("Delta({:?})", t),
             CodecOp::ToI64(t) => format!("ToI64({:?})", t),
-            CodecOp::PushDataSection(i) => format!("Data({})", i),
+            CodecOp::PushDataSection(i) => format!("Data({i})"),
             CodecOp::DictLookup(t) => format!("Dict({:?})", t),
             CodecOp::LZ4(t, decoded_len) => {
                 if alternate {

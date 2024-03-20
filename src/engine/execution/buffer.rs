@@ -33,14 +33,6 @@ pub struct Scalar<T> { t: PhantomData<T> }
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Nullable<T> { t: PhantomData<T> }
 
-pub fn error_buffer_ref(name: &'static str) -> BufferRef<Any> {
-    BufferRef {
-        i: 0xdead_beef,
-        name,
-        t: PhantomData,
-    }
-}
-
 impl BufferRef<Any> {
     pub fn merge_op(self) -> BufferRef<MergeOp> { self.transmute() }
     pub fn premerge(self) -> BufferRef<Premerge> { self.transmute() }
@@ -71,6 +63,7 @@ impl BufferRef<Any> {
     pub fn string(self) -> BufferRef<String> { self.transmute() }
     pub fn str<'a>(self) -> BufferRef<&'a str> { self.transmute() }
     pub fn opt_str<'a>(self) -> BufferRef<Option<&'a str>> { self.transmute() }
+    pub fn opt_f64(self) -> BufferRef<Option<OrderedFloat<f64>>> { self.transmute() }
     pub fn usize(self) -> BufferRef<usize> { self.transmute() }
     fn transmute<T>(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
 }
@@ -172,6 +165,12 @@ impl From<BufferRef<Premerge>> for TypedBufferRef {
     }
 }
 
+impl From<BufferRef<Nullable<u8>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Nullable<u8>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::NullableU8)
+    }
+}
+
 impl<T> BufferRef<Nullable<T>> {
     pub fn cast_non_nullable(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
     pub fn nullable_any(self) -> BufferRef<Nullable<Any>> { unsafe { mem::transmute(self) } }
@@ -217,6 +216,10 @@ impl TypedBufferRef {
 
     pub fn is_nullable(&self) -> bool { self.tag.is_nullable() }
 
+    pub fn is_null(&self) -> bool { self.tag == EncodingType::Null }
+
+    pub fn is_constant(&self) -> bool { self.tag.is_constant() }
+
     pub fn nullable_any(&self) -> Result<BufferRef<Nullable<Any>>, QueryError> {
         ensure!(self.tag.is_nullable(), "{:?} is not nullable", self.tag);
         Ok(self.buffer.cast_nullable_any())
@@ -230,6 +233,11 @@ impl TypedBufferRef {
     pub fn opt_str<'a>(&self) -> Result<BufferRef<Option<&'a str>>, QueryError> {
         ensure!(self.tag == EncodingType::OptStr, "{:?} != OptStr", self.tag);
         Ok(self.buffer.opt_str())
+    }
+
+    pub fn opt_f64(&self) -> Result<BufferRef<Option<OrderedFloat<f64>>>, QueryError> {
+        ensure!(self.tag == EncodingType::OptF64, "{:?} != OptF64", self.tag);
+        Ok(self.buffer.opt_f64())
     }
 
     pub fn i64(&self) -> Result<BufferRef<i64>, QueryError> {
@@ -253,7 +261,7 @@ impl TypedBufferRef {
     }
 
     pub fn u8(&self) -> Result<BufferRef<u8>, QueryError> {
-        ensure!(self.tag == EncodingType::U8, "{:?} != U8", self.tag);
+        ensure!(self.tag == EncodingType::U8 || self.tag == EncodingType::Bitvec, "{:?} != U8", self.tag);
         Ok(self.buffer.u8())
     }
 
@@ -340,5 +348,13 @@ impl TypedBufferRef {
     pub fn scalar_string(&self) -> Result<BufferRef<Scalar<String>>, QueryError> {
         ensure!(self.tag == EncodingType::ScalarString, "{:?} != ScalaString", self.tag);
         Ok(self.buffer.scalar_string())
+    }
+}
+
+pub fn error_buffer_ref(name: &'static str) -> BufferRef<Any> {
+    BufferRef {
+        i: 0xdead_beef,
+        name,
+        t: PhantomData,
     }
 }

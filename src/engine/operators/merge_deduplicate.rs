@@ -22,6 +22,7 @@ impl<'a, T: VecData<T> + 'a> VecOperator<'a> for MergeDeduplicate<T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.left.any(), self.right.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.left.i, &mut self.right.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.deduplicated.any(), self.merge_ops.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }

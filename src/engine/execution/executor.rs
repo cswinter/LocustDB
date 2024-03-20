@@ -2,16 +2,17 @@ use crate::bitvec::BitVec;
 use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
 use std::cmp;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::marker::PhantomData;
+
+use self::planner::BufferProvider;
 
 pub struct QueryExecutor<'a> {
     ops: Vec<Box<dyn VecOperator<'a> + 'a>>,
     stages: Vec<ExecutorStage>,
-    count: usize,
-    last_buffer: TypedBufferRef,
-    shared_buffers: HashMap<&'static str, TypedBufferRef>,
+    batch_size: usize,
+    buffer_provider: BufferProvider,
 }
 
 #[derive(Default, Clone)]
@@ -22,22 +23,17 @@ struct ExecutorStage {
 }
 
 impl<'a> QueryExecutor<'a> {
-    pub fn set_buffer_count(&mut self, count: usize) {
-        self.count = count
+    pub fn new(batch_size: usize, buffer_provider: BufferProvider) -> QueryExecutor<'a> {
+        QueryExecutor {
+            ops: vec![],
+            stages: vec![],
+            batch_size,
+            buffer_provider,
+        }
     }
 
     pub fn named_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
-        let buffer = TypedBufferRef::new(
-            BufferRef {
-                i: self.count,
-                name,
-                t: PhantomData,
-            },
-            tag,
-        );
-        self.count += 1;
-        self.last_buffer = buffer;
-        buffer
+        self.buffer_provider.named_buffer(name, tag)
     }
 
     pub fn buffer_merge_op(&mut self, name: &'static str) -> BufferRef<MergeOp> {
@@ -103,18 +99,11 @@ impl<'a> QueryExecutor<'a> {
     }
 
     pub fn shared_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
-        if self.shared_buffers.get(name).is_none() {
-            let buffer = self.named_buffer(name, tag);
-            self.shared_buffers.insert(name, buffer);
-        }
-        self.shared_buffers[name]
+        self.buffer_provider.shared_buffer(name, tag)
     }
 
     pub fn last_buffer(&self) -> TypedBufferRef {
-        self.last_buffer
-    }
-    pub fn set_last_buffer(&mut self, buffer: TypedBufferRef) {
-        self.last_buffer = buffer;
+        self.buffer_provider.last_buffer()
     }
 
     pub fn push(&mut self, op: Box<dyn VecOperator<'a> + 'a>) {
@@ -123,12 +112,12 @@ impl<'a> QueryExecutor<'a> {
 
     pub fn prepare(&mut self, columns: HashMap<String, Vec<&'a dyn Data<'a>>>) -> Scratchpad<'a> {
         self.stages = self.partition();
-        Scratchpad::new(self.count, columns)
+        Scratchpad::new(self.buffer_provider.buffer_count(), columns)
     }
 
     pub fn prepare_no_columns(&mut self) -> Scratchpad<'a> {
         self.stages = self.partition();
-        Scratchpad::new(self.count, HashMap::default())
+        Scratchpad::new(self.buffer_provider.buffer_count(), HashMap::default())
     }
 
     pub fn run(
@@ -144,10 +133,35 @@ impl<'a> QueryExecutor<'a> {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn partition(&self) -> Vec<ExecutorStage> {
+    fn partition(&mut self) -> Vec<ExecutorStage> {
+        /* Partitions the operators into stages which are executed as a group and stream intermediate results.
+         * At a high level, we group operators into stages by finding the largest connected subgraphs of
+         * operators that are connected by streaming inputs/outputs.
+         * After determining stages and whether a stage should be streamed, we maybe have to insert additional
+         * operators in-between stages to convert between stream and block inputs/outputs.
+         *
+         * An important edge case is when operator A has both a streaming input B and a non-streaming input C
+         * which come from the same stage.
+         * In this case, we cannot include A in the same stage as B and C because A cannot start until B has
+         * produced all its output.
+         * A <= B <- C
+         * A <- C
+         *
+         * More complex example:
+         * D <- C <= B <= A
+         * D <- E <- A
+         *
+         *
+         * Also note that an operator might have itself as an input if it mutates the buffer in place
+         *
+         * Notation:
+         * A <- B (a is a consumer of b and can stream input from b)
+         * A <= B (a is a consumer of b and cannot stream input from b)
+         */
+
         // Construct execution graph
-        let mut consumers = vec![vec![]; self.count];
-        let mut producers = vec![vec![]; self.count];
+        let mut consumers = vec![vec![]; self.buffer_provider.buffer_count()];
+        let mut producers = vec![vec![]; self.buffer_provider.buffer_count()];
         for (i, op) in self.ops.iter().enumerate() {
             for input in op.inputs() {
                 consumers[input.i].push(i);
@@ -157,23 +171,48 @@ impl<'a> QueryExecutor<'a> {
             }
         }
 
-        // Disable streaming output for operators that have streaming + nonstreaming consumers
-        let mut streaming_disabled = vec![false; self.ops.len()];
+        // `block_output` keeps track of streaming operators that have only nonstreaming consumers and can produce block output when streaming inputs
+        // we disable streaming output for these so we don't have to insert additional block -> stream conversion operators
+        let mut block_output = vec![false; self.ops.len()];
         for (i, op) in self.ops.iter().enumerate() {
+            if !op.can_block_output() {
+                continue;
+            }
+            log::debug!("DETERMINING STREAMING FOR {}", op.display(true));
             for output in op.outputs() {
+                log::debug!("  DETERMINING STREAMING FOR OUTPUT {}", output);
                 if op.can_stream_output(output.i) {
+                    log::debug!("  CHECKING STREAMABLE");
+                    // Are there any ops consuming this output that are streaming?
                     let mut streaming = false;
+                    // Are there any ops consuming this output that are not streaming?
                     let mut block = false;
-                    for &p in &consumers[output.i] {
-                        streaming |= self.ops[p].can_stream_input(output.i);
-                        block |= !self.ops[p].can_stream_input(output.i);
+                    log::debug!("  CONSUMERS: {:?}", &consumers[output.i]);
+                    for &consumer in &consumers[output.i] {
+                        streaming |= self.ops[consumer].can_stream_input(output.i);
+                        block |= !self.ops[consumer].can_stream_input(output.i);
+                        log::debug!(
+                            "  CONSUMER: {} CAN STREAM INPUT: {}, STREAMING: {}, BLOCK: {}",
+                            self.ops[consumer].display(true),
+                            self.ops[consumer].can_stream_input(output.i),
+                            streaming,
+                            block
+                        );
                     }
-                    streaming_disabled[i] = streaming & block;
+                    block_output[i] = !streaming & block;
+                    log::debug!(
+                        "  STREAMING: {}, BLOCK: {}, DISABLED: {}",
+                        streaming,
+                        block,
+                        block_output[i]
+                    );
                 }
             }
         }
 
         // Group operators into stages
+        // This is done by taking an operator, and transitively adding all operators that can be
+        // streamed to/from this operator while checking for any constraints that would prevent streaming
         let mut visited = vec![false; self.ops.len()];
         let mut dependencies_visited = vec![false; self.ops.len()];
         let mut topo_pushed = vec![false; self.ops.len()];
@@ -193,17 +232,23 @@ impl<'a> QueryExecutor<'a> {
                 break;
             }
 
-            let mut ops = vec![];
-            let mut stream = false;
+            let mut ops_in_stage = vec![];
+            // keeps track of whether any op in the stage allocates (in which case we enable potentially enable streaming)
+            let mut stage_allocates = false;
+            // current transitive closure of all ops of the stage and inputs to these ops (entire set of upstream ops)
             let mut transitive_input = vec![false; self.ops.len()];
+            // current transitive closure of all ops of the stage and outputs from these ops (entire set of downstream ops)
             let mut transitive_output = vec![false; self.ops.len()];
             let mut consumers_to_revisit = vec![];
             let mut producers_to_revisit = vec![];
             while let Some(current) = to_visit.pop() {
                 let op = &self.ops[current];
+                stage_allocates |= op.allocates();
                 let current_stage = stages.len() as i32;
+                log::debug!("VISITING {} IN STAGE {}", op.display(true), current_stage);
                 stage[current] = current_stage;
-                ops.push(current);
+                ops_in_stage.push(current);
+
                 // Mark any new transitive inputs/outputs
                 let mut inputs = vec![current];
                 while let Some(op) = inputs.pop() {
@@ -231,20 +276,23 @@ impl<'a> QueryExecutor<'a> {
                     }
                 }
 
-                // Find producers that can be streamed
+                // Find ops which produce a streamable input to this op and add them to this stage
                 for input in op.inputs() {
                     if op.can_stream_input(input.i) {
                         'l1: for &p in &producers[input.i] {
-                            if visited[p] {
+                            if visited[p] || !self.ops[p].can_stream_output(input.i) {
                                 continue;
                             }
-                            let can_stream =
-                                self.ops[p].can_stream_output(input.i) && !streaming_disabled[p];
-                            if !can_stream {
-                                continue;
-                            }
-                            // Including op in this stage would introduce a cycle if any of the
-                            // outputs is consumed by a transitive input to stage
+                            // Including op in this stage could introduce a cycle between stages if any of the
+                            // outputs is consumed by a transitive input to stage (avoids edge case 1)
+                            //
+                            // Example:
+                            // op=A is only op in stage, p=C:
+                            // A <= B <- C
+                            // A <- C
+                            // B is not (currently) in stage but is a transitive input that also has C as an input
+                            // We can't include B in the stage because it has to fully run before A can run, but
+                            // B also has to be in the same or later stage as C.
                             for output in self.ops[p].outputs() {
                                 for &c in &consumers[output.i] {
                                     if transitive_input[c] && stage[c] != current_stage {
@@ -256,25 +304,35 @@ impl<'a> QueryExecutor<'a> {
 
                             visited[p] = true;
                             to_visit.push(p);
-                            stream = stream || self.ops[p].allocates();
+                            log::debug!(
+                                "  ADDING STREAMING PRODUCER {} TO STAGE {}",
+                                self.ops[p].display(true),
+                                current_stage
+                            );
                         }
                     }
                 }
                 // Find consumers that can be streamed to
                 for output in op.outputs() {
-                    if op.can_stream_output(output.i) && !streaming_disabled[current] {
+                    if op.can_stream_output(output.i) && !block_output[current] {
                         'l2: for &consumer in &consumers[output.i] {
-                            if visited[consumer] {
+                            if visited[consumer] || !self.ops[consumer].can_stream_input(output.i) {
                                 continue;
                             }
-                            if !self.ops[consumer].can_stream_input(output.i) {
-                                continue;
-                            }
-                            // Including op in this stage would introduce a cycle if any of the
-                            // inputs is produces by a transitive output to stage
+                            // Including op in this stage could introduce a cycle if any of the
+                            // inputs is produced by a transitive output to stage
+                            //
+                            // Example:
+                            // op=C is only op in stage, c=A:
+                            // A <= B <- C
+                            // A <- C
+                            // B is not (currently) in stage but is a transitive output that also has A as an output
+                            // We can't include A in the stage because it requires full completion of B which is a part
+                            // or downstream of this stage.
                             for input in self.ops[consumer].inputs() {
                                 for &p in &producers[input.i] {
-                                    if transitive_output[p] && stage[p] != current_stage {
+                                    if transitive_output[p] && stage[p] != current_stage
+                                    {
                                         consumers_to_revisit.push(consumer);
                                         continue 'l2;
                                     }
@@ -283,7 +341,11 @@ impl<'a> QueryExecutor<'a> {
 
                             visited[consumer] = true;
                             to_visit.push(consumer);
-                            stream = stream || self.ops[consumer].allocates();
+                            log::debug!(
+                                "  ADDING STREAMING CONSUMER {} TO STAGE {}",
+                                self.ops[consumer].display(true),
+                                current_stage
+                            );
                         }
                     }
                 }
@@ -304,7 +366,11 @@ impl<'a> QueryExecutor<'a> {
                         }
                         visited[p] = true;
                         to_visit.push(p);
-                        stream = stream || self.ops[p].allocates();
+                        log::debug!(
+                            "  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING PRODUCER {} TO STAGE {}",
+                            self.ops[p].display(true),
+                            current_stage
+                        );
                     }
                     let ctr = std::mem::take(&mut consumers_to_revisit);
                     'l4: for consumer in ctr {
@@ -318,30 +384,34 @@ impl<'a> QueryExecutor<'a> {
                         }
                         visited[consumer] = true;
                         to_visit.push(consumer);
-                        stream = stream || self.ops[consumer].allocates();
+                        log::debug!(
+                            "  ADDING PREVIOUSLY CYCLE EXCLUDED STREAMING CONSUMER {} TO STAGE {}",
+                            self.ops[consumer].display(true),
+                            current_stage
+                        );
                     }
                 }
             }
 
             // Topological sort of ops
             let mut total_order = vec![];
-            while let Some(op) = ops.pop() {
+            while let Some(op) = ops_in_stage.pop() {
                 if !dependencies_visited[op] {
                     dependencies_visited[op] = true;
-                    ops.push(op);
+                    ops_in_stage.push(op);
                     for input in self.ops[op].inputs() {
                         for &parent in &producers[input.i] {
                             if stage[parent] == stages.len() as i32 {
                                 if parent == op {
                                     panic!("TRIVIAL CYCLE: {}", self.ops[op].display(true));
                                 }
-                                ops.push(parent);
+                                ops_in_stage.push(parent);
                             }
                         }
                         if self.ops[op].mutates(input.i) {
                             for &consumer in &consumers[input.i] {
                                 if consumer != op && stage[consumer] == stages.len() as i32 {
-                                    ops.push(consumer);
+                                    ops_in_stage.push(consumer);
                                 }
                             }
                         }
@@ -352,31 +422,23 @@ impl<'a> QueryExecutor<'a> {
                 }
             }
 
-            // Determine if stage/ops should be streaming
-            let mut has_streaming_producer = false;
+            let mut has_streaming_operator = false;
             let ops = total_order
                 .into_iter()
                 .map(|op| {
-                    has_streaming_producer |= self.ops[op].is_streaming_producer();
-                    let mut streaming_consumers = false;
-                    let mut block_consumers = false;
-                    for output in self.ops[op].outputs() {
-                        if self.ops[op].can_stream_output(output.i) {
-                            for &consumer in &consumers[output.i] {
-                                streaming_consumers |=
-                                    self.ops[consumer].can_stream_input(output.i);
-                                block_consumers |= !self.ops[consumer].can_stream_input(output.i);
-                            }
-                        }
-                    }
-                    (op, streaming_consumers && !block_consumers)
+                    let any_streaming_input = self.ops[op]
+                        .inputs()
+                        .iter()
+                        .any(|input| self.ops[op].can_stream_input(input.i));
+                    let streaming_producer = self.ops[op].is_streaming_producer();
+                    has_streaming_operator |= any_streaming_input || streaming_producer;
+                    (op, !block_output[op])
                 })
                 .collect::<Vec<_>>();
 
-            // TODO(#98): Make streaming possible for stages reading from temp results
             stages.push(ExecutorStage {
                 ops,
-                stream: stream && has_streaming_producer,
+                stream: stage_allocates && has_streaming_operator,
             })
         }
 
@@ -464,6 +526,112 @@ impl<'a> QueryExecutor<'a> {
                 &mut total_order,
             )
         });
+
+        let mut stage_for_op = vec![0; self.ops.len()];
+        for (i, stage) in total_order.iter().enumerate() {
+            for (op, _) in &stage.ops {
+                stage_for_op[*op] = i;
+            }
+        }
+
+        // Insert operation to buffer output for any streaming op in a streaming stage that has non-streaming consumers
+        let mut substitutions = vec![];
+        let mut count = self.buffer_provider.buffer_count();
+        let mut block_output_buffers = HashMap::new();
+        let mut new_ops = vec![]; // new op and corresponding stage
+        for (i, consumer) in self.ops.iter().enumerate() {
+            for input in consumer.inputs() {
+                if !consumer.can_stream_input(input.i) || !total_order[stage_for_op[i]].stream {
+                    for &producer in &producers[input.i] {
+                        if self.ops[producer].can_stream_output(input.i)
+                            && !block_output[producer]
+                            && total_order[stage_for_op[producer]].stream
+                        {
+                            substitutions.push((i, input.i));
+                            if let Entry::Vacant(e) = block_output_buffers.entry(input.i) {
+                                new_ops.push((
+                                    self.buffer_provider.all_buffers[input.i].tag,
+                                    input,
+                                    stage_for_op[producer],
+                                ));
+                                e.insert(count);
+                                count += 1
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        for (tag, input, stage) in new_ops {
+            let buffer = self.buffer_provider.named_buffer("block_buffer", tag);
+            let op = vector_operator::operator::buffer(
+                self.buffer_provider.all_buffers[input.i],
+                buffer,
+            )
+            .unwrap();
+            total_order[stage].ops.push((self.ops.len(), false));
+            self.ops.push(op);
+            stage_for_op.push(stage);
+        }
+        for (consumer, old_input) in substitutions {
+            let new_input = *block_output_buffers.get(&old_input).unwrap();
+            self.ops[consumer].update_input(old_input, new_input);
+        }
+
+        // Insert operation to stream input for any streaming op that has non-streaming producers
+        // substitutions: (operation id, buffer id of input to replace)
+        let mut substitutions = vec![];
+        for (i, consumer) in self.ops.iter().enumerate() {
+            if !total_order[stage_for_op[i]].stream {
+                continue;
+            }
+            let mut already_substituted = vec![];
+            for input in consumer.inputs() {
+                if consumer.can_stream_input(input.i) && !already_substituted.contains(&input.i) {
+                    for &producer in &producers[input.i] {
+                        if !self.ops[producer].can_stream_output(input.i)
+                            || block_output[producer]
+                            || !total_order[stage_for_op[producer]].stream
+                        {
+                            substitutions.push((i, input.i));
+                            already_substituted.push(input.i);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        for (i, input_i) in substitutions {
+            let stage = stage_for_op[i];
+            let input = self.buffer_provider.all_buffers[input_i];
+            let buffer = self.buffer_provider.named_buffer("buffer_stream", input.tag);
+            if input.tag.is_scalar() {
+                continue
+            }
+            let op = if input.tag == EncodingType::Null {
+                vector_operator::operator::stream_null_vec(
+                    input.any(),
+                    buffer.any(),
+                )
+            } else if input.tag.is_nullable() {
+                vector_operator::operator::stream_nullable(
+                    input,
+                    self.buffer_provider.named_buffer("buffer_stream_data", input.tag),
+                    self.buffer_provider.buffer_u8("buffer_stream_present"),
+                    buffer,
+                )
+                .unwrap()
+            } else {
+                vector_operator::operator::stream(input, buffer)
+                    .unwrap()
+            };
+            self.ops[i].update_input(input_i, buffer.buffer.i);
+            total_order[stage].ops.insert(0, (self.ops.len(), true));
+            self.ops.push(op);
+            stage_for_op.push(stage);
+        }
+
         total_order
     }
 
@@ -484,12 +652,12 @@ impl<'a> QueryExecutor<'a> {
                 trace!("{}: {}", input.i, scratchpad.get_any(input).len());
             }
         }
-        // TODO(#98): once we can stream from intermediary results this will be overestimate
+        // TODO: this may be overestimate, we may have inserted a StreamBuffer op to stream from a materialized filtered column that is smaller that the full column
         if has_streaming_producer {
             max_input_length = column_length;
         }
         let batch_size = if self.stages[stage].stream {
-            1024
+            self.batch_size
         } else {
             max_input_length
         };
@@ -525,9 +693,11 @@ impl<'a> QueryExecutor<'a> {
         while has_more {
             has_more = false;
             for &(op, streamable) in &self.stages[stage].ops {
+                if show && iters < 2 {
+                    println!("{} streamable={streamable}", self.ops[op].display(true));
+                }
                 self.ops[op].execute(stream && streamable, scratchpad)?;
-                if show && iters == 0 {
-                    println!("{}", self.ops[op].display(true));
+                if show && iters < 2 {
                     for output in self.ops[op].outputs() {
                         let data = scratchpad.get_any(output);
                         println!("{}", data.display());
@@ -555,18 +725,6 @@ impl<'a> QueryExecutor<'a> {
             println!("\n[{} more iterations]", iters - 1);
         }
         Ok(())
-    }
-}
-
-impl<'a> Default for QueryExecutor<'a> {
-    fn default() -> QueryExecutor<'a> {
-        QueryExecutor {
-            ops: vec![],
-            stages: vec![],
-            count: 0,
-            last_buffer: TypedBufferRef::new(error_buffer_ref("ERROR"), EncodingType::Null),
-            shared_buffers: HashMap::default(),
-        }
     }
 }
 

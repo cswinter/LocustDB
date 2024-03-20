@@ -30,6 +30,7 @@ impl<'a> VecOperator<'a> for SortByValRows<'a> {
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.ranking.any(), self.indices.any()]
     }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.indices.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }

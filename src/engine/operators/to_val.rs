@@ -27,9 +27,11 @@ impl<'a> VecOperator<'a> for NullableStrToVal<'a> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.vals.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -50,11 +52,13 @@ impl<'a> VecOperator<'a> for ValToNullableStr<'a> {
             data.clear();
             present.clear();
         }
+        present.resize((data.len() + vals.len() + 7) / 8, 0u8);
+        let offset = data.len();
         for (i, &val) in vals.iter().enumerate() {
             match val {
                 Val::Str(s) => {
                     data.push(s);
-                    present.set(i);
+                    present.set(offset + i);
                 }
                 Val::Null => data.push(""),
                 _ => panic!("Trying to cast {:?} to NullableStr!", val),
@@ -64,13 +68,15 @@ impl<'a> VecOperator<'a> for ValToNullableStr<'a> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set_nullable(self.nullable, Vec::with_capacity(batch_size), Vec::with_capacity(batch_size / 8 + 1));
+        scratchpad.set_nullable(self.nullable, Vec::with_capacity(batch_size), vec![]);
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.vals.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.vals.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.nullable.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -103,9 +109,11 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NullableIntToVal<'a, T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.vals.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
@@ -146,13 +154,14 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for ValToNullableInt<'a, T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.vals.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.vals.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.nullable.any()] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }
+    fn can_block_output(&self) -> bool { true }
     fn allocates(&self) -> bool { true }
 
     fn display_op(&self, _: bool) -> String {
         format!("UnfuseNulls<{:?}>({})", T::t(), self.vals)
     }
 }
-

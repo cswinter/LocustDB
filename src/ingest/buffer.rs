@@ -1,3 +1,5 @@
+use ordered_float::OrderedFloat;
+
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::raw_col::MixedCol;
@@ -37,6 +39,15 @@ impl Buffer {
                 InputColumn::Str(vec) => buffered_col.push_strings(vec),
                 InputColumn::Float(vec) => buffered_col.push_floats(vec),
                 InputColumn::Null(c) => buffered_col.push_nulls(c),
+                InputColumn::NullableFloat(c, data) => {
+                    let mut next_i = 0;
+                    for (i, f) in data {
+                        buffered_col.push_nulls((i - next_i) as usize);
+                        buffered_col.push(RawVal::Float(OrderedFloat(f)));
+                        next_i = i + 1;
+                    }
+                    buffered_col.push_nulls((c - next_i) as usize);
+                }
             }
             new_length = cmp::max(new_length, buffered_col.len())
         }

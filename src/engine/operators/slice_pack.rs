@@ -31,6 +31,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for SlicePackInt<T> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
@@ -70,6 +71,7 @@ impl<'a> VecOperator<'a> for SlicePackString<'a> {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output] }
     fn can_stream_input(&self, _: usize) -> bool { true }
     fn can_stream_output(&self, _: usize) -> bool { true }

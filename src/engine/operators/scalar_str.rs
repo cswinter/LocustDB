@@ -21,6 +21,7 @@ impl<'a> VecOperator<'a> for ScalarStr<'a> {
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![]
     }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }

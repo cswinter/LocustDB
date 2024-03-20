@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use locustdb_derive::reify_types;
-use regex::Regex;
 use ordered_float::OrderedFloat;
+use regex::Regex;
 
 use crate::engine::Aggregator;
 use crate::engine::*;
@@ -18,6 +18,8 @@ use super::assemble_nullable::AssembleNullable;
 use super::binary_operator::*;
 use super::bit_unpack::BitUnpackOperator;
 use super::bool_op::*;
+use super::buffer_stream::*;
+use super::collect::Collect;
 use super::column_ops::*;
 use super::combine_null_maps::CombineNullMaps;
 use super::compact::Compact;
@@ -30,6 +32,7 @@ use super::dict_lookup::*;
 use super::encode_const::*;
 use super::exists::Exists;
 use super::filter::{Filter, NullableFilter};
+use super::filter_nullable::{FilterNullable, NullableFilterNullable};
 use super::functions::*;
 use super::fuse_nulls::*;
 use super::get_null_map::GetNullMap;
@@ -50,7 +53,10 @@ use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
 use super::nonzero_compact::NonzeroCompact;
 use super::nonzero_indices::NonzeroIndices;
+use super::null_to_val::NullToVal;
+use super::null_to_vec::NullToVec;
 use super::null_vec::NullVec;
+use super::null_vec_like::{LengthSource, NullVecLike};
 use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
@@ -63,6 +69,7 @@ use super::slice_unpack::*;
 use super::sort_by::*;
 use super::sort_by_slices::SortBySlices;
 use super::sort_by_val_rows::SortByValRows;
+use super::stream_buffer::{StreamBuffer, StreamBufferNullable, StreamNullVec};
 use super::subpartition::SubPartition;
 use super::to_val::*;
 use super::top_n::TopN;
@@ -75,21 +82,60 @@ use super::val_rows_unpack::*;
 pub type BoxedOperator<'a> = Box<dyn VecOperator<'a> + 'a>;
 
 pub trait VecOperator<'a> {
+    /// Called at every iteration of stage execution.
+    /// Stages can be in either _streaming_ or _block_ mode.
+    /// In streaming mode, the operator receives a slices of the input on every iteration.
+    /// If `stream` is true, the output should be the streamed as well.
+    /// If `stream` is false, the operator should retain outputs of all iterations.
+    /// The execution engine may set `stream=false` if `can_block_output() == true` and there are only block operators consuming the output of this operator to avoid inserting a buffering operator.
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError>;
-    fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
+
+    /// Called once before starting to execute a stage.
+    /// Typically used to initialize output buffers.
+    /// The `total_count` is the number of rows in the input, and `batch_size` is the number of rows to be processed in each iteration.
     fn init(&mut self, _total_count: usize, _batch_size: usize, _scratchpad: &mut Scratchpad<'a>) {}
 
+    /// Called once after stage execution is complete.
+    fn finalize(&mut self, _scratchpad: &mut Scratchpad<'a>) {}
+
+    fn inputs_mut(&mut self) -> Vec<&mut usize>;
     fn inputs(&self) -> Vec<BufferRef<Any>>;
     fn outputs(&self) -> Vec<BufferRef<Any>>;
+    /// Whether the operator can stream a particular input buffer.
     fn can_stream_input(&self, i: usize) -> bool;
+    /// Whether the operator can stream a particular output buffer.
     fn can_stream_output(&self, i: usize) -> bool;
+    /// Whether the operator can return non-streamed output when receiving streamed input.
+    fn can_block_output(&self) -> bool {
+        false
+    }
+    /// Whether the operator mutates a particular input buffer.
     fn mutates(&self, _i: usize) -> bool {
         false
     }
+    /// Whether the operator allocates new buffers.
+    /// Stages with operators that allocate new buffers may be streamed.
+    /// If none of the operators in a stage allocate new buffers, the stage can be efficiently executed in nonstreaming mode.
     fn allocates(&self) -> bool;
+
+    fn update_input(&mut self, old: usize, new: usize) {
+        let mut replaced = false;
+        for input in self.inputs_mut() {
+            if *input == old {
+                *input = new;
+                replaced = true;
+            }
+        }
+        assert!(replaced);
+    }
+
+    /// A streaming producer is an op that may not take any streaming inputs, but still produces streaming output.
+    /// This is used to determine whether a stage should be streamed.
+    /// Only stages with ops that either have an input that can stream or are streaming producers themselves can be streamed.
     fn is_streaming_producer(&self) -> bool {
         false
     }
+    // If a stage is streaming, at least one of the operators in the stage must return true for this function as long as there is further input to be processed.
     fn has_more(&self) -> bool {
         false
     }
@@ -132,14 +178,13 @@ pub mod operator {
         colname: String,
         section_index: usize,
         output: BufferRef<Any>,
+        tag: EncodingType,
     ) -> BoxedOperator<'a> {
         Box::new(ReadColumnData {
             colname,
             section_index,
             output,
-            batch_size: 0,
-            current_index: 0,
-            has_more: true,
+            tag,
         })
     }
 
@@ -163,6 +208,11 @@ pub mod operator {
                 data: data.str()?,
                 present,
                 nullable_data: nullable_data.nullable_str()?,
+            })),
+            EncodingType::F64 => Ok(Box::new(AssembleNullable {
+                data: data.f64()?,
+                present,
+                nullable_data: nullable_data.nullable_f64()?,
             })),
             _ => Err(fatal!("nullable not implemented for type {:?}", data.tag)),
         }
@@ -250,16 +300,23 @@ pub mod operator {
         input: TypedBufferRef,
         fused: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        if input.tag == EncodingType::NullableI64 {
-            Ok(Box::new(FuseNullsI64 {
+        match input.tag {
+            EncodingType::NullableI64 => Ok(Box::new(FuseNullsI64 {
                 input: input.nullable_i64()?,
                 fused: fused.i64()?,
-            }))
-        } else {
-            Ok(Box::new(FuseNullsStr {
+            })),
+            EncodingType::NullableStr => Ok(Box::new(FuseNullsStr {
                 input: input.nullable_str()?,
                 fused: fused.opt_str()?,
-            }))
+            })),
+            EncodingType::NullableF64 => Ok(Box::new(FuseNullsF64 {
+                input: input.nullable_f64()?,
+                fused: fused.opt_f64()?,
+            })),
+            _ => Err(fatal!(
+                "fuse_nulls not implemented for type {:?}",
+                input.tag
+            )),
         }
     }
 
@@ -345,19 +402,28 @@ pub mod operator {
         present: BufferRef<u8>,
         unfused: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        if fused.tag == EncodingType::I64 {
-            Ok(Box::new(UnfuseNullsI64 {
+        match fused.tag {
+            EncodingType::I64 => Ok(Box::new(UnfuseNullsI64 {
                 fused: fused.i64()?,
                 present,
                 unfused: unfused.nullable_i64()?,
-            }))
-        } else {
-            Ok(Box::new(UnfuseNullsStr {
+            })),
+            EncodingType::OptStr => Ok(Box::new(UnfuseNullsStr {
                 fused: fused.opt_str()?,
                 data: data.str()?,
                 present,
                 unfused: unfused.nullable_str()?,
-            }))
+            })),
+            EncodingType::OptF64 => Ok(Box::new(UnfuseNullsF64 {
+                fused: fused.opt_f64()?,
+                data: data.f64()?,
+                present,
+                unfused: unfused.nullable_f64()?,
+            })),
+            _ => Err(fatal!(
+                "unfuse_nulls not implemented for type {:?}",
+                fused.tag
+            )),
         }
     }
 
@@ -378,6 +444,18 @@ pub mod operator {
     pub fn identity<'a>(input: TypedBufferRef, output: TypedBufferRef) -> BoxedOperator<'a> {
         Box::new(Identity {
             input: input.any(),
+            output: output.any(),
+        })
+    }
+
+    pub fn collect<'a>(
+        input: TypedBufferRef,
+        output: TypedBufferRef,
+        name: String,
+    ) -> BoxedOperator<'a> {
+        Box::new(Collect {
+            input: input.any(),
+            name,
             output: output.any(),
         })
     }
@@ -406,7 +484,7 @@ pub mod operator {
         let reader: Box<dyn Read> = Box::new(&[] as &[u8]);
         reify_types! {
             "lz4_decode";
-            decoded: Integer;
+            decoded: Number;
             Ok(Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true }))
         }
     }
@@ -492,10 +570,24 @@ pub mod operator {
         filter: BufferRef<u8>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "filter";
-            input, output: PrimitiveUSize;
-            Ok(Box::new(Filter { input, filter, output }))
+        if input.is_null() {
+            Ok(null_vec_like(
+                filter.any(),
+                output.any(),
+                LengthSource::NonZeroU8ElementCount,
+            ))
+        } else if input.is_nullable() {
+            reify_types! {
+                "filter_nullable";
+                input, output: NullablePrimitive;
+                Ok(Box::new(FilterNullable { input, filter, output }))
+            }
+        } else {
+            reify_types! {
+                "filter";
+                input, output: VecData;
+                Ok(Box::new(Filter { input, filter, output }))
+            }
         }
     }
 
@@ -504,10 +596,18 @@ pub mod operator {
         filter: BufferRef<Nullable<u8>>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "nullable_filter";
-            input, output: PrimitiveUSize;
-            Ok(Box::new(NullableFilter { input, filter, output }))
+        if input.is_nullable() {
+            reify_types! {
+                "nullable_filter_nullable";
+                input, output: NullablePrimitive;
+                Ok(Box::new(NullableFilterNullable { input, filter, output }))
+            }
+        } else {
+            reify_types! {
+                "nullable_filter";
+                input, output: PrimitiveUSize;
+                Ok(Box::new(NullableFilter { input, filter, output }))
+            }
         }
     }
 
@@ -516,12 +616,16 @@ pub mod operator {
         indices: BufferRef<usize>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "select";
-            input, output: PrimitiveUSize;
-            Ok(Box::new(Select { input, indices, output }));
-            input, output: NullablePrimitive;
-            Ok(Box::new(SelectNullable { input, indices, output }))
+        if input.is_null() {
+            Ok(null_vec_like(input.any(), output.any(), LengthSource::InputLength))
+        } else {
+            reify_types! {
+                "select";
+                input, output: PrimitiveUSize;
+                Ok(Box::new(Select { input, indices, output }));
+                input, output: NullablePrimitive;
+                Ok(Box::new(SelectNullable { input, indices, output }))
+            }
         }
     }
 
@@ -563,6 +667,19 @@ pub mod operator {
 
     pub fn null_vec<'a>(len: usize, output: BufferRef<Any>) -> BoxedOperator<'a> {
         Box::new(NullVec { len, output })
+    }
+
+    pub fn null_vec_like<'a>(
+        input: BufferRef<Any>,
+        output: BufferRef<Any>,
+        source_type: LengthSource,
+    ) -> BoxedOperator<'a> {
+        Box::new(NullVecLike {
+            input,
+            output,
+            source_type,
+            count: 0,
+        })
     }
 
     pub fn constant_expand<'a>(
@@ -1046,6 +1163,10 @@ pub mod operator {
             stride,
             offset,
             output,
+
+            curr_index: 0,
+            batch_size: 0,
+            has_more: true,
         })
     }
 
@@ -1068,10 +1189,16 @@ pub mod operator {
                         Ok(Box::new(NullableIntToVal { input, vals: output }) as BoxedOperator<'a>)
                     }
                 }
+            } else if input.tag == EncodingType::Null {
+                Ok(Box::new(NullToVal {
+                    input: input.any(),
+                    output,
+                    batch_size: 0,
+                }))
             } else {
                 reify_types! {
                     "type_conversion";
-                    input: PrimitiveNoU64;
+                    input: VecDataNoU64;
                     Ok(Box::new(TypeConversionOperator { input, output }) as BoxedOperator<'a>)
                 }
             }
@@ -1097,11 +1224,23 @@ pub mod operator {
                     Ok(Box::new(TypeConversionOperator { input, output }) as BoxedOperator<'a>)
                 }
             }
+        } else if input.tag == EncodingType::Null {
+            reify_types! {
+                "null_to_vec";
+                output: NullablePrimitive;
+                Ok(Box::new(NullToVec { input: input.any(), output, batch_size: 0 }))
+            }
         } else {
             if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
                 return Ok(Box::new(TypeConversionOperator {
                     input: input.str()?,
                     output: output.opt_str()?,
+                }));
+            }
+            if input.tag == EncodingType::F64 && output.tag == EncodingType::OptF64 {
+                return Ok(Box::new(TypeConversionOperator {
+                    input: input.f64()?,
+                    output: output.opt_f64()?,
                 }));
             }
             reify_types! {
@@ -1248,7 +1387,7 @@ pub mod operator {
         reify_types! {
             "nonzero_indices";
             input: Integer, output: Integer;
-            Ok(Box::new(NonzeroIndices { input, output }))
+            Ok(Box::new(NonzeroIndices { input, output, offset: 0, }))
         }
     }
 
@@ -1338,13 +1477,13 @@ pub mod operator {
         }
         if ranking.is_nullable() {
             reify_types! {
-                "sort_indices";
+                "sort_by_nullable";
                 ranking: NullablePrimitive;
                 Ok(Box::new(SortByNullable { ranking, output, indices, descending, stable }))
             }
         } else {
             reify_types! {
-                "sort_indices";
+                "sort_by";
                 ranking: Primitive;
                 Ok(Box::new(SortBy { ranking, output, indices, descending, stable }))
             }
@@ -1518,13 +1657,13 @@ pub mod operator {
         if desc {
             reify_types! {
                 "merge_desc";
-                left, right, merged_out: Primitive;
+                left, right, merged_out: PrimitiveOrVal;
                 Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
-                "merge_desc";
-                left, right, merged_out: Primitive;
+                "merge_asc";
+                left, right, merged_out: PrimitiveOrVal;
                 Ok(Box::new(Merge { left, right, merged: merged_out, merge_ops: ops_out, limit, c: PhantomData::<CmpLessThan> }))
             }
         }
@@ -1540,8 +1679,79 @@ pub mod operator {
                 "merge_keep";
                 left, right, merged_out: NullablePrimitive;
                 Ok(Box::new(MergeKeepNullable { merge_ops, left, right, merged: merged_out }));
-                left, right, merged_out: Primitive;
+                left, right, merged_out: VecData;
                 Ok(Box::new(MergeKeep { merge_ops, left, right, merged: merged_out }))
         }
+    }
+
+    pub fn buffer<'a>(
+        streaming_input: TypedBufferRef,
+        block_output: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        if streaming_input.tag == EncodingType::Null {
+            Ok(Box::new(BufferStreamNull {
+                input: streaming_input.any(),
+                output: block_output.any(),
+                count: 0,
+            }))
+        } else {
+            reify_types! {
+                "buffer";
+                streaming_input, block_output: NullablePrimitive;
+                Ok(Box::new(BufferStreamNullable { input: streaming_input, output: block_output }));
+                streaming_input, block_output: VecData;
+                Ok(Box::new(BufferStream { input: streaming_input, output: block_output }))
+            }
+        }
+    }
+
+    pub fn stream<'a>(
+        streaming_input: TypedBufferRef,
+        block_output: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        let is_bitvec = streaming_input.tag == EncodingType::Bitvec;
+        reify_types! {
+            "stream";
+            streaming_input, block_output: VecData;
+            Ok(Box::new(StreamBuffer {
+                input: streaming_input,
+                output: block_output,
+                is_bitvec,
+                batch_size: 0,
+                current_index: 0,
+                has_more: true,
+            }))
+        }
+    }
+
+    pub fn stream_nullable<'a>(
+        streaming_input: TypedBufferRef,
+        output_data: TypedBufferRef,
+        output_present: BufferRef<u8>,
+        block_output: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "stream_nullable";
+            streaming_input, block_output: NullablePrimitive;
+            Ok(Box::new(StreamBufferNullable {
+                input: streaming_input,
+                output_data: output_data.any(),
+                output_present,
+                output: block_output,
+                batch_size: 0,
+                current_index: 0,
+                has_more: true,
+            }))
+        }
+    }
+
+    pub fn stream_null_vec<'a>(input: BufferRef<Any>, output: BufferRef<Any>) -> BoxedOperator<'a> {
+        Box::new(StreamNullVec {
+            input,
+            output,
+            batch_size: 0,
+            current_index: 0,
+            has_more: true,
+        })
     }
 }

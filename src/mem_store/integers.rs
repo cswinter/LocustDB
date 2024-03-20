@@ -58,14 +58,14 @@ impl IntegerColumn {
                         values.len(),
                         original_range,
                         vec![CodecOp::Delta(EncodingType::I64), CodecOp::PushDataSection(1), CodecOp::Nullable],
-                        vec![values.into(), present.into()])
+                        vec![values.into(), DataSection::Bitvec(present)])
                 } else {
                     Column::new(
                         name,
                         values.len(),
                         original_range,
                         vec![CodecOp::PushDataSection(1), CodecOp::Nullable],
-                        vec![values.into(), present.into()])
+                        vec![values.into(), DataSection::Bitvec(present)])
                 }
                 None => if delta_encode {
                     Column::new(
@@ -120,7 +120,7 @@ impl IntegerColumn {
             len,
             Some((min - offset, max - offset)),
             codec,
-            if let Some(present) = null_map { vec![values.into(), present.into()] } else { vec![values.into()] })
+            if let Some(present) = null_map { vec![values.into(), DataSection::Bitvec(present)] } else { vec![values.into()] })
     }
 
     pub fn encode<T: GenericIntVec<T>>(values: Vec<i64>, offset: i64) -> Vec<T> {

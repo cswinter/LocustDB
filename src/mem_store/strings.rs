@@ -47,7 +47,7 @@ where
             let mut column = if let Some(present) = present {
                 codec.push(CodecOp::PushDataSection(1));
                 codec.push(CodecOp::Nullable);
-                Column::new(name, len, None, codec, vec![data, DataSection::U8(present)])
+                Column::new(name, len, None, codec, vec![data, DataSection::Bitvec(present)])
             } else {
                 Column::new(name, len, None, codec, vec![data])
             };
@@ -122,7 +122,7 @@ where
     if let Some(present) = present {
         codec.insert(0, CodecOp::PushDataSection(3));
         codec.insert(1, CodecOp::Nullable);
-        data_sections.push(DataSection::U8(present));
+        data_sections.push(DataSection::Bitvec(present));
     }
     let mut column = Column::new(name, len, range, codec, data_sections);
     column.lz4_encode();

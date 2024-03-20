@@ -1,11 +1,11 @@
 extern crate csv;
 extern crate flate2;
 
+use ordered_float::OrderedFloat;
+
 use crate::bitvec::*;
+use crate::ingest::raw_val::RawVal;
 use crate::ingest::schema::*;
-use crate::mem_store::column::*;
-use crate::mem_store::column_builder::*;
-use crate::mem_store::strings::fast_build_string_column;
 use crate::scheduler::*;
 use crate::stringpack::*;
 use std::collections::{HashMap, HashSet};
@@ -21,6 +21,7 @@ use self::flate2::read::GzDecoder;
 
 type IngestionTransform = HashMap<usize, extractor::Extractor>;
 
+#[derive(Debug)]
 pub struct Options {
     filename: PathBuf,
     tablename: String,
@@ -198,17 +199,19 @@ where
         }
 
         if row_num % opts.partition_size == opts.partition_size - 1 {
-            let partition =
-                create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
-            ldb.store_partition(&opts.tablename, partition);
+            let cols = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
+            ldb.ingest_heterogeneous(&opts.tablename, cols);
+            ldb.wal_flush();
         }
         row_num += 1;
     }
 
     if row_num % opts.partition_size != 0 {
-        let partition = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
-        ldb.store_partition(&opts.tablename, partition);
+        let cols = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
+        ldb.ingest_heterogeneous(&opts.tablename, cols);
     }
+    // ingest_heterogeneous does not write to WAL, so need to flush to ensure data is persisted as partitions
+    ldb.wal_flush();
     Ok(())
 }
 
@@ -218,15 +221,15 @@ fn create_batch(
     extractors: &IngestionTransform,
     ignore: &[bool],
     string: &[bool],
-) -> Vec<Arc<Column>> {
-    let mut mem_store = Vec::new();
+) -> HashMap<String, Vec<RawVal>> {
+    let mut mem_store = HashMap::new();
     for (i, col) in cols.iter_mut().enumerate() {
         if !ignore[i] {
             let new_column = match extractors.get(&i) {
-                Some(extractor) => col.extract(&colnames[i], *extractor),
+                Some(extractor) => col.extract(*extractor),
                 None => col.finalize(&colnames[i], string[i]),
             };
-            mem_store.push(new_column);
+            mem_store.insert(colnames[i].to_string(), new_column);
         }
     }
     mem_store
@@ -304,88 +307,82 @@ impl RawCol {
         self.values.push(elem);
     }
 
-    fn finalize(&mut self, name: &str, string: bool) -> Arc<Column> {
-        let present = if self.allow_null && self.any_null {
-            Some(std::mem::take(&mut self.present))
-        } else {
-            None
-        };
+    fn finalize(&mut self, name: &str, string: bool) -> Vec<RawVal> {
         let result = if self.types.contains_string || string {
-            fast_build_string_column(
-                name,
-                self.values.iter(),
-                self.values.len(),
-                self.lhex,
-                self.uhex,
-                self.string_bytes,
-                present,
-            )
-        } else if self.types.contains_float {
-            let mut builder = FloatColBuilder::default();
-            for s in self.values.iter() {
-                let f = if s.is_empty() {
-                    if self.allow_null {
-                        None
+            self.values
+                .iter()
+                .map(|s| {
+                    if self.allow_null && s.is_empty() {
+                        RawVal::Null
                     } else {
-                        Some(0.0)
+                        RawVal::Str(s.to_string())
+                    }
+                })
+                .collect()
+        } else if self.types.contains_float {
+            let mut result = Vec::with_capacity(self.values.len());
+            for s in self.values.iter() {
+                if s.is_empty() {
+                    if self.allow_null {
+                        result.push(RawVal::Null);
+                    } else {
+                        result.push(RawVal::Float(OrderedFloat(0.0)));
                     }
                 } else if let Ok(float) = s.parse::<f64>() {
-                    Some(float)
+                    result.push(RawVal::Float(OrderedFloat(float)));
                 } else {
                     unreachable!(
                         "{} should be parseable as float. {} {:?}",
                         s, name, self.types
                     )
-                };
-                builder.push(&f);
+                }
             }
-            builder.finalize(name, present)
+            result
         } else if self.types.contains_int {
-            let mut builder = IntColBuilder::default();
+            let mut result = Vec::with_capacity(self.values.len());
             for s in self.values.iter() {
-                let int = if s.is_empty() {
+                if s.is_empty() {
                     if self.allow_null {
-                        None
+                        result.push(RawVal::Null);
                     } else {
-                        Some(0)
+                        result.push(RawVal::Int(0));
                     }
                 } else if let Ok(int) = s.parse::<i64>() {
-                    Some(int)
+                    result.push(RawVal::Int(int));
                 } else if let Ok(float) = s.parse::<f64>() {
-                    Some(float as i64)
+                    result.push(RawVal::Int(float as i64));
                 } else {
                     unreachable!(
                         "{} should be parseable as int or float. {} {:?}",
                         s, name, self.types
                     )
                 };
-                builder.push(&int);
             }
-            builder.finalize(name, present)
+            result
         } else {
-            Arc::new(Column::null(name, self.values.len()))
+            vec![RawVal::Null; self.values.len()]
         };
         self.clear();
         result
     }
 
-    fn extract(&mut self, name: &str, extractor: extractor::Extractor) -> Arc<Column> {
-        let mut builder = IntColBuilder::default();
+    fn extract(&mut self, extractor: extractor::Extractor) -> Vec<RawVal> {
+        let mut builder = Vec::new();
         for s in self.values.iter() {
             if self.allow_null {
                 if s.is_empty() {
                     self.any_null = true;
-                    builder.push(&None);
+                    builder.push(RawVal::Null);
                 } else {
                     self.present.set(self.values.len());
-                    builder.push(&Some(extractor(s)));
+                    builder.push(RawVal::Int(extractor(s)));
                 }
             } else {
-                builder.push(&Some(extractor(s)));
+                builder.push(RawVal::Int(extractor(s)))
             }
         }
         self.clear();
-        builder.finalize(name, None)
+        builder
     }
 
     fn clear(&mut self) {

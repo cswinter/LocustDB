@@ -1,17 +1,16 @@
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str;
 use std::sync::Arc;
 
 use futures::channel::oneshot;
 
-use crate::disk_store::interface::*;
-use crate::disk_store::noop_storage::NoopStorage;
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
-use crate::ingest::raw_val::RawVal;
+use crate::logging_client::EventBuffer;
 use crate::mem_store::*;
+use crate::perf_counter::PerfCounter;
 use crate::scheduler::*;
 use crate::syntax::parser;
 use crate::QueryError;
@@ -28,12 +27,8 @@ impl LocustDB {
     }
 
     pub fn new(opts: &Options) -> LocustDB {
-        let disk_store = opts
-            .db_path
-            .as_ref()
-            .map(LocustDB::persistent_storage)
-            .unwrap_or_else(|| Arc::new(NoopStorage));
-        let locustdb = Arc::new(InnerLocustDB::new(disk_store, opts));
+        opts.validate().expect("Invalid options");
+        let locustdb = Arc::new(InnerLocustDB::new(opts));
         InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB {
             inner_locustdb: locustdb,
@@ -44,6 +39,7 @@ impl LocustDB {
         &self,
         query: &str,
         explain: bool,
+        rowformat: bool,
         show: Vec<usize>,
     ) -> Result<QueryResult, oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
@@ -80,17 +76,20 @@ impl LocustDB {
 
         let query_task = QueryTask::new(
             query,
+            rowformat,
             explain,
             show,
             data,
             self.inner_locustdb.disk_read_scheduler().clone(),
             SharedSender::new(sender),
+            self.inner_locustdb.opts().batch_size,
         );
 
         match query_task {
             Ok(task) => {
                 self.schedule(task);
-                Ok(receiver.await?)
+                let result = receiver.await?;
+                Ok(result)
             }
             Err(err) => Ok(Err(err)),
         }
@@ -107,12 +106,8 @@ impl LocustDB {
         Ok(receiver.await??)
     }
 
-    pub async fn ingest(&self, table: &str, rows: Vec<Vec<(String, RawVal)>>) {
-        // TODO: efficiency
-        // TODO: async
-        for row in rows {
-            self.inner_locustdb.ingest(table, row);
-        }
+    pub async fn ingest_efficient(&self, events: EventBuffer) {
+        self.inner_locustdb.ingest_efficient(events);
     }
 
     pub async fn gen_table(&self, opts: GenTable) -> Result<(), oneshot::Canceled> {
@@ -137,6 +132,10 @@ impl LocustDB {
             Ok(query) => format!("{:#?}", query),
             Err(err) => format!("{:?}", err),
         }
+    }
+
+    pub fn search_column_names(&self, table: &str, query: &str) -> Vec<String> {
+        self.inner_locustdb.search_column_names(table, query)
     }
 
     pub async fn bulk_load(&self) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
@@ -182,15 +181,16 @@ impl LocustDB {
         self.inner_locustdb.schedule(task)
     }
 
-    #[cfg(feature = "enable_rocksdb")]
-    pub fn persistent_storage<P: AsRef<Path>>(db_path: P) -> Arc<dyn DiskStore> {
-        use crate::disk_store::rocksdb;
-        Arc::new(rocksdb::RocksDB::new(db_path))
+    pub fn perf_counter(&self) -> &PerfCounter {
+        self.inner_locustdb.perf_counter()
     }
 
-    #[cfg(not(feature = "enable_rocksdb"))]
-    pub fn persistent_storage<P: AsRef<Path>>(_: P) -> Arc<dyn DiskStore> {
-        panic!("RocksDB storage backend is not enabled in this build of LocustDB. Create db with `memory_only`, or set the `enable_rocksdb` feature.")
+    pub fn force_flush(&self) {
+        self.inner_locustdb.wal_flush();
+    }
+
+    pub fn evict_cache(&self) -> usize {
+        self.inner_locustdb.evict_cache()
     }
 }
 
@@ -203,6 +203,16 @@ pub struct Options {
     pub mem_lz4: bool,
     pub readahead: usize,
     pub seq_disk_read: bool,
+    /// Maximum size of WAL in bytes before triggering compaction
+    pub max_wal_size_bytes: u64,
+    /// Maximum size of partition
+    pub max_partition_size_bytes: u64,
+    /// Combine partitions when the size of every original partition is less than this factor of the combined partition size
+    pub partition_combine_factor: u64,
+    /// Maximum length of temporary buffer used in streaming stages during query execution
+    pub batch_size: usize,
+    /// Maximum number of rows in a partitions. Not implemented.
+    pub max_partition_length: usize,
 }
 
 impl Default for Options {
@@ -215,7 +225,30 @@ impl Default for Options {
             mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB
             seq_disk_read: false,
+            max_wal_size_bytes: 64 * 1024 * 1024, // 64 MiB
+            max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
+            partition_combine_factor: 4,
+            batch_size: 1024,
+            max_partition_length: 1024 * 1024,
         }
+    }
+}
+
+impl Options {
+    fn validate(&self) -> Result<(), String> {
+        if self.threads == 0 {
+            return Err("threads must be greater than 0".to_string());
+        }
+        if self.read_threads == 0 {
+            return Err("read_threads must be greater than 0".to_string());
+        }
+        if self.partition_combine_factor == 0 {
+            return Err("partition_combine_factor must be greater than 0".to_string());
+        }
+        if self.batch_size % 8 != 0 {
+            return Err("batch_size must be a multiple of 8".to_string());
+        }
+        Ok(())
     }
 }
 

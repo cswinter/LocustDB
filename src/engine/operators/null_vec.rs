@@ -18,11 +18,12 @@ impl<'a> VecOperator<'a> for NullVec {
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![]
     }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![] }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }
     fn can_stream_input(&self, _: usize) -> bool {
-        false
+        true
     }
     fn can_stream_output(&self, _: usize) -> bool {
         true

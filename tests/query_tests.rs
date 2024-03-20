@@ -1,5 +1,4 @@
 use futures::executor::block_on;
-use ordered_float::OrderedFloat;
 
 use crate::value_syntax::*;
 use locustdb::nyc_taxi_data;
@@ -10,7 +9,10 @@ use std::env;
 
 fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    let mut opts = Options::default();
+    let mut opts = Options {
+        //partition_combine_factor: 99999999999,
+        ..Options::default()
+    };
     if env::var("DEBUG_TESTS").is_ok() {
         opts.threads = 1;
     }
@@ -20,34 +22,64 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
             .load_csv(LoadOptions::new("test_data/tiny.csv", "default").with_partition_size(40)),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, true, vec![0, 1, 2])).unwrap()
+        block_on(locustdb.run_query(query, true, true, vec![0, 1, 2])).unwrap()
     } else {
-        block_on(locustdb.run_query(query, true, vec![])).unwrap()
+        block_on(locustdb.run_query(query, true, true, vec![])).unwrap()
     };
-    assert_eq!(result.unwrap().rows, expected_rows);
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
 }
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
     let _ = env_logger::try_init();
-    #[allow(unused_mut)]
-    let mut opts = Options::default();
-    if env::var("DEBUG_TESTS").is_ok() {
-        opts.threads = 1;
+    let optss = [
+        Options::default(),
+        Options {
+            batch_size: 8,
+            ..Options::default()
+        },
+        Options {
+            partition_combine_factor: 999,
+            batch_size: 8,
+            max_partition_length: 9,
+            ..Options::default()
+        },
+        Options {
+            partition_combine_factor: 999,
+            max_partition_length: 3,
+            ..Options::default()
+        },
+    ];
+
+    for mut opts in optss {
+        if env::var("DEBUG_TESTS").is_ok() {
+            opts.threads = 1;
+        }
+        let locustdb = LocustDB::new(&opts);
+        let _ = block_on(
+            locustdb.load_csv(
+                LoadOptions::new("test_data/edge_cases.csv", "default")
+                    .with_partition_size(opts.max_partition_length)
+                    .allow_nulls_all_columns(),
+            ),
+        );
+
+        let show = if env::var("DEBUG_TESTS").is_ok() {
+            vec![0, 1, 2, 3]
+        } else {
+            vec![]
+        };
+
+        let result1 = block_on(locustdb.run_query(query, false, true, show.clone())).unwrap();
+        locustdb.force_flush();
+        let result2 = block_on(locustdb.run_query(query, false, true, show)).unwrap();
+
+        assert_eq!(
+            result1.as_ref().unwrap().rows,
+            result2.as_ref().unwrap().rows,
+            "Query results differ after flush"
+        );
+        assert_eq!(result1.unwrap().rows.unwrap(), expected_rows);
     }
-    let locustdb = LocustDB::new(&opts);
-    let _ = block_on(
-        locustdb.load_csv(
-            LoadOptions::new("test_data/edge_cases.csv", "default")
-                .with_partition_size(3)
-                .allow_nulls_all_columns(),
-        ),
-    );
-    let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
-    } else {
-        block_on(locustdb.run_query(query, false, vec![])).unwrap()
-    };
-    assert_eq!(result.unwrap().rows, expected_rows);
 }
 
 fn test_query_ec_err(query: &str, _expected_err: QueryError) {
@@ -66,9 +98,9 @@ fn test_query_ec_err(query: &str, _expected_err: QueryError) {
         ),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap()
     } else {
-        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
     };
     assert!(result.is_err());
 }
@@ -89,8 +121,13 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
         ),
     );
     load.unwrap();
-    let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
-    let actual_rows = result.unwrap().rows;
+    let show = if env::var("DEBUG_TESTS").is_ok() {
+        vec![0, 1, 2, 3]
+    } else {
+        vec![]
+    };
+    let result = block_on(locustdb.run_query(query, false, true, show)).unwrap();
+    let actual_rows = result.unwrap().rows.unwrap();
     assert_eq!(
         &actual_rows[..min(expected_rows.len(), actual_rows.len())],
         expected_rows
@@ -113,9 +150,9 @@ fn test_query_colnames(query: &str, expected_result: Vec<String>) {
         ),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false, vec![0, 1, 2, 3])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap()
     } else {
-        block_on(locustdb.run_query(query, false, vec![])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
     };
     assert_eq!(result.unwrap().colnames, expected_result);
 }
@@ -300,9 +337,9 @@ fn test_sum() {
     test_query_ec(
         "select enum, sum(float) from default;",
         &[
-            vec![Str("aa"), Float(OrderedFloat(-123.87628600000001))],
-            vec![Str("bb"), Float(OrderedFloat(1.234e29))],
-            vec![Str("cc"), Float(OrderedFloat(-1.0))]
+            vec![Str("aa"), Float(-123.87628600000001)],
+            vec![Str("bb"), Float(1.234e29)],
+            vec![Str("cc"), Float(-1.0)],
         ],
     );
 }
@@ -430,25 +467,24 @@ fn test_not_equals_2() {
     )
 }
 
-
 #[test]
 fn test_order_by_float() {
     test_query_ec(
         "SELECT string_packed, float FROM default ORDER BY float DESC LIMIT 5;",
         &[
-            vec![Str("azy"), Float(OrderedFloat(1.234e29))],
-            vec![Str("😈"), Float(OrderedFloat(1234124.51325))],
-            vec![Str("AXY"), Float(OrderedFloat(3.15159))],
-            vec![Str("xyz"), Float(OrderedFloat(0.123412))],
-            vec![Str("abc"), Float(OrderedFloat(0.0003))],
+            vec![Str("azy"), Float(1.234e29)],
+            vec![Str("😈"), Float(1234124.51325)],
+            vec![Str("AXY"), Float(3.15159)],
+            vec![Str("xyz"), Float(0.123412)],
+            vec![Str("abc"), Float(0.0003)],
         ],
     );
     test_query_ec(
         "SELECT string_packed, float FROM default ORDER BY float ASC LIMIT 3;",
         &[
-            vec![Str("axz"), Float(OrderedFloat(-124.0))],
-            vec![Str("t"), Float(OrderedFloat(-1.0))],
-            vec![Str("asd"), Float(OrderedFloat(0.0))],
+            vec![Str("axz"), Float(-124.0)],
+            vec![Str("t"), Float(-1.0)],
+            vec![Str("asd"), Float(0.0)],
         ],
     );
 }
@@ -549,9 +585,21 @@ fn test_min_max() {
     test_query_ec(
         "select enum, max(float), min(float) from default;",
         &[
-            vec![Str("aa"), Float(OrderedFloat(0.123412)), Float(OrderedFloat(-124.0))],
-            vec![Str("bb"), Float(OrderedFloat(1.234e29)), Float(OrderedFloat(3.15159))],
-            vec![Str("cc"), Float(OrderedFloat(0.0)), Float(OrderedFloat(-1.0))]
+            vec![
+                Str("aa"),
+                Float(0.123412),
+                Float(-124.0),
+            ],
+            vec![
+                Str("bb"),
+                Float(1.234e29),
+                Float(3.15159),
+            ],
+            vec![
+                Str("cc"),
+                Float(0.0),
+                Float(-1.0),
+            ],
         ],
     );
 }
@@ -787,6 +835,22 @@ fn test_sort_by_nullable() {
             vec![Int(14), Str("Germany")],
         ],
     );
+    // Sort by null/nonexistant column
+    test_query_ec(
+        "SELECT column_does_not_exist FROM default ORDER BY column_does_not_exist;",
+        &[
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+        ],
+    );
 }
 
 #[test]
@@ -992,8 +1056,8 @@ fn test_gen_table() {
         [Str("Hazelnut".to_string()), Int(76_356)],
         [Str("Walnut".to_string()), Int(23_868)],
     ];
-    let result = block_on(locustdb.run_query(query, true, vec![])).unwrap();
-    assert_eq!(result.unwrap().rows, expected_rows);
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
 }
 
 #[test]
@@ -1020,15 +1084,31 @@ fn test_column_with_null_partitions() {
             ),
         )],
     }));
-    println!("{:?}", block_on(locustdb.run_query("SELECT * FROM test;", true, vec![])).unwrap().unwrap());
+    println!(
+        "{:?}",
+        block_on(locustdb.run_query("SELECT * FROM test;", true, true, vec![]))
+            .unwrap()
+            .unwrap()
+    );
     let query = "SELECT partition_sparse FROM test;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
-    assert_eq!(result.rows.iter().filter(|&x| x == &[Null]).count(), 13);
     assert_eq!(
         result
             .rows
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|&x| x == &[Null])
+            .count(),
+        13
+    );
+    assert_eq!(
+        result
+            .rows
+            .as_ref()
+            .unwrap()
             .iter()
             .filter(|&x| x == &[Str("A".to_string())])
             .count(),
@@ -1037,11 +1117,72 @@ fn test_column_with_null_partitions() {
     assert_eq!(
         result
             .rows
+            .as_ref()
+            .unwrap()
             .iter()
             .filter(|&x| x == &[Str("B".to_string())])
             .count(),
         6
     );
+}
+
+#[test]
+fn test_long_nullable() {
+    let _ = env_logger::try_init();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 8,
+        partition_size: 2 << 14,
+        columns: vec![(
+            "nullable_int".to_string(),
+            locustdb::colgen::nullable_ints(vec![None, Some(1), Some(-10)], vec![0.9, 0.05, 0.05]),
+        )],
+    }));
+    let query = "SELECT nullable_int FROM test LIMIT 0;";
+    let expected_rows: Vec<[Value; 1]> = vec![];
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+
+    let query = "SELECT nullable_int, count(1) FROM test;";
+    let expected_rows = vec![
+        [Null, Int(235917)],
+        [Int(-10), Int(13296)],
+        [Int(1), Int(12931)],
+    ];
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+
+    locustdb.force_flush();
+    let query = "SELECT nullable_int FROM test WHERE nullable_int IS NOT NULL;";
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap().len(), 26227);
+}
+
+#[test]
+fn test_sequential_int_sort() {
+    let _ = env_logger::try_init();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 1,
+        partition_size: 64,
+        columns: vec![("_step".to_string(), locustdb::colgen::incrementing_int())],
+    }));
+    let query = "SELECT _step FROM test WHERE _step IS NOT NULL ORDER BY _step;";
+    let expected_rows: Vec<[Value; 1]> = vec![
+        [Int(0)],
+        [Int(1)],
+        [Int(2)],
+        [Int(3)],
+        [Int(4)],
+        [Int(5)],
+        [Int(6)],
+        [Int(7)],
+        [Int(8)],
+    ];
+    let result = block_on(locustdb.run_query(query, true, true, vec![0, 1, 2, 3])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap()[0..9], expected_rows);
 }
 
 #[test]
@@ -1064,7 +1205,7 @@ fn test_group_by_string() {
     }));
 
     let query = "SELECT scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1074,10 +1215,10 @@ fn test_group_by_string() {
         [Str("04"), Int(4)],
         [Str("05"), Int(3)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     let query = "SELECT scrambled, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1087,10 +1228,10 @@ fn test_group_by_string() {
         [Str("04"), Str("04"), Int(4)],
         [Str("05"), Str("05"), Int(3)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     let query = "SELECT hex, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1100,10 +1241,10 @@ fn test_group_by_string() {
         [Str("000c761329c01138"), Str("69"), Int(1)],
         [Str("000d9e5ae13b57b7"), Str("m"), Int(1)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     let query = "SELECT ints, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, vec![]))
         .unwrap()
         .unwrap();
     let expected_rows = vec![
@@ -1113,7 +1254,7 @@ fn test_group_by_string() {
         [Int(-10), Str("0t"), Int(1)],
         [Int(-10), Str("3"), Int(1)],
     ];
-    assert_eq!(result.rows, expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 }
 
 #[test]
@@ -1121,19 +1262,85 @@ fn test_group_by_float() {
     test_query_ec(
         "SELECT count(0), float FROM default ORDER BY float ASC LIMIT 5;",
         &[
-            vec![Int(1), Float(OrderedFloat(-124.0))],
-            vec![Int(1), Float(OrderedFloat(-1.0))],
-            vec![Int(1), Float(OrderedFloat(0.0))],
-            vec![Int(2), Float(OrderedFloat(1e-6))],
-            vec![Int(1), Float(OrderedFloat(0.0003))],
+            vec![Int(1), Float(-124.0)],
+            vec![Int(1), Float(-1.0)],
+            vec![Int(1), Float(0.0)],
+            vec![Int(2), Float(1e-6)],
+            vec![Int(1), Float(0.0003)],
         ],
     );
 }
 
-#[cfg(feature = "enable_rocksdb")]
+#[test]
+fn test_or_nullcheck_and_filter1() {
+    test_query_ec(
+        "SELECT nullable_int2, float FROM default WHERE nullable_int2 IS NOT NULL OR float IS NOT NULL ORDER BY id LIMIT 100000;",
+        &[
+            vec![Null, Float(0.123412)],
+            vec![Int(-40), Float(0.0003)],
+            vec![Null, Float(-124.0)],
+            vec![Int(0), Float(3.15159)],
+            vec![Int(9), Float(1.234e29)],
+            vec![Int(6), Float(1e-6)],
+            vec![Null, Float(0.0)],
+            vec![Null, Float(1e-6)],
+            vec![Int(1), Float(-1.0)],
+            vec![Int(14), Float(1234124.51325)]
+        ]
+    );
+}
+
+#[test]
+fn test_or_nullcheck_and_filter2() {
+    // Tests aliasing of OR inputs (both resolve to same constant expand)
+    test_query_ec(
+        "SELECT id FROM default WHERE id IS NULL OR float IS NULL ORDER BY id LIMIT 100000;",
+        &[],
+    );
+}
+
+#[test]
+fn test_or_nullcheck_and_filter3() {
+    test_query_ec(
+        "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) ORDER BY id LIMIT 100000;",
+        &[
+            vec![Int(14), Float(1.123124e30)],
+        ]
+    );
+}
+
+#[test]
+fn test_or_nullcheck_and_filter4() {
+    test_query_ec(
+        "SELECT nullable_int2, nullable_float FROM default WHERE nullable_int2 IS NOT NULL AND (nullable_float IS NOT NULL) LIMIT 100000;",
+        &[
+            vec![Int(14), Float(1.123124e30)],
+        ]
+    );
+}
+
+#[test]
+fn test_select_0_of_everything() {
+    test_query_ec("SELECT * FROM default LIMIT 0;", &[])
+}
+
+#[test]
+fn test_filter_nonexistant_columns() {
+    test_query_ec(
+        "SELECT nullable_int2, lolololol, also_doesnt_exist FROM default WHERE nullable_int2 IS NOT NULL;",
+        &[
+            vec![Int(-40), Null, Null],
+            vec![Int(0), Null, Null],
+            vec![Int(9), Null, Null],
+            vec![Int(6), Null, Null],
+            vec![Int(1), Null, Null],
+            vec![Int(14), Null, Null]
+        ],
+    )
+}
+
 #[test]
 fn test_restore_from_disk() {
-    use std::{thread, time};
     use tempfile::TempDir;
     let _ = env_logger::try_init();
     let tmp_dir = TempDir::new().unwrap();
@@ -1141,7 +1348,7 @@ fn test_restore_from_disk() {
         db_path: Some(tmp_dir.path().to_path_buf()),
         ..Default::default()
     };
-    {
+    let old_db_contents = {
         let locustdb = LocustDB::new(&opts);
         let load = block_on(
             locustdb.load_csv(
@@ -1150,14 +1357,17 @@ fn test_restore_from_disk() {
             ),
         );
         load.unwrap();
-    }
-    // Dropping the LocustDB object will cause all threads to be stopped
-    // This eventually drops RocksDB and relinquish the file lock, however this happens asynchronously
-    thread::sleep(time::Duration::from_millis(2000));
+        block_on(locustdb.run_query("SELECT * FROM default;", true, true, vec![]))
+            .unwrap()
+            .unwrap()
+            .rows
+            .unwrap()
+    };
+
     let locustdb = LocustDB::new(&opts);
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
-    let result = block_on(locustdb.run_query(query, false, vec![])).unwrap();
-    let actual_rows = result.unwrap().rows;
+    let result = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
+    let actual_rows = result.unwrap().rows.unwrap();
     use Value::*;
     assert_eq!(
         &actual_rows[..min(5, actual_rows.len())],
@@ -1169,6 +1379,22 @@ fn test_restore_from_disk() {
             vec![Int(1), Int(2013), Int(2), Int(824)]
         ]
     );
+    let restored_db_contents = {
+        let query = "SELECT * FROM default;";
+        let result = block_on(locustdb.run_query(query, true, true, vec![]))
+            .unwrap()
+            .unwrap()
+            .rows
+            .unwrap();
+        result
+    };
+    assert_eq!(old_db_contents.len(), restored_db_contents.len());
+    // TODO: column order is not preserved/deterministic
+    // for (i, (old, new)) in old_db_contents.iter().zip(restored_db_contents.iter()).enumerate() {
+    //     assert_eq!(old, new, "Row {} differs", i);
+    // }
+
+    
 }
 
 #[test]
@@ -1191,5 +1417,30 @@ fn test_colnames() {
     test_query_colnames(
         "SELECT u8_offset_encoded FROM default WHERE u8_offset_encoded = 256;",
         vec!["u8_offset_encoded".to_string()],
+    );
+
+    test_query_colnames(
+        "SELECT \"u8_offset_encoded\" FROM \"default\" WHERE \"u8_offset_encoded\" = 256;",
+        vec!["u8_offset_encoded".to_string()],
+    );
+}
+
+#[test]
+fn test_merge_keep_null_column() {
+    test_query_ec(
+        "SELECT id, nonexistant_column FROM default ORDER BY id LIMIT 2;",
+        &[
+            vec![Int(0), Null],
+            vec![Int(1), Null],
+        ],
+    );
+}
+
+#[test]
+fn test_top_n_of_null() {
+    test_query_ec(
+        "SELECT id, nonexistant, ne2 FROM default WHERE nonexistant IS NOT NULL AND ne2 IS NOT NULL ORDER BY id LIMIT 4;",
+        &[
+        ],
     );
 }

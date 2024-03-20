@@ -79,7 +79,7 @@ fn get_query_components(
         offset,
         ..
     } = *query;
-    match body {
+    match *body {
         SetExpr::Select(box Select {
             distinct,
             projection,
@@ -87,14 +87,14 @@ fn get_query_components(
             selection,
             group_by,
             having,
-            // TODO: ensure top is not set
-            top: _,
+            // TODO: ensure other items not set
+            ..
         }) => {
-            if !group_by.is_empty() {
+            if let GroupByExpr::Expressions(exprs) = group_by && !exprs.is_empty() {
                 Err(QueryError::NotImplemented("Group By  (Hint: If your SELECT clause contains any aggregation expressions, results will implicitly grouped by all other expresssions.)".to_string()))
             } else if having.is_some() {
                 Err(QueryError::NotImplemented("Having".to_string()))
-            } else if distinct {
+            } else if distinct.is_some() {
                 Err(QueryError::NotImplemented("DISTINCT".to_string()))
             } else if from.len() > 1 {
                 Err(QueryError::NotImplemented(
@@ -134,16 +134,16 @@ fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<ColumnInfo>, QueryE
                 // These will later be used as colnames of query results.
                 result.push(ColumnInfo {
                     expr: *convert_to_native_expr(e)?,
-                    name: Some(format!("{}", e)),
+                    name: Some(strip_quotes(&format!("{}", e))),
                 })
             }
-            SelectItem::Wildcard => result.push(ColumnInfo {
+            SelectItem::Wildcard(_) => result.push(ColumnInfo {
                 expr: Expr::ColName('*'.to_string()),
                 name: None,
             }),
             SelectItem::ExprWithAlias { expr, alias } => result.push(ColumnInfo {
                 expr: *convert_to_native_expr(expr)?,
-                name: Some(alias.to_string()),
+                name: Some(strip_quotes(&alias.to_string())),
             }),
             _ => {
                 return Err(QueryError::NotImplemented(format!(
@@ -160,7 +160,7 @@ fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<ColumnInfo>, QueryE
 fn get_table_name(relation: Option<TableFactor>) -> Result<String, QueryError> {
     match relation {
         // TODO: error message if any unused fields are set
-        Some(TableFactor::Table { name, .. }) => Ok(format!("{}", name)),
+        Some(TableFactor::Table { name, .. }) => Ok(strip_quotes(&format!("{}", name))),
         Some(s) => Err(QueryError::ParseError(format!(
             "Invalid expression for table name: {:?}",
             s
@@ -181,8 +181,8 @@ fn get_order_by(order_by: Option<Vec<OrderByExpr>>) -> Result<Vec<(Expr, bool)>,
 
 fn get_limit(limit: Option<ASTNode>) -> Result<u64, QueryError> {
     match limit {
-        Some(ASTNode::Value(Value::Number(int))) => Ok(int.parse::<u64>().unwrap()),
-        None => Ok(100),
+        Some(ASTNode::Value(Value::Number(int, _))) => Ok(int.parse::<u64>().unwrap()),
+        None => Ok(u64::MAX),
         _ => Err(QueryError::NotImplemented(format!(
             "Invalid expression in limit clause: {:?}",
             limit
@@ -194,12 +194,28 @@ fn get_offset(offset: Option<Offset>) -> Result<u64, QueryError> {
     match offset {
         None => Ok(0),
         Some(offset) => match offset.value {
-            ASTNode::Value(Value::Number(rows)) => Ok(rows.parse::<u64>().unwrap()),
+            ASTNode::Value(Value::Number(rows, _)) => Ok(rows.parse::<u64>().unwrap()),
             expr => Err(QueryError::ParseError(format!(
                 "Invalid expression in offset clause: Expected constant integer, got {:?}",
                 expr,
             ))),
         },
+    }
+}
+
+fn function_arg_to_expr(node: &FunctionArg) -> Result<&ASTNode, QueryError> {
+    match node {
+        FunctionArg::Named { name, .. } => Err(QueryError::NotImplemented(format!(
+            "Named function arguments are not supported: {}",
+            name
+        ))),
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Ok(expr),
+        FunctionArg::Unnamed(FunctionArgExpr::Wildcard) => {
+            Err(QueryError::NotImplemented("Wildcard function arguments are not supported".to_string()))
+        }
+        FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(_)) => {
+            Err(QueryError::NotImplemented("Qualified wildcard function arguments are not supported".to_string()))
+        }
     }
 }
 
@@ -230,7 +246,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in TO_YEAR function".to_string(),
                     ));
                 }
-                Expr::Func1(Func1Type::ToYear, convert_to_native_expr(&f.args[0])?)
+                Expr::Func1(Func1Type::ToYear, convert_to_native_expr(function_arg_to_expr(&f.args[0])?)?)
             }
             "REGEX" => {
                 if f.args.len() != 2 {
@@ -240,8 +256,8 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 }
                 Expr::Func2(
                     Func2Type::RegexMatch,
-                    convert_to_native_expr(&f.args[0])?,
-                    convert_to_native_expr(&f.args[1])?,
+                    func_arg_to_native_expr(&f.args[0])?,
+                    func_arg_to_native_expr(&f.args[1])?,
                 )
             }
             "LENGTH" => {
@@ -250,7 +266,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one arguments in length function".to_string(),
                     ));
                 }
-                Expr::Func1(Func1Type::Length, convert_to_native_expr(&f.args[0])?)
+                Expr::Func1(Func1Type::Length, func_arg_to_native_expr(&f.args[0])?)
             }
             "COUNT" => {
                 if f.args.len() != 1 {
@@ -258,7 +274,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in COUNT function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Count, convert_to_native_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::Count, func_arg_to_native_expr(&f.args[0])?)
             }
             "SUM" => {
                 if f.args.len() != 1 {
@@ -266,7 +282,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in SUM function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::SumI64, convert_to_native_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::SumI64, func_arg_to_native_expr(&f.args[0])?)
             }
             "AVG" => {
                 if f.args.len() != 1 {
@@ -278,11 +294,11 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                     Func2Type::Divide,
                     Box::new(Expr::Aggregate(
                         Aggregator::SumI64,
-                        convert_to_native_expr(&f.args[0])?,
+                        func_arg_to_native_expr(&f.args[0])?,
                     )),
                     Box::new(Expr::Aggregate(
                         Aggregator::Count,
-                        convert_to_native_expr(&f.args[0])?,
+                        func_arg_to_native_expr(&f.args[0])?,
                     )),
                 )
             }
@@ -292,7 +308,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in MAX function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::MaxI64, convert_to_native_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::MaxI64, func_arg_to_native_expr(&f.args[0])?)
             }
             "MIN" => {
                 if f.args.len() != 1 {
@@ -300,7 +316,7 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                         "Expected one argument in MIN function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::MinI64, convert_to_native_expr(&f.args[0])?)
+                Expr::Aggregate(Aggregator::MinI64, func_arg_to_native_expr(&f.args[0])?)
             }
             _ => return Err(QueryError::NotImplemented(format!("Function {:?}", f.name))),
         },
@@ -308,9 +324,24 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
         ASTNode::IsNotNull(ref node) => {
             Expr::Func1(Func1Type::IsNotNull, convert_to_native_expr(node)?)
         }
+        ASTNode::Like { negated, expr, pattern, escape_char } => {
+            if escape_char.is_some() {
+                return Err(QueryError::NotImplemented("LIKE with escape character".to_string()));
+            }
+            Expr::Func2(
+                if *negated { Func2Type::NotLike } else { Func2Type::Like },
+                convert_to_native_expr(expr)?,
+                convert_to_native_expr(pattern)?,
+            )
+        }
         _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
     }))
 }
+
+fn func_arg_to_native_expr(node: &FunctionArg) -> Result<Box<Expr>, QueryError> {
+    convert_to_native_expr(function_arg_to_expr(node)?)
+}
+
 
 fn strip_quotes(ident: &str) -> String {
     if ident.starts_with('`') || ident.starts_with('"') {
@@ -335,7 +366,7 @@ fn map_binary_operator(o: &BinaryOperator) -> Result<Func2Type, QueryError> {
         BinaryOperator::Minus => Func2Type::Subtract,
         BinaryOperator::Multiply => Func2Type::Multiply,
         BinaryOperator::Divide => Func2Type::Divide,
-        BinaryOperator::Modulus => Func2Type::Modulo,
+        BinaryOperator::Modulo => Func2Type::Modulo,
         BinaryOperator::Gt => Func2Type::GT,
         BinaryOperator::GtEq => Func2Type::GTE,
         BinaryOperator::Lt => Func2Type::LT,
@@ -343,8 +374,6 @@ fn map_binary_operator(o: &BinaryOperator) -> Result<Func2Type, QueryError> {
         BinaryOperator::Eq => Func2Type::Equals,
         BinaryOperator::NotEq => Func2Type::NotEquals,
         BinaryOperator::Or => Func2Type::Or,
-        BinaryOperator::Like => Func2Type::Like,
-        BinaryOperator::NotLike => Func2Type::NotLike,
         _ => {
             return Err(QueryError::NotImplemented(format!(
                 "Unsupported operator {:?}",
@@ -357,7 +386,7 @@ fn map_binary_operator(o: &BinaryOperator) -> Result<Func2Type, QueryError> {
 // Fn to map sqlparser-rs `Value` to LocustDB's `RawVal`.
 fn get_raw_val(constant: &Value) -> Result<RawVal, QueryError> {
     match constant {
-        Value::Number(int) => Ok(RawVal::Int(int.parse::<i64>().unwrap())),
+        Value::Number(int, _) => Ok(RawVal::Int(int.parse::<i64>().unwrap())),
         Value::SingleQuotedString(string) => Ok(RawVal::Str(string.to_string())),
         Value::Null => Ok(RawVal::Null),
         _ => Err(QueryError::NotImplemented(format!("{:?}", constant))),
@@ -371,21 +400,21 @@ mod tests {
     #[test]
     fn test_select_star() {
         assert_eq!(
-            format!("{:?}", parse_query("select * from default")),
+            format!("{:?}", parse_query("select * from default limit 100")),
             "Ok(Query { select: [ColumnInfo { expr: ColName(\"*\"), name: None }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_alias() {
         assert_eq!(
-            format!("{:?}", parse_query("select trip_id as id from default")),
+            format!("{:?}", parse_query("select trip_id as id from default limit 100")),
             "Ok(Query { select: [ColumnInfo { expr: ColName(\"trip_id\"), name: Some(\"id\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_to_year() {
         assert_eq!(
-            format!("{:?}", parse_query("select to_year(ts) from default")),
+            format!("{:?}", parse_query("select to_year(ts) from default limit 100")),
             "Ok(Query { select: [ColumnInfo { expr: Func1(ToYear, ColName(\"ts\")), name: Some(\"to_year(ts)\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }

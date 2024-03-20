@@ -63,6 +63,19 @@ impl VecData<OrderedFloat<f64>> for OrderedFloat<f64> {
     fn t() -> EncodingType { EncodingType::F64 }
 }
 
+impl VecData<Option<OrderedFloat<f64>>> for Option<OrderedFloat<f64>> {
+    fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [Option<OrderedFloat<f64>>] where Option<OrderedFloat<f64>>: 'a { vec.cast_ref_opt_f64() }
+    fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<Option<OrderedFloat<f64>>> where Option<OrderedFloat<f64>>: 'a { vec.cast_ref_mut_opt_f64() }
+    fn wrap_one(value: Option<OrderedFloat<f64>>) -> RawVal {
+        match value {
+            Some(f) => RawVal::Float(f),
+            None => RawVal::Null,
+        }
+    }
+
+    fn t() -> EncodingType { EncodingType::OptF64 }
+}
+
 impl VecData<usize> for usize {
     fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [usize] where usize: 'a { vec.cast_ref_usize() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<usize> where usize: 'a { vec.cast_ref_mut_usize() }

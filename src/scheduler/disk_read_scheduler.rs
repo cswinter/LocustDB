@@ -6,15 +6,15 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex};
 use std_semaphore::Semaphore;
 
-use crate::disk_store::interface::DiskStore;
-use crate::disk_store::interface::PartitionID;
+use crate::disk_store::*;
 use crate::mem_store::partition::ColumnHandle;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::*;
+use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub struct DiskReadScheduler {
-    disk_store: Arc<dyn DiskStore>,
+    disk_store: Arc<dyn ColumnLoader>,
     task_queue: Mutex<VecDeque<DiskRun>>,
     reader_semaphore: Semaphore,
     lru: Lru,
@@ -35,7 +35,7 @@ struct DiskRun {
 
 impl DiskReadScheduler {
     pub fn new(
-        disk_store: Arc<dyn DiskStore>,
+        disk_store: Arc<dyn ColumnLoader>,
         lru: Lru,
         max_readers: usize,
         lz4_decode: bool,
@@ -105,7 +105,7 @@ impl DiskReadScheduler {
                     run.bytes > chunk_size
                 };
                 if reached_chunk_size {
-                    task_queue.push_back(runs.remove(col).unwrap());
+                    task_queue.push_back(runs.remove(&col.as_str()).unwrap());
                 }
             }
         }
@@ -115,7 +115,7 @@ impl DiskReadScheduler {
         debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
     }
 
-    pub fn get_or_load(&self, handle: &ColumnHandle) -> Arc<Column> {
+    pub fn get_or_load(&self, handle: &ColumnHandle, cols: &HashMap<String, ColumnHandle>, perf_counter: &QueryPerfCounter) -> Arc<Column> {
         loop {
             if handle.is_resident() {
                 let mut maybe_column = handle.try_get();
@@ -145,25 +145,33 @@ impl DiskReadScheduler {
                 }
             } else {
                 debug!("Point lookup for {}.{}", handle.name(), handle.id());
-                #[allow(unused_mut)]
-                let mut column = {
+                let columns = {
                     let _token = self.reader_semaphore.access();
-                    self.disk_store.load_column(handle.id(), handle.name())
+                    self.disk_store.load_column(&handle.key().table, handle.id(), handle.name(), perf_counter)
                 };
-                // Need to hold lock when we put new value into lru
-                let mut maybe_column = handle.try_get();
-                self.lru.put(handle.key().clone());
-                #[cfg(feature = "enable_lz4")]
-                {
-                    if self.lz4_decode {
-                        column.lz4_decode();
-                        handle.update_size_bytes(column.heap_size_of_children());
+                let mut result = None;
+                #[allow(unused_mut)]
+                for mut column in columns {
+                    let _handle = cols.get(column.name()).unwrap();
+                    // Need to hold lock when we put new value into lru
+                    let mut maybe_column = _handle.try_get();
+                    // TODO: if not main handle, put it at back of lru
+                    self.lru.put(_handle.key().clone());
+                    #[cfg(feature = "enable_lz4")]
+                    {
+                        if self.lz4_decode {
+                            column.lz4_decode();
+                            _handle.update_size_bytes(column.heap_size_of_children());
+                        }
+                    }
+                    let column = Arc::new(column);
+                    *maybe_column = Some(column.clone());
+                    _handle.set_resident(column.heap_size_of_children());
+                    if column.name() == handle.name() {
+                        result = Some(column);
                     }
                 }
-                let column = Arc::new(column);
-                *maybe_column = Some(column.clone());
-                handle.set_resident();
-                return column;
+                return result.unwrap()
             }
         }
     }

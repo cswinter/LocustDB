@@ -15,7 +15,9 @@ impl<'a> VecOperator<'a> for Indices {
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.indices_out.any()] }
+    // TODO: could make streaming? (need to set streaming_producer)
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { false }
     fn allocates(&self) -> bool { true }

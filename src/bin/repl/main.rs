@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use failure::Fail;
 use futures::executor::block_on;
@@ -19,7 +20,7 @@ mod unicode;
     author = "Clemens Winter <clemenswinter1@gmail.com>"
 )]
 struct Opt {
-    /// Path to data directory
+    /// Database path
     #[structopt(long, name = "PATH", parse(from_os_str))]
     db_path: Option<PathBuf>,
 
@@ -34,6 +35,14 @@ struct Opt {
     /// Limit for in-memory size of tables in GiB")
     #[structopt(long, name = "GB", default_value = "8")]
     mem_limit_tables: usize,
+
+    /// Maximum size of WAL in bytes
+    #[structopt(long, name = "WAL_SIZE", default_value = "16777216")]
+    max_wal_size_bytes: u64,
+
+    /// Maximum size of partition files in bytes
+    #[structopt(long, name = "PART_SIZE", default_value = "8388608")]
+    max_partition_size_bytes: u64,
 
     /// Comma separated list specifying the types and (optionally) names of all columns in files specified by `--load` option.
     /// Valid types: `s`, `string`, `i`, `integer`, `ns` (nullable string), `ni` (nullable integer)
@@ -73,6 +82,22 @@ struct Opt {
     // TODO: make this a subcommand
     #[structopt(long)]
     server: bool,
+
+    /// Allow all CORS requests
+    #[structopt(long)]
+    cors_allow_all: bool,
+
+    /// CORS allowed origins
+    #[structopt(long, name = "ORIGINS")]
+    cors_allow_origin: Vec<String>,
+
+    /// Address to bind the server to
+    #[structopt(long, default_value = "127.0.0.1:8080")]
+    addrs: String,
+
+    /// Maximum length of temporary buffer used in streaming stages during query execution
+    #[structopt(long, default_value = "1024")]
+    batch_size: usize,
 }
 
 fn main() {
@@ -92,6 +117,12 @@ fn main() {
         reduced_trips,
         trips,
         server,
+        max_wal_size_bytes,
+        max_partition_size_bytes,
+        cors_allow_all,
+        cors_allow_origin,
+        addrs,
+        batch_size,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -102,11 +133,13 @@ fn main() {
         mem_lz4,
         readahead: readahead * 1024 * 1024,
         seq_disk_read,
+        max_wal_size_bytes,
+        max_partition_size_bytes,
+        partition_combine_factor: 4,
+        batch_size,
+        max_partition_length: 1024 * 1024,
     };
 
-    if db_path.is_some() && !cfg!(feature = "enable_rocksdb") {
-        println!("WARNING: --db-path option passed, but RocksDB storage backend is not enabled in this build of LocustDB.");
-    }
     if options.readahead > options.mem_size_limit_tables {
         println!("WARNING: `mem-limit-tables` should be at least as large as `readahead`");
     }
@@ -146,12 +179,11 @@ fn main() {
         );
     }
 
-    table_stats(&locustdb);
-
     if server {
-        actix_web::rt::System::new()
-            .block_on(locustdb::server::run(locustdb))
-            .unwrap();
+        let (_, rx) =
+            locustdb::server::run(Arc::new(locustdb), cors_allow_all, cors_allow_origin, addrs)
+                .unwrap();
+        block_on(rx).unwrap();
     } else {
         repl(&locustdb);
     }
@@ -197,6 +229,7 @@ fn repl(locustdb: &LocustDB) {
                       :memtree(<N>) - Display breakdown of memory usage up to a depth of N (at most 4).
                       :explain <QUERY> - Run and display the query plan for QUERY.
                       :show(<N>) <QUERY> - Run QUERY and show all intermediary results in partition N.:w
+                      :table_stats - Print columns and basic statistics for all tables.
 
                       :ast <QUERY> - Show the abstract syntax tree for QUERY.
                       ");
@@ -224,6 +257,10 @@ fn repl(locustdb: &LocustDB) {
                 }
                 _ => println!("Error: Query execution was canceled!"),
             }
+            continue;
+        }
+        if s.starts_with(":table_stats") {
+            table_stats(locustdb);
             continue;
         }
         if s.starts_with(":restore") {
@@ -285,7 +322,7 @@ fn repl(locustdb: &LocustDB) {
             continue;
         }
 
-        let query = locustdb.run_query(s, explain, show);
+        let query = locustdb.run_query(s, explain, true, show);
         match block_on(query) {
             Ok(result) => match result {
                 Ok(output) => print_results::print_query_result(&output),

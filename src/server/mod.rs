@@ -1,17 +1,21 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::Arc;
+use std::thread;
 
-use actix_web::web::Data;
+use actix_cors::Cors;
+use actix_web::dev::ServerHandle;
+use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
-use ordered_float::OrderedFloat;
+use futures::channel::oneshot::Canceled;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
+use tokio::sync::oneshot;
 
-use crate::ingest::raw_val::RawVal;
-use crate::LocustDB;
-use crate::Value;
+use crate::{logging_client, BasicTypeColumn, LocustDB};
+use crate::{QueryError, QueryOutput, Value};
 
 lazy_static! {
     pub static ref TEMPLATES: Tera = {
@@ -44,6 +48,19 @@ struct QueryRequest {
     query: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct ColumnNameRequest {
+    tables: Vec<String>,
+    pattern: Option<String>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct MultiQueryRequest {
+    queries: Vec<String>,
+}
+
 #[get("/")]
 async fn index(data: web::Data<AppState>) -> impl Responder {
     let mut context = Context::new();
@@ -73,15 +90,14 @@ async fn plot(_data: web::Data<AppState>) -> impl Responder {
 }
 
 #[get("/table/{tablename}")]
-async fn table_handler(
-    path: web::Path<String>,
-    data: web::Data<AppState>,
-) -> impl Responder {
+async fn table_handler(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
+    // TODO: sql injection
     let cols = data
         .db
         .run_query(
-            &format!("SELECT * FROM {} LIMIT 0", path.as_str()),
+            &format!("SELECT * FROM \"{}\" LIMIT 0", path.as_str()),
             false,
+            true,
             vec![],
         )
         .await
@@ -104,8 +120,20 @@ async fn tables(data: web::Data<AppState>) -> impl Responder {
     println!("Requesting table stats");
     let stats = data.db.table_stats().await.unwrap();
 
+    let mut total_buffer_bytes = 0;
+    let mut total_bytes = 0;
+    let mut total_rows = 0;
+    for table in &stats {
+        total_buffer_bytes += table.buffer_bytes;
+        total_bytes += table.batches_bytes + table.buffer_bytes;
+        total_rows += table.rows;
+    }
+
     let mut body = String::new();
-    for table in stats {
+    writeln!(body, "Total rows: {}", total_rows).unwrap();
+    writeln!(body, "Total bytes: {}", total_bytes).unwrap();
+    writeln!(body, "Total buffer bytes: {}", total_buffer_bytes).unwrap();
+    for table in &stats {
         writeln!(body, "{}", table.name).unwrap();
         writeln!(body, "  Rows: {}", table.rows).unwrap();
         writeln!(body, "  Batches: {}", table.batches).unwrap();
@@ -136,17 +164,17 @@ async fn query_data(_data: web::Data<AppState>) -> impl Responder {
 
 #[post("/query")]
 async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> impl Responder {
-    log::info!("Query: {:?}", req_body);
+    log::debug!("Query: {:?}", req_body);
     let result = data
         .db
-        .run_query(&req_body.query, false, vec![])
+        .run_query(&req_body.query, false, true, vec![])
         .await
         .unwrap()
         .unwrap();
 
     let response = json!({
         "colnames": result.colnames,
-        "rows": result.rows.iter().map(|row| row.iter().map(|val| match val {
+        "rows": result.rows.unwrap().iter().map(|row| row.iter().map(|val| match val {
             Value::Int(int) => json!(int),
             Value::Str(str) => json!(str),
             Value::Null => json!(null),
@@ -157,74 +185,118 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
     HttpResponse::Ok().json(response)
 }
 
-#[get("/query_cols")]
+#[post("/query_cols")]
 async fn query_cols(
     data: web::Data<AppState>,
-    // req_body: web::Json<QueryRequest>,
+    req_body: web::Json<QueryRequest>,
 ) -> impl Responder {
-    // log::info!("Query: {:?}", req_body);
-    let result = data
+    log::debug!("Query: {:?}", req_body);
+    let x = data
         .db
-        .run_query("SELECT timestamp, cpu * 100 AS cpu FROM test_metrics LIMIT 100000000", false, vec![])
-        .await
-        .unwrap()
-        .unwrap();
-
-    let mut cols: HashMap<String, Vec<serde_json::Value>> = HashMap::default();
-    for col in &result.colnames {
-        cols.insert(col.to_string(), vec![]);
-    }
-    for row in result.rows {
-        for (val, colname) in row.iter().zip(result.colnames.iter()) {
-            cols.get_mut(colname).unwrap().push(match val {
-                Value::Int(int) => json!(int),
-                Value::Str(str) => json!(str),
-                Value::Null => json!(null),
-                Value::Float(f) => json!(f.0),
-            });
+        .run_query(&req_body.query, false, false, vec![])
+        .await;
+    match flatmap_err_response(x) {
+        Ok(result) => {
+            let response = query_output_to_json_cols(result);
+            HttpResponse::Ok().json(response)
         }
+        Err(err) => err,
     }
-    let response = json!({
-        "colnames": result.colnames,
-        "cols": cols,
-        "stats": result.stats,
-    });
-    HttpResponse::Ok().json(response)
 }
 
-// TODO: efficient endpoint
-#[post("/insert")]
-async fn insert(data: web::Data<AppState>, req_body: web::Json<DataBatch>) -> impl Responder {
-    log::info!("Inserting! {:?}", req_body);
-    let DataBatch { table, rows } = req_body.0;
+#[post("/multi_query_cols")]
+async fn multi_query_cols(
+    data: web::Data<AppState>,
+    req_body: web::Json<MultiQueryRequest>,
+) -> impl Responder {
+    log::debug!("Multi Query: {:?}", req_body);
+    let mut results = vec![];
+    for q in &req_body.queries {
+        // Run query starts executing immediately even without awaiting future
+        let result = data.db.run_query(q, false, false, vec![]);
+        results.push(result);
+    }
+    let mut json_results = vec![];
+    for result in results {
+        let result = match flatmap_err_response(result.await) {
+            Ok(result) => result,
+            Err(err) => return err,
+        };
+        json_results.push(query_output_to_json_cols(result));
+    }
+    HttpResponse::Ok().json(json_results)
+}
+
+#[post("/columns")]
+async fn columns(
+    data: web::Data<AppState>,
+    req_body: web::Json<ColumnNameRequest>,
+) -> impl Responder {
+    let mut cols = HashSet::new();
+    let pattern = req_body.pattern.clone().unwrap_or("".to_string());
+    for table in &req_body.tables {
+        cols.extend(data.db.search_column_names(table, &pattern));
+    }
+    let len = cols.len();
+    let limit = req_body.limit.unwrap_or(usize::MAX);
+    let offset = req_body.offset.unwrap_or(0).min(len.saturating_sub(limit));
+    HttpResponse::Ok().json(json!({
+        "columns": cols.iter().cloned().sorted().into_iter().skip(offset).take(limit).collect::<Vec<_>>(),
+        "offset": offset,
+        "len": len,
+    }))
+}
+
+fn flatmap_err_response(
+    err: Result<Result<QueryOutput, QueryError>, Canceled>,
+) -> Result<QueryOutput, HttpResponse> {
+    match err {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(QueryError::NotImplemented(msg))) => Err(HttpResponse::NotImplemented().json(msg)),
+        Ok(Err(QueryError::FatalError(msg, bt))) => {
+            Err(HttpResponse::InternalServerError().json((msg, bt.to_string())))
+        }
+        Ok(Err(err)) => Err(HttpResponse::BadRequest().json(err.to_string())),
+        Err(err) => Err(HttpResponse::InternalServerError().json(err.to_string())),
+    }
+}
+
+// TODO: even more efficient, push all data-conversions into client
+#[post("/insert_bin")]
+async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responder {
+    // PRINT FIRST 64 BYTES
+    let mut bytes = req_body.clone();
+    let mut s = String::new();
+    for _ in 0..64 {
+        if bytes.is_empty() {
+            break;
+        }
+        s.push_str(&format!("{:02x}", bytes[0]));
+        bytes = bytes.slice(1..);
+    }
+    log::debug!("Inserting bytes: {} ({})", s, req_body.len());
+
     data.db
-        .ingest(
-            &table,
-            rows.into_iter()
-                .map(|row| {
-                    row.into_iter()
-                        .map(|(colname, val)| {
-                            let val = match val {
-                                serde_json::Value::Null => RawVal::Null,
-                                serde_json::Value::Number(n) => {
-                                    if n.is_i64() { 
-                                        RawVal::Int(n.as_i64().unwrap())
-                                    } else if n.is_f64() {
-                                        RawVal::Float(OrderedFloat(n.as_f64().unwrap()))
-                                    } else {
-                                        panic!("Unsupported number {}", n)
-                                    }
-                                },
-                                serde_json::Value::String(s) => RawVal::Str(s),
-                                _ => panic!("Unsupported value: {:?}", val),
-                            };
-                            (colname, val)
-                        })
-                        .collect()
-                })
-                .collect(),
-        )
-        .await;
+        .perf_counter()
+        .network_read_ingestion(req_body.len() as u64);
+
+    let events: logging_client::EventBuffer = match bincode::deserialize(&req_body) {
+        Ok(events) => events,
+        Err(e) => {
+            log::error!("Failed to deserialize /insert_bin request: {}", e);
+            return HttpResponse::BadRequest()
+                .json(format!("Failed to deserialize request: {}", e));
+        }
+    };
+    log::info!(
+        "Received request data for {} events",
+        events
+            .tables
+            .values()
+            .map(|t| t.columns.values().next().map(|c| c.data.len()).unwrap_or(0))
+            .sum::<usize>()
+    );
+    data.db.ingest_efficient(events).await;
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
 }
 
@@ -232,25 +304,82 @@ async fn manual_hello() -> impl Responder {
     HttpResponse::Ok().body("Hey there!")
 }
 
-pub async fn run(db: LocustDB) -> std::io::Result<()> {
-    let db = Arc::new(db);
-    HttpServer::new(move || {
+fn query_output_to_json_cols(result: QueryOutput) -> serde_json::Value {
+    let mut cols: HashMap<String, serde_json::Value> = HashMap::default();
+    for (colname, data) in result.columns {
+        let json_data = match data {
+            BasicTypeColumn::Int(xs) => json!(xs),
+            BasicTypeColumn::Float(xs) => json!(xs),
+            BasicTypeColumn::String(xs) => json!(xs),
+            BasicTypeColumn::Null(xs) => json!(xs),
+            BasicTypeColumn::Mixed(xs) => json!(xs
+                .into_iter()
+                .map(|val| match val {
+                    Value::Int(int) => json!(int),
+                    Value::Str(str) => json!(str),
+                    Value::Null => json!(null),
+                    Value::Float(f) => json!(f.0),
+                })
+                .collect::<Vec<_>>()),
+        };
+        cols.insert(colname, json_data);
+    }
+    json!({
+        "colnames": result.colnames,
+        "cols": cols,
+        "stats": result.stats,
+    })
+}
+
+pub fn run(
+    db: Arc<LocustDB>,
+    cors_allow_all: bool,
+    cors_allow_origin: Vec<String>,
+    addrs: String,
+) -> std::io::Result<(ServerHandle, oneshot::Receiver<()>)> {
+    let server = HttpServer::new(move || {
+        let cors = if cors_allow_all {
+            Cors::permissive()
+        } else {
+            let mut cors = Cors::default()
+                .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+                .allowed_headers(vec!["Authorization", "Accept"])
+                .allowed_header(actix_web::http::header::CONTENT_TYPE)
+                .max_age(3600);
+            for origin in &cors_allow_origin {
+                cors = cors.allowed_origin(origin);
+            }
+            cors
+        };
         let app_state = AppState { db: db.clone() };
         App::new()
+            .wrap(cors)
             .app_data(Data::new(app_state))
-            .app_data(Data::new(web::PayloadConfig::new(100 * 1024 * 1024)))
+            .app_data(Data::new(web::PayloadConfig::new(512 * 1024 * 1024)))
             .service(index)
             .service(echo)
             .service(tables)
             .service(query)
             .service(table_handler)
-            .service(insert)
+            // .service(insert)
+            .service(insert_bin)
             .service(query_data)
             .service(query_cols)
+            .service(multi_query_cols)
+            .service(columns)
             .service(plot)
             .route("/hey", web::get().to(manual_hello))
     })
-    .bind("127.0.0.1:8080")?
-    .run()
-    .await
+    .bind(&addrs)?
+    .run();
+
+    let (tx, rx) = oneshot::channel();
+
+    let handle = server.handle();
+    thread::spawn(move || {
+        actix_web::rt::System::new().block_on(server).unwrap();
+        let _ = tx.send(());
+    });
+
+    Ok((handle, rx))
 }

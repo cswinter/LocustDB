@@ -19,11 +19,10 @@ pub struct QueryPlanner {
 }
 
 impl QueryPlanner {
-    pub fn prepare<'a>(&mut self, mut constant_vecs: Vec<BoxedData<'a>>) -> Result<QueryExecutor<'a>, QueryError> {
+    pub fn prepare(mut self, mut constant_vecs: Vec<BoxedData>, batch_size: usize) -> Result<QueryExecutor, QueryError> {
         self.perform_rewrites();
 
-        let mut result = QueryExecutor::default();
-        result.set_buffer_count(self.buffer_provider.buffer_count());
+        let mut result = QueryExecutor::new(batch_size, std::mem::take(&mut self.buffer_provider));
         for operation in &self.operations {
             prepare(operation.clone(), &mut constant_vecs, &mut result)?;
         }
@@ -350,14 +349,23 @@ fn combine_nulls2(bp: &mut BufferProvider,
 #[derive(Default)]
 pub struct BufferProvider {
     buffer_count: usize,
+    pub all_buffers: Vec<TypedBufferRef>,
     shared_buffers: HashMap<&'static str, TypedBufferRef>,
 }
 
 impl BufferProvider {
     pub fn named_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
         let buffer = TypedBufferRef::new(BufferRef { i: self.buffer_count, name, t: PhantomData }, tag);
+        self.all_buffers.push(buffer);
         self.buffer_count += 1;
         buffer
+    }
+
+    pub fn buffer_bitvec(&mut self, name: &'static str) -> BufferRef<u8> {
+        let buffer = TypedBufferRef::new(BufferRef { i: self.buffer_count, name, t: PhantomData }, EncodingType::U8);
+        self.all_buffers.push(buffer);
+        self.buffer_count += 1;
+        buffer.u8().unwrap()
     }
 
     pub fn buffer_str<'a>(&mut self, name: &'static str) -> BufferRef<&'a str> {
@@ -421,4 +429,14 @@ impl BufferProvider {
     }
 
     pub fn buffer_count(&self) -> usize { self.buffer_count }
+
+    pub fn last_buffer(&self) -> TypedBufferRef {
+        self.all_buffers
+            .last()
+            .cloned()
+            .unwrap_or_else(|| TypedBufferRef {
+                buffer: error_buffer_ref("ERROR"),
+                tag: EncodingType::Null,
+            })
+    }
 }

@@ -7,6 +7,7 @@ use crate::QueryError;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Iterator;
+use std::ops::Range;
 use std::sync::Arc;
 use std::u64;
 
@@ -45,18 +46,17 @@ impl NormalFormQuery {
         explain: bool,
         show: bool,
         partition: usize,
-        partition_len: usize,
+        partition_range: Range<usize>,
+        batch_size: usize,
     ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
-        println!("Running {:?}", self);
         let limit = (self.limit.limit + self.limit.offset) as usize;
-        println!("limit: {limit}");
         let mut planner = QueryPlanner::default();
 
         let (filter_plan, _) = QueryPlan::compile_expr(
             &self.filter,
             Filter::None,
             columns,
-            partition_len,
+            partition_range.len(),
             &mut planner,
         )?;
         let mut filter = match filter_plan.tag {
@@ -69,37 +69,36 @@ impl NormalFormQuery {
         let mut sort_indices = None;
         for (plan, desc) in self.order_by.iter().rev() {
             let (ranking, _) = query_plan::order_preserving(
-                QueryPlan::compile_expr(plan, filter, columns, partition_len, &mut planner)?,
+                QueryPlan::compile_expr(plan, filter, columns, partition_range.len(), &mut planner)?,
                 &mut planner,
             );
 
             // PERF: better criterion for using top_n
             // PERF: top_n for multiple columns?
-            sort_indices = Some(if limit < partition_len / 2 && self.order_by.len() == 1 {
+            // TODO: efficient PERF top_n for null or constant vec (construct indices of size min(ranking.len(), limit))
+            let indices = if limit < partition_range.len() / 2 && self.order_by.len() == 1 && !ranking.is_constant() {
                 planner.top_n(ranking, limit, *desc)
             } else {
                 // PERF: sort directly if only single column selected
-                match sort_indices {
-                    None => {
-                        let indices = planner.indices(ranking);
-                        planner.sort_by(ranking, indices, *desc, false /* unstable sort */)
-                    }
-                    Some(indices) => {
-                        planner.sort_by(ranking, indices, *desc, true /* stable sort */)
-                    }
+                let indices = sort_indices.unwrap_or_else(|| planner.indices(ranking));
+                if ranking.is_constant() {
+                    indices
+                } else {
+                    planner.sort_by(ranking, indices, *desc, true /* stable sort */)
                 }
-            });
+            };
+            sort_indices = Some(indices)
         }
         if let Some(sort_indices) = sort_indices {
             filter = match filter {
                 Filter::U8(where_true) => {
-                    let buffer = planner.null_vec(partition_len, EncodingType::Null);
+                    let buffer = planner.null_vec(partition_range.len(), EncodingType::Null);
                     let indices = planner.indices(buffer).into();
                     let filter = planner.filter(indices, where_true);
                     Filter::Indices(planner.select(filter, sort_indices).usize()?)
                 }
                 Filter::NullableU8(where_true) => {
-                    let buffer = planner.null_vec(partition_len, EncodingType::Null);
+                    let buffer = planner.null_vec(partition_range.len(), EncodingType::Null);
                     let indices = planner.indices(buffer).into();
                     let filter = planner.nullable_filter(indices, where_true);
                     Filter::Indices(planner.select(filter, sort_indices).usize()?)
@@ -110,12 +109,12 @@ impl NormalFormQuery {
         }
 
         let mut select = Vec::new();
-        for col_info in &self.projection {
+        for (i, col_info) in self.projection.iter().enumerate() {
             let (mut plan, plan_type) = QueryPlan::compile_expr(
                 &col_info.expr,
                 filter,
                 columns,
-                partition_len,
+                partition_range.len(),
                 &mut planner,
             )?;
             if let Some(codec) = plan_type.codec {
@@ -124,28 +123,36 @@ impl NormalFormQuery {
             if plan.is_nullable() {
                 plan = planner.fuse_nulls(plan);
             }
+            plan = planner.collect(
+                plan,
+                &col_info
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("select_{}", i)),
+            );
             select.push(plan.any());
         }
         let mut order_by = Vec::new();
-        for (expr, desc) in &self.order_by {
+        for (i, (expr, desc)) in self.order_by.iter().enumerate() {
             let (mut plan, plan_type) =
-                QueryPlan::compile_expr(expr, filter, columns, partition_len, &mut planner)?;
+                QueryPlan::compile_expr(expr, filter, columns, partition_range.len(), &mut planner)?;
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
             if plan.is_nullable() {
                 plan = planner.fuse_nulls(plan);
             }
+            plan = planner.collect(plan, &format!("order_by_{}", i));
             order_by.push((plan.any(), *desc));
         }
 
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = planner.prepare(vec![])?;
+        let mut executor = planner.prepare(vec![], batch_size)?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
-        executor.run(partition_len, &mut results, show)?;
+        executor.run(partition_range.len(), &mut results, show)?;
         let (columns, projection, _, order_by) = results.collect_aliased(&select, &[], &order_by);
 
         Ok((
@@ -155,6 +162,7 @@ impl NormalFormQuery {
                 aggregations: vec![],
                 order_by,
                 level: 0,
+                scanned_range: partition_range,
                 batch_count: 1,
                 show,
                 unsafe_referenced_buffers: results.collect_pinned(),
@@ -174,13 +182,14 @@ impl NormalFormQuery {
         explain: bool,
         show: bool,
         partition: usize,
-        partition_len: usize,
+        partition_range: Range<usize>,
+        batch_size: usize,
     ) -> Result<(BatchResult<'a>, Option<String>), QueryError> {
         let mut qp = QueryPlanner::default();
 
         // Filter
         let (filter_plan, filter_type) =
-            QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_len, &mut qp)?;
+            QueryPlan::compile_expr(&self.filter, Filter::None, columns, partition_range.len(), &mut qp)?;
         let filter = match filter_type.encoding_type() {
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
@@ -201,7 +210,7 @@ impl NormalFormQuery {
                 .collect::<Vec<_>>(),
             filter,
             columns,
-            partition_len,
+            partition_range.len(),
             &mut qp,
         )?;
 
@@ -232,7 +241,7 @@ impl NormalFormQuery {
         let mut selector_index = None;
         for (i, &(aggregator, ref col_info)) in self.aggregate.iter().enumerate() {
             let (plan, plan_type) =
-                QueryPlan::compile_expr(&col_info.expr, filter, columns, partition_len, &mut qp)?;
+                QueryPlan::compile_expr(&col_info.expr, filter, columns, partition_range.len(), &mut qp)?;
             let (aggregate, t) = query_plan::prepare_aggregation(
                 plan,
                 plan_type,
@@ -271,9 +280,12 @@ impl NormalFormQuery {
                                       input_nullable: bool| {
                 let compacted = match aggregator {
                     // PERF: if summation column is strictly positive, can use NonzeroCompact
-                    Aggregator::SumI64 | Aggregator::MaxI64 | Aggregator::MinI64 | Aggregator::SumF64 | Aggregator::MaxF64 | Aggregator::MinF64 => {
-                        qp.compact(aggregate, selector)
-                    }
+                    Aggregator::SumI64
+                    | Aggregator::MaxI64
+                    | Aggregator::MinI64
+                    | Aggregator::SumF64
+                    | Aggregator::MaxF64
+                    | Aggregator::MinF64 => qp.compact(aggregate, selector),
                     Aggregator::Count => {
                         if input_nullable {
                             qp.compact(aggregate, selector)
@@ -351,7 +363,8 @@ impl NormalFormQuery {
 
             let mut aggregations2 = Vec::new();
             for &(a, aggregator) in &aggregation_cols {
-                aggregations2.push((qp.select(a, sort_indices), aggregator));
+                let plan = qp.select(a, sort_indices);
+                aggregations2.push((plan, aggregator));
             }
             aggregation_cols = aggregations2;
 
@@ -362,19 +375,26 @@ impl NormalFormQuery {
             grouping_columns = grouping_columns2;
         }
 
-        for plan in &mut grouping_columns {
+        for (i, plan) in grouping_columns.iter_mut().enumerate() {
             if plan.is_nullable() {
                 *plan = qp.fuse_nulls(*plan);
             }
+            *plan = qp.collect(*plan, &format!("grouping_{}", i));
+        }
+        for (i, (plan, _)) in aggregation_cols.iter_mut().enumerate() {
+            if plan.is_nullable() {
+                *plan = qp.fuse_nulls(*plan);
+            }
+            *plan = qp.collect(*plan, &format!("aggregation_{}", i));
         }
 
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = qp.prepare(vec![])?;
+        let mut executor = qp.prepare(vec![], batch_size)?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
-        executor.run(partition_len, &mut results, show)?;
+        executor.run(partition_range.len(), &mut results, show)?;
         let (columns, projection, aggregations, _) = results.collect_aliased(
             &grouping_columns.iter().map(|s| s.any()).collect::<Vec<_>>(),
             &aggregation_cols
@@ -390,6 +410,7 @@ impl NormalFormQuery {
             aggregations,
             order_by: vec![],
             level: 0,
+            scanned_range: partition_range,
             batch_count: 1,
             show,
             unsafe_referenced_buffers: results.collect_pinned(),
@@ -604,5 +625,21 @@ impl Query {
         }
         self.filter.add_colnames(&mut colnames);
         colnames
+    }
+
+    pub fn read_column(table: &str, column: &str) -> Query {
+        Query {
+            select: vec![ColumnInfo {
+                expr: Expr::ColName(column.to_string()),
+                name: Some("col".to_string()),
+            }],
+            table: table.to_string(),
+            filter: Expr::Const(RawVal::Int(1)),
+            order_by: vec![],
+            limit: LimitClause {
+                limit: u64::MAX,
+                offset: 0,
+            },
+        }
     }
 }

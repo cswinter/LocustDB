@@ -1,63 +1,100 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::disk_store::interface::*;
+use crate::disk_store::*;
 use crate::ingest::buffer::Buffer;
 use crate::mem_store::*;
+use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 
-pub type ColumnKey = (PartitionID, String);
+// Table, Partition, Column
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub struct ColumnLocator {
+    pub table: String,
+    pub id: PartitionID,
+    pub column: String,
+}
 
 pub struct Partition {
     pub id: PartitionID,
-    len: usize,
-    cols: Vec<ColumnHandle>,
+    range: Range<usize>,
+    total_size_bytes: usize,
+    // Column name -> PartitionID -> ColumnHandle
+    pub(crate) cols: HashMap<String, ColumnHandle>,
     lru: Lru,
 }
 
 impl Partition {
-    pub fn new(id: PartitionID, cols: Vec<Arc<Column>>, lru: Lru) -> (Partition, Vec<ColumnKey>) {
+    pub fn new(
+        table: &str,
+        id: PartitionID,
+        cols: Vec<Arc<Column>>,
+        lru: Lru,
+        // Offset of this partition in the table
+        offset: usize,
+    ) -> (Partition, Vec<(u64, String)>) {
+        // Can't put into lru directly, because then memory limit enforcer might try to evict column that is unreachable because this partition is not yet in the partition map.
+        // Instead, we return the keys to be added to the lru after the partition is added to the partition map.
         let mut keys = Vec::with_capacity(cols.len());
+        let len = cols[0].len();
+        let total_size_bytes = cols.iter().map(|c| c.heap_size_of_children()).sum();
+        let cols = cols
+            .into_iter()
+            .map(|c| {
+                keys.push((id, c.name().to_string()));
+                (c.name().to_string(), ColumnHandle::resident(table, id, c))
+            })
+            .collect();
         (
             Partition {
                 id,
-                len: cols[0].len(),
-                cols: cols
-                    .into_iter()
-                    .map(|c| {
-                        let key = (id, c.name().to_string());
-                        // Can't put into lru directly, because then memory limit enforcer might try to evict unreachable column.
-                        keys.push(key);
-                        ColumnHandle::resident(id, c)
-                    })
-                    .collect(),
+                range: offset..(offset + len),
+                total_size_bytes,
+                cols,
                 lru,
             },
             keys,
         )
     }
 
-    pub fn nonresident(
-        id: PartitionID,
-        len: usize,
-        cols: &[ColumnMetadata],
-        lru: Lru,
-    ) -> Partition {
+    pub fn nonresident(table: &str, md: &PartitionMetadata, lru: Lru) -> Partition {
+        let range = md.offset..(md.offset + md.len);
+        let mut cols = HashMap::default();
+        let mut total_size_bytes = 0;
+        for subpartition in &md.subpartitions {
+            total_size_bytes += subpartition.size_bytes as usize;
+        }
+        for name in md.column_name_to_subpartition_index.keys() {
+            cols.insert(
+                name.clone(),
+                ColumnHandle::non_resident(
+                    table,
+                    md.id,
+                    name.clone(),
+                ),
+            );
+        }
         Partition {
-            id,
-            len,
-            cols: cols
-                .iter()
-                .map(|c| ColumnHandle::non_resident(id, c.name.to_string(), c.size_bytes))
-                .collect(),
+            id: md.id,
+            range,
+            cols,
             lru,
+            total_size_bytes,
         }
     }
 
-    pub fn from_buffer(id: PartitionID, buffer: Buffer, lru: Lru) -> (Partition, Vec<ColumnKey>) {
+    pub fn from_buffer(
+        table: &str,
+        id: PartitionID,
+        buffer: Buffer,
+        lru: Lru,
+        offset: usize,
+    ) -> (Partition, Vec<(u64, String)>) {
         Partition::new(
+            table,
             id,
             buffer
                 .buffer
@@ -65,6 +102,7 @@ impl Partition {
                 .map(|(name, raw_col)| raw_col.finalize(&name))
                 .collect(),
             lru,
+            offset,
         )
     }
 
@@ -72,28 +110,25 @@ impl Partition {
         &self,
         referenced_cols: &HashSet<String>,
         drs: &DiskReadScheduler,
+        perf_counter: &QueryPerfCounter,
     ) -> HashMap<String, Arc<dyn DataSource>> {
         let mut columns = HashMap::<String, Arc<dyn DataSource>>::new();
-        for handle in &self.cols {
-            if referenced_cols.contains(handle.name()) {
-                let column = drs.get_or_load(handle);
+        for colname in referenced_cols {
+            if let Some(handle) = self.cols.get(colname) {
+                let column = drs.get_or_load(handle, &self.cols, perf_counter);
                 columns.insert(handle.name().to_string(), Arc::new(column));
             }
         }
         columns
     }
 
-    pub fn col_names(&self) -> Vec<&str> {
-        let mut names = Vec::new();
-        for handle in &self.cols {
-            names.push(handle.name());
-        }
-        names
+    pub fn col_names(&self) -> impl Iterator<Item = &String> {
+        self.cols.keys()
     }
 
     pub fn non_residents(&self, cols: &HashSet<String>) -> HashSet<String> {
         let mut non_residents = HashSet::new();
-        for handle in &self.cols {
+        for handle in self.cols.values() {
             if !handle.is_resident() && cols.contains(handle.name()) {
                 non_residents.insert(handle.name().to_string());
             }
@@ -106,7 +141,7 @@ impl Partition {
         nonresidents: &HashSet<String>,
         eligible: &HashSet<String>,
     ) -> bool {
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             if handle.is_resident() {
                 if nonresidents.contains(handle.name()) {
                     return false;
@@ -120,7 +155,7 @@ impl Partition {
 
     pub fn promise_load(&self, cols: &HashSet<String>) -> usize {
         let mut total_size = 0;
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             if cols.contains(handle.name()) {
                 handle.load_scheduled.store(true, Ordering::SeqCst);
                 total_size += handle.size_bytes();
@@ -130,7 +165,7 @@ impl Partition {
     }
 
     pub fn restore(&self, col: &Arc<Column>) {
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             if handle.name() == col.name() {
                 let mut maybe_column = handle.col.lock().unwrap();
                 if maybe_column.is_none() {
@@ -144,28 +179,28 @@ impl Partition {
     }
 
     pub fn evict(&self, col: &str) -> usize {
-        for handle in &self.cols {
-            if handle.name() == col {
-                let mut maybe_column = handle.col.lock().unwrap();
-                let mem_size = handle.heap_size_of_children();
-                handle.resident.store(false, Ordering::SeqCst);
-                *maybe_column = None;
-                self.lru.remove(&handle.key);
-                return mem_size;
-            }
-        }
-        0
+        let handle = &self.cols[col];
+        let mem_size = handle.heap_size_of_children();
+        let mut maybe_column = handle.col.lock().unwrap();
+        handle.resident.store(false, Ordering::SeqCst);
+        *maybe_column = None;
+        self.lru.remove(&handle.key);
+        mem_size
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.range.len()
+    }
+
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
     }
 
     pub fn mem_tree(&self, coltrees: &mut HashMap<String, MemTreeColumn>, depth: usize) {
         if depth == 0 {
             return;
         }
-        for handle in &self.cols {
+        for handle in self.col_handles() {
             let col = handle.col.lock().unwrap();
             let coltree = coltrees
                 .entry(handle.name().to_string())
@@ -185,8 +220,7 @@ impl Partition {
     }
 
     pub fn heap_size_per_column(&self) -> Vec<(String, usize)> {
-        self.cols
-            .iter()
+        self.col_handles()
             .map(|handle| {
                 let c = handle.col.lock().unwrap();
                 (
@@ -201,8 +235,7 @@ impl Partition {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        self.cols
-            .iter()
+        self.col_handles()
             .map(|handle| {
                 let c = handle.col.lock().unwrap();
                 match *c {
@@ -212,10 +245,21 @@ impl Partition {
             })
             .sum()
     }
+
+    pub fn col_handles(&self) -> impl Iterator<Item = &ColumnHandle> {
+        self.cols.values()
+    }
+
+    /// Total size of all columns in this partition, including non-resident columns.
+    pub fn total_size_bytes(&self) -> usize {
+        self.total_size_bytes
+    }
 }
 
 pub struct ColumnHandle {
-    key: (PartitionID, String),
+    // Table, Partition, Subpartition
+    key: ColumnLocator,
+    name: String,
     size_bytes: AtomicUsize,
     resident: AtomicBool,
     load_scheduled: AtomicBool,
@@ -223,9 +267,14 @@ pub struct ColumnHandle {
 }
 
 impl ColumnHandle {
-    fn resident(id: PartitionID, col: Arc<Column>) -> ColumnHandle {
+    fn resident(table: &str, id: PartitionID, col: Arc<Column>) -> ColumnHandle {
         ColumnHandle {
-            key: (id, col.name().to_string()),
+            key: ColumnLocator {
+                table: table.to_string(),
+                id,
+                column: col.name().to_string(),
+            },
+            name: col.name().to_string(),
             size_bytes: AtomicUsize::new(col.heap_size_of_children()),
             resident: AtomicBool::new(true),
             load_scheduled: AtomicBool::new(false),
@@ -233,10 +282,15 @@ impl ColumnHandle {
         }
     }
 
-    fn non_resident(id: PartitionID, name: String, size_bytes: usize) -> ColumnHandle {
+    fn non_resident(
+        table: &str,
+        id: PartitionID,
+        name: String,
+    ) -> ColumnHandle {
         ColumnHandle {
-            key: (id, name),
-            size_bytes: AtomicUsize::new(size_bytes),
+            key: ColumnLocator::new(table, id, &name),
+            name,
+            size_bytes: AtomicUsize::new(0),
             resident: AtomicBool::new(false),
             load_scheduled: AtomicBool::new(false),
             col: Mutex::new(None),
@@ -247,24 +301,29 @@ impl ColumnHandle {
         self.resident.load(Ordering::SeqCst)
     }
 
-    pub fn set_resident(&self) {
+    pub fn set_resident(&self, size_bytes: usize) {
         self.resident.store(true, Ordering::SeqCst);
+        self.size_bytes.store(size_bytes, Ordering::SeqCst);
     }
 
     pub fn is_load_scheduled(&self) -> bool {
         self.load_scheduled.load(Ordering::SeqCst)
     }
 
-    pub fn key(&self) -> &(PartitionID, String) {
+    pub fn key(&self) -> &ColumnLocator {
         &self.key
     }
 
-    pub fn id(&self) -> PartitionID {
-        self.key.0
+    pub fn table(&self) -> &str {
+        &self.key.table
     }
 
     pub fn name(&self) -> &str {
-        &self.key.1
+        &self.name
+    }
+
+    pub fn id(&self) -> PartitionID {
+        self.key.id
     }
 
     pub fn try_get(&self) -> MutexGuard<Option<Arc<Column>>> {
@@ -284,6 +343,16 @@ impl ColumnHandle {
             self.size_bytes()
         } else {
             0
+        }
+    }
+}
+
+impl ColumnLocator {
+    pub fn new(table: &str, id: PartitionID, column: &str) -> ColumnLocator {
+        ColumnLocator {
+            table: table.to_string(),
+            id,
+            column: column.to_string(),
         }
     }
 }

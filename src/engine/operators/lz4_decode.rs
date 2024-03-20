@@ -11,7 +11,7 @@ pub struct LZ4Decode<'a, T> {
     pub has_more: bool,
 }
 
-impl<'a, T: GenericIntVec<T>> VecOperator<'a> for LZ4Decode<'a, T> {
+impl<'a, T: VecData<T> + Default + 'static> VecOperator<'a> for LZ4Decode<'a, T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let mut decoded = scratchpad.get_mut(self.decoded);
         let len = lz4::decode(&mut self.reader, &mut decoded);
@@ -23,12 +23,13 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for LZ4Decode<'a, T> {
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.decoded, vec![T::zero(); batch_size]);
+        scratchpad.set(self.decoded, vec![T::default(); batch_size]);
         let encoded = scratchpad.get_pinned(self.encoded);
         self.reader = Box::new(lz4::decoder(encoded));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.encoded.any()] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.encoded.i] }
     fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.decoded.any()] }
     fn can_stream_input(&self, _: usize) -> bool { false }
     fn can_stream_output(&self, _: usize) -> bool { true }

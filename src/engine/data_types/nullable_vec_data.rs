@@ -31,11 +31,20 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
     fn type_error(&self, func_name: &str) -> String {
         format!("NullableVec<{:?}>.{}", T::t(), func_name)
     }
-    fn slice_box<'b>(&'b self, _: usize, _: usize) -> BoxedData<'b>
+    fn slice_box<'b>(&'b self, from: usize, to: usize) -> BoxedData<'b>
     where
         'a: 'b,
     {
-        panic!("nullable slice box!")
+        // TODO: more efficient implementation that doesn't clone?
+        let to = min(to, self.len());
+        let data = self.data[from..to].to_vec();
+        let mut present = vec![0u8; (to - from + 7) / 8];
+        for i in from..to {
+            if self.present.is_set(i) {
+                present.set(i - from);
+            }
+        }
+        Box::new(NullableVec { data, present })
     }
 
     default fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>> {
