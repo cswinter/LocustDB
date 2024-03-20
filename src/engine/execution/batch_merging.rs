@@ -13,6 +13,7 @@ pub struct BatchResult<'a> {
     pub columns: Vec<BoxedData<'a>>,
     pub projection: Vec<usize>,
     pub aggregations: Vec<(usize, Aggregator)>,
+    // Maps each projection in original query to corresponding result column (`projection` is just a subset without aggregating projections)
     pub order_by: Vec<(usize, bool)>,
     pub level: u32,
     pub scanned_range: Range<usize>,
