@@ -134,16 +134,16 @@ fn get_projection(projection: Vec<SelectItem>) -> Result<Vec<ColumnInfo>, QueryE
                 // These will later be used as colnames of query results.
                 result.push(ColumnInfo {
                     expr: *convert_to_native_expr(e)?,
-                    name: Some(strip_quotes(&format!("{}", e))),
+                    name: strip_quotes(&format!("{}", e)),
                 })
             }
             SelectItem::Wildcard(_) => result.push(ColumnInfo {
                 expr: Expr::ColName('*'.to_string()),
-                name: None,
+                name: "*".to_string(),
             }),
             SelectItem::ExprWithAlias { expr, alias } => result.push(ColumnInfo {
                 expr: *convert_to_native_expr(expr)?,
-                name: Some(strip_quotes(&alias.to_string())),
+                name: strip_quotes(&alias.to_string()),
             }),
             _ => {
                 return Err(QueryError::NotImplemented(format!(
@@ -401,20 +401,20 @@ mod tests {
     fn test_select_star() {
         assert_eq!(
             format!("{:?}", parse_query("select * from default limit 100")),
-            "Ok(Query { select: [ColumnInfo { expr: ColName(\"*\"), name: None }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [ColumnInfo { expr: ColName(\"*\"), name: \"*\" }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_alias() {
         assert_eq!(
             format!("{:?}", parse_query("select trip_id as id from default limit 100")),
-            "Ok(Query { select: [ColumnInfo { expr: ColName(\"trip_id\"), name: Some(\"id\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [ColumnInfo { expr: ColName(\"trip_id\"), name: \"id\" }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 
     #[test]
     fn test_to_year() {
         assert_eq!(
             format!("{:?}", parse_query("select to_year(ts) from default limit 100")),
-            "Ok(Query { select: [ColumnInfo { expr: Func1(ToYear, ColName(\"ts\")), name: Some(\"to_year(ts)\") }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
+            "Ok(Query { select: [ColumnInfo { expr: Func1(ToYear, ColName(\"ts\")), name: \"to_year(ts)\" }], table: \"default\", filter: Const(Int(1)), order_by: [], limit: LimitClause { limit: 100, offset: 0 } })");
     }
 }

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
 
+use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +33,8 @@ pub struct QueryTask {
     partitions: Vec<Arc<Partition>>,
     referenced_cols: HashSet<String>,
     output_colnames: Vec<String>,
+    // Tells us how to reconstruct final output in correct ordering from `projection` and `aggregate` columns
+    result_column_sources: Vec<ResultColumn>,
     start_time: Instant,
     db: Arc<DiskReadScheduler>,
     perf_counter: Arc<QueryPerfCounter>,
@@ -101,18 +104,15 @@ impl QueryTask {
                 .into_iter()
                 .map(|name| ColumnInfo {
                     expr: Expr::ColName(name.clone()),
-                    name: Some(name),
+                    name,
                 })
-                .collect();
+                .sorted_by(|a, b| a.name.cmp(&b.name))
         }
 
         let referenced_cols = query.find_referenced_cols();
 
-        let (main_phase, final_pass) = query.normalize()?;
-        let output_colnames = match &final_pass {
-            Some(final_pass) => final_pass.result_column_names()?,
-            None => main_phase.result_column_names()?,
-        };
+        let (main_phase, final_pass, result_column_sources) = query.normalize()?;
+        let output_colnames = query.select.iter().map(|c| c.name.clone()).collect();
 
         let task = QueryTask {
             main_phase,
@@ -123,6 +123,7 @@ impl QueryTask {
             partitions: source,
             referenced_cols,
             output_colnames,
+            result_column_sources,
             start_time,
             db,
             perf_counter: Arc::default(),
@@ -259,13 +260,13 @@ impl QueryTask {
             }
             None
         }
-        while let Some((key1, key2)) =
-            eligible_pair(batch_results, true).or_else(|| if !require_same_level {
+        while let Some((key1, key2)) = eligible_pair(batch_results, true).or_else(|| {
+            if !require_same_level {
                 eligible_pair(batch_results, false)
             } else {
                 None
-            })
-        {
+            }
+        }) {
             let br1 = batch_results.remove(&key1).unwrap();
             let br2 = batch_results.remove(&key2).unwrap();
             let result = combine(br1, br2, combined_limit, batch_size)?;
@@ -387,16 +388,17 @@ impl QueryTask {
         full_result.validate().unwrap();
 
         let mut rows = None;
+        println!("{:?}", self.result_column_sources);
         if self.rowformat {
             let mut result_rows = Vec::new();
             for i in offset..(count + offset) {
                 let mut record = Vec::with_capacity(self.output_colnames.len());
-                // TODO(#99): use column order of original query
-                for &j in &full_result.projection {
-                    record.push(full_result.columns[j].get_raw(i));
-                }
-                for &(aggregation, _) in &full_result.aggregations {
-                    record.push(full_result.columns[aggregation].get_raw(i));
+                for proj in &self.result_column_sources {
+                    let index = match proj {
+                        ResultColumn::Proj(i) => full_result.projection[*i],
+                        ResultColumn::Agg(i) => full_result.aggregations[*i].0,
+                    };
+                    record.push(full_result.columns[index].get_raw(i));
                 }
                 result_rows.push(record);
             }
@@ -409,9 +411,12 @@ impl QueryTask {
         }
 
         let mut columns = vec![];
-        // TODO: this is probably wrong, see above (columns might not all be in the same order as output_colnames or correspond to columns we want to return)
-        for (colname, column) in self.output_colnames.iter().zip(full_result.columns.iter()) {
-            let column = column.slice_box(offset, offset + count);
+        for (colname, proj) in self.output_colnames.iter().zip(&self.result_column_sources) {
+            let index = match proj {
+                ResultColumn::Proj(i) => full_result.projection[*i],
+                ResultColumn::Agg(i) => full_result.aggregations[*i].0,
+            };
+            let column = full_result.columns[index].slice_box(offset, offset + count);
             let column = BasicTypeColumn::from_boxed_data(column);
             columns.push((colname.clone(), column));
         }
@@ -534,7 +539,9 @@ impl PartialEq for BasicTypeColumn {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (BasicTypeColumn::Int(a), BasicTypeColumn::Int(b)) => a == b,
-            (BasicTypeColumn::Float(a), BasicTypeColumn::Float(b)) => a.len() == b.len() && (0..a.len()).all(|i| OrderedFloat(a[i]) == OrderedFloat(b[i])),
+            (BasicTypeColumn::Float(a), BasicTypeColumn::Float(b)) => {
+                a.len() == b.len() && (0..a.len()).all(|i| OrderedFloat(a[i]) == OrderedFloat(b[i]))
+            }
             (BasicTypeColumn::String(a), BasicTypeColumn::String(b)) => a == b,
             (BasicTypeColumn::Null(a), BasicTypeColumn::Null(b)) => a == b,
             (BasicTypeColumn::Mixed(a), BasicTypeColumn::Mixed(b)) => a == b,

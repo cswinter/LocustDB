@@ -713,22 +713,22 @@ fn test_group_by_trip_id() {
 #[test]
 fn test_string_length() {
     test_query_nyc(
-        "SELECT length(pickup_ntaname), pickup_ntaname, COUNT(0) FROM default ORDER BY length(pickup_ntaname) DESC LIMIT 3;",
+        "SELECT length(pickup_ntaname), COUNT(0), pickup_ntaname FROM default ORDER BY length(pickup_ntaname) DESC LIMIT 3;",
         &[
             vec![
                 Int(56),
-                Str("Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill"),
                 Int(1),
+                Str("Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill"),
             ],
             vec![
                 Int(50),
-                Str("Mariner\'s Harbor-Arlington-Port Ivory-Graniteville"),
                 Int(3),
+                Str("Mariner\'s Harbor-Arlington-Port Ivory-Graniteville"),
             ],
             vec![
                 Int(48),
-                Str("DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill"),
                 Int(245),
+                Str("DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill"),
             ],
         ],
     )
@@ -737,11 +737,11 @@ fn test_string_length() {
 #[test]
 fn test_group_by_negative_expression() {
     test_query_ec(
-        "SELECT negative/100, count(1) FROM default;",
+        "SELECT count(1), negative/100 FROM default;",
         &[
-            vec![Int(-1), Int(4)],
-            vec![Int(0), Int(4)],
-            vec![Int(40), Int(2)],
+            vec![Int(4), Int(-1)],
+            vec![Int(4), Int(0)],
+            vec![Int(2), Int(40)],
         ],
     )
 }
@@ -1389,12 +1389,9 @@ fn test_restore_from_disk() {
         result
     };
     assert_eq!(old_db_contents.len(), restored_db_contents.len());
-    // TODO: column order is not preserved/deterministic
-    // for (i, (old, new)) in old_db_contents.iter().zip(restored_db_contents.iter()).enumerate() {
-    //     assert_eq!(old, new, "Row {} differs", i);
-    // }
-
-    
+    for (i, (old, new)) in old_db_contents.iter().zip(restored_db_contents.iter()).enumerate() {
+        assert_eq!(old, new, "Row {} differs", i);
+    }
 }
 
 #[test]
@@ -1422,6 +1419,11 @@ fn test_colnames() {
     test_query_colnames(
         "SELECT \"u8_offset_encoded\" FROM \"default\" WHERE \"u8_offset_encoded\" = 256;",
         vec!["u8_offset_encoded".to_string()],
+    );
+
+    test_query_colnames(
+        "SELECT name, COUNT(1) AS c, timestamp FROM _meta_tables;",
+        vec!["name".to_string(), "c".to_string(), "timestamp".to_string()],
     );
 }
 
