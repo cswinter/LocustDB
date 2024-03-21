@@ -388,7 +388,6 @@ impl QueryTask {
         full_result.validate().unwrap();
 
         let mut rows = None;
-        println!("{:?}", self.result_column_sources);
         if self.rowformat {
             let mut result_rows = Vec::new();
             for i in offset..(count + offset) {

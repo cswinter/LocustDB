@@ -299,8 +299,9 @@ impl InnerLocustDB {
                 assert_eq!(
                     range.len(),
                     column_builder.len(),
-                    "range={range:?}, column_builder.len() = {}",
-                    column_builder.len()
+                    "range={range:?}, column_builder.len() = {}, table = {table},  column = {column}",
+                    column_builder.len(),
+
                 );
                 columns.push(column_builder.finalize(column));
             }

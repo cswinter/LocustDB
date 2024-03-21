@@ -25,3 +25,6 @@ rocksdb
 
 # OS X
 .DS_Store
+
+# VSCode
+.vscode
