@@ -46,7 +46,7 @@ async fn main() {
         .map(|i| {
             format!(
                 "{}_{i}",
-                random_word::gen(random_word::Lang::En).to_string()
+                random_word::gen(random_word::Lang::En),
             )
         })
         .collect();

@@ -23,7 +23,7 @@ pub struct BatchResult<'a> {
 
 impl<'a> BatchResult<'a> {
     pub fn len(&self) -> usize {
-        self.columns.get(0).map_or(0, |s| s.len())
+        self.columns.first().map_or(0, |s| s.len())
     }
 
     pub fn validate(&self) -> Result<(), QueryError> {
@@ -31,7 +31,7 @@ impl<'a> BatchResult<'a> {
         let mut info_str = "".to_owned();
         for (i, select) in self.columns.iter().enumerate() {
             lengths.push(select.len());
-            info_str = format!("{}:columns[{}].len = {}", info_str, i, select.len()).to_owned();
+            info_str = format!("{}:columns[{}].len = {}", info_str, i, select.len());
         }
         let all_lengths_same = lengths.iter().all(|x| *x == lengths[0]);
         if !all_lengths_same {
