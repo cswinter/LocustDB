@@ -1,3 +1,20 @@
+pub static FLOATS: &[(&[f64], &str)] = &[
+    (
+        TRACE_ROLLOUT_FORWARD_ACTION_HEADS,
+        "trace/rollout/forward/action_heads",
+    ),
+    (ACTIONS_ACT_RIGHT_UP, "actions/act_right_up"),
+    (EPISODE_LENGTH_MEAN, "episode_length.mean"),
+    (REWARD_MAX, "reward.max"),
+    (GRADNORM, "gradnorm"),
+    (SPS, "sps"),
+    (APPROX_KL, "approxkl"),
+    (POLICY_LOSS, "policy_loss"),
+    (TRACE_BROADCAST_ADVANTAGES, "trace/update.optimize.broadcast_advantages"),
+    (STEP, "step"),
+    (EVIL_NUMBERS, "evil_numbers"),
+];
+
 pub static TRACE_ROLLOUT_FORWARD_ACTION_HEADS: &[f64] = &[
   0.02372121810913086,
   0.01983642578125,
@@ -2468,4 +2485,16 @@ pub static STEP: &[f64] = &[
   242.0,
   243.0,
   245.0,
-]; 
+];
+
+pub static EVIL_NUMBERS: &[f64] = &[
+  0.07460732757485433,
+  0.6864171425542641,
+  0.15095287251954115,
+  0.22875876795010863,
+  0.22875873923043355,
+  0.5928760768120115,
+  0.33292072284007945,
+  0.48799426601331375,
+  0.977367104498959,
+];

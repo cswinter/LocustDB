@@ -19,9 +19,10 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Box<[u8
         None => u64::MAX,
     };
     for &f in floats.iter().skip(1) {
-        let xor = f.to_bits() ^ last_value.to_bits() & mask;
-        let leading_zeros = xor.leading_zeros().min(32);
+        let xor = (f.to_bits() ^ last_value.to_bits()) & mask;
+        let leading_zeros = xor.leading_zeros().min(31);
         let trailing_zeros = xor.trailing_zeros();
+
         if trailing_zeros == 64 {
             writer.write_zero();
         } else {
@@ -131,7 +132,7 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
     for &f in floats.iter().skip(1) {
         let xor = (f.to_bits() ^ last_value.to_bits()) & mask;
 
-        let leading_zeros = xor.leading_zeros().min(32);
+        let leading_zeros = xor.leading_zeros().min(31);
         let trailing_zeros = xor.trailing_zeros();
 
         let mut bits_string = String::new();
@@ -236,9 +237,11 @@ mod test {
     #[test]
     fn test_xor_float_encode_decode() {
         for &(floats, _) in FLOATS {
-            let encoded = encode(floats, 0, None);
-            let decoded = decode(&encoded).unwrap();
-            assert_eq!(floats, decoded);
+            for max_regret in [0, 30, 100, 100] {
+                let encoded = encode(floats, max_regret, None);
+                let decoded = decode(&encoded).unwrap();
+                assert_eq!(floats, decoded);
+            }
         }
     }
 }

@@ -96,7 +96,7 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
     for &f in floats.iter().skip(1) {
         let xor = (f.to_bits() ^ last_value.to_bits()) & mask;
 
-        let leading_zeros = xor.leading_zeros().min(32);
+        let leading_zeros = xor.leading_zeros().min(31);
         let trailing_zeros = xor.trailing_zeros();
 
         let mut bits_string = String::new();
