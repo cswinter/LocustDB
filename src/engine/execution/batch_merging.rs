@@ -1,10 +1,8 @@
 use crate::engine::*;
-use crate::errors::QueryError;
 use crate::mem_store::column::DataSource;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::ops::Range;
-use std::result::Result;
 use std::sync::Arc;
 use std::usize;
 

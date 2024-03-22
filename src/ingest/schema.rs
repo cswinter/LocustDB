@@ -1,5 +1,3 @@
-use std::result::Result;
-
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Schema {
     pub column_names: Option<Vec<String>>,

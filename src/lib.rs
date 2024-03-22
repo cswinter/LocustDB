@@ -1,5 +1,7 @@
 // TODO: migrate off incomplete/unsound specialization feature
+// TODO: migrate off core_intrinsics?
 #![allow(incomplete_features)]
+#![allow(internal_features)]
 #![feature(
     fn_traits,
     specialization,

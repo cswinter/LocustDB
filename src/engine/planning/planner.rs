@@ -1,9 +1,7 @@
-use crate::QueryError;
 use crate::engine::*;
 use crate::mem_store::*;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::result::Result;
 
 use self::query_plan::prepare;
 use self::QueryPlan::*;

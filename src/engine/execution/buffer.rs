@@ -7,7 +7,6 @@ use crate::QueryError;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
-use std::result::Result;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct BufferRef<T> {

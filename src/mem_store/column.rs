@@ -6,7 +6,6 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::data_types::*;
-use crate::mem_store::lz4;
 use crate::mem_store::*;
 
 #[derive(Serialize, Deserialize)]

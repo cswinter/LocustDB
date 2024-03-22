@@ -71,7 +71,6 @@ pub trait BooleanOp {
     fn evaluate(lhs: &mut [u8], rhs: &[u8]);
     // Specialized case for when lhs refers to the same buffer as rhs
     fn evaluate_aliased(lhs: &mut [u8]);
-    fn name() -> &'static str;
     fn symbol() -> &'static str;
 }
 
@@ -87,9 +86,6 @@ impl BooleanOp for BooleanOr {
 
     fn evaluate_aliased(_lhs: &mut [u8]) {}
 
-    fn name() -> &'static str {
-        "bit_vec_or"
-    }
     fn symbol() -> &'static str {
         "|"
     }
@@ -107,9 +103,6 @@ impl BooleanOp for BooleanAnd {
 
     fn evaluate_aliased(_lhs: &mut [u8]) {}
 
-    fn name() -> &'static str {
-        "bit_vec_and"
-    }
     fn symbol() -> &'static str {
         "&"
     }

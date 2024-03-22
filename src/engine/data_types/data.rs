@@ -12,8 +12,6 @@ use crate::mem_store::codec::Codec;
 use crate::mem_store::column::DataSource;
 use crate::mem_store::value::Val;
 
-use super::NullableVec;
-
 pub type BoxedData<'a> = Box<dyn Data<'a> + 'a>;
 
 pub trait Data<'a>: Send + Sync {

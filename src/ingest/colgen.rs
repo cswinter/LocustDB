@@ -1,7 +1,5 @@
 use crate::ingest::alias_method_fork::*;
 use crate::ingest::raw_val::RawVal;
-use hex;
-use rand;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::Rng;
 use rand::SeedableRng;

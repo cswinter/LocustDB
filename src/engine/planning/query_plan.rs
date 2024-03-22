@@ -1,21 +1,15 @@
 // TODO: figure out why clippy complains
 #![allow(clippy::nonstandard_macro_braces, clippy::unused_unit)]
-use chrono::{Datelike, NaiveDateTime};
+use chrono::{Datelike, DateTime};
 use locustdb_derive::ASTBuilder;
-use regex;
 use regex::Regex;
 
-use crate::engine::operators::LengthSource;
 use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
-use crate::mem_store::column::DataSource;
-use crate::mem_store::value::Val;
 use crate::mem_store::*;
 use crate::syntax::expression::*;
-use crate::QueryError;
 use std::collections::HashMap;
 use std::i64;
-use std::result::Result;
 use std::sync::Arc;
 
 #[derive(ASTBuilder, Debug, Clone)]
@@ -1280,8 +1274,8 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         ColumnSection { range, .. } => range,
         ToYear { timestamp, .. } => encoding_range(&timestamp, qp).map(|(min, max)| {
             (
-                i64::from(NaiveDateTime::from_timestamp_opt(min, 0).unwrap().year()),
-                i64::from(NaiveDateTime::from_timestamp_opt(max, 0).unwrap().year()),
+                i64::from(DateTime::from_timestamp(min, 0).unwrap().year()),
+                i64::from(DateTime::from_timestamp(max, 0).unwrap().year()),
             )
         }),
         Filter { ref plan, .. } => encoding_range(plan, qp),

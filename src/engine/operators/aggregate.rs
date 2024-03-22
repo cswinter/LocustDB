@@ -8,11 +8,13 @@ use std::marker::PhantomData;
 pub trait Aggregator<T, Acc> {
     fn unit() -> Acc;
     fn accumulate(accumulator: Acc, value: T) ->Acc;
+    #[allow(dead_code)]
     fn combine(accumulator1: Acc, accumulator2: Acc) -> Acc;
 }
 
 pub trait CheckedAggregator<T, Acc>: Aggregator<T, Acc> {
     fn accumulate_checked(accumulator: Acc, value: T) -> (Acc, bool);
+    #[allow(dead_code)]
     fn combine_checked(accumulator1: Acc, accumulator2: Acc) -> (Acc, bool);
 }
 

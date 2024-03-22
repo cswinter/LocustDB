@@ -1,5 +1,3 @@
-use hex;
-
 use crate::engine::*;
 use std::fmt;
 use std::mem;

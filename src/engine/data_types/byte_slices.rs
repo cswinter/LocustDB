@@ -2,7 +2,6 @@ use std::cmp::min;
 use std::fmt;
 use std::fmt::Write;
 
-use hex;
 use itertools::Itertools;
 
 use crate::engine::data_types::*;

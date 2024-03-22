@@ -1,7 +1,6 @@
 use futures::executor::block_on;
 
 use crate::value_syntax::*;
-use locustdb::nyc_taxi_data;
 use locustdb::Value;
 use locustdb::*;
 use std::cmp::min;

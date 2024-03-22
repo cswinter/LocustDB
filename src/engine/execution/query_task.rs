@@ -2,7 +2,6 @@ use std::cmp;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::iter::Iterator;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -21,7 +20,6 @@ use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 use crate::syntax::expression::*;
-use crate::QueryError;
 use crate::QueryResult;
 
 pub struct QueryTask {

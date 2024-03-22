@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::engine::planning::QueryPlanner;
 use crate::engine::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

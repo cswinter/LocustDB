@@ -1,7 +1,6 @@
 use std::i64;
 
-use chrono::{NaiveDateTime, Datelike};
-use regex;
+use chrono::{DateTime, Datelike};
 
 use super::map_operator::MapOp;
 
@@ -9,7 +8,7 @@ use super::map_operator::MapOp;
 pub struct ToYear;
 
 impl MapOp<i64, i64> for ToYear {
-    fn apply(&self, unix_ts: i64) -> i64 { i64::from(NaiveDateTime::from_timestamp_opt(unix_ts, 0).unwrap().year()) }
+    fn apply(&self, unix_ts: i64) -> i64 { i64::from(DateTime::from_timestamp(unix_ts, 0).unwrap().year()) }
     fn name() -> &'static str { "to_year" }
 }
 

@@ -1,7 +1,6 @@
 use crate::engine::data_types::*;
 use crate::mem_store::*;
 use std::{u16, u32, u8};
-use std::convert::From;
 use std::sync::Arc;
 
 pub struct IntegerColumn;

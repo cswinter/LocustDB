@@ -1,4 +1,3 @@
-use hex;
 use seahash::SeaHasher;
 
 use crate::engine::data_types::*;

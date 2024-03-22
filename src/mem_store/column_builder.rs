@@ -13,7 +13,6 @@ use super::floats::FloatColumn;
 
 
 pub trait ColumnBuilder<T: ?Sized>: Default {
-    fn new() -> Self;
     fn push(&mut self, elem: &T);
     fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column>;
 }
@@ -37,8 +36,6 @@ impl Default for StringColBuilder {
 }
 
 impl<T: AsRef<str>> ColumnBuilder<T> for StringColBuilder {
-    fn new() -> StringColBuilder { StringColBuilder::default() }
-
     fn push(&mut self, elem: &T) {
         let elem = elem.as_ref();
         self.lhex = self.lhex && is_lowercase_hex(elem);
@@ -77,8 +74,6 @@ impl Default for IntColBuilder {
 }
 
 impl ColumnBuilder<Option<i64>> for IntColBuilder {
-    fn new() -> IntColBuilder { IntColBuilder::default() }
-
     #[inline]
     fn push(&mut self, elem: &Option<i64>) {
         // PERF: can set arbitrary values for null to help compression (extend from last/previous value)
@@ -113,8 +108,6 @@ pub struct FloatColBuilder {
 }
 
 impl ColumnBuilder<Option<f64>> for FloatColBuilder {
-    fn new() -> FloatColBuilder { FloatColBuilder::default() }
-
     #[inline]
     fn push(&mut self, elem: &Option<f64>) {
         // PERF: can set arbitrary values for null to help compression (extend from last/previous value)

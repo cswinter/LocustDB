@@ -9,7 +9,6 @@ pub trait BlobWriter {
         -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
     fn load(&self, path: &Path) -> Result<Vec<u8>, Box<dyn Error + Send + Sync + 'static>>;
     fn delete(&self, path: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
-    fn rename(&self, src: &Path, dst: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>>;
     /// Returns absolute paths of files in the directory
     fn list(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error + Send + Sync + 'static>>;
     fn exists(&self, path: &Path) -> Result<bool, Box<dyn Error + Send + Sync + 'static>>;
@@ -55,11 +54,6 @@ impl BlobWriter for FileBlobWriter {
 
     fn delete(&self, path: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         std::fs::remove_file(path)?;
-        Ok(())
-    }
-
-    fn rename(&self, src: &Path, dst: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-        std::fs::rename(src, dst)?;
         Ok(())
     }
 

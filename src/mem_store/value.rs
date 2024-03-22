@@ -1,5 +1,4 @@
 use std::fmt;
-use std::convert::From;
 use ordered_float::OrderedFloat;
 
 use crate::ingest::raw_val::RawVal;
