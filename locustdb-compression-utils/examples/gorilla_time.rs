@@ -37,46 +37,44 @@ struct Opt {
     #[clap(short, long)]
     single: bool,
 
-    /// Run the benchmark instead of the verbose encoding.
-    ///
-    /// This will measure the time it takes to encode the data and
-    /// print the compressed size in bytes.
+    /// Time compression of this many MiB of random data.
     #[clap(short, long)]
-    benchmark: bool,
+    benchmark: Option<usize>,
 }
 
 fn main() {
     let opt = Opt::parse();
 
-    if opt.benchmark {
+    if let Some(mibibytes) = opt.benchmark {
         assert!(!opt.single, "Benchmarking single precision is not supported");
         assert!(opt.max_regret.len() == 1, "Benchmarking multiple max-regret values is not supported");
         // create 1GiB of random floats
-        let mut data = Vec::with_capacity(1 << 27);
-        println!("Generating 1GiB of random data...");
+        let len = (1 << 20) * mibibytes / 8;
+        let mut data = Vec::with_capacity(len);
+        println!("Generating {mibibytes} MiB of random data...");
         let start_time = std::time::Instant::now();
         let mut fast_rng = rand::rngs::SmallRng::seed_from_u64(42);
-        for _ in 0..(1 << 27) {
+        for _ in 0..len {
             data.push(fast_rng.gen::<f64>());
         }
         println!(
-            "Generated 1GiB of random data in {:?}",
+            "Generated {mibibytes} MiB of random data in {:?}",
             start_time.elapsed(),
         );
         let start_time = std::time::Instant::now();
         let encoded = xor_float::double::encode(&data, opt.max_regret[0], opt.mantissa);
         println!(
-            "Encoded 1GiB of random data in {:?} ({} MiB/s)",
+            "Encoded {mibibytes} MiB of random data in {:?} ({} MiB/s)",
             start_time.elapsed(),
-            1024 * 1000 / start_time.elapsed().as_millis(),
+            mibibytes as u128 * 1000 / start_time.elapsed().as_millis(),
         );
         println!("Compressed size: {} GiB", encoded.len() as f64 / (1 << 30) as f64);
         let start_time = std::time::Instant::now();
         let decoded = xor_float::double::decode(&encoded).unwrap();
         println!(
-            "Decoded 1GiB of random data in {:?} ({} MiB/s)",
+            "Decoded {mibibytes} MiB of random data in {:?} ({} MiB/s)",
             start_time.elapsed(),
-            1024 * 1000 / start_time.elapsed().as_millis(),
+            mibibytes as u128 * 1000 / start_time.elapsed().as_millis(),
         );
         for (i, (expected, actual)) in data.iter().zip(decoded.iter()).enumerate() {
             assert_eq!(expected, actual, "Decoded data does not match original data at index {}", i);

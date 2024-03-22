@@ -12,3 +12,9 @@ serde_json = "1.0"
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
+
+[profile.release]
+debug = true
+
+[profile.dev]
+debug = true
