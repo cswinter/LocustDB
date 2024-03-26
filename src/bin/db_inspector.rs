@@ -79,7 +79,7 @@ async fn main() {
         }
 
         if opts.wal > 0 {
-            println!("");
+            println!();
             println!("### WAL ###");
             println!("Number of WAL segments: {:?}", wal.len());
             if opts.wal > 1 {

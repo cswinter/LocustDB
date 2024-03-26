@@ -5,7 +5,10 @@ use crate::{BitReader, BitWriter};
 pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Box<[u8]> {
     let mut writer = BitWriter::new();
     writer.write_bits(floats.len() as u64, 64);
-    writer.write_bits(floats[0].to_bits(), 64);
+    match floats.first() {
+        Some(first) => writer.write_bits(first.to_bits(), 64),
+        None => return writer.close(),
+    }
     let mut last_value = floats[0];
     let mut last_leading_zeros = 65;
     let mut last_trailing_zeros = 65;
@@ -19,9 +22,10 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Box<[u8
         None => u64::MAX,
     };
     for &f in floats.iter().skip(1) {
-        let xor = f.to_bits() ^ last_value.to_bits() & mask;
-        let leading_zeros = xor.leading_zeros().min(32);
+        let xor = (f.to_bits() ^ last_value.to_bits()) & mask;
+        let leading_zeros = xor.leading_zeros().min(31);
         let trailing_zeros = xor.trailing_zeros();
+
         if trailing_zeros == 64 {
             writer.write_zero();
         } else {
@@ -57,6 +61,10 @@ pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
     let mut reader = BitReader::new(data);
     let length = reader.read_bits(64)? as usize;
     let mut decoded = Vec::with_capacity(length);
+
+    if length == 0 {
+        return Ok(decoded);
+    }
 
     let first = reader.read_bits(64).unwrap();
     decoded.push(f64::from_bits(first));
@@ -131,7 +139,7 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
     for &f in floats.iter().skip(1) {
         let xor = (f.to_bits() ^ last_value.to_bits()) & mask;
 
-        let leading_zeros = xor.leading_zeros().min(32);
+        let leading_zeros = xor.leading_zeros().min(31);
         let trailing_zeros = xor.trailing_zeros();
 
         let mut bits_string = String::new();
@@ -236,9 +244,11 @@ mod test {
     #[test]
     fn test_xor_float_encode_decode() {
         for &(floats, _) in FLOATS {
-            let encoded = encode(floats, 0, None);
-            let decoded = decode(&encoded).unwrap();
-            assert_eq!(floats, decoded);
+            for max_regret in [0, 30, 100, 100] {
+                let encoded = encode(floats, max_regret, None);
+                let decoded = decode(&encoded).unwrap();
+                assert_eq!(floats, decoded);
+            }
         }
     }
 }

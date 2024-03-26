@@ -118,7 +118,7 @@ impl Column {
 
     #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(&mut self) {
-        if let Some(CodecOp::LZ4(decoded_type, _)) = self.codec.ops().get(0).copied() {
+        if let Some(CodecOp::LZ4(decoded_type, _)) = self.codec.ops().first().copied() {
             trace!("lz4_decode before: {:?}", self);
             self.codec = self.codec.without_lz4();
             self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);

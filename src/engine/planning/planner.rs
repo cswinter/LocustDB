@@ -29,7 +29,7 @@ impl QueryPlanner {
 
     pub fn checkpoint(&mut self) {
         self.checkpoint = self.operations.len();
-        self.cache_checkpoint = self.cache.clone();
+        self.cache_checkpoint.clone_from(&self.cache);
     }
 
     pub fn reset(&mut self) {
@@ -419,7 +419,7 @@ impl BufferProvider {
     }
 
     pub fn shared_buffer(&mut self, name: &'static str, tag: EncodingType) -> TypedBufferRef {
-        if self.shared_buffers.get(name).is_none() {
+        if !self.shared_buffers.contains_key(name) {
             let buffer = self.named_buffer(name, tag);
             self.shared_buffers.insert(name, buffer);
         }

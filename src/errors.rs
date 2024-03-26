@@ -1,4 +1,5 @@
 #![allow(clippy::nonstandard_macro_braces)]
+#![allow(non_local_definitions)]
 use failure::Backtrace;
 
 #[derive(Fail, Debug)]

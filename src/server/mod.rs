@@ -9,6 +9,7 @@ use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::channel::oneshot::Canceled;
 use itertools::Itertools;
+use locustdb_compression_utils::column;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
@@ -59,6 +60,19 @@ struct ColumnNameRequest {
 #[derive(Serialize, Deserialize, Debug)]
 struct MultiQueryRequest {
     queries: Vec<String>,
+    encoding_opts: Option<EncodingOpts>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QueryResponse {
+    pub columns: HashMap<String, column::Column>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EncodingOpts {
+    pub xor_float_compression: bool,
+    pub mantissa: Option<u32>,
+    pub full_precision_cols: HashSet<String>,
 }
 
 #[get("/")]
@@ -210,21 +224,61 @@ async fn multi_query_cols(
     req_body: web::Json<MultiQueryRequest>,
 ) -> impl Responder {
     log::debug!("Multi Query: {:?}", req_body);
-    let mut results = vec![];
+    let mut futures = vec![];
     for q in &req_body.queries {
         // Run query starts executing immediately even without awaiting future
         let result = data.db.run_query(q, false, false, vec![]);
-        results.push(result);
+        futures.push(result);
     }
-    let mut json_results = vec![];
-    for result in results {
-        let result = match flatmap_err_response(result.await) {
+    let mut results = vec![];
+    for future in futures {
+        let result = match flatmap_err_response(future.await) {
             Ok(result) => result,
             Err(err) => return err,
         };
-        json_results.push(query_output_to_json_cols(result));
+        results.push(result);
     }
-    HttpResponse::Ok().json(json_results)
+    match &req_body.encoding_opts {
+        Some(encoding_opts) => {
+            let full_precision = EncodingOpts {
+                mantissa: None,
+                ..encoding_opts.clone()
+            };
+            let mut query_responses = vec![];
+            for result in results {
+                query_responses.push(QueryResponse {
+                    columns: result
+                        .columns
+                        .into_iter()
+                        .map(|(colname, data)| {
+                            let use_full_precision =
+                                encoding_opts.full_precision_cols.contains(&colname);
+                            (
+                                colname,
+                                encode_column(
+                                    data,
+                                    if use_full_precision {
+                                        &full_precision
+                                    } else {
+                                        encoding_opts
+                                    },
+                                ),
+                            )
+                        })
+                        .collect(),
+                });
+            }
+            let serialized = bincode::serialize(&query_responses).unwrap();
+            HttpResponse::Ok().body(serialized)
+        }
+        None => {
+            let json_results = results
+                .into_iter()
+                .map(query_output_to_json_cols)
+                .collect::<Vec<_>>();
+            HttpResponse::Ok().json(json_results)
+        }
+    }
 }
 
 #[post("/columns")]
@@ -382,4 +436,30 @@ pub fn run(
     });
 
     Ok((handle, rx))
+}
+
+fn encode_column(col: BasicTypeColumn, encode_opts: &EncodingOpts) -> column::Column {
+    match col {
+        BasicTypeColumn::Int(xs) => column::Column::Int(xs),
+        BasicTypeColumn::Float(xs) => {
+            //let xs = unsafe { mem::transmute::<Vec<f64>, Vec<OrderedFloat<f64>>>(xs) };
+            if encode_opts.xor_float_compression {
+                column::Column::compress(xs, encode_opts.mantissa)
+            } else {
+                column::Column::Float(xs)
+            }
+        }
+        BasicTypeColumn::String(xs) => column::Column::String(xs),
+        BasicTypeColumn::Null(xs) => column::Column::Null(xs),
+        BasicTypeColumn::Mixed(xs) => column::Column::Mixed(
+            xs.into_iter()
+                .map(|val| match val {
+                    Value::Int(int) => column::Mixed::Int(int),
+                    Value::Str(str) => column::Mixed::Str(str),
+                    Value::Null => column::Mixed::Null,
+                    Value::Float(float) => column::Mixed::Float(float.0),
+                })
+                .collect(),
+        ),
+    }
 }
