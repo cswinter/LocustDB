@@ -297,24 +297,24 @@ pub fn combine<'a>(
             let mut result = Vec::with_capacity(batch1.columns.len());
             let show = batch1.show || batch2.show;
             for (mut col1, col2) in batch1.columns.into_iter().zip(batch2.columns) {
-                if show {
-                    println!("Merging columns");
-                    println!("{}", col1.display());
-                    println!("{}", col2.display());
-                }
                 let count = if col1.len() >= limit {
                     0
                 } else {
                     min(col2.len(), limit - col1.len())
                 };
+                if show {
+                    println!("Merging columns (count={count})");
+                    println!("col1={}", col1.display());
+                    println!("col2={}", col2.display());
+                }
                 if let Some(newcol) = col1.append_all(&*col2, count) {
                     if show {
-                        println!("{}", newcol.display());
+                        println!("newcol={}", newcol.display());
                     }
                     result.push(newcol)
                 } else {
                     if show {
-                        println!("{}", col1.display());
+                        println!("newcol=col1={}", col1.display());
                     }
                     result.push(col1)
                 }

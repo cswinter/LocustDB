@@ -495,8 +495,7 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for &'a [T] {
 
     fn append_all(&mut self, other: &dyn Data<'a>, count: usize) -> Option<BoxedData<'a>> {
         let mut owned = Vec::from(*self);
-        owned.append_all(other, count);
-        Some(Box::new(owned))
+        owned.append_all(other, count).or(Some(Box::new(owned)))
     }
 
     fn type_error(&self, func_name: &str) -> String {
