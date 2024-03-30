@@ -173,8 +173,8 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
                 bits_string.push_str("\x1b[1;31m11\x1b[0m");
                 writer.write_bits(leading_zeros as u64, 5);
                 bits_string.push_str(&format!("\x1b[1;32m{:05b}\x1b[0m", leading_zeros));
-                writer.write_bits(significant_bits as u64, 6);
-                bits_string.push_str(&format!("\x1b[1;34m{:06b}\x1b[0m", significant_bits));
+                writer.write_bits(significant_bits as u64 - 1, 6);
+                bits_string.push_str(&format!("\x1b[1;34m{:06b}\x1b[0m", significant_bits - 1));
                 let xor = xor >> last_trailing_zeros;
                 writer.write_bits(xor, significant_bits);
                 if verbose {

@@ -134,9 +134,9 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
                 writer.write_bits(leading_zeros as u64, 5);
                 bits_string.push_str(&format!("\x1b[1;32m{:05b}\x1b[0m", leading_zeros));
                 writer.write_bits(significant_bits as u64, 5);
-                bits_string.push_str(&format!("\x1b[1;34m{:05b}\x1b[0m", significant_bits));
+                bits_string.push_str(&format!("\x1b[1;34m{:05b}\x1b[0m", significant_bits - 1));
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor as u64, significant_bits);
+                writer.write_bits(xor as u64, significant_bits - 1);
                 if verbose {
                     bits_string.push_str(&format!(
                         "\x1b[1;33m{:0width$b}\x1b[0m",
