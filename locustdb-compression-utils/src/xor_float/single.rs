@@ -44,7 +44,7 @@ pub fn encode(floats: &[f32], max_regret: u32, mantissa: Option<u32>) -> Box<[u8
                 writer.write_one();
                 writer.write_one();
                 writer.write_bits(leading_zeros as u64, 5);
-                writer.write_bits(significant_bits as u64, 5);
+                writer.write_bits(significant_bits as u64, 5 - 1);
                 let xor = xor >> last_trailing_zeros;
                 writer.write_bits(xor as u64, significant_bits);
             }

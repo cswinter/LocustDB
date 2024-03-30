@@ -47,7 +47,7 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Box<[u8
                 writer.write_one();
                 writer.write_one();
                 writer.write_bits(leading_zeros as u64, 5);
-                writer.write_bits(significant_bits as u64, 6);
+                writer.write_bits(significant_bits as u64 - 1, 6);
                 let xor = xor >> last_trailing_zeros;
                 writer.write_bits(xor, significant_bits);
             }
@@ -81,7 +81,7 @@ pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
             Bit::One => {
                 if let Bit::One = reader.read_bit()? {
                     last_leading_zeros = reader.read_bits(5)? as u32;
-                    last_significant_bits = reader.read_bits(6)? as u32;
+                    last_significant_bits = reader.read_bits(6)? as u32 + 1;
                     last_trailing_zeros = 64 - last_leading_zeros - last_significant_bits;
                 }
                 let xor = reader.read_bits(last_significant_bits)?;
