@@ -58,59 +58,59 @@ jobs:
         asset_name: ${{ matrix.asset_name }}
         tag: ${{ github.ref }}
 
-    publish-python:
-      name: Publish Python for ${{ matrix.os }}
-      strategy:
-        fail-fast: false
-        matrix:
-          target:
-            - x86_64-unknown-linux-musl
-            - x86_64-apple-darwin
-            - x86_64-pc-windows-msvc
-            - i686-pc-windows-msvc
-            - aarch64-pc-windows-msvc
-          include:
-            - target: x86_64-unknown-linux-musl
-              os: ubuntu-latest
-            - target: x86_64-apple-darwin
-              os: macos-latest
-            - target: x86_64-pc-windows-msvc
-              os: windows-latest
-            - target: i686-pc-windows-msvc
-              os: windows-latest
-            - target: aarch64-pc-windows-msvc
-              os: windows-latest
+  publish-python:
+    name: Publish Python for ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - x86_64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - i686-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
 
-      runs-on: ${{ matrix.os }}
-      environment: PyPI
-      steps:
-        - uses: actions/checkout@v2
-        - uses: actions/setup-python@v2
-          with:
-            python-version: 3.7
-        - uses: actions/setup-python@v2
-          with:
-            python-version: 3.8
-        - uses: actions/setup-python@v2
-          with:
-            python-version: 3.9
-        - uses: actions/setup-python@v2
-          with:
-            python-version: 3.10
-        - uses: actions/setup-python@v2
-          with:
-            python-version: 3.11
-        - uses: actions-rs/toolchain@v1
-          with:
-            profile: minimal
-            toolchain: stable
-            override: true
+    runs-on: ${{ matrix.os }}
+    environment: PyPI
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.10
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-        - name: Publish
-          uses: messense/maturin-action@v1
-          env:
-            MATURIN_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-          with:
-            maturin-version: latest
-            command: publish
-            args: --username=__token__ --skip-existing --features=python --find-interpreter
+      - name: Publish
+        uses: messense/maturin-action@v1
+        env:
+          MATURIN_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        with:
+          maturin-version: latest
+          command: publish
+          args: --username=__token__ --skip-existing --features=python --find-interpreter
