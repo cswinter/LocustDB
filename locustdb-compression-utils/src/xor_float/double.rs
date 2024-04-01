@@ -1,14 +1,17 @@
-use crate::bit_reader::Error;
-use crate::bit_writer::Bit;
-use crate::{BitReader, BitWriter};
+use bitbuffer::{BigEndian, BitReadBuffer, BitReadStream, BitWriteStream};
 
-pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Box<[u8]> {
-    let mut writer = BitWriter::new();
-    writer.write_bits(floats.len() as u64, 64);
+use super::Error;
+
+
+
+pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Vec<u8> {
+    let mut write_bytes = vec![];
+    let mut writer = BitWriteStream::new(&mut write_bytes, BigEndian);
+    writer.write_int(floats.len() as u64, 64).unwrap();
     match floats.first() {
-        Some(first) => writer.write_bits(first.to_bits(), 64),
-        None => return writer.close(),
-    }
+        Some(first) => writer.write_int(first.to_bits(), 64).unwrap(),
+        None => return write_bytes,
+    };
     let mut last_value = floats[0];
     let mut last_leading_zeros = 65;
     let mut last_trailing_zeros = 65;
@@ -27,66 +30,69 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Box<[u8
         let trailing_zeros = xor.trailing_zeros();
 
         if trailing_zeros == 64 {
-            writer.write_zero();
+            writer.write_int(0, 1).unwrap();
         } else {
             let significant_bits = 64 - leading_zeros - trailing_zeros;
             if leading_zeros >= last_leading_zeros
                 && trailing_zeros >= last_trailing_zeros
                 && (regret < max_regret || significant_bits == last_significant_bits)
             {
-                writer.write_one();
-                writer.write_zero();
+                writer.write_int(0b10, 2).unwrap();
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor, last_significant_bits);
+                writer.write_int(xor, last_significant_bits as usize).unwrap();
                 regret += last_significant_bits - significant_bits;
             } else {
                 last_leading_zeros = leading_zeros;
                 last_trailing_zeros = trailing_zeros;
                 last_significant_bits = significant_bits;
                 regret = 0;
-                writer.write_one();
-                writer.write_one();
-                writer.write_bits(leading_zeros as u64, 5);
-                writer.write_bits(significant_bits as u64 - 1, 6);
+                writer.write_int((0b11 << 11) | (leading_zeros << 6) | (significant_bits - 1), 13).unwrap();
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor, significant_bits);
+                writer.write_int(xor, significant_bits as usize).unwrap();
             }
         }
         last_value = f;
     }
-    writer.close()
+    // TODO: flush partial bits?
+    write_bytes
 }
 
 pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
-    let mut reader = BitReader::new(data);
-    let length = reader.read_bits(64)? as usize;
+    let buffer = BitReadBuffer::new(data, BigEndian);
+    let mut reader = BitReadStream::new(buffer);
+    let length = reader.read_int(64).map_err(|_| Error::Eof)?;
     let mut decoded = Vec::with_capacity(length);
 
     if length == 0 {
         return Ok(decoded);
     }
 
-    let first = reader.read_bits(64).unwrap();
+    let first = reader.read_int(64).map_err(|_| Error::Eof)?;
     decoded.push(f64::from_bits(first));
 
     let mut last = first;
-    let mut last_leading_zeros;
-    let mut last_trailing_zeros = 65;
+    let mut last_leading_zeros: u32;
+    let mut last_trailing_zeros = 65u32;
     let mut last_significant_bits = 0;
     for _ in 1..length {
-        match reader.read_bit()? {
-            Bit::Zero => {
+        //match reader.read_bit().ok_or(Error::Eof)? {
+        match reader.read_int::<u8>(1).unwrap() {
+            0 => {
                 decoded.push(f64::from_bits(last));
             }
-            Bit::One => {
-                if let Bit::One = reader.read_bit()? {
-                    last_leading_zeros = reader.read_bits(5)? as u32;
-                    last_significant_bits = reader.read_bits(6)? as u32 + 1;
+            1 => {
+                //if reader.read_bit().ok_or(Error::Eof)? {
+                if reader.read_int::<u8>(1).unwrap() == 1u8 {
+                    last_leading_zeros = reader.read_int(5).unwrap();
+                    last_significant_bits = reader.read_int::<u32>(6).unwrap() + 1;
                     last_trailing_zeros = 64 - last_leading_zeros - last_significant_bits;
                 }
-                let xor = reader.read_bits(last_significant_bits)?;
+                let xor: u64 = reader.read_int(last_significant_bits as usize).unwrap();
                 last ^= xor << last_trailing_zeros;
                 decoded.push(f64::from_bits(last));
+            }
+            _ => {
+                return Err(Error::Eof);
             }
         }
     }
@@ -95,8 +101,9 @@ pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
 }
 
 
-pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Option<u32>, verbose: bool) -> Box<[u8]> {
-    let mut writer = BitWriter::new();
+pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Option<u32>, verbose: bool) -> Vec<u8> {
+    let mut write_bytes = vec![];
+    let mut writer = BitWriteStream::new(&mut write_bytes, BigEndian);
 
     let mask = match mantissa {
         Some(mantissa) => {
@@ -128,8 +135,8 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
         );
     }
 
-    writer.write_bits(floats.len() as u64, 64);
-    writer.write_bits(floats[0].to_bits(), 64);
+    writer.write_int(floats.len(), 64).unwrap();
+    writer.write_int(floats[0].to_bits(), 64).unwrap();
     let mut last_value = floats[0];
     let mut last_leading_zeros = 65;
     let mut last_trailing_zeros = 65;
@@ -144,16 +151,15 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
 
         let mut bits_string = String::new();
         if trailing_zeros == 64 {
-            writer.write_zero();
+            writer.write_int(0, 1).unwrap();
             bits_string.push_str("\x1b[1;31m0\x1b[0m");
         } else {
             let significant_bits = 64 - leading_zeros - trailing_zeros;
             if leading_zeros >= last_leading_zeros && trailing_zeros >= last_trailing_zeros && (regret < max_regret || significant_bits == last_significant_bits) {
-                writer.write_one();
-                writer.write_zero();
+                writer.write_int(0b10, 2).unwrap();
                 bits_string.push_str("\x1b[1;31m10\x1b[0m");
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor, last_significant_bits);
+                writer.write_int(xor, last_significant_bits as usize).unwrap();
                 if verbose {
                     bits_string.push_str(&format!(
                         "\x1b[1;33m{:0width$b}\x1b[0m",
@@ -168,15 +174,14 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
                 last_significant_bits = significant_bits;
                 regret = 0;
 
-                writer.write_one();
-                writer.write_one();
+                writer.write_int(0b11, 2).unwrap();
                 bits_string.push_str("\x1b[1;31m11\x1b[0m");
-                writer.write_bits(leading_zeros as u64, 5);
+                writer.write_int(leading_zeros, 5).unwrap();
                 bits_string.push_str(&format!("\x1b[1;32m{:05b}\x1b[0m", leading_zeros));
-                writer.write_bits(significant_bits as u64 - 1, 6);
+                writer.write_int(significant_bits - 1, 6).unwrap();
                 bits_string.push_str(&format!("\x1b[1;34m{:06b}\x1b[0m", significant_bits - 1));
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor, significant_bits);
+                writer.write_int(xor, significant_bits as usize).unwrap();
                 if verbose {
                     bits_string.push_str(&format!(
                         "\x1b[1;33m{:0width$b}\x1b[0m",
@@ -200,12 +205,11 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
 
     // 8 bytes per value and 8 addtional bytes for the length
     let uncompressed_size = std::mem::size_of_val(floats) + 8;
-    let compressed = writer.close();
     println!(
         "Compression ratio of {:.2} for {name} (max_regret={max_regret})",
-        uncompressed_size as f64 / compressed.len() as f64,
+        uncompressed_size as f64 / write_bytes.len() as f64,
     );
-    compressed
+    write_bytes
 }
 
 

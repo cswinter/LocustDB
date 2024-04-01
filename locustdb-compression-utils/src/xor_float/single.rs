@@ -1,11 +1,12 @@
-use crate::BitWriter;
+use bitbuffer::{BigEndian, BitWriteStream};
 
-pub fn encode(floats: &[f32], max_regret: u32, mantissa: Option<u32>) -> Box<[u8]> {
-    let mut writer = BitWriter::new();
-    writer.write_bits(floats.len() as u64, 64);
+pub fn encode(floats: &[f32], max_regret: u32, mantissa: Option<u32>) -> Vec<u8> {
+    let mut write_bytes = vec![];
+    let mut writer = BitWriteStream::new(&mut write_bytes, BigEndian);
+    writer.write_int(floats.len(), 64).unwrap();
     match floats.first() {
-        Some(first) => writer.write_bits(first.to_bits() as u64, 64),
-        None => return writer.close(),
+        Some(first) => writer.write_int(first.to_bits(), 64).unwrap(),
+        None => return write_bytes,
     }
     let mut last_value = floats[0];
     let mut last_leading_zeros = 65;
@@ -24,39 +25,38 @@ pub fn encode(floats: &[f32], max_regret: u32, mantissa: Option<u32>) -> Box<[u8
         let leading_zeros = xor.leading_zeros();
         let trailing_zeros = xor.trailing_zeros();
         if trailing_zeros == 64 {
-            writer.write_zero();
+            writer.write_int(0, 1).unwrap();
         } else {
             let significant_bits = 64 - leading_zeros - trailing_zeros;
             if leading_zeros >= last_leading_zeros
                 && trailing_zeros >= last_trailing_zeros
                 && (regret < max_regret || significant_bits == last_significant_bits)
             {
-                writer.write_one();
-                writer.write_zero();
+                writer.write_int(0b10, 2).unwrap();
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor as u64, last_significant_bits);
+                writer.write_int(xor, last_significant_bits as usize).unwrap();
                 regret += last_significant_bits - significant_bits;
             } else {
                 last_leading_zeros = leading_zeros;
                 last_trailing_zeros = trailing_zeros;
                 last_significant_bits = significant_bits;
                 regret = 0;
-                writer.write_one();
-                writer.write_one();
-                writer.write_bits(leading_zeros as u64, 5);
-                writer.write_bits(significant_bits as u64, 5 - 1);
+                writer.write_int(0b11, 2).unwrap();
+                writer.write_int(leading_zeros as u64, 5).unwrap();
+                writer.write_int(significant_bits as u64 - 1, 6).unwrap();
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor as u64, significant_bits);
+                writer.write_int(xor, significant_bits as usize).unwrap();
             }
         }
         last_value = f;
     }
-    writer.close()
+    write_bytes
 }
 
 
-pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Option<u32>, verbose: bool) -> Box<[u8]> {
-    let mut writer = BitWriter::new();
+pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Option<u32>, verbose: bool) -> Vec<u8> {
+    let mut write_bytes = vec![];
+    let mut writer = BitWriteStream::new(&mut write_bytes, BigEndian);
 
     let mask = match mantissa {
         Some(mantissa) => {
@@ -88,8 +88,8 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
         );
     }
 
-    writer.write_bits(floats.len() as u64, 32);
-    writer.write_bits(floats[0].to_bits() as u64, 32);
+    writer.write_int(floats.len(), 64).unwrap();
+    writer.write_int(floats[0].to_bits(), 32).unwrap();
     let mut last_value = floats[0];
     let mut last_leading_zeros = 65;
     let mut last_trailing_zeros = 65;
@@ -104,16 +104,15 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
 
         let mut bits_string = String::new();
         if trailing_zeros == 32 {
-            writer.write_zero();
+            writer.write_int(0, 1).unwrap();
             bits_string.push_str("\x1b[1;31m0\x1b[0m");
         } else {
             let significant_bits = 32 - leading_zeros - trailing_zeros;
             if leading_zeros >= last_leading_zeros && trailing_zeros >= last_trailing_zeros && (regret < max_regret || significant_bits == last_significant_bits) {
-                writer.write_one();
-                writer.write_zero();
+                writer.write_int(0b10, 2).unwrap();
                 bits_string.push_str("\x1b[1;31m10\x1b[0m");
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor as u64, last_significant_bits);
+                writer.write_int(xor, last_significant_bits as usize).unwrap();
                 if verbose {
                     bits_string.push_str(&format!(
                         "\x1b[1;33m{:0width$b}\x1b[0m",
@@ -128,15 +127,14 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
                 last_significant_bits = significant_bits;
                 regret = 0;
 
-                writer.write_one();
-                writer.write_one();
+                writer.write_int(0b11, 2).unwrap();
                 bits_string.push_str("\x1b[1;31m11\x1b[0m");
-                writer.write_bits(leading_zeros as u64, 5);
+                writer.write_int(leading_zeros as u64, 5).unwrap();
                 bits_string.push_str(&format!("\x1b[1;32m{:05b}\x1b[0m", leading_zeros));
-                writer.write_bits(significant_bits as u64, 5);
+                writer.write_int(significant_bits as u64 - 1, 6).unwrap();
                 bits_string.push_str(&format!("\x1b[1;34m{:05b}\x1b[0m", significant_bits - 1));
                 let xor = xor >> last_trailing_zeros;
-                writer.write_bits(xor as u64, significant_bits - 1);
+                writer.write_int(xor, significant_bits as usize).unwrap();
                 if verbose {
                     bits_string.push_str(&format!(
                         "\x1b[1;33m{:0width$b}\x1b[0m",
@@ -160,12 +158,11 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
 
     // 8 bytes per value and 8 addtional bytes for the length
     let uncompressed_size = floats.len() * std::mem::size_of::<f64>() + 8;
-    let compressed = writer.close();
     println!(
         "Compression ratio of {:.2} for {name} (max_regret={max_regret})",
-        uncompressed_size as f64 / compressed.len() as f64,
+        uncompressed_size as f64 / write_bytes.len() as f64,
     );
-    compressed
+    write_bytes
 }
 
 

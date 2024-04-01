@@ -50,7 +50,6 @@ fn main() {
     let opt = Opt::parse();
 
     if let Some(mibibytes) = opt.benchmark {
-        assert!(!opt.single, "Benchmarking single precision is not supported");
         assert!(opt.max_regret.len() == 1, "Benchmarking multiple max-regret values is not supported");
         // create 1GiB of random floats
         let len = (1 << 20) * mibibytes / 8;
@@ -59,7 +58,11 @@ fn main() {
         let start_time = std::time::Instant::now();
         let mut fast_rng = rand::rngs::SmallRng::seed_from_u64(42);
         for _ in 0..len {
-            data.push(fast_rng.gen::<f64>());
+            if opt.single {
+                data.push(fast_rng.gen::<f32>() as f64);
+            } else {
+                data.push(fast_rng.gen::<f64>());
+            }
         }
         println!(
             "Generated {mibibytes} MiB of random data in {:?}",
