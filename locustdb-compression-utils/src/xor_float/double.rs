@@ -53,7 +53,6 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Vec<u8>
         }
         last_value = f;
     }
-    // TODO: flush partial bits?
     write_bytes
 }
 
