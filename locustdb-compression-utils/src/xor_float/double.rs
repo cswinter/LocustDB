@@ -61,35 +61,35 @@ pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
     let buffer = BitReadBuffer::new(data, BigEndian);
     let mut reader = BitReadStream::new(buffer);
     let length = reader.read_int(64).map_err(|_| Error::Eof)?;
-    let mut decoded = Vec::with_capacity(length);
+    let mut decoded = vec![f64::from_bits(0u64); length];
 
     if length == 0 {
         return Ok(decoded);
     }
 
     let first = reader.read_int(64).map_err(|_| Error::Eof)?;
-    decoded.push(f64::from_bits(first));
+    decoded[0] = f64::from_bits(first);
 
     let mut last = first;
     let mut last_leading_zeros: u32;
     let mut last_trailing_zeros = 65u32;
     let mut last_significant_bits = 0;
-    for _ in 1..length {
+    for decoded in &mut decoded[1..length] {
         //match reader.read_bit().ok_or(Error::Eof)? {
-        match reader.read_int::<u8>(1).unwrap() {
+        match reader.read_int::<u8>(1).map_err(|_| Error::Eof)? {
             0 => {
-                decoded.push(f64::from_bits(last));
+                *decoded = f64::from_bits(last);
             }
             1 => {
                 //if reader.read_bit().ok_or(Error::Eof)? {
-                if reader.read_int::<u8>(1).unwrap() == 1u8 {
-                    last_leading_zeros = reader.read_int(5).unwrap();
-                    last_significant_bits = reader.read_int::<u32>(6).unwrap() + 1;
+                if reader.read_int::<u8>(1).map_err(|_| Error::Eof)? == 1u8 {
+                    last_leading_zeros = reader.read_int(5).map_err(|_| Error::Eof)?;
+                    last_significant_bits = reader.read_int::<u32>(6).map_err(|_| Error::Eof)? + 1;
                     last_trailing_zeros = 64 - last_leading_zeros - last_significant_bits;
                 }
-                let xor: u64 = reader.read_int(last_significant_bits as usize).unwrap();
+                let xor: u64 = reader.read_int(last_significant_bits as usize).map_err(|_| Error::Eof)?;
                 last ^= xor << last_trailing_zeros;
-                decoded.push(f64::from_bits(last));
+                *decoded = f64::from_bits(last);
             }
             _ => {
                 return Err(Error::Eof);
