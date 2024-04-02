@@ -78,13 +78,11 @@ pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
     let mut last_trailing_zeros = 65u32;
     let mut last_significant_bits = 0;
     for decoded in &mut decoded[1..length] {
-        //match reader.read_bit().ok_or(Error::Eof)? {
         match reader.read_int::<u8>(1).map_err(|_| Error::Eof)? {
             0 => {
                 *decoded = f64::from_bits(last);
             }
             1 => {
-                //if reader.read_bit().ok_or(Error::Eof)? {
                 if reader.read_int::<u8>(1).map_err(|_| Error::Eof)? == 1u8 {
                     last_leading_zeros = reader.read_int(5).map_err(|_| Error::Eof)?;
                     last_significant_bits = reader.read_int::<u32>(6).map_err(|_| Error::Eof)? + 1;
