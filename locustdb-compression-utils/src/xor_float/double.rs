@@ -1,12 +1,10 @@
-use bitbuffer::{BigEndian, BitReadBuffer, BitReadStream, BitWriteStream};
+use bitbuffer::{BitReadBuffer, BitReadStream, BitWriteStream, LittleEndian};
 
 use super::Error;
 
-
-
 pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Vec<u8> {
     let mut write_bytes = vec![];
-    let mut writer = BitWriteStream::new(&mut write_bytes, BigEndian);
+    let mut writer = BitWriteStream::new(&mut write_bytes, LittleEndian);
     writer.write_int(floats.len() as u64, 64).unwrap();
     match floats.first() {
         Some(first) => writer.write_int(first.to_bits(), 64).unwrap(),
@@ -37,16 +35,22 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Vec<u8>
                 && trailing_zeros >= last_trailing_zeros
                 && (regret < max_regret || significant_bits == last_significant_bits)
             {
-                writer.write_int(0b10, 2).unwrap();
+                // We want to write first a 1 bit and then a 0 bit, but because we are in LittleEndian mode 
+                // the bits get written in reverse order. So we write 0b01 to get 0b10 in the output.
+                writer.write_int(0b01, 2).unwrap();
                 let xor = xor >> last_trailing_zeros;
-                writer.write_int(xor, last_significant_bits as usize).unwrap();
+                writer
+                    .write_int(xor, last_significant_bits as usize)
+                    .unwrap();
                 regret += last_significant_bits - significant_bits;
             } else {
                 last_leading_zeros = leading_zeros;
                 last_trailing_zeros = trailing_zeros;
                 last_significant_bits = significant_bits;
                 regret = 0;
-                writer.write_int((0b11 << 11) | (leading_zeros << 6) | (significant_bits - 1), 13).unwrap();
+                writer.write_int(0b11, 2).unwrap();
+                writer.write_int(leading_zeros, 5).unwrap();
+                writer.write_int(significant_bits - 1, 6).unwrap();
                 let xor = xor >> last_trailing_zeros;
                 writer.write_int(xor, significant_bits as usize).unwrap();
             }
@@ -57,7 +61,7 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Vec<u8>
 }
 
 pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
-    let buffer = BitReadBuffer::new(data, BigEndian);
+    let buffer = BitReadBuffer::new(data, LittleEndian);
     let mut reader = BitReadStream::new(buffer);
     let length = reader.read_int(64).map_err(|_| Error::Eof)?;
     let mut decoded = vec![f64::from_bits(0u64); length];
@@ -86,7 +90,9 @@ pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
                     last_significant_bits = reader.read_int::<u32>(6).map_err(|_| Error::Eof)? + 1;
                     last_trailing_zeros = 64 - last_leading_zeros - last_significant_bits;
                 }
-                let xor: u64 = reader.read_int(last_significant_bits as usize).map_err(|_| Error::Eof)?;
+                let xor: u64 = reader
+                    .read_int(last_significant_bits as usize)
+                    .map_err(|_| Error::Eof)?;
                 last ^= xor << last_trailing_zeros;
                 *decoded = f64::from_bits(last);
             }
@@ -99,10 +105,15 @@ pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
     Ok(decoded)
 }
 
-
-pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Option<u32>, verbose: bool) -> Vec<u8> {
+pub fn verbose_encode(
+    name: &str,
+    floats: &[f64],
+    max_regret: u32,
+    mantissa: Option<u32>,
+    verbose: bool,
+) -> Vec<u8> {
     let mut write_bytes = vec![];
-    let mut writer = BitWriteStream::new(&mut write_bytes, BigEndian);
+    let mut writer = BitWriteStream::new(&mut write_bytes, LittleEndian);
 
     let mask = match mantissa {
         Some(mantissa) => {
@@ -120,10 +131,7 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
     if verbose {
         println!(
             "\x1b[1m{:23}\x1b[0m  \x1b[1m{:64}\x1b[0m  \x1b[1m{:64}\x1b[0m  \x1b[1m{:10}\x1b[0m",
-            "DECIMAL",
-            "BITS IN",
-            "XOR",
-            "BITS OUT"
+            "DECIMAL", "BITS IN", "XOR", "BITS OUT"
         );
         println!(
             "{:<23}  {:64}  {:64}  {}",
@@ -154,11 +162,16 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
             bits_string.push_str("\x1b[1;31m0\x1b[0m");
         } else {
             let significant_bits = 64 - leading_zeros - trailing_zeros;
-            if leading_zeros >= last_leading_zeros && trailing_zeros >= last_trailing_zeros && (regret < max_regret || significant_bits == last_significant_bits) {
+            if leading_zeros >= last_leading_zeros
+                && trailing_zeros >= last_trailing_zeros
+                && (regret < max_regret || significant_bits == last_significant_bits)
+            {
                 writer.write_int(0b10, 2).unwrap();
                 bits_string.push_str("\x1b[1;31m10\x1b[0m");
                 let xor = xor >> last_trailing_zeros;
-                writer.write_int(xor, last_significant_bits as usize).unwrap();
+                writer
+                    .write_int(xor, last_significant_bits as usize)
+                    .unwrap();
                 if verbose {
                     bits_string.push_str(&format!(
                         "\x1b[1;33m{:0width$b}\x1b[0m",
@@ -211,7 +224,6 @@ pub fn verbose_encode(name: &str, floats: &[f64], max_regret: u32, mantissa: Opt
     write_bytes
 }
 
-
 fn format_f64_bits(bits: u64) -> String {
     let bits_str = format!("{:064b}", bits);
     // ANSI escape codes for color on sign, exponent, and mantissa
@@ -237,17 +249,15 @@ fn format_f64_bits_highlight_remainder(bits: u64) -> String {
     bits_str
 }
 
-
-
 #[cfg(test)]
 mod test {
+    use super::{decode, encode};
     use crate::test_data::FLOATS;
-    use super::{encode, decode};
 
     #[test]
     fn test_xor_float_encode_decode() {
         for &(floats, _) in FLOATS {
-            for max_regret in [0, 30, 100, 100] {
+            for max_regret in [0, 30, 100, 1000] {
                 let encoded = encode(floats, max_regret, None);
                 let decoded = decode(&encoded).unwrap();
                 assert_eq!(floats, decoded);
