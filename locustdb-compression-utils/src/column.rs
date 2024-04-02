@@ -28,7 +28,7 @@ impl Column {
         let xor_compressed = xor_float::double::encode(&xs, 100, mantissa);
         // Require at least 1.5x compression to use xor
         if xor_compressed.len() * 6 > xor_compressed.len() {
-            Column::Xor(Vec::from(xor_compressed))
+            Column::Xor(xor_compressed)
         } else {
             Column::Float(xs)
         }
