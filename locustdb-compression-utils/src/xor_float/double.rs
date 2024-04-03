@@ -35,7 +35,7 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Vec<u8>
                 && trailing_zeros >= last_trailing_zeros
                 && (regret < max_regret || significant_bits == last_significant_bits)
             {
-                // We want to write first a 1 bit and then a 0 bit, but because we are in LittleEndian mode 
+                // We want to write first a 1 bit and then a 0 bit, but because we are in LittleEndian mode
                 // the bits get written in reverse order. So we write 0b01 to get 0b10 in the output.
                 writer.write_int(0b01, 2).unwrap();
                 let xor = xor >> last_trailing_zeros;
@@ -63,7 +63,8 @@ pub fn encode(floats: &[f64], max_regret: u32, mantissa: Option<u32>) -> Vec<u8>
 pub fn decode(data: &[u8]) -> Result<Vec<f64>, Error> {
     let buffer = BitReadBuffer::new(data, LittleEndian);
     let mut reader = BitReadStream::new(buffer);
-    let length = reader.read_int(64).map_err(|_| Error::Eof)?;
+    let length = reader.read_int::<u64>(64).map_err(|_| Error::Eof)? as usize;
+
     let mut decoded = vec![f64::from_bits(0u64); length];
 
     if length == 0 {
