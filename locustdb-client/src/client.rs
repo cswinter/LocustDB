@@ -4,13 +4,13 @@ use wasm_bindgen::prelude::*;
 use locustdb_compression_utils::column;
 use std::collections::HashMap;
 use std::mem;
-
-use super::log;
+use std::sync::Once;
 
 #[wasm_bindgen]
 pub struct Client {
     client: reqwest::Client,
     url: String,
+    log_stats: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -46,15 +46,22 @@ pub struct QueryResponse {
     pub columns: HashMap<String, column::Column>,
 }
 
+static START: Once = Once::new();
+
 #[wasm_bindgen]
 impl Client {
     pub fn new(url: &str) -> Client {
         #[cfg(feature = "console_error_panic_hook")]
         console_error_panic_hook::set_once();
 
+        START.call_once(|| {
+            wasm_logger::init(wasm_logger::Config::default());
+        });
+
         Client {
             client: reqwest::Client::new(),
             url: url.to_string(),
+            log_stats: true,
         }
     }
 
@@ -110,6 +117,11 @@ impl Client {
             let mut rsps: Vec<QueryResponse> = bincode::deserialize(&bytes).unwrap();
             rsps.iter_mut().for_each(|rsp| {
                 rsp.columns.iter_mut().for_each(|(key, col)| {
+                    let compressed_bytes = if self.log_stats {
+                        col.size_bytes()
+                    } else {
+                        0
+                    };
                     let coltype = match col {
                         column::Column::Float(_) => "float",
                         column::Column::Int(_) => "int",
@@ -118,16 +130,26 @@ impl Client {
                         column::Column::Null(_) => "null",
                         column::Column::Xor(_) => "xor",
                     };
-                    log(&format!("decompressing column {key} of type {coltype}"));
                     *col = mem::replace(col, column::Column::Null(0)).decompress();
+                    if self.log_stats {
+                        log::info!(
+                            "[{}; {}]  size: {}B  ratio: {: >2.2}x  {:2.2} B/row  {}",
+                            coltype,
+                            col.len(),
+                            compressed_bytes,
+                            col.size_bytes() as f64 / compressed_bytes as f64,
+                            compressed_bytes as f64 / col.len().max(1) as f64,
+                            key,
+                        );
+                    }
                 });
             });
-            log(&format!(
+            log::info!(
                 "waiting on server {:.2?} ms, downloading {:.2?} ms, deserializing {:.2?} ms",
                 first_response_ms - request_start_ms,
                 download_finished_ms - first_response_ms,
                 performance.now() - download_finished_ms,
-            ));
+            );
             rsps
         } else {
             vec![]
