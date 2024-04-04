@@ -1,12 +1,17 @@
 use std::collections::HashMap;
+use std::mem;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use tokio::select;
 use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
+
+use locustdb_compression_utils::column;
+use crate::server::{EncodingOpts, MultiQueryRequest, QueryResponse};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct EventBuffer {
@@ -39,6 +44,8 @@ pub struct LoggingClient {
     max_buffer_size_bytes: usize,
     pub total_events: u64,
     flush_interval: Duration,
+    query_client: reqwest::Client,
+    query_url: String,
 }
 
 struct BackgroundWorker {
@@ -53,7 +60,11 @@ struct BackgroundWorker {
 }
 
 impl LoggingClient {
-    pub fn new(flush_interval: Duration, locustdb_url: &str, max_buffer_size_bytes: usize) -> LoggingClient {
+    pub fn new(
+        flush_interval: Duration,
+        locustdb_url: &str,
+        max_buffer_size_bytes: usize,
+    ) -> LoggingClient {
         let buffer: Arc<Mutex<EventBuffer>> = Arc::default();
         let shutdown = CancellationToken::new();
         let flushed = Arc::new((Mutex::new(false), Condvar::new()));
@@ -78,7 +89,44 @@ impl LoggingClient {
             max_buffer_size_bytes,
             buffer_size,
             flush_interval,
+            query_client: reqwest::Client::new(),
+            query_url: format!("{locustdb_url}/multi_query_cols"),
         }
+    }
+
+    pub async fn multi_query(
+        &self,
+        queries: Vec<String>,
+    ) -> Result<Vec<QueryResponse>, reqwest::Error> {
+        let request_body = MultiQueryRequest {
+            queries,
+            encoding_opts: Some(EncodingOpts {
+                xor_float_compression: true,
+                mantissa: None,
+                full_precision_cols: Default::default(),
+            }),
+        };
+        let bytes = self
+            .query_client
+            .post(&self.query_url)
+            .header(CONTENT_TYPE, "application/json")
+            .json(&request_body)
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?
+            .to_vec();
+        log::info!("RECEIVED BYTES");
+        let mut rsps: Vec<QueryResponse> = bincode::deserialize(&bytes).unwrap();
+        log::info!("RESONSE {:?}", rsps);
+        rsps.iter_mut().for_each(|rsp| {
+            rsp.columns.iter_mut().for_each(|(_, col)| {
+                *col = mem::replace(col, column::Column::Null(0)).decompress();
+            });
+        });
+        log::info!("OK");
+        Ok(rsps)
     }
 
     pub fn log<Row: IntoIterator<Item = (String, f64)>>(&mut self, table: &str, row: Row) {
@@ -89,7 +137,9 @@ impl LoggingClient {
             / 1000.0;
         let mut warncount = 0;
         loop {
-            if self.buffer_size.load(std::sync::atomic::Ordering::SeqCst) as usize > self.max_buffer_size_bytes  {
+            if self.buffer_size.load(std::sync::atomic::Ordering::SeqCst) as usize
+                > self.max_buffer_size_bytes
+            {
                 if warncount % 10 == 0 {
                     log::warn!("Logging buffer full, waiting for flush");
                 }
@@ -102,7 +152,8 @@ impl LoggingClient {
         let mut events = self.events.lock().unwrap();
         let table = events.tables.entry(table.to_string()).or_default();
         for (column_name, value) in row {
-            self.buffer_size.fetch_add(8, std::sync::atomic::Ordering::SeqCst);
+            self.buffer_size
+                .fetch_add(8, std::sync::atomic::Ordering::SeqCst);
             table
                 .columns
                 .entry(column_name.to_string())
@@ -160,7 +211,8 @@ impl BackgroundWorker {
                 .map(|t| t.columns.values().next().map(|c| c.data.len()).unwrap_or(0))
                 .sum::<usize>()
         );
-        self.buffer_size.store(0, std::sync::atomic::Ordering::SeqCst);
+        self.buffer_size
+            .store(0, std::sync::atomic::Ordering::SeqCst);
         // TODO: keep all buffers on client, but don't send tables that are empty
         buffer.tables.clear();
         // for table in buffer.tables.values_mut() {

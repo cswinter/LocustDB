@@ -58,9 +58,9 @@ struct ColumnNameRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct MultiQueryRequest {
-    queries: Vec<String>,
-    encoding_opts: Option<EncodingOpts>,
+pub struct MultiQueryRequest {
+    pub queries: Vec<String>,
+    pub encoding_opts: Option<EncodingOpts>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
