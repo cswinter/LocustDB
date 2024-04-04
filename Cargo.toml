@@ -4,7 +4,7 @@ description = "Embeddable high-performance analytics database."
 edition = "2021"
 license-file = "LICENSE"
 name = "locustdb"
-version = "0.4.2"
+version = "0.4.3"
 repository = "https://github.com/cswinter/LocustDB"
 readme = "README.md"
 
