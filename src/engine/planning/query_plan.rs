@@ -61,7 +61,7 @@ pub enum QueryPlan {
         #[output(t = "base=data;null=_always")]
         nullable: TypedBufferRef,
     },
-    /// Converts NullableI64 or NullableStr NullableF64 into a representation where nulls are encoded as part
+    /// Converts NullableI64, NullableStr, or NullableF64 into a representation where nulls are encoded as part
     /// of the data (i64 with i64::MIN representing null for NullableI64, Option<&str> for NullableStr, and Option<OrderedFloat<f64> for NullableF64).
     FuseNulls {
         nullable: TypedBufferRef,

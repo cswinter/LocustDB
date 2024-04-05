@@ -92,6 +92,12 @@ impl NormalFormQuery {
                 && self.order_by.len() == 1
                 && !ranking.is_constant()
             {
+                let ranking = if ranking.is_nullable() {
+                    // TODO: not implemented for all types (e.g. NullableU8). Need to upcast to u64, add corresponding fused types, or add nullable top_n
+                    planner.fuse_nulls(ranking)
+                } else {
+                    ranking
+                };
                 planner.top_n(ranking, limit, *desc)
             } else {
                 // PERF: sort directly if only single column selected

@@ -584,21 +584,9 @@ fn test_min_max() {
     test_query_ec(
         "select enum, max(float), min(float) from default;",
         &[
-            vec![
-                Str("aa"),
-                Float(0.123412),
-                Float(-124.0),
-            ],
-            vec![
-                Str("bb"),
-                Float(1.234e29),
-                Float(3.15159),
-            ],
-            vec![
-                Str("cc"),
-                Float(0.0),
-                Float(-1.0),
-            ],
+            vec![Str("aa"), Float(0.123412), Float(-124.0)],
+            vec![Str("bb"), Float(1.234e29), Float(3.15159)],
+            vec![Str("cc"), Float(0.0), Float(-1.0)],
         ],
     );
 }
@@ -834,6 +822,21 @@ fn test_sort_by_nullable() {
             vec![Int(14), Str("Germany")],
         ],
     );
+    test_query_ec(
+        "SELECT nullable_int2, country
+         FROM default
+         ORDER BY nullable_int2, country DESC
+         LIMIT 2;",
+        &[vec![Null, Str("Turkey")], vec![Null, Str("Germany")]],
+    );
+    // This currently fails with "NullableU8 does not have a corresponding fused nullable type"
+    // test_query_ec(
+    //     "SELECT nullable_int2
+    //      FROM default
+    //      ORDER BY nullable_int2 DESC
+    //      LIMIT 2;",
+    //     &[vec![Null], vec![Null]],
+    // );
     // Sort by null/nonexistant column
     test_query_ec(
         "SELECT column_does_not_exist FROM default ORDER BY column_does_not_exist;",
@@ -850,6 +853,74 @@ fn test_sort_by_nullable() {
             vec![Null],
         ],
     );
+}
+
+#[test]
+fn test_sort_by_nullable_float() {
+    test_query_ec(
+        "SELECT nullable_float
+        FROM default
+        ORDER BY nullable_float;",
+        &[
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Float(1e-32)],
+            vec![Float(0.4)],
+            vec![Float(1.123124e30)],
+        ],
+    );
+    test_query_ec(
+        "SELECT nullable_float
+        FROM default
+        ORDER BY nullable_float DESC;",
+        &[
+            vec![Float(1.123124e30)],
+            vec![Float(0.4)],
+            vec![Float(1e-32)],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+        ],
+    );
+    test_query_ec(
+        "SELECT nullable_float
+        FROM default
+        ORDER BY nullable_float DESC
+        LIMIT 4;",
+        &[
+            vec![Float(1.123124e30)],
+            vec![Float(0.4)],
+            vec![Float(1e-32)],
+            vec![Null],
+        ],
+    );
+    // This currently fails with "subpartition not supported for type Null" (when table has multiple partitions and columns are null in some partitions)
+    // test_query_ec(
+    //     "SELECT nullable_float, nullable_float2, country
+    //      FROM default
+    //      ORDER BY nullable_float, nullable_float2 DESC, country;",
+    //     &[
+    //         vec![Null, Null, Null],
+    //         vec![Null, Null, Null],
+    //         vec![Null, Null, Null],
+    //         vec![Null, Null, Null],
+    //         vec![Null, Null, Str("France")],
+    //         vec![Null, Null, Str("Germany")],
+    //         vec![Null, Null, Str("USA")],
+    //         vec![Float(1e-32), Null, Str("Turkey")],
+    //         vec![Float(0.4), Null, Str("France")],
+    //         vec![Float(1.123124e30), Null, Str("Germany")],
+    //     ],
+    // );
 }
 
 #[test]
@@ -1388,7 +1459,11 @@ fn test_restore_from_disk() {
         result
     };
     assert_eq!(old_db_contents.len(), restored_db_contents.len());
-    for (i, (old, new)) in old_db_contents.iter().zip(restored_db_contents.iter()).enumerate() {
+    for (i, (old, new)) in old_db_contents
+        .iter()
+        .zip(restored_db_contents.iter())
+        .enumerate()
+    {
         assert_eq!(old, new, "Row {} differs", i);
     }
 }
@@ -1430,10 +1505,7 @@ fn test_colnames() {
 fn test_merge_keep_null_column() {
     test_query_ec(
         "SELECT id, nonexistant_column FROM default ORDER BY id LIMIT 2;",
-        &[
-            vec![Int(0), Null],
-            vec![Int(1), Null],
-        ],
+        &[vec![Int(0), Null], vec![Int(1), Null]],
     );
 }
 
