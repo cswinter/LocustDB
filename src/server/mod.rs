@@ -9,7 +9,7 @@ use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::channel::oneshot::Canceled;
 use itertools::Itertools;
-use locustdb_compression_utils::column;
+use locustdb_compression_utils::{column, xor_float};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
@@ -442,7 +442,6 @@ fn encode_column(col: BasicTypeColumn, encode_opts: &EncodingOpts) -> column::Co
     match col {
         BasicTypeColumn::Int(xs) => column::Column::Int(xs),
         BasicTypeColumn::Float(xs) => {
-            //let xs = unsafe { mem::transmute::<Vec<f64>, Vec<OrderedFloat<f64>>>(xs) };
             if encode_opts.xor_float_compression {
                 column::Column::compress(xs, encode_opts.mantissa)
             } else {
@@ -451,15 +450,47 @@ fn encode_column(col: BasicTypeColumn, encode_opts: &EncodingOpts) -> column::Co
         }
         BasicTypeColumn::String(xs) => column::Column::String(xs),
         BasicTypeColumn::Null(xs) => column::Column::Null(xs),
-        BasicTypeColumn::Mixed(xs) => column::Column::Mixed(
-            xs.into_iter()
-                .map(|val| match val {
+        BasicTypeColumn::Mixed(xs) => {
+            let mut type_signature = 0u8;
+            for val in &xs {
+                match val {
+                    Value::Int(_) => type_signature |= 1,
+                    Value::Str(_) => type_signature |= 2,
+                    Value::Null => type_signature |= 4,
+                    Value::Float(_) => type_signature |= 8,
+                }
+            }
+            if type_signature == 2 {
+                column::Column::String(xs.into_iter().map(|val| match val {
+                    Value::Str(str) => str,
+                    _ => unreachable!(),
+                }).collect())
+            } else if type_signature == 1 {
+                column::Column::Int(xs.into_iter().map(|val| match val {
+                    Value::Int(int) => int,
+                    _ => unreachable!(),
+                }).collect())
+            } else if type_signature == 4 {
+                column::Column::Null(xs.len())
+            } else if type_signature == 8 || type_signature == 12 {
+                let floats = xs.into_iter().map(|val| match val {
+                    Value::Float(float) => float.0,
+                    Value::Null => xor_float::NULL,
+                    _ => unreachable!(),
+                }).collect();
+                if encode_opts.xor_float_compression {
+                    column::Column::compress(floats, encode_opts.mantissa)
+                } else {
+                    column::Column::Float(floats)
+                }
+            } else {
+                column::Column::Mixed(xs.into_iter().map(|val| match val {
                     Value::Int(int) => column::Mixed::Int(int),
                     Value::Str(str) => column::Mixed::Str(str),
                     Value::Null => column::Mixed::Null,
                     Value::Float(float) => column::Mixed::Float(float.0),
-                })
-                .collect(),
-        ),
+                }).collect())
+            }
+        }
     }
 }
