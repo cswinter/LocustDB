@@ -54,7 +54,7 @@ reqwest = { version = "0.11", default_features = false, features = ["json", "rus
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 systemstat = "0.1.8"
-pyo3 = {features = ["extension-module"], version = "0.19", optional = true}
+pyo3 = {features = ["extension-module"], version = "0.21", optional = true}
 ordered-float = { version = "3", features = ["serde"] }
 unicode-width = "0.1"
 unicode-segmentation = "1"

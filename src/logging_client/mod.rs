@@ -11,7 +11,7 @@ use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
 use locustdb_compression_utils::column;
-use crate::server::{EncodingOpts, MultiQueryRequest, QueryResponse};
+use crate::server::{EncodingOpts, MultiQueryRequest, QueryResponse, ColumnNameRequest};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct EventBuffer {
@@ -35,6 +35,13 @@ pub enum ColumnData {
     Sparse(Vec<(u64, f64)>),
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ColumnNameResponse {
+    pub columns: Vec<String>,
+    pub offset: usize,
+    pub len: usize,
+}
+
 pub struct LoggingClient {
     // Table -> Rows
     events: Arc<Mutex<EventBuffer>>,
@@ -46,6 +53,7 @@ pub struct LoggingClient {
     flush_interval: Duration,
     query_client: reqwest::Client,
     query_url: String,
+    columns_url: String,
 }
 
 struct BackgroundWorker {
@@ -91,6 +99,7 @@ impl LoggingClient {
             flush_interval,
             query_client: reqwest::Client::new(),
             query_url: format!("{locustdb_url}/multi_query_cols"),
+            columns_url: format!("{locustdb_url}/columns"),
         }
     }
 
@@ -117,15 +126,12 @@ impl LoggingClient {
             .bytes()
             .await?
             .to_vec();
-        log::info!("RECEIVED BYTES");
         let mut rsps: Vec<QueryResponse> = bincode::deserialize(&bytes).unwrap();
-        log::info!("RESONSE {:?}", rsps);
         rsps.iter_mut().for_each(|rsp| {
             rsp.columns.iter_mut().for_each(|(_, col)| {
                 *col = mem::replace(col, column::Column::Null(0)).decompress();
             });
         });
-        log::info!("OK");
         Ok(rsps)
     }
 
@@ -167,6 +173,24 @@ impl LoggingClient {
             .push(time_millis, table.len);
         table.len += 1;
         self.total_events += 1;
+    }
+
+    pub async fn columns(&self, table: String, pattern: Option<String>) -> Result<ColumnNameResponse, reqwest::Error> {
+        let request_body = ColumnNameRequest {
+            tables: vec![table],
+            pattern,
+            offset: None,
+            limit: None,
+        };
+        let response = self
+            .query_client
+            .post(&self.columns_url)
+            .header(CONTENT_TYPE, "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .unwrap();
+        response.json::<ColumnNameResponse>().await
     }
 }
 

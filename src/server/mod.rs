@@ -50,11 +50,11 @@ struct QueryRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct ColumnNameRequest {
-    tables: Vec<String>,
-    pattern: Option<String>,
-    offset: Option<usize>,
-    limit: Option<usize>,
+pub struct ColumnNameRequest {
+    pub tables: Vec<String>,
+    pub pattern: Option<String>,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
