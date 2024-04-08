@@ -1301,7 +1301,7 @@ dependencies = [
 
 [[package]]
 name = "locustdb"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "actix-cors",
  "actix-web",
