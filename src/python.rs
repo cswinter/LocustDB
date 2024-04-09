@@ -94,7 +94,7 @@ fn column_to_python(py: Python, column: Column) -> PyObject {
         Column::Int(xs) => xs.into_py(py),
         Column::String(xs) => xs.into_py(py),
         Column::Mixed(xs) => PyList::new_bound(py, xs.iter().map(|x| mixed_to_python(py, x))).into_py(py),
-        Column::Null(n) => n.into_py(py),
+        Column::Null(n) => PyList::new_bound(py, (0..n).map(|_| None::<()>.into_py(py))).into_py(py),
         Column::Xor(xs) => xs.into_py(py),
     }
 }
