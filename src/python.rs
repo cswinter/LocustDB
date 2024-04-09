@@ -53,7 +53,7 @@ impl Client {
     fn multi_query(&self, py: Python, queries: Vec<String>) -> PyResult<PyObject> {
         let results = RT
             .block_on(self.client.multi_query(queries))
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{:?}", e)))?;
+            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
         let py_result = PyList::new_bound(
             py,
             results.into_iter().map(|result| {
@@ -70,7 +70,7 @@ impl Client {
     fn query(&self, py: Python, query: String) -> PyResult<PyObject> {
         let result = RT
             .block_on(self.client.multi_query(vec![query]))
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{:?}", e)))?;
+            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
         assert_eq!(result.len(), 1);
         let columns = PyDict::new_bound(py);
         for (key, value) in result.into_iter().next().unwrap().columns {
@@ -83,7 +83,7 @@ impl Client {
     fn columns(&self, py: Python, table: String, pattern: Option<String>) -> PyResult<PyObject> {
         let response = RT
             .block_on(self.client.columns(table, pattern))
-            .map_err(|e| PyErr::new::<PyException, _>(format!("{:?}", e)))?;
+            .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
         Ok(response.columns.into_py(py))
     }
 }

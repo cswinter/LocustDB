@@ -3,6 +3,7 @@ use std::mem;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::fmt;
 
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
@@ -10,8 +11,8 @@ use tokio::select;
 use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
+use crate::server::{ColumnNameRequest, EncodingOpts, MultiQueryRequest, QueryResponse};
 use locustdb_compression_utils::column;
-use crate::server::{EncodingOpts, MultiQueryRequest, QueryResponse, ColumnNameRequest};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct EventBuffer {
@@ -67,6 +68,13 @@ struct BackgroundWorker {
     request_data: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    Reqwest(reqwest::Error),
+    Bincode(bincode::Error),
+    Client { status_code: u16, msg: String },
+}
+
 impl LoggingClient {
     pub fn new(
         flush_interval: Duration,
@@ -103,10 +111,7 @@ impl LoggingClient {
         }
     }
 
-    pub async fn multi_query(
-        &self,
-        queries: Vec<String>,
-    ) -> Result<Vec<QueryResponse>, reqwest::Error> {
+    pub async fn multi_query(&self, queries: Vec<String>) -> Result<Vec<QueryResponse>, Error> {
         let request_body = MultiQueryRequest {
             queries,
             encoding_opts: Some(EncodingOpts {
@@ -115,17 +120,19 @@ impl LoggingClient {
                 full_precision_cols: Default::default(),
             }),
         };
-        let bytes = self
+        let response = self
             .query_client
             .post(&self.query_url)
             .header(CONTENT_TYPE, "application/json")
             .json(&request_body)
             .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?
-            .to_vec();
+            .await?;
+        if response.status().is_client_error() {
+            let status_code = response.status().as_u16();
+            let msg = response.text().await?;
+            return Err(Error::Client { status_code, msg });
+        }
+        let bytes = response.bytes().await?.to_vec();
         let mut rsps: Vec<QueryResponse> = bincode::deserialize(&bytes).unwrap();
         rsps.iter_mut().for_each(|rsp| {
             rsp.columns.iter_mut().for_each(|(_, col)| {
@@ -175,7 +182,11 @@ impl LoggingClient {
         self.total_events += 1;
     }
 
-    pub async fn columns(&self, table: String, pattern: Option<String>) -> Result<ColumnNameResponse, reqwest::Error> {
+    pub async fn columns(
+        &self,
+        table: String,
+        pattern: Option<String>,
+    ) -> Result<ColumnNameResponse, Error> {
         let request_body = ColumnNameRequest {
             tables: vec![table],
             pattern,
@@ -188,9 +199,13 @@ impl LoggingClient {
             .header(CONTENT_TYPE, "application/json")
             .json(&request_body)
             .send()
-            .await
-            .unwrap();
-        response.json::<ColumnNameResponse>().await
+            .await?;
+        if response.status().is_client_error() {
+            let status_code = response.status().as_u16();
+            let msg = response.text().await?;
+            return Err(Error::Client { status_code, msg });
+        }
+        Ok(response.json::<ColumnNameResponse>().await?)
     }
 }
 
@@ -339,5 +354,29 @@ impl ColumnData {
 impl Default for ColumnData {
     fn default() -> Self {
         ColumnData::Dense(Vec::new())
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Self {
+        Error::Reqwest(err)
+    }
+}
+
+impl From<bincode::Error> for Error {
+    fn from(err: bincode::Error) -> Self {
+        Error::Bincode(err)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Reqwest(err) => write!(f, "Reqwest error: {}", err),
+            Error::Bincode(err) => write!(f, "Bincode error: {}", err),
+            Error::Client { status_code, msg } => {
+                write!(f, "Client error ({}): {}", status_code, msg)
+            }
+        }
     }
 }
