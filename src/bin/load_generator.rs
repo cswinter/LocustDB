@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use locustdb::logging_client::BufferFullPolicy;
 use structopt::StructOpt;
 use tokio::time;
 
@@ -43,14 +44,14 @@ async fn main() {
     } = Opt::from_args();
     let rowcount = rowcount.unwrap_or_else(Vec::new);
     let tables: Vec<_> = (0..n_tables)
-        .map(|i| {
-            format!(
-                "{}_{i}",
-                random_word::gen(random_word::Lang::En),
-            )
-        })
+        .map(|i| format!("{}_{i}", random_word::gen(random_word::Lang::En),))
         .collect();
-    let mut log = locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), &addr, 1 << 28);
+    let mut log = locustdb::logging_client::LoggingClient::new(
+        Duration::from_secs(1),
+        &addr,
+        1 << 28,
+        BufferFullPolicy::Block,
+    );
     let mut interval = time::interval(Duration::from_millis(interval));
 
     loop {

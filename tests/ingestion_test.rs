@@ -1,14 +1,15 @@
 use actix_web::dev::ServerHandle;
-use tempfile::tempdir;
+use locustdb::logging_client::BufferFullPolicy;
 use pretty_assertions::assert_eq;
+use tempfile::tempdir;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use locustdb::{BasicTypeColumn, LocustDB};
 use locustdb::{value_syntax::*, QueryOutput};
+use locustdb::{BasicTypeColumn, LocustDB};
 use rand::{Rng, SeedableRng};
 
 // Need multiple threads since dropping logging client blocks main thread and prevents logging worker from flushing buffers
@@ -38,7 +39,11 @@ async fn test_ingestion() {
 
         assert_eq!(
             id_sum.rows.unwrap(),
-            vec![[Float(i as f64), Float((total_rows * (total_rows - 1) / 2) as f64), Int(total_rows as i64)],]
+            vec![[
+                Float(i as f64),
+                Float((total_rows * (total_rows - 1) / 2) as f64),
+                Int(total_rows as i64)
+            ],]
         );
     }
 
@@ -53,8 +58,16 @@ async fn test_ingestion() {
     let new_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
     assert_eq!(new_all.rows.unwrap().len(), total_rows);
     assert_eq!(old_all.colnames.len(), new_all.colnames.len());
-    let row_col = &new_all.columns.iter().find(|(name, _)| name == "row").unwrap().1;
-    assert_eq!(*row_col, BasicTypeColumn::Float((0..total_rows).map(|i| i as f64).collect()));
+    let row_col = &new_all
+        .columns
+        .iter()
+        .find(|(name, _)| name == "row")
+        .unwrap()
+        .1;
+    assert_eq!(
+        *row_col,
+        BasicTypeColumn::Float((0..total_rows).map(|i| i as f64).collect())
+    );
     let old_columns: HashMap<_, _> = old_all.columns.into_iter().collect();
     for (name, column) in &new_all.columns {
         assert_eq!(old_columns[name], *column, "Mismatch in column {}", name);
@@ -92,7 +105,6 @@ async fn test_ingestion() {
 
     test_db(&db, total_rows, &tables).await;
 
-
     let old_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
     handle.stop(true).await;
     drop(db);
@@ -100,8 +112,16 @@ async fn test_ingestion() {
     let new_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
     assert_eq!(new_all.rows.unwrap().len(), total_rows);
     assert_eq!(old_all.colnames.len(), new_all.colnames.len());
-    let row_col = &new_all.columns.iter().find(|(name, _)| name == "row").unwrap().1;
-    assert_eq!(*row_col, BasicTypeColumn::Float((0..total_rows).map(|i| i as f64).collect()));
+    let row_col = &new_all
+        .columns
+        .iter()
+        .find(|(name, _)| name == "row")
+        .unwrap()
+        .1;
+    assert_eq!(
+        *row_col,
+        BasicTypeColumn::Float((0..total_rows).map(|i| i as f64).collect())
+    );
     let old_columns: HashMap<_, _> = old_all.columns.into_iter().collect();
     for (name, column) in &new_all.columns {
         assert_eq!(old_columns[name], *column, "Mismatch in column {}", name);
@@ -131,8 +151,12 @@ fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
     let start_time = Instant::now();
     log::info!("Ingesting {rows} rows into {} tables", tables.len());
     let addr = "http://localhost:8888";
-    let mut log =
-        locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), addr, 64 * (1 << 20));
+    let mut log = locustdb::logging_client::LoggingClient::new(
+        Duration::from_secs(1),
+        addr,
+        64 * (1 << 20),
+        BufferFullPolicy::Block,
+    );
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     for row in 0..rows {
         for (i, table) in tables.iter().enumerate() {
@@ -146,7 +170,11 @@ fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
             log.log(table, row);
         }
     }
-    log::info!("Logged {} rows in {:?}", rows * tables.len(), start_time.elapsed());
+    log::info!(
+        "Logged {} rows in {:?}",
+        rows * tables.len(),
+        start_time.elapsed()
+    );
 }
 
 async fn query(db: &LocustDB, query: &str) -> QueryOutput {

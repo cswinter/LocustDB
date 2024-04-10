@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use locustdb::logging_client::BufferFullPolicy;
 use locustdb::LocustDB;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -182,8 +183,12 @@ async fn main() {
 fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
     let load_factor = opts.load_factor;
     let addr = "http://localhost:8080";
-    let mut log =
-        locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), addr, 64 * (1 << 20));
+    let mut log = locustdb::logging_client::LoggingClient::new(
+        Duration::from_secs(1),
+        addr,
+        64 * (1 << 20),
+        BufferFullPolicy::Block,
+    );
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     if !opts.large_only {
         log::info!("Starting small table logging");

@@ -1,6 +1,7 @@
 use std::mem;
 use std::time::Duration;
 
+use locustdb::logging_client::BufferFullPolicy;
 use structopt::StructOpt;
 use systemstat::{Platform, System};
 use tokio::time;
@@ -25,7 +26,12 @@ struct Opt {
 async fn main() {
     env_logger::init();
     let Opt { addr, interval } = Opt::from_args();
-    let mut log = locustdb::logging_client::LoggingClient::new(Duration::from_secs(1), &addr, 1 << 50);
+    let mut log = locustdb::logging_client::LoggingClient::new(
+        Duration::from_secs(1),
+        &addr,
+        1 << 50,
+        BufferFullPolicy::Block,
+    );
     let mut interval = time::interval(Duration::from_millis(interval));
     let sys = System::new();
     let mut cpu_watcher = sys.cpu_load_aggregate().unwrap();

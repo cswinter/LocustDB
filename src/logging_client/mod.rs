@@ -55,6 +55,7 @@ pub struct LoggingClient {
     query_client: reqwest::Client,
     query_url: String,
     columns_url: String,
+    buffer_full_policy: BufferFullPolicy,
 }
 
 struct BackgroundWorker {
@@ -75,11 +76,17 @@ pub enum Error {
     Client { status_code: u16, msg: String },
 }
 
+pub enum BufferFullPolicy {
+    Block,
+    Drop,
+}
+
 impl LoggingClient {
     pub fn new(
         flush_interval: Duration,
         locustdb_url: &str,
         max_buffer_size_bytes: usize,
+        buffer_full_policy: BufferFullPolicy,
     ) -> LoggingClient {
         let buffer: Arc<Mutex<EventBuffer>> = Arc::default();
         let shutdown = CancellationToken::new();
@@ -108,6 +115,7 @@ impl LoggingClient {
             query_client: reqwest::Client::new(),
             query_url: format!("{locustdb_url}/multi_query_cols"),
             columns_url: format!("{locustdb_url}/columns"),
+            buffer_full_policy,
         }
     }
 
@@ -153,11 +161,19 @@ impl LoggingClient {
             if self.buffer_size.load(std::sync::atomic::Ordering::SeqCst) as usize
                 > self.max_buffer_size_bytes
             {
-                if warncount % 10 == 0 {
-                    log::warn!("Logging buffer full, waiting for flush");
+                match self.buffer_full_policy {
+                    BufferFullPolicy::Block => {
+                        if warncount % 10 == 0 {
+                            log::warn!("Logging buffer full, waiting for flush");
+                        }
+                        warncount += 1;
+                        std::thread::sleep(self.flush_interval);
+                    }
+                    BufferFullPolicy::Drop => {
+                        log::warn!("Dropping event due to full buffer");
+                        return;
+                    }
                 }
-                warncount += 1;
-                std::thread::sleep(self.flush_interval);
             } else {
                 break;
             }

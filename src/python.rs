@@ -2,25 +2,16 @@
 #![allow(non_local_definitions)] // Try removing after PyO3 upgrade
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use locustdb_compression_utils::column::{Column, Mixed};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use crate::logging_client::LoggingClient;
+use crate::logging_client::{BufferFullPolicy, LoggingClient};
 
 lazy_static! {
     static ref RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-    static ref DEFAULT_CLIENT: Arc<Mutex<LoggingClient>> = {
-        let _guard = RT.enter();
-        Arc::new(Mutex::new(LoggingClient::new(
-            std::time::Duration::from_secs(1),
-            "http://localhost:8080",
-            128 * (1 << 20),
-        )))
-    };
 }
 
 #[pyclass]
@@ -38,10 +29,20 @@ fn locustdb(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pymethods]
 impl Client {
     #[new]
-    fn new(url: &str) -> Self {
+    #[pyo3(signature = (url, max_buffer_size_bytes = 128 * (1 << 20), block_when_buffer_full = false, flush_interval_seconds = 1))]
+    fn new(url: &str, max_buffer_size_bytes: usize, block_when_buffer_full: bool, flush_interval_seconds: u64) -> Self {
         let _guard = RT.enter();
         Self {
-            client: LoggingClient::new(std::time::Duration::from_secs(1), url, 128 * (1 << 20)),
+            client: LoggingClient::new(
+                std::time::Duration::from_secs(flush_interval_seconds),
+                url,
+                max_buffer_size_bytes,
+                if block_when_buffer_full {
+                    BufferFullPolicy::Block
+                } else {
+                    BufferFullPolicy::Drop
+                },
+            ),
         }
     }
 
@@ -93,8 +94,12 @@ fn column_to_python(py: Python, column: Column) -> PyObject {
         Column::Float(xs) => xs.into_py(py),
         Column::Int(xs) => xs.into_py(py),
         Column::String(xs) => xs.into_py(py),
-        Column::Mixed(xs) => PyList::new_bound(py, xs.iter().map(|x| mixed_to_python(py, x))).into_py(py),
-        Column::Null(n) => PyList::new_bound(py, (0..n).map(|_| None::<()>.into_py(py))).into_py(py),
+        Column::Mixed(xs) => {
+            PyList::new_bound(py, xs.iter().map(|x| mixed_to_python(py, x))).into_py(py)
+        }
+        Column::Null(n) => {
+            PyList::new_bound(py, (0..n).map(|_| None::<()>.into_py(py))).into_py(py)
+        }
         Column::Xor(xs) => xs.into_py(py),
     }
 }
