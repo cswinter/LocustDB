@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::mem;
+use std::os::unix::thread;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::fmt;
 
 use reqwest::header::CONTENT_TYPE;
@@ -341,10 +342,26 @@ impl ColumnBuffer {
 impl Drop for LoggingClient {
     fn drop(&mut self) {
         self.shutdown.cancel();
-        let (flushed, cvar) = &*self.flushed;
-        let mut flushed = flushed.lock().unwrap();
-        while !*flushed {
-            flushed = cvar.wait(flushed).unwrap();
+        match self.buffer_full_policy {
+            BufferFullPolicy::Block => {
+                let (flushed, cvar) = &*self.flushed;
+                let mut flushed = flushed.lock().unwrap();
+                while !*flushed {
+                    flushed = cvar.wait(flushed).unwrap();
+                }
+            }
+            BufferFullPolicy::Drop => {
+                // Wait for 1 minute for the buffer to flush
+                let mut max_tries = 6;
+                while max_tries > 0 {
+                    max_tries -= 1;
+                    std::thread::sleep(Duration::from_secs(10));
+                    if *self.flushed.0.lock().unwrap() {
+                        break;
+                    }
+                }
+                log::warn!("Logging buffer not flushed, potentially dropping events");
+            }
         }
         log::info!("Logging client dropped");
     }
