@@ -141,9 +141,6 @@ impl NormalFormQuery {
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
-            if plan.is_nullable() {
-                plan = planner.fuse_nulls(plan);
-            }
             plan = planner.collect(
                 plan,
                 &col_info

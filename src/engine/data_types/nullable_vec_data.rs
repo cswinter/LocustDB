@@ -3,6 +3,7 @@ use std::fmt;
 use std::fmt::Write;
 
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 
 use crate::bitvec::*;
 use crate::engine::data_types::*;
@@ -99,6 +100,9 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
     default fn cast_ref_u8(&self) -> &[u8] {
         panic!("{}", self.type_error("cast_ref_u8"))
     }
+    default fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
+        panic!("{}", self.type_error("cast_ref_f64"))
+    }
     default fn to_mixed(&self) -> Vec<Val<'a>> {
         panic!("{}", self.type_error("to_mixed"))
     }
@@ -108,7 +112,6 @@ impl<'a> Data<'a> for NullableVec<i64> {
     fn cast_ref_i64(&self) -> &[i64] {
         &self.data
     }
-    // fn cast_ref_mut_i64(&mut self) -> &mut Vec<i64> { &mut self.data }
     fn to_mixed(&self) -> Vec<Val<'a>> {
         self.data
             .iter()
@@ -128,26 +131,94 @@ impl<'a> Data<'a> for NullableVec<u32> {
     fn cast_ref_u32(&self) -> &[u32] {
         &self.data
     }
-    // fn cast_ref_mut_u32(&mut self) -> &mut Vec<u32> { &mut self.data }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if self.present.is_set(i) {
+                    Val::Integer(*x as i64)
+                } else {
+                    Val::Null
+                }
+            })
+            .collect()
+    }
 }
 
 impl<'a> Data<'a> for NullableVec<u16> {
     fn cast_ref_u16(&self) -> &[u16] {
         &self.data
     }
-    // fn cast_ref_mut_u16(&mut self) -> &mut Vec<u16> { &mut self.data }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if self.present.is_set(i) {
+                    Val::Integer(*x as i64)
+                } else {
+                    Val::Null
+                }
+            })
+            .collect()
+    }
 }
 
 impl<'a> Data<'a> for NullableVec<u8> {
     fn cast_ref_u8(&self) -> &[u8] {
         &self.data
     }
-    // fn cast_ref_mut_u8(&mut self) -> &mut Vec<u8> { &mut self.data }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if self.present.is_set(i) {
+                    Val::Integer(*x as i64)
+                } else {
+                    Val::Null
+                }
+            })
+            .collect()
+    }
 }
 
 impl<'a> Data<'a> for NullableVec<&'a str> {
     fn cast_ref_str(&self) -> &[&'a str] {
         &self.data
+    }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if self.present.is_set(i) {
+                    Val::Str(x)
+                } else {
+                    Val::Null
+                }
+            })
+            .collect()
+    }
+}
+
+impl<'a> Data<'a> for NullableVec<OrderedFloat<f64>> {
+    fn cast_ref_f64(&self) -> &[OrderedFloat<f64>] {
+        &self.data
+    }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                if self.present.is_set(i) {
+                    Val::Float(*x)
+                } else {
+                    Val::Null
+                }
+            })
+            .collect()
     }
 }
 

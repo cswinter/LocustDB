@@ -1230,6 +1230,52 @@ fn test_long_nullable() {
 }
 
 #[test]
+fn test_partition_alias_mismatch() {
+    let _ = env_logger::try_init();
+    let locustdb = LocustDB::memory_only();
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 1,
+        partition_size: 5,
+        columns: vec![(
+            "f1".to_string(),
+            locustdb::colgen::nullable_ints(vec![None, Some(1)], vec![0.1, 0.9]),
+        )],
+    }));
+    locustdb.force_flush();
+    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+        name: "test".to_string(),
+        partitions: 1,
+        partition_size: 5,
+        columns: vec![
+            (
+                "f2".to_string(),
+                locustdb::colgen::nullable_ints(vec![None, Some(1)], vec![0.1, 0.9]),
+            ),
+            (
+                "f3".to_string(),
+                locustdb::colgen::nullable_ints(vec![None, Some(1)], vec![0.1, 0.9]),
+            ),
+        ],
+    }));
+    let query = "SELECT f1, f2, f3, f4 FROM test LIMIT 10;";
+    let expected_rows = vec![
+        [Int(1), Null, Null, Null],
+        [Int(1), Null, Null, Null],
+        [Int(1), Null, Null, Null],
+        [Int(1), Null, Null, Null],
+        [Null, Null, Null, Null],
+        [Null, Int(1), Int(1), Null],
+        [Null, Int(1), Int(1), Null],
+        [Null, Int(1), Int(1), Null],
+        [Null, Int(1), Int(1), Null],
+        [Null, Null, Null, Null],
+    ];
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+}
+
+#[test]
 fn test_sequential_int_sort() {
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();

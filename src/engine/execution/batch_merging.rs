@@ -10,8 +10,8 @@ use std::usize;
 pub struct BatchResult<'a> {
     pub columns: Vec<BoxedData<'a>>,
     pub projection: Vec<usize>,
-    pub aggregations: Vec<(usize, Aggregator)>,
     // Maps each projection in original query to corresponding result column (`projection` is just a subset without aggregating projections)
+    pub aggregations: Vec<(usize, Aggregator)>,
     pub order_by: Vec<(usize, bool)>,
     pub level: u32,
     pub scanned_range: Range<usize>,
@@ -288,52 +288,98 @@ pub fn combine<'a>(
         } else {
             // Select query
             // TODO(#97): make this work for differently aliased columns (need to send through query planner)
-            ensure!(
-                batch1.projection == batch2.projection,
-                "Different projections in select batches ({:?}, {:?})",
-                &batch1.projection,
-                &batch2.projection
-            );
-            let mut result = Vec::with_capacity(batch1.columns.len());
-            let show = batch1.show || batch2.show;
-            for (mut col1, col2) in batch1.columns.into_iter().zip(batch2.columns) {
-                let count = if col1.len() >= limit {
-                    0
-                } else {
-                    min(col2.len(), limit - col1.len())
-                };
-                if show {
-                    println!("Merging columns (count={count})");
-                    println!("col1={}", col1.display());
-                    println!("col2={}", col2.display());
-                }
-                if let Some(newcol) = col1.append_all(&*col2, count) {
+            // ensure!(
+            //     batch1.projection == batch2.projection,
+            //     "Different projections in select batches ({:?}, {:?})",
+            //     &batch1.projection,
+            //     &batch2.projection
+            // );
+            if batch1.projection == batch2.projection {
+                let mut result = Vec::with_capacity(batch1.columns.len());
+                let show = batch1.show || batch2.show;
+                for (mut col1, col2) in batch1.columns.into_iter().zip(batch2.columns) {
+                    let count = if col1.len() >= limit {
+                        0
+                    } else {
+                        min(col2.len(), limit - col1.len())
+                    };
                     if show {
-                        println!("newcol={}", newcol.display());
+                        println!("Merging columns (count={count})");
+                        println!("col1={}", col1.display());
+                        println!("col2={}", col2.display());
                     }
-                    result.push(newcol)
-                } else {
-                    if show {
-                        println!("newcol=col1={}", col1.display());
+                    if let Some(newcol) = col1.append_all(&*col2, count) {
+                        if show {
+                            println!("newcol={}", newcol.display());
+                        }
+                        result.push(newcol)
+                    } else {
+                        if show {
+                            println!("newcol=col1={}", col1.display());
+                        }
+                        result.push(col1)
                     }
-                    result.push(col1)
                 }
+                Ok(BatchResult {
+                    columns: result,
+                    projection: batch1.projection,
+                    aggregations: vec![],
+                    order_by: vec![],
+                    level: batch1.level + 1,
+                    scanned_range: batch1.scanned_range.start..batch2.scanned_range.end,
+                    batch_count: batch1.batch_count + batch2.batch_count,
+                    show: batch1.show && batch2.show,
+                    unsafe_referenced_buffers: {
+                        let mut urb = batch1.unsafe_referenced_buffers;
+                        urb.extend(batch2.unsafe_referenced_buffers);
+                        urb
+                    },
+                })
+            } else {
+                // TODO: potentially inefficient (conversion to mixed, could avoid copying in some cases and just append, ...)
+                let mut result = Vec::with_capacity(batch1.projection.len());
+                let show = batch1.show || batch2.show;
+                for (proj1, proj2) in batch1.projection.iter().zip(batch2.projection.iter()) {
+                    let mut col1: Box<dyn Data> = Box::new(batch1.columns[*proj1].to_mixed());
+                    let col2 = &batch2.columns[*proj2];
+                    let count = if col1.len() >= limit {
+                        0
+                    } else {
+                        min(col2.len(), limit - col1.len())
+                    };
+                    if show {
+                        println!("Merging columns (count={count})");
+                        println!("col1={}", col1.display());
+                        println!("col2={}", col2.display());
+                    }
+                    if let Some(newcol) = col1.append_all(&**col2, count) {
+                        if show {
+                            println!("newcol={}", newcol.display());
+                        }
+                        result.push(newcol)
+                    } else {
+                        if show {
+                            println!("newcol=col1={}", col1.display());
+                        }
+                        result.push(col1)
+                    }
+                }
+                Ok(BatchResult {
+                    columns: result,
+                    projection: (0..batch1.projection.len()).collect(),
+                    aggregations: vec![],
+                    order_by: vec![],
+                    level: batch1.level + 1,
+                    scanned_range: batch1.scanned_range.start..batch2.scanned_range.end,
+                    batch_count: batch1.batch_count + batch2.batch_count,
+                    show: batch1.show && batch2.show,
+                    unsafe_referenced_buffers: {
+                        let mut urb = batch1.unsafe_referenced_buffers;
+                        urb.extend(batch2.unsafe_referenced_buffers);
+                        urb
+                    },
+                })
             }
-            Ok(BatchResult {
-                columns: result,
-                projection: batch1.projection,
-                aggregations: vec![],
-                order_by: vec![],
-                level: batch1.level + 1,
-                scanned_range: batch1.scanned_range.start..batch2.scanned_range.end,
-                batch_count: batch1.batch_count + batch2.batch_count,
-                show: batch1.show && batch2.show,
-                unsafe_referenced_buffers: {
-                    let mut urb = batch1.unsafe_referenced_buffers;
-                    urb.extend(batch2.unsafe_referenced_buffers);
-                    urb
-                },
-            })
         }
     }
 }
