@@ -165,7 +165,7 @@ pub fn verbose_encode(
                 && trailing_zeros >= last_trailing_zeros
                 && (regret < max_regret || significant_bits == last_significant_bits)
             {
-                writer.write_int(0b10, 2).unwrap();
+                writer.write_int(0b01, 2).unwrap();
                 bits_string.push_str("\x1b[1;31m10\x1b[0m");
                 let xor = xor >> last_trailing_zeros;
                 writer

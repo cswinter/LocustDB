@@ -57,6 +57,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1fdabc7756949593fe60f30ec81974b613357de856987752631dea1e3394c80"
 
 [[package]]
+name = "better_io"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92fde17f91e7ba10b2a07f8dff29530b77144894bc6ae850fbc66e1276af0d28"
+
+[[package]]
 name = "bitbuffer"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -182,6 +188,7 @@ dependencies = [
  "bitbuffer",
  "clap",
  "log",
+ "pco",
  "rand",
  "serde",
  "serde_json",
@@ -206,6 +213,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da0df0e5185db44f69b44f26786fe401b6c293d1907744beaa7fa62b2e5a517a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "pco"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19cb0bcfbdea722b116cdf2699bef37e9ebde77a6e9edb57b9d22afd5eb13cc3"
+dependencies = [
+ "better_io",
+ "rand_xoshiro",
 ]
 
 [[package]]
@@ -284,6 +301,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
+]
+
+[[package]]
+name = "rand_xoshiro"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
+dependencies = [
+ "rand_core",
 ]
 
 [[package]]
