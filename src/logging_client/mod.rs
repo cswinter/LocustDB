@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::mem;
-use std::os::unix::thread;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::fmt;
 
 use reqwest::header::CONTENT_TYPE;
