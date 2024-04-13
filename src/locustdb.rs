@@ -186,7 +186,10 @@ impl LocustDB {
     }
 
     pub fn force_flush(&self) {
-        self.inner_locustdb.wal_flush();
+        let inner = self.inner_locustdb.clone();
+        std::thread::spawn(move || inner.wal_flush())
+            .join()
+            .unwrap();
     }
 
     pub fn evict_cache(&self) -> usize {
@@ -225,7 +228,7 @@ impl Default for Options {
             mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB
             seq_disk_read: false,
-            max_wal_size_bytes: 64 * 1024 * 1024, // 64 MiB
+            max_wal_size_bytes: 64 * 1024 * 1024,      // 64 MiB
             max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
             partition_combine_factor: 4,
             batch_size: 1024,

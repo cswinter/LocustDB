@@ -1,7 +1,12 @@
 mod file_writer;
 mod gcs_writer;
+mod azure_writer;
 pub mod noop_storage;
 pub mod storage;
+
+lazy_static! {
+    static ref RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+}
 
 use std::collections::HashMap;
 

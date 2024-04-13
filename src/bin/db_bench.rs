@@ -30,9 +30,10 @@ struct Opts {
     no_ingest: bool,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     env_logger::init();
+    log::info!("Store blob successful");
     let opts = Opts::from_args();
     let start_time = std::time::Instant::now();
 
