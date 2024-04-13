@@ -26,6 +26,7 @@ failure_derive = "0.1"
 flate2 = "1.0"
 fnv = "1.0"
 futures = "0.3"
+google-cloud-storage = { version = "0.16", features = ["rustls-tls", "auth"], default-features = false }
 hex = "0.3"
 itertools = "0.5"
 lazy_static = "1.4.0"

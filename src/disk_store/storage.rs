@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Serialize};
 
 use super::file_writer::{BlobWriter, FileBlobWriter};
+use super::gcs_writer::GCSBlobWriter;
 use super::{ColumnLoader, PartitionMetadata, SubpartitionMetadata};
 use crate::logging_client::EventBuffer;
 use crate::mem_store::{Column, DataSource};
@@ -63,13 +64,24 @@ impl Storage {
         path: &Path,
         perf_counter: Arc<PerfCounter>,
         readonly: bool,
-    ) -> (Storage, Vec<WALSegment>) {
+    ) -> (Storage, Vec<WALSegment<'static>>) {
+        let (writer, path): (Box<dyn BlobWriter + Send + Sync + 'static>, PathBuf) = if path.starts_with("gs://") {
+            let components = path.components().collect::<Vec<_>>();
+            if components.len() < 2 {
+                panic!("Invalid GCS path: {:?}", path);
+            }
+            let bucket = components[1].as_os_str().to_str().expect("Invalid GCS path");
+            // create new path that omits the first two components
+            let path = components[2..].iter().map(|c| c.as_os_str()).collect::<PathBuf>();
+            (Box::new(GCSBlobWriter::new(bucket.to_string()).unwrap()), path)
+        } else {
+            (Box::new(FileBlobWriter::new()), path.to_owned())
+        };
         let meta_db_path = path.join("meta");
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
-        let writer = Box::new(FileBlobWriter::new());
         let (meta_store, wal_segments) = Storage::recover(
-            &writer,
+            writer.as_ref(),
             &meta_db_path,
             &wal_dir,
             readonly,
@@ -90,7 +102,7 @@ impl Storage {
     }
 
     fn recover(
-        writer: &FileBlobWriter,
+        writer: &dyn BlobWriter,
         meta_db_path: &Path,
         wal_dir: &Path,
         readonly: bool,

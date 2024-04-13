@@ -20,7 +20,7 @@ mod unicode;
     author = "Clemens Winter <clemenswinter1@gmail.com>"
 )]
 struct Opt {
-    /// Database path
+    /// Database path. Supports both local file paths and Google cloud storage paths (gs://bucket/folder)
     #[structopt(long, name = "PATH", parse(from_os_str))]
     db_path: Option<PathBuf>,
 
@@ -32,7 +32,7 @@ struct Opt {
     #[structopt(long, name = "NAME", default_value = "default")]
     table: String,
 
-    /// Limit for in-memory size of tables in GiB")
+    /// Limit for in-memory size of tables in GiB
     #[structopt(long, name = "GB", default_value = "8")]
     mem_limit_tables: usize,
 

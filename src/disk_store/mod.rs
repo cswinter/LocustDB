@@ -1,4 +1,5 @@
 mod file_writer;
+mod gcs_writer;
 pub mod noop_storage;
 pub mod storage;
 
