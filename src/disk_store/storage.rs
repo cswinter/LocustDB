@@ -5,6 +5,7 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 
+use super::azure_writer::AzureBlobWriter;
 use super::file_writer::{BlobWriter, FileBlobWriter};
 use super::gcs_writer::GCSBlobWriter;
 use super::{ColumnLoader, PartitionMetadata, SubpartitionMetadata};
@@ -74,6 +75,16 @@ impl Storage {
             // create new path that omits the first two components
             let path = components[2..].iter().map(|c| c.as_os_str()).collect::<PathBuf>();
             (Box::new(GCSBlobWriter::new(bucket.to_string()).unwrap()), path)
+        } else if path.starts_with("az://") {
+            let components = path.components().collect::<Vec<_>>();
+            if components.len() < 3 {
+                panic!("Invalid Azure path: {:?}", path);
+            }
+            let account = components[1].as_os_str().to_str().expect("Invalid Azure path");
+            let container = components[2].as_os_str().to_str().expect("Invalid Azure path");
+            // create new path that omits the first three components
+            let path = components[3..].iter().map(|c| c.as_os_str()).collect::<PathBuf>();
+            (Box::new(AzureBlobWriter::new(account, container).unwrap()), path)
         } else {
             (Box::new(FileBlobWriter::new()), path.to_owned())
         };

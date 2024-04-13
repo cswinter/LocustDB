@@ -30,9 +30,11 @@ struct Opts {
     no_ingest: bool,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     env_logger::init();
+    let _ = storeblob().await;
+    log::info!("Store blob successful");
     let opts = Opts::from_args();
     let start_time = std::time::Instant::now();
 
@@ -516,3 +518,50 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 //   ingestion bytes:    1.02GiB
 // query
 //   files opened: 25
+
+
+use azure_identity::DefaultAzureCredential;
+use azure_storage::prelude::*;
+use azure_storage_blobs::prelude::*;
+use futures::stream::StreamExt;
+use futures::executor::block_on;
+
+async fn storeblob() -> azure_core::Result<()> {
+
+    // First we retrieve the account name and access key from environment variables.
+    let account = "locustdbstoragetesting".to_string();
+    let container = "dev".to_string();
+    let blob_name = "xtest01/wal/0.wal";
+    // let blob_name = "rustclienttest/helloworld.txt";
+    let creds = Arc::new(DefaultAzureCredential::default());
+    println!("obtained default creds");
+    let storage_credentials = StorageCredentials::token_credential(creds);
+    println!("obtained storage creds");
+    let blob_client = ClientBuilder::new(account, storage_credentials).blob_client(&container, blob_name);
+    println!("created blob client {:?}", blob_client);
+    println!("putting blob...");
+    let start_time = std::time::Instant::now();
+    //let data = (0..390).map(|i| (i % 256) as u8).collect::<Vec<_>>();
+    let data = vec![1, 70, 70, 1];
+    block_on(blob_client.put_block_blob(data).content_type("application/octet-stream").into_future())?;
+    println!("success! time: {:?}", start_time.elapsed());
+
+    let mut result: Vec<u8> = vec![];
+
+    println!("getting blob...");
+    // The stream is composed of individual calls to the get blob endpoint
+    let mut stream = blob_client.get().into_stream();
+    while let Some(value) = stream.next().await {
+        let mut body = value?.data;
+        // For each response, we stream the body instead of collecting it all
+        // into one large allocation.
+        while let Some(value) = body.next().await {
+            let value = value?;
+            result.extend(&value);
+        }
+    }
+
+    println!("result: {:?}", result);
+
+    Ok(())
+}

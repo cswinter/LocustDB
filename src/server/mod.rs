@@ -329,6 +329,9 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
         bytes = bytes.slice(1..);
     }
     log::debug!("Inserting bytes: {} ({})", s, req_body.len());
+    log::info!("LCREaTING BLOB IN INSERT BIN");
+    let _ = storeblob().await;
+    log::info!("success");
 
     data.db
         .perf_counter()
@@ -391,6 +394,8 @@ pub fn run(
     cors_allow_origin: Vec<String>,
     addrs: String,
 ) -> std::io::Result<(ServerHandle, oneshot::Receiver<()>)> {
+    // println!("STORE BLOB IN RUN");
+    // let _ = block_on(storeblob());
     let server = HttpServer::new(move || {
         let cors = if cors_allow_all {
             Cors::permissive()
@@ -431,7 +436,8 @@ pub fn run(
 
     let handle = server.handle();
     thread::spawn(move || {
-        actix_web::rt::System::new().block_on(server).unwrap();
+        let runtime = || tokio::runtime::Runtime::new().unwrap();
+        actix_web::rt::System::with_tokio_rt(runtime).block_on(server).unwrap();
         let _ = tx.send(());
     });
 
@@ -493,4 +499,51 @@ fn encode_column(col: BasicTypeColumn, encode_opts: &EncodingOpts) -> column::Co
             }
         }
     }
+}
+
+
+use azure_identity::DefaultAzureCredential;
+use azure_storage::prelude::*;
+use azure_storage_blobs::prelude::*;
+use futures::stream::StreamExt;
+use futures::executor::block_on;
+
+async fn storeblob() -> azure_core::Result<()> {
+
+    // First we retrieve the account name and access key from environment variables.
+    let account = "locustdbstoragetesting".to_string();
+    let container = "dev".to_string();
+    let blob_name = "xtest01/wal/0.wal";
+    // let blob_name = "rustclienttest/helloworld.txt";
+    let creds = Arc::new(DefaultAzureCredential::default());
+    println!("obtained default creds");
+    let storage_credentials = StorageCredentials::token_credential(creds);
+    println!("obtained storage creds");
+    let blob_client = ClientBuilder::new(account, storage_credentials).blob_client(&container, blob_name);
+    println!("created blob client {:?}", blob_client);
+    println!("putting blob...");
+    let start_time = std::time::Instant::now();
+    //let data = (0..390).map(|i| (i % 256) as u8).collect::<Vec<_>>();
+    let data = vec![1, 70, 70, 1];
+    block_on(blob_client.put_block_blob(data).content_type("application/octet-stream").into_future())?;
+    println!("success! time: {:?}", start_time.elapsed());
+
+    let mut result: Vec<u8> = vec![];
+
+    println!("getting blob...");
+    // The stream is composed of individual calls to the get blob endpoint
+    let mut stream = blob_client.get().into_stream();
+    while let Some(value) = stream.next().await {
+        let mut body = value?.data;
+        // For each response, we stream the body instead of collecting it all
+        // into one large allocation.
+        while let Some(value) = body.next().await {
+            let value = value?;
+            result.extend(&value);
+        }
+    }
+
+    println!("result: {:?}", result);
+
+    Ok(())
 }
