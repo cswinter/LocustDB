@@ -1179,7 +1179,6 @@ pub mod operator {
         input: TypedBufferRef,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        println!("type_conversion: {:?} -> {:?}", input.tag, output.tag);
         if input.tag == output.tag {
             return Ok(Box::new(Identity {
                 input: input.any(),
