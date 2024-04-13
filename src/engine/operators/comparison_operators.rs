@@ -6,12 +6,11 @@ use crate::engine::data_types::GenericIntVec;
 
 
 pub struct LessThan;
-
 pub struct LessThanEquals;
-
 pub struct NotEquals;
-
 pub struct Equals;
+pub struct BoolOr;
+pub struct BoolAnd;
 
 
 impl<T, U, V> BinaryOp<T, U, u8> for LessThan
@@ -76,6 +75,17 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for NotEquals {
     fn symbol() -> &'static str { "<>" }
 }
 
+impl BinaryOp<u8, u8, u8> for BoolOr {
+    #[inline]
+    fn perform(l: u8, r: u8) -> u8 { l | r }
+    fn symbol() -> &'static str { "OR" }
+}
+
+impl BinaryOp<u8, u8, u8> for BoolAnd {
+    #[inline]
+    fn perform(l: u8, r: u8) -> u8 { l & r }
+    fn symbol() -> &'static str { "AND" }
+}
 
 pub trait Widen<T> {
     type Join: PrimInt;

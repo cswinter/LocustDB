@@ -17,7 +17,7 @@ use super::aggregate::*;
 use super::assemble_nullable::AssembleNullable;
 use super::binary_operator::*;
 use super::bit_unpack::BitUnpackOperator;
-use super::bool_op::*;
+// use super::bool_op::*;
 use super::buffer_stream::*;
 use super::collect::Collect;
 use super::column_ops::*;
@@ -1061,7 +1061,14 @@ pub mod operator {
         rhs: BufferRef<u8>,
         output: BufferRef<u8>,
     ) -> BoxedOperator<'a> {
-        BooleanOperator::<BooleanOr>::compare(lhs, rhs, output)
+        // TODO(perf): carefully reenable inplace boolean operators in cases where we can prove that this preserves semantics. Last bug that prevented this was modyfing buffer from ConstantExpand which didn't get reset in subsequent iterations.
+        // InplaceBooleanOperator::<BooleanOr>::compare(lhs, rhs, output)
+        Box::new(BinaryOperator {
+            lhs,
+            rhs,
+            output,
+            op: PhantomData::<BoolOr>,
+        })
     }
 
     pub fn and<'a>(
@@ -1069,7 +1076,13 @@ pub mod operator {
         rhs: BufferRef<u8>,
         output: BufferRef<u8>,
     ) -> BoxedOperator<'a> {
-        BooleanOperator::<BooleanAnd>::compare(lhs, rhs, output)
+        Box::new(BinaryOperator {
+            lhs,
+            rhs,
+            output,
+            op: PhantomData::<BoolAnd>,
+        })
+        // InplaceBooleanOperator::<BooleanAnd>::compare(lhs, rhs, output)
     }
 
     pub fn bit_shift_left_add<'a>(

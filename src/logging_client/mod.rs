@@ -1,9 +1,9 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::mem;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::fmt;
 
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
@@ -222,6 +222,14 @@ impl LoggingClient {
             return Err(Error::Client { status_code, msg });
         }
         Ok(response.json::<ColumnNameResponse>().await?)
+    }
+
+    /// This doesn't fully flush the buffer, just waits for current buffer to be picked up by worker.
+    /// This means there may still be one outstanding buffer that hasn't been sent.
+    pub async fn flush(&self) {
+        while self.buffer_size.load(std::sync::atomic::Ordering::SeqCst) as usize > 0 {
+            tokio::time::sleep(self.flush_interval).await;
+        }
     }
 }
 

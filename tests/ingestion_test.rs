@@ -4,6 +4,7 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use std::collections::HashMap;
+use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,11 +16,16 @@ use rand::{Rng, SeedableRng};
 // Need multiple threads since dropping logging client blocks main thread and prevents logging worker from flushing buffers
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_ingestion() {
-    env_logger::init();
+    let _ = env_logger::try_init();
 
     let db_path: PathBuf = tempdir().unwrap().path().into();
     log::info!("Creating LocustDB at {:?}", db_path);
-    let (db, handle) = create_locustdb(db_path.clone());
+    let opts = locustdb::Options {
+        db_path: Some(db_path),
+        ..locustdb::Options::default()
+    };
+    let port = 8888;
+    let (db, handle) = create_locustdb(&opts, port);
 
     let tables = (0..20)
         .map(|i| format!("table_{:02}", i))
@@ -54,7 +60,7 @@ async fn test_ingestion() {
 
     handle.stop(true).await;
     drop(db);
-    let (mut db, mut handle) = create_locustdb(db_path.clone());
+    let (mut db, mut handle) = create_locustdb(&opts, port);
     let new_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
     assert_eq!(new_all.rows.unwrap().len(), total_rows);
     assert_eq!(old_all.colnames.len(), new_all.colnames.len());
@@ -83,7 +89,7 @@ async fn test_ingestion() {
         log::info!("Dropped db in {:?}", start_time.elapsed());
 
         let start_time = Instant::now();
-        (db, handle) = create_locustdb(db_path.clone());
+        (db, handle) = create_locustdb(&opts, port);
         log::info!("Created db in {:?}", start_time.elapsed());
 
         let start_time = Instant::now();
@@ -108,7 +114,7 @@ async fn test_ingestion() {
     let old_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
     handle.stop(true).await;
     drop(db);
-    let (db, _) = create_locustdb(db_path.clone());
+    let (db, _) = create_locustdb(&opts, port);
     let new_all = query(&db, &format!("SELECT * FROM {}", &tables[7])).await;
     assert_eq!(new_all.rows.unwrap().len(), total_rows);
     assert_eq!(old_all.colnames.len(), new_all.colnames.len());
@@ -184,14 +190,74 @@ async fn query(db: &LocustDB, query: &str) -> QueryOutput {
         .unwrap()
 }
 
-fn create_locustdb(db_path: PathBuf) -> (Arc<locustdb::LocustDB>, ServerHandle) {
-    let options = locustdb::Options {
-        db_path: Some(db_path),
-        ..locustdb::Options::default()
-    };
-    let db = Arc::new(locustdb::LocustDB::new(&options));
+fn create_locustdb(opts: &locustdb::Options, port: u16) -> (Arc<locustdb::LocustDB>, ServerHandle) {
+    let db = Arc::new(locustdb::LocustDB::new(opts));
     let _locustdb = db.clone();
     let (handle, _) =
-        locustdb::server::run(_locustdb, false, vec![], "localhost:8888".to_string()).unwrap();
+        locustdb::server::run(_locustdb, false, vec![], format!("localhost:{port}")).unwrap();
     (db, handle)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_ingest_sparse_nullable() {
+    let _ = env_logger::try_init();
+
+    let db_path: PathBuf = tempdir().unwrap().path().into();
+    let opts = locustdb::Options {
+        db_path: Some(db_path),
+        threads: 1,
+        batch_size: 8,
+        ..locustdb::Options::default()
+    };
+    let port = 8889;
+    let (db, _handle) = create_locustdb(&opts, port);
+
+    let addr = format!("http://localhost:{port}");
+    let mut log = locustdb::logging_client::LoggingClient::new(
+        Duration::from_micros(10),
+        &addr,
+        // Set max buffer size to 0 to ensure we ingest one row at a time
+        0,
+        BufferFullPolicy::Block,
+    );
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
+    let mut vals = vec![];
+    let interval = 7;
+    for i in 0..15 {
+        let mut row = vec![("row".to_string(), i as f64)];
+        if i % interval == 0 {
+            let val = rng.gen::<f64>();
+            vals.push(val);
+            row.push(("sparse_float".to_string(), val));
+        }
+        log.log("default", row);
+    }
+    drop(log);
+
+    let query = "SELECT row, sparse_float FROM default WHERE row IS NOT NULL AND (sparse_float IS NOT NULL)";
+    let query2 = "SELECT row, sparse_float FROM default WHERE (sparse_float IS NOT NULL)";
+    let show = if env::var("DEBUG_TESTS").is_ok() {
+        vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    } else {
+        vec![]
+    };
+    let all_nonzero = db.run_query(query, false, true, show.clone())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        all_nonzero.rows.as_ref().unwrap(),
+        &vals.iter()
+            .enumerate()
+            .map(|(i, &v)| vec![Float((i * interval) as f64), Float(v)])
+            .collect::<Vec<_>>()
+    );
+    let all_nonzero2 = db.run_query(query2, false, true, show)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        all_nonzero.rows.unwrap(),
+        all_nonzero2.rows.unwrap(),
+    );
 }

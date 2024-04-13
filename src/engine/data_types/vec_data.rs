@@ -271,7 +271,7 @@ pub fn display_slice<T: Debug>(slice: &[T], max_chars: usize) -> String {
 fn _display_slice<T: Debug>(slice: &[T], max: usize) -> String {
     let mut result = String::new();
     write!(result, "[").unwrap();
-    write!(result, "{}", slice[..max].iter().map(|x| format!("{:?}", x)).join(", ")).unwrap();
+    write!(result, "{}", slice[..max.min(slice.len())].iter().map(|x| format!("{:?}", x)).join(", ")).unwrap();
     if max < slice.len() {
         write!(result, ", ...] ({} more)", slice.len() - max).unwrap();
     } else {
