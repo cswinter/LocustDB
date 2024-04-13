@@ -274,6 +274,11 @@ pub mod operator {
                 to: data.i64()?,
                 output: output.nullable_i64()?,
             })),
+            EncodingType::F64 => Ok(Box::new(PropagateNullability {
+                from: nullability,
+                to: data.f64()?,
+                output: output.nullable_f64()?,
+            })),
             EncodingType::Str => Ok(Box::new(PropagateNullability {
                 from: nullability,
                 to: data.str()?,
@@ -621,7 +626,7 @@ pub mod operator {
         } else {
             reify_types! {
                 "select";
-                input, output: PrimitiveUSize;
+                input, output: VecData;
                 Ok(Box::new(Select { input, indices, output }));
                 input, output: NullablePrimitive;
                 Ok(Box::new(SelectNullable { input, indices, output }))
@@ -1174,20 +1179,20 @@ pub mod operator {
         input: TypedBufferRef,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
+        println!("type_conversion: {:?} -> {:?}", input.tag, output.tag);
+        if input.tag == output.tag {
+            return Ok(Box::new(Identity {
+                input: input.any(),
+                output: output.any(),
+            }));
+        }
         if output.tag == EncodingType::Val {
             let output = output.val()?;
             if input.tag.is_nullable() {
-                if input.tag == EncodingType::NullableStr {
-                    Ok(Box::new(NullableStrToVal {
-                        input: input.nullable_str()?,
-                        vals: output,
-                    }) as BoxedOperator<'a>)
-                } else {
-                    reify_types! {
-                        "nullable_int_to_val";
-                        input: NullableInteger;
-                        Ok(Box::new(NullableIntToVal { input, vals: output }) as BoxedOperator<'a>)
-                    }
+                reify_types! {
+                    "nullable_to_val";
+                    input: NullablePrimitive;
+                    Ok(Box::new(NullableToVal { input, vals: output }) as BoxedOperator<'a>)
                 }
             } else if input.tag == EncodingType::Null {
                 Ok(Box::new(NullToVal {
@@ -1236,8 +1241,7 @@ pub mod operator {
                     input: input.str()?,
                     output: output.opt_str()?,
                 }));
-            }
-            if input.tag == EncodingType::F64 && output.tag == EncodingType::OptF64 {
+            } else if input.tag == EncodingType::F64 && output.tag == EncodingType::OptF64 {
                 return Ok(Box::new(TypeConversionOperator {
                     input: input.f64()?,
                     output: output.opt_f64()?,

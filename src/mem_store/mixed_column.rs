@@ -10,5 +10,14 @@ impl RawVal {
             RawVal::Float(f) => Val::Float(f),
         }
     }
+
+    pub fn to_static_val(&self) -> Val<'static> {
+        match *self {
+            RawVal::Null => Val::Null,
+            RawVal::Int(i) => Val::Integer(i),
+            RawVal::Float(f) => Val::Float(f),
+            RawVal::Str(_) => panic!("Can't convert RawVal::Str to Val::Str + 'static"),
+        }
+    }
 }
 

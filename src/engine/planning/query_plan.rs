@@ -1401,7 +1401,11 @@ pub fn compile_grouping_key(
                 if original_plan.is_nullable() {
                     decoded_group_by = match offset {
                         Some(offset) => planner.unfuse_int_nulls(offset, decoded_group_by),
-                        None => planner.unfuse_nulls(decoded_group_by),
+                        None => if decoded_group_by.tag.is_naturally_nullable() {
+                            decoded_group_by
+                        } else {
+                            planner.unfuse_nulls(decoded_group_by)
+                        },
                     }
                 } else if let Some(offset) = offset {
                     let offset = planner.scalar_i64(-offset, true);

@@ -163,7 +163,7 @@ pub fn combine<'a>(
             aggregates.push((aggregated.any(), aggregator));
         }
 
-        let mut executor = qp.prepare(data, batch_size)?;
+        let mut executor = qp.prepare(data, batch_size, false)?;
         let mut results = executor.prepare_no_columns();
         executor.run(1, &mut results, batch1.show || batch2.show)?;
 
@@ -227,9 +227,9 @@ pub fn combine<'a>(
                 let (l, r) = unify_types(&mut qp, l, r);
                 let mut partitioning = qp.partition(l, r, limit, desc);
 
-                for i in 1..(left.len() - 1) {
+                for i in 1..(batch1.order_by.len() - 1){
                     let (index1, desc) = batch1.order_by[i];
-                    let (index2, _) = batch1.order_by[i];
+                    let (index2, _) = batch2.order_by[i];
                     let (l, r) = unify_types(&mut qp, left[index1], right[index2]);
                     partitioning = qp.subpartition(partitioning, l, r, desc);
                 }
@@ -247,6 +247,7 @@ pub fn combine<'a>(
                     let l = null_to_val(&mut qp, left[ileft]);
                     let r = null_to_val(&mut qp, right[iright]);
                     let (l, r) = unify_types(&mut qp, l, r);
+                    assert!(l.tag == r.tag, "Types do not match: {:?} {:?}", l.tag, r.tag);
                     let merged = qp.merge_keep(merge_ops, l, r);
                     projection.push(merged.any());
                 }
@@ -259,12 +260,13 @@ pub fn combine<'a>(
                 let l = null_to_val(&mut qp, left[ileft]);
                 let r = null_to_val(&mut qp, right[iright]);
                 let (l, r) = unify_types(&mut qp, l, r);
+                assert!(l.tag == r.tag, "Types do not match: {:?} {:?}", l.tag, r.tag);
                 let merged = qp.merge_keep(merge_ops, l, r);
                 order_by.push((merged.any(), desc));
             }
             order_by.push((merged_final_sort_col.any(), final_desc));
 
-            let mut executor = qp.prepare(data, batch_size)?;
+            let mut executor = qp.prepare(data, batch_size, false)?;
             let mut results = executor.prepare_no_columns();
             executor.run(1, &mut results, batch1.show || batch2.show)?;
             let (columns, projection, _, order_by) =

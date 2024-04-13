@@ -331,8 +331,7 @@ impl<'a> QueryExecutor<'a> {
                             // or downstream of this stage.
                             for input in self.ops[consumer].inputs() {
                                 for &p in &producers[input.i] {
-                                    if transitive_output[p] && stage[p] != current_stage
-                                    {
+                                    if transitive_output[p] && stage[p] != current_stage {
                                         consumers_to_revisit.push(consumer);
                                         continue 'l2;
                                     }
@@ -605,26 +604,25 @@ impl<'a> QueryExecutor<'a> {
         for (i, input_i) in substitutions {
             let stage = stage_for_op[i];
             let input = self.buffer_provider.all_buffers[input_i];
-            let buffer = self.buffer_provider.named_buffer("buffer_stream", input.tag);
+            let buffer = self
+                .buffer_provider
+                .named_buffer("buffer_stream", input.tag);
             if input.tag.is_scalar() {
-                continue
+                continue;
             }
             let op = if input.tag == EncodingType::Null {
-                vector_operator::operator::stream_null_vec(
-                    input.any(),
-                    buffer.any(),
-                )
+                vector_operator::operator::stream_null_vec(input.any(), buffer.any())
             } else if input.tag.is_nullable() {
                 vector_operator::operator::stream_nullable(
                     input,
-                    self.buffer_provider.named_buffer("buffer_stream_data", input.tag),
+                    self.buffer_provider
+                        .named_buffer("buffer_stream_data", input.tag),
                     self.buffer_provider.buffer_u8("buffer_stream_present"),
                     buffer,
                 )
                 .unwrap()
             } else {
-                vector_operator::operator::stream(input, buffer)
-                    .unwrap()
+                vector_operator::operator::stream(input, buffer).unwrap()
             };
             self.ops[i].update_input(input_i, buffer.buffer.i);
             total_order[stage].ops.insert(0, (self.ops.len(), true));
@@ -682,11 +680,7 @@ impl<'a> QueryExecutor<'a> {
         let (max_length, batch_size) = self.init_stage(column_length, stage, scratchpad);
         let stream = self.stages[stage].stream;
         if show {
-            println!("\n-- Stage {} --", stage);
-            println!(
-                "batch_size: {}, max_length: {}, column_length: {}, stream: {}",
-                batch_size, max_length, column_length, stream
-            );
+            println!("\n-- Stage {stage} --    batch_size: {batch_size}, max_length: {max_length}, column_length: {column_length}, stream: {stream}");
         }
         let mut has_more = true;
         let mut iters = 0;
@@ -694,15 +688,24 @@ impl<'a> QueryExecutor<'a> {
             has_more = false;
             for &(op, streamable) in &self.stages[stage].ops {
                 if show && iters < 2 {
-                    println!("{} streamable={streamable}", self.ops[op].display(true));
+                    let types = self.ops[op]
+                        .outputs()
+                        .iter()
+                        .map(|b| format!("{:?}", self.buffer_provider.all_buffers[b.i].tag))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    println!(
+                        "{}     streamable={streamable} types={types}",
+                        self.ops[op].display(true)
+                    );
                 }
                 self.ops[op].execute(stream && streamable, scratchpad)?;
                 if show && iters < 2 {
                     for output in self.ops[op].outputs() {
                         let data = scratchpad.get_any(output);
-                        println!("{}", data.display());
+                        println!("  {}", data.display());
                         if let Some(present) = scratchpad.try_get_null_map(output) {
-                            print!("null map: ");
+                            print!("  null map: ");
                             for i in 0..cmp::min(present.len() * 8, 100) {
                                 if (&*present).is_set(i) {
                                     print!("1")

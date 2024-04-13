@@ -1,5 +1,6 @@
 use crate::engine::*;
 
+/// Applies the null map of a nullable buffer to another (non-nullable) buffer.
 #[derive(Debug)]
 pub struct PropagateNullability<T> {
     pub from: BufferRef<Nullable<Any>>,

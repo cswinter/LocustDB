@@ -141,6 +141,10 @@ impl NormalFormQuery {
             if let Some(codec) = plan_type.codec {
                 plan = codec.decode(plan, &mut planner);
             }
+            // TODO(perf): use more efficient solution than fuse_nulls for nullable columns (mostly requires better support in batch_merging)
+            if plan.is_nullable() {
+                plan = planner.cast(plan, EncodingType::Val);
+            }
             plan = planner.collect(
                 plan,
                 &col_info
@@ -171,7 +175,7 @@ impl NormalFormQuery {
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = planner.prepare(vec![], batch_size)?;
+        let mut executor = planner.prepare(vec![], batch_size, show)?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(partition_range.len(), &mut results, show)?;
@@ -423,7 +427,7 @@ impl NormalFormQuery {
         for c in columns {
             debug!("{}: {:?}", partition, c);
         }
-        let mut executor = qp.prepare(vec![], batch_size)?;
+        let mut executor = qp.prepare(vec![], batch_size, show)?;
         let mut results = executor.prepare(NormalFormQuery::column_data(columns));
         debug!("{:#}", &executor);
         executor.run(partition_range.len(), &mut results, show)?;

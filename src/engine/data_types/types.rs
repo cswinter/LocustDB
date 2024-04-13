@@ -63,9 +63,12 @@ impl EncodingType {
         }
     }
 
+    /// Returns the nullable version of the encoding type.
+    /// This is used when propagating nullability of type casts.
+    /// Types that already represent null values will return themselves.
     pub fn nullable(&self) -> EncodingType {
         match self {
-            EncodingType::Str | EncodingType::NullableStr | EncodingType::OptStr => {
+            EncodingType::Str | EncodingType::NullableStr => {
                 EncodingType::NullableStr
             }
             EncodingType::I64 | EncodingType::NullableI64 => EncodingType::NullableI64,
@@ -73,10 +76,12 @@ impl EncodingType {
             EncodingType::U16 | EncodingType::NullableU16 => EncodingType::NullableU16,
             EncodingType::U32 | EncodingType::NullableU32 => EncodingType::NullableU32,
             EncodingType::U64 | EncodingType::NullableU64 => EncodingType::NullableU64,
-            EncodingType::F64 | EncodingType::NullableF64 | EncodingType::OptF64 => {
+            EncodingType::F64 | EncodingType::NullableF64=> {
                 EncodingType::NullableF64
             }
             EncodingType::Val => EncodingType::Val,
+            EncodingType::OptStr => EncodingType::OptStr,
+            EncodingType::OptF64 => EncodingType::OptF64,
             _ => panic!("{:?} does not have a corresponding nullable type", &self),
         }
     }
@@ -93,6 +98,8 @@ impl EncodingType {
         }
     }
 
+    /// Returns whether the encoding type is nullable, i.e., is a basic type with an associated null map.
+    /// This does not apply to types like OptStr which can naturally represent null values.
     pub fn is_nullable(&self) -> bool {
         match self {
             EncodingType::NullableStr
@@ -114,6 +121,40 @@ impl EncodingType {
             | EncodingType::USize
             | EncodingType::Bitvec
             | EncodingType::Val
+            | EncodingType::Null
+            | EncodingType::ScalarI64
+            | EncodingType::ScalarStr
+            | EncodingType::ScalarString
+            | EncodingType::ConstVal
+            | EncodingType::ByteSlices(_)
+            | EncodingType::ValRows
+            | EncodingType::Premerge
+            | EncodingType::MergeOp => false,
+        }
+    }
+
+    /// Returns whether the encoding type can represent null values without an associated null map.
+    pub fn is_naturally_nullable(&self) -> bool {
+        match self {
+            EncodingType::Val
+            | EncodingType::OptStr
+            | EncodingType::OptF64 => true,
+            EncodingType::NullableStr
+            | EncodingType::NullableI64
+            | EncodingType::NullableU8
+            | EncodingType::NullableU16
+            | EncodingType::NullableU32
+            | EncodingType::NullableU64
+            | EncodingType::NullableF64
+            | EncodingType::Str
+            | EncodingType::I64
+            | EncodingType::U8
+            | EncodingType::U16
+            | EncodingType::U32
+            | EncodingType::U64
+            | EncodingType::F64
+            | EncodingType::USize
+            | EncodingType::Bitvec
             | EncodingType::Null
             | EncodingType::ScalarI64
             | EncodingType::ScalarStr
@@ -236,6 +277,39 @@ impl EncodingType {
                 (EncodingType::F64, EncodingType::OptF64) => EncodingType::OptF64,
                 _ => unimplemented!("lub not implemented for {:?} and {:?}", self, other),
             }
+        }
+    }
+
+    pub fn to_u8(self) -> u8 {
+        match self {
+            EncodingType::Str => 0u8,
+            EncodingType::I64 => 1,
+            EncodingType::U8 => 2,
+            EncodingType::U16 => 3,
+            EncodingType::U32 => 4,
+            EncodingType::U64 => 5,
+            EncodingType::F64 => 6,
+            EncodingType::Val => 7,
+            EncodingType::USize => 8,
+            EncodingType::Bitvec => 9,
+            EncodingType::NullableStr => 10,
+            EncodingType::NullableI64 => 11,
+            EncodingType::NullableU8 => 12,
+            EncodingType::NullableU16 => 13,
+            EncodingType::NullableU32 => 14,
+            EncodingType::NullableU64 => 15,
+            EncodingType::NullableF64 => 16,
+            EncodingType::OptStr => 17,
+            EncodingType::OptF64 => 18,
+            EncodingType::Null => 19,
+            EncodingType::ScalarI64 => 20,
+            EncodingType::ScalarStr => 21,
+            EncodingType::ScalarString => 22,
+            EncodingType::ConstVal => 23,
+            EncodingType::ByteSlices(x) => 32 + u8::try_from(x).unwrap(),
+            EncodingType::ValRows => 25,
+            EncodingType::Premerge => 26,
+            EncodingType::MergeOp => 27,
         }
     }
 }

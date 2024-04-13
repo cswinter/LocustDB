@@ -2,42 +2,7 @@ use crate::bitvec::*;
 use crate::engine::*;
 use crate::mem_store::Val;
 
-pub struct NullableStrToVal<'a> {
-    pub input: BufferRef<Nullable<&'a str>>,
-    pub vals: BufferRef<Val<'a>>,
-}
-
-impl<'a> VecOperator<'a> for NullableStrToVal<'a> {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
-        let (input, present) = scratchpad.get_nullable(self.input);
-        let mut vals = scratchpad.get_mut(self.vals);
-        if stream { vals.clear(); }
-        for i in 0..input.len() {
-            if (&*present).is_set(i) {
-                vals.push(Val::Str(input[i]));
-            } else {
-                vals.push(Val::Null);
-            }
-        }
-        Ok(())
-    }
-
-    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.vals, Vec::with_capacity(batch_size));
-    }
-
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
-    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.vals.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { true }
-    fn can_stream_output(&self, _: usize) -> bool { true }
-    fn can_block_output(&self) -> bool { true }
-    fn allocates(&self) -> bool { true }
-
-    fn display_op(&self, _: bool) -> String {
-        format!("NullableStrToVal({})", self.vals)
-    }
-}
+use super::type_conversion::Cast;
 
 pub struct ValToNullableStr<'a> {
     pub vals: BufferRef<Val<'a>>,
@@ -84,19 +49,19 @@ impl<'a> VecOperator<'a> for ValToNullableStr<'a> {
     }
 }
 
-pub struct NullableIntToVal<'a, T> {
+pub struct NullableToVal<'a, T> {
     pub input: BufferRef<Nullable<T>>,
     pub vals: BufferRef<Val<'a>>,
 }
 
-impl<'a, T: GenericIntVec<T>> VecOperator<'a> for NullableIntToVal<'a, T> {
+impl<'a, T: VecData<T> + Cast<Val<'a>> + 'a> VecOperator<'a> for NullableToVal<'a, T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (input, present) = scratchpad.get_nullable(self.input);
         let mut vals = scratchpad.get_mut(self.vals);
         if stream { vals.clear(); }
         for i in 0..input.len() {
             if (&*present).is_set(i) {
-                vals.push(Val::Integer(num::cast(input[i]).unwrap()));
+                vals.push(input[i].cast());
             } else {
                 vals.push(Val::Null);
             }

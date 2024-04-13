@@ -308,6 +308,7 @@ pub enum CodecOp {
     Nullable,
     Add(EncodingType, i64),
     Delta(EncodingType),
+    // EncodingType is the type of the input data
     ToI64(EncodingType),
     PushDataSection(usize),
     DictLookup(EncodingType),

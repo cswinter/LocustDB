@@ -368,6 +368,9 @@ impl<'a> Data<'a> for Vec<Val<'a>> {
         }
         None
     }
+    fn to_mixed(&self) -> Vec<Val<'a>> {
+        self.clone()
+    }
 }
 
 impl<'a> Data<'a> for Vec<usize> {

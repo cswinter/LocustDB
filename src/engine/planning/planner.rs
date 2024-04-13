@@ -17,12 +17,15 @@ pub struct QueryPlanner {
 }
 
 impl QueryPlanner {
-    pub fn prepare(mut self, mut constant_vecs: Vec<BoxedData>, batch_size: usize) -> Result<QueryExecutor, QueryError> {
-        self.perform_rewrites();
+    pub fn prepare(mut self, mut constant_vecs: Vec<BoxedData>, batch_size: usize, show: bool) -> Result<QueryExecutor, QueryError> {
+        self.perform_rewrites(show);
 
         let mut result = QueryExecutor::new(batch_size, std::mem::take(&mut self.buffer_provider));
         for operation in &self.operations {
-            prepare(operation.clone(), &mut constant_vecs, &mut result)?;
+            if let Err(err) = prepare(operation.clone(), &mut constant_vecs, &mut result) {
+                error!("Error preparing {:#?}: {:?}", operation, err);
+                return Err(err);
+            }
         }
         Ok(result)
     }
@@ -46,11 +49,14 @@ impl QueryPlanner {
     pub fn enable_common_subexpression_elimination(&self) -> bool { true }
 
 
-    fn perform_rewrites(&mut self) {
+    fn perform_rewrites(&mut self, show: bool) {
         for i in 0..self.operations.len() {
             match propagate_nullability(&self.operations[i], &mut self.buffer_provider) {
                 Rewrite::ReplaceWith(ops) => {
                     trace!("Replacing {:#?} with {:#?}", self.operations[i], ops);
+                    if show {
+                        println!("Replacing {:#?} with {:#?}", self.operations[i], ops);
+                    }
                     self.operations[i] = ops[0].clone();
                     for op in ops.into_iter().skip(1) {
                         self.operations.push(op);
@@ -67,9 +73,10 @@ enum Rewrite {
     ReplaceWith(Vec<QueryPlan>),
 }
 
+/// Allows null values to be supported by mapping operations that don't have inbuilt support for null maps.
 fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewrite {
     match *operation {
-        Cast { input, casted } if input.is_nullable() && casted.tag != EncodingType::Val => {
+        Cast { input, casted } if input.is_nullable() && casted.tag.is_nullable() => {
             let casted_non_nullable = bp.named_buffer("casted_non_nullable", casted.tag.non_nullable());
             let cast = Cast {
                 input: input.forget_nullability(),

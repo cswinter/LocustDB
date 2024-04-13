@@ -26,12 +26,14 @@ pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Sync + Send {
 impl VecData<u8> for u8 {
     fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [u8] where u8: 'a { vec.cast_ref_u8() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<u8> where u8: 'a { vec.cast_ref_mut_u8() }
+    fn wrap_one(value: u8) -> RawVal { RawVal::Int(i64::from(value)) }
     fn t() -> EncodingType { EncodingType::U8 }
 }
 
 impl VecData<u16> for u16 {
     fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [u16] where u16: 'a { vec.cast_ref_u16() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<u16> where u16: 'a { vec.cast_ref_mut_u16() }
+    fn wrap_one(value: u16) -> RawVal { RawVal::Int(i64::from(value)) }
     fn t() -> EncodingType { EncodingType::U16 }
 }
 
