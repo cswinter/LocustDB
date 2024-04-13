@@ -182,7 +182,7 @@ async fn main() {
 
 fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
     let load_factor = opts.load_factor;
-    let addr = "http://localhost:8080";
+    let addr = "http://localhost:8888";
     let mut log = locustdb::logging_client::LoggingClient::new(
         Duration::from_secs(1),
         addr,
