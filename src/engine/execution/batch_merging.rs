@@ -50,7 +50,8 @@ impl<'a> BatchResult<'a> {
         Ok(())
     }
 
-    pub fn into_columns(self) -> HashMap<String, Arc<dyn DataSource + 'a>> {
+    #[must_use]
+    pub fn into_columns(self) -> (HashMap<String, Arc<dyn DataSource + 'a>>, Vec<BoxedData<'a>>) {
         let mut cols = HashMap::<String, Arc<dyn DataSource>>::default();
         let columns = self.columns.into_iter().map(Arc::new).collect::<Vec<_>>();
         for projection in self.projection {
@@ -59,7 +60,7 @@ impl<'a> BatchResult<'a> {
         for (i, &(aggregation, _)) in self.aggregations.iter().enumerate() {
             cols.insert(format!("_ca{}", i), columns[aggregation].clone());
         }
-        cols
+        (cols, self.unsafe_referenced_buffers)
     }
 }
 
