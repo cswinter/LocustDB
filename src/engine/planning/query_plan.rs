@@ -932,12 +932,7 @@ impl QueryPlan {
                         t = Type::encoded(codec);
                         plan = fixed_width;
                     }
-                    plan = match filter {
-                        Filter::U8(filter) => planner.filter(plan, filter),
-                        Filter::NullableU8(filter) => planner.nullable_filter(plan, filter),
-                        Filter::Indices(indices) => planner.select(plan, indices),
-                        Filter::None => plan,
-                    };
+                    plan = filter.apply_filter(planner, plan);
                     (plan, t)
                 }
                 None => {
