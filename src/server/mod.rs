@@ -389,8 +389,6 @@ pub fn run(
     cors_allow_origin: Vec<String>,
     addrs: String,
 ) -> std::io::Result<(ServerHandle, oneshot::Receiver<()>)> {
-    // println!("STORE BLOB IN RUN");
-    // let _ = block_on(storeblob());
     let server = HttpServer::new(move || {
         let cors = if cors_allow_all {
             Cors::permissive()
@@ -431,8 +429,7 @@ pub fn run(
 
     let handle = server.handle();
     thread::spawn(move || {
-        let runtime = || tokio::runtime::Runtime::new().unwrap();
-        actix_web::rt::System::with_tokio_rt(runtime).block_on(server).unwrap();
+        actix_web::rt::System::new().block_on(server).unwrap();
         let _ = tx.send(());
     });
 
