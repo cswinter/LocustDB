@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use futures::executor::block_on;
 
 use google_cloud_storage::client::Client;
 use google_cloud_storage::client::ClientConfig;
@@ -12,6 +11,7 @@ use google_cloud_storage::http::objects::upload::{Media, UploadObjectRequest, Up
 use reqwest::StatusCode;
 
 use super::file_writer::BlobWriter;
+use super::RT;
 
 pub struct GCSBlobWriter {
     client: Client,
@@ -20,7 +20,7 @@ pub struct GCSBlobWriter {
 
 impl GCSBlobWriter {
     pub fn new(bucket: String) -> Result<GCSBlobWriter, Box<dyn Error>> {
-        let config = block_on(ClientConfig::default().with_auth())?;
+        let config = RT.block_on(ClientConfig::default().with_auth())?;
         Ok(GCSBlobWriter {
             client: Client::new(config),
             bucket,
@@ -35,7 +35,7 @@ impl BlobWriter for GCSBlobWriter {
         data: &[u8],
     ) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         let upload_type = UploadType::Simple(Media::new(path.to_string_lossy().to_string()));
-        block_on(self.client.upload_object(
+        RT.block_on(self.client.upload_object(
             &UploadObjectRequest {
                 bucket: self.bucket.clone(),
                 ..Default::default()
@@ -47,7 +47,7 @@ impl BlobWriter for GCSBlobWriter {
     }
 
     fn load(&self, path: &Path) -> Result<Vec<u8>, Box<dyn Error + Send + Sync + 'static>> {
-        block_on(self.client.download_object(
+        RT.block_on(self.client.download_object(
             &GetObjectRequest {
                 bucket: self.bucket.to_string(),
                 object: path.to_string_lossy().to_string(),
@@ -59,7 +59,7 @@ impl BlobWriter for GCSBlobWriter {
     }
 
     fn delete(&self, path: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-        block_on(self.client.delete_object(&DeleteObjectRequest {
+        RT.block_on(self.client.delete_object(&DeleteObjectRequest {
             bucket: self.bucket.to_string(),
             object: path.to_string_lossy().to_string(),
             ..Default::default()
@@ -68,7 +68,7 @@ impl BlobWriter for GCSBlobWriter {
     }
 
     fn list(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error + Send + Sync + 'static>> {
-        block_on(self.client.list_objects(&ListObjectsRequest {
+        RT.block_on(self.client.list_objects(&ListObjectsRequest {
             bucket: self.bucket.to_string(),
             prefix: Some(path.to_string_lossy().to_string()),
             ..Default::default()
@@ -85,7 +85,7 @@ impl BlobWriter for GCSBlobWriter {
     }
 
     fn exists(&self, path: &Path) -> Result<bool, Box<dyn Error + Send + Sync + 'static>> {
-        block_on(self.client.get_object(&GetObjectRequest {
+        RT.block_on(self.client.get_object(&GetObjectRequest {
             bucket: self.bucket.to_string(),
             object: path.to_string_lossy().to_string(),
             ..Default::default()

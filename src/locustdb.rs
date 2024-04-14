@@ -186,7 +186,10 @@ impl LocustDB {
     }
 
     pub fn force_flush(&self) {
-        self.inner_locustdb.wal_flush();
+        let inner = self.inner_locustdb.clone();
+        std::thread::spawn(move || inner.wal_flush())
+            .join()
+            .unwrap();
     }
 
     pub fn evict_cache(&self) -> usize {

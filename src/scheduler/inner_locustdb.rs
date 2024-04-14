@@ -52,14 +52,17 @@ impl InnerLocustDB {
     pub fn new(opts: &Options) -> InnerLocustDB {
         let lru = Lru::default();
         let perf_counter = Arc::new(PerfCounter::default());
-        let storage = opts.db_path.as_ref().map(|path| {
-            let (storage, wal) = Storage::new(path, perf_counter.clone(), false);
-            (Arc::new(storage), wal)
-        });
-        let (storage, existing_tables) = match storage {
-            Some((storage, wal_segments)) => {
-                let tables = Table::restore_tables_from_disk(&storage, wal_segments, &lru);
-                (Some(storage), tables)
+        let (storage, tables) = match opts.db_path.clone() {
+            Some(path) => {
+                let perf_counter = perf_counter.clone();
+                let lru = lru.clone();
+                std::thread::spawn(move || {
+                    let (storage, wal) = Storage::new(&path, perf_counter, false);
+                    let tables = Table::restore_tables_from_disk(&storage, wal, &lru);
+                    (Some(Arc::new(storage)), tables)
+                })
+                .join()
+                .unwrap()
             }
             None => (None, HashMap::new()),
         };
@@ -74,7 +77,7 @@ impl InnerLocustDB {
         ));
 
         InnerLocustDB {
-            tables: RwLock::new(existing_tables),
+            tables: RwLock::new(tables),
             lru,
             disk_read_scheduler,
             running: AtomicBool::new(true),
@@ -173,16 +176,20 @@ impl InnerLocustDB {
         let (wal_size, wal_condvar) = &self.wal_size;
         let mut wal_size = wal_size.lock().unwrap();
         while *wal_size > self.opts.max_wal_size_bytes {
+            log::warn!("wal size limit exceeded, blocking ingestion");
             wal_size = wal_condvar.wait(wal_size).unwrap();
         }
 
-        if let Some(storage) = &self.storage {
-            let bytes_written = storage.persist_wal_segment(WALSegment {
-                id: 0,
-                data: Cow::Borrowed(&events),
-            });
-            *wal_size += bytes_written;
-        }
+        let bytes_written_join_handle = self.storage.as_ref().map(|storage| {
+            let events = events.clone();
+            let storage = storage.clone();
+            thread::spawn(move || {
+                storage.persist_wal_segment(WALSegment {
+                    id: 0,
+                    data: Cow::Borrowed(&events),
+                })
+            })
+        });
         // TODO: code duplicated in Table::restore_tables_from_disk
         for (table, data) in events.tables {
             self.create_if_empty(&table);
@@ -216,6 +223,10 @@ impl InnerLocustDB {
             table.ingest_homogeneous(columns);
         }
 
+        if let Some(jh) = bytes_written_join_handle {
+            let bytes_written = jh.join().unwrap();
+            *wal_size += bytes_written;
+        }
         wal_condvar.notify_all();
     }
 
@@ -485,7 +496,10 @@ fn subpartition(
     let mut acc = PartitionBuilder::default();
     fn create_subpartition(acc: &mut PartitionBuilder) {
         acc.subpartition_metadata.push((
-            acc.subpartition.iter().map(|c| c.name().to_string()).collect(),
+            acc.subpartition
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect(),
             acc.bytes,
         ));
         acc.subpartitions.push(mem::take(&mut acc.subpartition));
@@ -516,17 +530,17 @@ fn subpartition(
                     && first_col
                         .chars()
                         .all(|c| (c.is_alphanumeric() && c.is_lowercase()) || c == '_');
-                let subpartition_key =
-                    if column_names.len() == 1 && is_column_name_filesystem_safe {
-                        format!("x{}", first_col)
-                    } else {
-                        use sha2::{Digest, Sha256};
-                        let mut hasher = Sha256::new();
-                        for col in column_names {
-                            hasher.update(col);
-                        }
-                        format!("{:x}", hasher.finalize())
-                    };
+                let subpartition_key = if column_names.len() == 1 && is_column_name_filesystem_safe
+                {
+                    format!("x{}", first_col)
+                } else {
+                    use sha2::{Digest, Sha256};
+                    let mut hasher = Sha256::new();
+                    for col in column_names {
+                        hasher.update(col);
+                    }
+                    format!("{:x}", hasher.finalize())
+                };
                 SubpartitionMetadata {
                     subpartition_key,
                     size_bytes: *size,

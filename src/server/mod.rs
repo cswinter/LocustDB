@@ -328,8 +328,6 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
         s.push_str(&format!("{:02x}", bytes[0]));
         bytes = bytes.slice(1..);
     }
-    log::debug!("Inserting bytes: {} ({})", s, req_body.len());
-
     data.db
         .perf_counter()
         .network_read_ingestion(req_body.len() as u64);
