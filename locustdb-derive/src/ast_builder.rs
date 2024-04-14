@@ -144,6 +144,10 @@ pub fn ast_builder(input: TokenStream) -> TokenStream {
                             self.cache.insert(signature, vec![#(#result2.into()),*]);
                         }
 
+                        if std::env::var("EARLY_OPERATOR_CHECK").is_ok() {
+                            self.clone().prepare(vec![], 1024, false).unwrap();
+                        }
+
                         (#(#result),*)
                     }
                 };

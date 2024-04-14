@@ -1,6 +1,6 @@
 // TODO: figure out why clippy complains
 #![allow(clippy::nonstandard_macro_braces, clippy::unused_unit)]
-use chrono::{Datelike, DateTime};
+use chrono::{DateTime, Datelike};
 use locustdb_derive::ASTBuilder;
 use regex::Regex;
 
@@ -463,11 +463,13 @@ pub enum QueryPlan {
         #[output(t = "base=plan")]
         filtered: TypedBufferRef,
     },
+    /// Selects one of the externally provided constant vectors.
     ConstantVec {
         index: usize,
         #[output(t = "base=provided")]
         constant_vec: TypedBufferRef,
     },
+    /// Creates a "null vector" of the specified length and type which encodes the number of null values as a single scalar.
     NullVec {
         len: usize,
         #[output(t = "base=provided")]
@@ -1323,6 +1325,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
         UnpackStrings { .. } | UnhexpackStrings { .. } | Length { .. } => None,
+        NullVec { .. } => Some((0, 0)),
         ref plan => {
             error!("encoding_range not implement for {:?}", plan);
             None
@@ -1330,101 +1333,122 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
     }
 }
 
-// TODO: return struct
-#[allow(clippy::type_complexity)]
+/// Encodes information about compiled query plans for projections in GROUP BY clause, yielding single key that can be used for grouping.
+pub struct GroupByPlan {
+    // Combined grouping key
+    pub raw_grouping_key: TypedBufferRef,
+    // True iff the raw grouping preserves the sort order of the expressions in the GROUP BY clause
+    pub is_raw_grouping_key_order_preserving: bool,
+    // A bound on the maximum value that the grouping key can take (if the grouping key is an integer)
+    pub max: i64,
+    // Expressions to decode the values of the original GROUP BY expressions from the raw grouping key
+    pub decode_plans: Vec<(TypedBufferRef, Type)>,
+    // Placeholder expression that is used as input to the decode plans.
+    // It has to be connected to the grouping key expression that will be derived from the `raw_grouping_key`.
+    pub encoded_group_by_placeholder: TypedBufferRef,
+}
+
 pub fn compile_grouping_key(
-    exprs: &[Expr],
+    group_by_exprs: &[Expr],
     filter: Filter,
     columns: &HashMap<String, Arc<dyn DataSource>>,
     partition_len: usize,
     planner: &mut QueryPlanner,
-) -> Result<
-    (
-        (TypedBufferRef, bool),
-        i64,
-        Vec<(TypedBufferRef, Type)>,
-        TypedBufferRef,
-    ),
-    QueryError,
-> {
-    if exprs.is_empty() {
+) -> Result<GroupByPlan, QueryError> {
+    if group_by_exprs.is_empty() {
         let mut plan = planner.constant_expand(0, partition_len, EncodingType::U8);
-        plan = match filter {
-            Filter::U8(filter) => planner.filter(plan, filter),
-            Filter::NullableU8(filter) => planner.nullable_filter(plan, filter),
-            Filter::Indices(indices) => planner.select(plan, indices),
-            Filter::None => plan,
-        };
-        Ok((
-            (plan, true),
-            1,
-            vec![],
-            planner
+        plan = filter.apply_filter(planner, plan);
+        Ok(GroupByPlan {
+            raw_grouping_key: plan,
+            is_raw_grouping_key_order_preserving: true,
+            max: 1,
+            decode_plans: vec![],
+            encoded_group_by_placeholder: planner
                 .buffer_provider
                 .named_buffer("empty_group_by", EncodingType::Null),
-        ))
-    } else if exprs.len() == 1 {
-        QueryPlan::compile_expr(&exprs[0], filter, columns, partition_len, planner).map(
-            |(mut gk_plan, gk_type)| {
-                let original_plan = gk_plan;
-                let encoding_range = encoding_range(&gk_plan, planner);
-                debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
-                let (max_cardinality, offset) = match encoding_range {
-                    Some((min, max)) => {
-                        if min <= 0 && gk_plan.is_nullable() {
-                            (max - min + 1, Some(-min + 1))
-                        } else if gk_plan.is_nullable() {
-                            (max, Some(0))
-                        } else if min < 0 {
-                            (max - min, Some(-min))
-                        } else {
-                            (max, None)
-                        }
-                    }
-                    None => (1 << 62, None),
-                };
+        })
+    } else if group_by_exprs.len() == 1 {
+        let (mut gk_plan, gk_type) =
+            QueryPlan::compile_expr(&group_by_exprs[0], filter, columns, partition_len, planner)?;
 
-                if gk_plan.is_nullable() {
-                    gk_plan = match offset {
-                        Some(offset) => planner.fuse_int_nulls(offset, gk_plan),
-                        None => planner.fuse_nulls(gk_plan),
-                    }
-                } else if let Some(offset) = offset {
-                    let offset = planner.scalar_i64(offset, true);
-                    gk_plan = planner.add(gk_plan, offset.into());
-                }
+        if gk_plan.is_null() {
+            let constant0 = planner.constant_expand(0, partition_len, EncodingType::U8);
+            let encoded_group_by_placeholder = planner
+                .buffer_provider
+                .named_buffer("group_by_null", EncodingType::Null);
+            let decoded =
+                planner.null_vec_like(encoded_group_by_placeholder, 0, EncodingType::Null);
+            return Ok(GroupByPlan {
+                raw_grouping_key: filter.apply_filter(planner, constant0),
+                is_raw_grouping_key_order_preserving: true,
+                max: 0,
+                decode_plans: vec![(decoded, Type::new(BasicType::Null, None))],
+                encoded_group_by_placeholder,
+            });
+        }
 
-                let encoded_group_by_placeholder = planner
-                    .buffer_provider
-                    .named_buffer("encoded_group_by_placeholder", gk_plan.tag);
-                let mut decoded_group_by = encoded_group_by_placeholder;
-                if original_plan.is_nullable() {
-                    decoded_group_by = match offset {
-                        Some(offset) => planner.unfuse_int_nulls(offset, decoded_group_by),
-                        None => if decoded_group_by.tag.is_naturally_nullable() {
-                            decoded_group_by
-                        } else {
-                            planner.unfuse_nulls(decoded_group_by)
-                        },
-                    }
-                } else if let Some(offset) = offset {
-                    let offset = planner.scalar_i64(-offset, true);
-                    let sum = planner.add(decoded_group_by, offset.into());
-                    decoded_group_by = planner.cast(sum, gk_type.encoding_type());
+        let original_plan = gk_plan;
+        let encoding_range = encoding_range(&gk_plan, planner);
+        debug!("Encoding range of {:?} for {:?}", &encoding_range, &gk_plan);
+        let (max_cardinality, offset) = match encoding_range {
+            Some((min, max)) => {
+                if min <= 0 && gk_plan.is_nullable() {
+                    (max - min + 1, Some(-min + 1))
+                } else if gk_plan.is_nullable() {
+                    (max, Some(0))
+                } else if min < 0 {
+                    (max - min, Some(-min))
+                } else {
+                    (max, None)
                 }
-                if let Some(codec) = gk_type.codec.clone() {
-                    decoded_group_by = codec.decode(decoded_group_by, planner)
-                }
+            }
+            None => (1 << 62, None),
+        };
 
-                (
-                    (gk_plan, gk_type.is_order_preserving()),
-                    max_cardinality,
-                    vec![(decoded_group_by, gk_type.decoded())],
-                    encoded_group_by_placeholder,
-                )
-            },
-        )
-    } else if let Some(result) = try_bitpacking(exprs, filter, columns, partition_len, planner)? {
+        if gk_plan.is_nullable() {
+            gk_plan = match offset {
+                Some(offset) => planner.fuse_int_nulls(offset, gk_plan),
+                None => planner.fuse_nulls(gk_plan),
+            }
+        } else if let Some(offset) = offset {
+            let offset = planner.scalar_i64(offset, true);
+            gk_plan = planner.add(gk_plan, offset.into());
+        }
+
+        let encoded_group_by_placeholder = planner
+            .buffer_provider
+            .named_buffer("encoded_group_by_placeholder", gk_plan.tag);
+        let mut decoded_group_by = encoded_group_by_placeholder;
+        if original_plan.is_nullable() {
+            decoded_group_by = match offset {
+                Some(offset) => planner.unfuse_int_nulls(offset, decoded_group_by),
+                None => {
+                    if decoded_group_by.tag.is_naturally_nullable() {
+                        decoded_group_by
+                    } else {
+                        planner.unfuse_nulls(decoded_group_by)
+                    }
+                }
+            }
+        } else if let Some(offset) = offset {
+            let offset = planner.scalar_i64(-offset, true);
+            let sum = planner.add(decoded_group_by, offset.into());
+            decoded_group_by = planner.cast(sum, gk_type.encoding_type());
+        }
+        if let Some(codec) = gk_type.codec.clone() {
+            decoded_group_by = codec.decode(decoded_group_by, planner)
+        }
+
+        Ok(GroupByPlan {
+            raw_grouping_key: gk_plan,
+            is_raw_grouping_key_order_preserving: gk_type.is_order_preserving(),
+            max: max_cardinality,
+            decode_plans: vec![(decoded_group_by, gk_type.decoded())],
+            encoded_group_by_placeholder,
+        })
+    } else if let Some(result) =
+        try_bitpacking(group_by_exprs, filter, columns, partition_len, planner)?
+    {
         Ok(result)
     } else {
         info!("Failed to bitpack grouping key");
@@ -1434,15 +1458,19 @@ pub fn compile_grouping_key(
             .buffer_provider
             .named_buffer("encoded_group_by_placeholder", EncodingType::ValRows);
         let mut order_preserving = true;
-        for (i, expr) in exprs.iter().enumerate() {
+        for (i, expr) in group_by_exprs.iter().enumerate() {
             let (query_plan, plan_type) =
                 QueryPlan::compile_expr(expr, filter, columns, partition_len, planner)?;
             order_preserving = order_preserving && plan_type.is_order_preserving();
             let vals = planner.cast(query_plan, EncodingType::Val).val()?;
-            pack.push(planner.val_rows_pack(vals, exprs.len(), i));
+            pack.push(planner.val_rows_pack(vals, group_by_exprs.len(), i));
 
             let vals = planner
-                .val_rows_unpack(encoded_group_by_placeholder.val_rows()?, exprs.len(), i)
+                .val_rows_unpack(
+                    encoded_group_by_placeholder.val_rows()?,
+                    group_by_exprs.len(),
+                    i,
+                )
                 .into();
             let mut decode_plan = planner.cast(vals, query_plan.tag);
             if let Some(codec) = plan_type.codec.clone() {
@@ -1450,12 +1478,13 @@ pub fn compile_grouping_key(
             }
             decode_plans.push((decode_plan, plan_type.decoded()));
         }
-        Ok((
-            (pack[0].into(), order_preserving),
-            i64::MAX,
+        Ok(GroupByPlan {
+            raw_grouping_key: pack[0].into(),
+            is_raw_grouping_key_order_preserving: order_preserving,
+            max: i64::MAX,
             decode_plans,
             encoded_group_by_placeholder,
-        ))
+        })
         // PERF: evaluate performance of ValRows vs ByteSlices grouping
         /*} else {
         info!("Failed to bitpack grouping key");
@@ -1487,23 +1516,13 @@ pub fn compile_grouping_key(
     }
 }
 
-// TODO: return struct
-#[allow(clippy::type_complexity)]
 fn try_bitpacking(
     exprs: &[Expr],
     filter: Filter,
     columns: &HashMap<String, Arc<dyn DataSource>>,
     partition_len: usize,
     planner: &mut QueryPlanner,
-) -> Result<
-    Option<(
-        (TypedBufferRef, bool),
-        i64,
-        Vec<(TypedBufferRef, Type)>,
-        TypedBufferRef,
-    )>,
-    QueryError,
-> {
+) -> Result<Option<GroupByPlan>, QueryError> {
     planner.checkpoint();
     // PERF: use u64 as grouping key type
     let mut total_width = 0;
@@ -1553,6 +1572,8 @@ fn try_bitpacking(
             } else if subtract_offset {
                 let offset = planner.scalar_i64(-min, true);
                 planner.add(query_plan, offset.into()).i64()?
+            } else if query_plan.is_null() {
+                planner.constant_expand(0, partition_len, EncodingType::I64).i64()?
             } else {
                 planner.cast(query_plan, EncodingType::I64).i64()?
             };
@@ -1563,23 +1584,30 @@ fn try_bitpacking(
                 plan = plan.map(|plan| planner.bit_pack(plan, adjusted_query_plan, total_width));
             }
 
-            let mut decode_plan = planner
-                .bit_unpack(
-                    encoded_group_by_placeholder,
-                    total_width as u8,
-                    bits(adjusted_max) as u8,
-                )
-                .into();
-            if query_plan.is_nullable() {
-                decode_plan = planner.unfuse_int_nulls(-min + 1, decode_plan);
-            } else if subtract_offset {
-                let offset = planner.scalar_i64(min, true);
-                decode_plan = planner.add(decode_plan, offset.into());
-            }
-            decode_plan = planner.cast(decode_plan, plan_type.encoding_type());
-            if let Some(codec) = plan_type.codec.clone() {
-                decode_plan = codec.decode(decode_plan, planner);
-            }
+            // Extract original value from bitpacked grouping key
+            let decode_plan = if query_plan.is_null() {
+                planner.null_vec_like(encoded_group_by_placeholder.into(), 0, EncodingType::Null)
+            } else {
+                let mut decode_plan = planner
+                    .bit_unpack(
+                        encoded_group_by_placeholder,
+                        total_width as u8,
+                        bits(adjusted_max) as u8,
+                    )
+                    .into();
+                if query_plan.is_nullable() {
+                    decode_plan = planner.unfuse_int_nulls(-min + 1, decode_plan);
+                } else if query_plan.is_null() {
+                } else if subtract_offset {
+                    let offset = planner.scalar_i64(min, true);
+                    decode_plan = planner.add(decode_plan, offset.into());
+                }
+                decode_plan = planner.cast(decode_plan, plan_type.encoding_type());
+                if let Some(codec) = plan_type.codec.clone() {
+                    decode_plan = codec.decode(decode_plan, planner);
+                }
+                decode_plan 
+            };
             decode_plans.push((decode_plan, plan_type.decoded()));
 
             largest_key += adjusted_max << total_width;
@@ -1593,12 +1621,13 @@ fn try_bitpacking(
     Ok(if total_width <= 63 {
         plan.map(|plan| {
             decode_plans.reverse();
-            (
-                (plan.into(), order_preserving),
-                largest_key,
+            GroupByPlan {
+                raw_grouping_key: plan.into(),
+                is_raw_grouping_key_order_preserving: order_preserving,
+                max: largest_key,
                 decode_plans,
-                encoded_group_by_placeholder.into(),
-            )
+                encoded_group_by_placeholder: encoded_group_by_placeholder.into(),
+            }
         })
     } else {
         planner.reset();

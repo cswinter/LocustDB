@@ -318,7 +318,7 @@ impl QueryTask {
             }
             let full_result = owned_results.into_iter().next().unwrap().1;
             let final_result = if let Some(final_pass) = &self.final_pass {
-                let data_sources = full_result.into_columns();
+                let (data_sources, _unsafe_referenced_buffers) = full_result.into_columns();
                 let cols = unsafe {
                     mem::transmute::<
                         &HashMap<String, Arc<dyn DataSource>>,

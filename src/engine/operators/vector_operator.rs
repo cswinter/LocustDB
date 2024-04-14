@@ -622,7 +622,7 @@ pub mod operator {
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
         if input.is_null() {
-            Ok(null_vec_like(input.any(), output.any(), LengthSource::InputLength))
+            Ok(null_vec_like(indices.any(), output.any(), LengthSource::InputLength))
         } else {
             reify_types! {
                 "select";
@@ -696,6 +696,13 @@ pub mod operator {
             EncodingType::U8 => Ok(Box::new(ConstantExpand {
                 val: val as u8,
                 output: output.u8()?,
+                current_index: 0,
+                len,
+                batch_size: 0, // initialized later
+            })),
+            EncodingType::I64 => Ok(Box::new(ConstantExpand {
+                val,
+                output: output.i64()?,
                 current_index: 0,
                 len,
                 batch_size: 0, // initialized later

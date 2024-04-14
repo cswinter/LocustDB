@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use self::query_plan::prepare;
 use self::QueryPlan::*;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct QueryPlanner {
     pub operations: Vec<QueryPlan>,
     pub buffer_to_operation: Vec<Option<usize>>,
@@ -351,7 +351,7 @@ fn combine_nulls2(bp: &mut BufferProvider,
     (combined_null_map, plan)
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BufferProvider {
     buffer_count: usize,
     pub all_buffers: Vec<TypedBufferRef>,

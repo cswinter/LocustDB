@@ -829,7 +829,7 @@ fn test_sort_by_nullable() {
          LIMIT 2;",
         &[vec![Null, Str("Turkey")], vec![Null, Str("Germany")]],
     );
-    // This currently fails with "NullableU8 does not have a corresponding fused nullable type"
+    // TODO: This currently fails with "NullableU8 does not have a corresponding fused nullable type"
     // test_query_ec(
     //     "SELECT nullable_int2
     //      FROM default
@@ -1301,9 +1301,15 @@ fn test_sequential_int_sort() {
     assert_eq!(result.unwrap().rows.unwrap()[0..9], expected_rows);
 }
 
-#[test]
-fn test_group_by_string() {
-    use crate::value_syntax::*;
+fn show() -> Vec<usize> {
+    if env::var("DEBUG_TESTS").is_ok() {
+        vec![0, 1, 2, 3]
+    } else {
+        vec![]
+    }
+}
+
+fn test_hex_scrambled_int<const N: usize>(query: &str, expected: &[[Value; N]]) {
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
     let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
@@ -1319,58 +1325,95 @@ fn test_group_by_string() {
             ("ints".to_string(), locustdb::colgen::int_uniform(-10, 256)),
         ],
     }));
-
-    let query = "SELECT scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, true, vec![]))
+    let result = block_on(locustdb.run_query(query, true, true, show()))
         .unwrap()
         .unwrap();
-    let expected_rows = vec![
-        [Str("0"), Int(99)],
-        [Str("00"), Int(2)],
-        [Str("02"), Int(1)],
-        [Str("04"), Int(4)],
-        [Str("05"), Int(3)],
-    ];
-    assert_eq!(result.rows.unwrap(), expected_rows);
+    assert_eq!(&result.rows.unwrap()[..5], expected);
+}
 
-    let query = "SELECT scrambled, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, true, vec![]))
-        .unwrap()
-        .unwrap();
-    let expected_rows = vec![
-        [Str("0"), Str("0"), Int(99)],
-        [Str("00"), Str("00"), Int(2)],
-        [Str("02"), Str("02"), Int(1)],
-        [Str("04"), Str("04"), Int(4)],
-        [Str("05"), Str("05"), Int(3)],
-    ];
-    assert_eq!(result.rows.unwrap(), expected_rows);
+#[test]
+fn test_group_by_string() {
+    test_hex_scrambled_int(
+        "SELECT scrambled, count(1) FROM test ORDER BY count(1) DESC LIMIT 5;",
+        &[
+            [Str("R"), Int(125)],
+            [Str("h"), Int(120)],
+            [Str("2"), Int(119)],
+            [Str("Q"), Int(115)],
+            [Str("5"), Int(114)],
+        ],
+    );
+}
 
-    let query = "SELECT hex, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, true, vec![]))
-        .unwrap()
-        .unwrap();
-    let expected_rows = vec![
-        [Str("000365b5ea02afce"), Str("qj"), Int(1)],
-        [Str("00039e63ed327628"), Str("Fk"), Int(1)],
-        [Str("0007c07f9d36e02f"), Str("h"), Int(1)],
-        [Str("000c761329c01138"), Str("69"), Int(1)],
-        [Str("000d9e5ae13b57b7"), Str("m"), Int(1)],
-    ];
-    assert_eq!(result.rows.unwrap(), expected_rows);
+#[test]
+fn test_group_by_string_nonexistant() {
+    test_hex_scrambled_int(
+        "SELECT scrambled, notacolumn, count(1) FROM test ORDER BY count(1) DESC LIMIT 5;",
+        &[
+            [Str("R"), Null, Int(125)],
+            [Str("h"), Null, Int(120)],
+            [Str("2"), Null, Int(119)],
+            [Str("Q"), Null, Int(115)],
+            [Str("5"), Null, Int(114)],
+        ],
+    );
+}
 
-    let query = "SELECT ints, scrambled, count(1) FROM test LIMIT 5;";
-    let result = block_on(locustdb.run_query(query, true, true, vec![]))
-        .unwrap()
-        .unwrap();
-    let expected_rows = vec![
-        [Int(-10), Str("0D"), Int(1)],
-        [Int(-10), Str("0Y"), Int(1)],
-        [Int(-10), Str("0n"), Int(1)],
-        [Int(-10), Str("0t"), Int(1)],
-        [Int(-10), Str("3"), Int(1)],
-    ];
-    assert_eq!(result.rows.unwrap(), expected_rows);
+// TODO: currently not correctly handling aliases, this just selects from non-existant "c" colum in ORDER BY clause instead of substituting count(1) expression
+// #[test]
+// fn test_group_by_string_count_alias() {
+//     test_hex_scrambled_int(
+//         "SELECT scrambled, count(1) AS c FROM test ORDER BY c LIMIT 5;",
+//         &[
+//             [Str("R"), Int(125)],
+//             [Str("h"), Int(120)],
+//             [Str("2"), Int(119)],
+//             [Str("Q"), Int(115)],
+//             [Str("5"), Int(114)],
+//         ],
+//     );
+// }
+
+#[test]
+fn test_group_by_string_string() {
+    test_hex_scrambled_int(
+        "SELECT scrambled, scrambled, count(1) AS c FROM test ORDER BY count(1) DESC LIMIT 5;",
+        &[
+            [Str("R"), Str("R"), Int(125)],
+            [Str("h"), Str("h"), Int(120)],
+            [Str("2"), Str("2"), Int(119)],
+            [Str("Q"), Str("Q"), Int(115)],
+            [Str("5"), Str("5"), Int(114)],
+        ],
+    );
+}
+
+#[test]
+fn test_group_by_hexstring_string() {
+    test_hex_scrambled_int(
+        "SELECT hex, scrambled, count(1) AS c FROM test ORDER BY count(1) DESC LIMIT 5;",
+        &[
+            [Str("000365b5ea02afce"), Str("qj"), Int(1)],
+            [Str("00039e63ed327628"), Str("Fk"), Int(1)],
+            [Str("0007c07f9d36e02f"), Str("h"), Int(1)],
+            [Str("000c761329c01138"), Str("69"), Int(1)],
+            [Str("000d9e5ae13b57b7"), Str("m"), Int(1)],
+        ],
+    );
+}
+
+#[test]
+fn test_group_by_int_string() {
+    test_hex_scrambled_int(
+        "SELECT ints, scrambled, count(1) FROM test DESC;",
+        &[
+            [Int(-10), Str("0D"), Int(1)],
+            [Int(-10), Str("0Y"), Int(1)],
+            [Int(-10), Str("0n"), Int(1)],
+            [Int(-10), Str("0t"), Int(1)],
+            [Int(-10), Str("3"), Int(1)],
+        ],
+    )
 }
 
 #[test]
