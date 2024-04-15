@@ -5,7 +5,7 @@ pub fn encode(floats: &[f32], max_regret: u32, mantissa: Option<u32>) -> Vec<u8>
     let mut writer = BitWriteStream::new(&mut write_bytes, BigEndian);
     writer.write_int(floats.len(), 64).unwrap();
     match floats.first() {
-        Some(first) => writer.write_int(first.to_bits(), 64).unwrap(),
+        Some(first) => writer.write_int(first.to_bits(), 32).unwrap(),
         None => return write_bytes,
     }
     let mut last_value = floats[0];
@@ -24,10 +24,10 @@ pub fn encode(floats: &[f32], max_regret: u32, mantissa: Option<u32>) -> Vec<u8>
         let xor = f.to_bits() ^ last_value.to_bits() & mask;
         let leading_zeros = xor.leading_zeros();
         let trailing_zeros = xor.trailing_zeros();
-        if trailing_zeros == 64 {
+        if trailing_zeros == 32 {
             writer.write_int(0, 1).unwrap();
         } else {
-            let significant_bits = 64 - leading_zeros - trailing_zeros;
+            let significant_bits = 32 - leading_zeros - trailing_zeros;
             if leading_zeros >= last_leading_zeros
                 && trailing_zeros >= last_trailing_zeros
                 && (regret < max_regret || significant_bits == last_significant_bits)
@@ -157,7 +157,7 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
     }
 
     // 8 bytes per value and 8 addtional bytes for the length
-    let uncompressed_size = floats.len() * std::mem::size_of::<f64>() + 8;
+    let uncompressed_size = floats.len() * std::mem::size_of::<f32>() + 8;
     println!(
         "Compression ratio of {:.2} for {name} (max_regret={max_regret})",
         uncompressed_size as f64 / write_bytes.len() as f64,
