@@ -51,6 +51,7 @@ mod null_vec_like;
 mod numeric_operators;
 mod parameterized_vec_vec_int_op;
 mod propagate_nullability;
+mod scalar_f64;
 mod scalar_i64;
 mod scalar_str;
 mod select;

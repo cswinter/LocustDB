@@ -386,7 +386,13 @@ fn map_binary_operator(o: &BinaryOperator) -> Result<Func2Type, QueryError> {
 // Fn to map sqlparser-rs `Value` to LocustDB's `RawVal`.
 fn get_raw_val(constant: &Value) -> Result<RawVal, QueryError> {
     match constant {
-        Value::Number(int, _) => Ok(RawVal::Int(int.parse::<i64>().unwrap())),
+        Value::Number(num, _) => {
+            if num.parse::<i64>().is_ok() {
+                Ok(RawVal::Int(num.parse::<i64>().unwrap()))
+            } else {
+                Ok(RawVal::Float(ordered_float::OrderedFloat(num.parse::<f64>().unwrap())))
+            }
+        },
         Value::SingleQuotedString(string) => Ok(RawVal::Str(string.to_string())),
         Value::Null => Ok(RawVal::Null),
         _ => Err(QueryError::NotImplemented(format!("{:?}", constant))),

@@ -4,8 +4,6 @@ use std::i64;
 use std::mem;
 use std::string;
 
-use ordered_float::OrderedFloat;
-
 use crate::engine::data_types::*;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::codec::Codec;
@@ -74,6 +72,9 @@ pub trait Data<'a>: Send + Sync {
     }
     fn cast_scalar_i64(&self) -> i64 {
         panic!("{}", self.type_error("cast_scalar_i64"))
+    }
+    fn cast_scalar_f64(&self) -> of64 {
+        panic!("{}", self.type_error("cast_scalar_f64"))
     }
     fn cast_scalar_str(&self) -> &'a str {
         panic!("{}", self.type_error("cast_scalar_str"))
@@ -746,6 +747,12 @@ impl<'a> Data<'a> for RawVal {
         match self {
             RawVal::Int(i) => *i,
             _ => panic!("{}.cast_i64_const", &self),
+        }
+    }
+    fn cast_scalar_f64(&self) -> of64 {
+        match self {
+            RawVal::Float(f) => *f,
+            _ => panic!("{}.cast_f64_const", &self),
         }
     }
 

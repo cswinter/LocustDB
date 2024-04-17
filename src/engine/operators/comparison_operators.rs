@@ -1,8 +1,10 @@
 use super::binary_operator::*;
 
 use num::PrimInt;
+use ordered_float::OrderedFloat;
 
 use crate::engine::data_types::GenericIntVec;
+use crate::engine::of64;
 
 
 pub struct LessThan;
@@ -28,6 +30,11 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for LessThan {
     fn symbol() -> &'static str { "<" }
 }
 
+impl BinaryOp<of64, of64, u8> for LessThan {
+    #[inline]
+    fn perform(l: of64, r: of64) -> u8 { (l < r) as u8 }
+    fn symbol() -> &'static str { "<" }
+}
 
 impl<T, U, V> BinaryOp<T, U, u8> for LessThanEquals
     where T: Widen<U, Join=V>, V: PrimInt, T: GenericIntVec<T> {
@@ -44,6 +51,12 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for LessThanEquals {
     fn symbol() -> &'static str { "<=" }
 }
 
+impl BinaryOp<of64, of64, u8> for LessThanEquals {
+    #[inline]
+    fn perform(l: of64, r: of64) -> u8 { (l <= r) as u8 }
+    fn symbol() -> &'static str { "<=" }
+}
+
 impl<T, U, V> BinaryOp<T, U, u8> for Equals
     where T: Widen<U, Join=V>, V: PrimInt, T: GenericIntVec<T> {
     fn perform(t: T, u: U) -> u8 {
@@ -56,6 +69,12 @@ impl<T, U, V> BinaryOp<T, U, u8> for Equals
 impl<'a> BinaryOp<&'a str, &'a str, u8> for Equals {
     #[inline]
     fn perform(l: &'a str, r: &'a str) -> u8 { (l == r) as u8 }
+    fn symbol() -> &'static str { "=" }
+}
+
+impl BinaryOp<of64, of64, u8> for Equals {
+    #[inline]
+    fn perform(l: of64, r: of64) -> u8 { (l == r) as u8 }
     fn symbol() -> &'static str { "=" }
 }
 
@@ -75,6 +94,12 @@ impl<'a> BinaryOp<&'a str, &'a str, u8> for NotEquals {
     fn symbol() -> &'static str { "<>" }
 }
 
+impl BinaryOp<of64, of64, u8> for NotEquals {
+    #[inline]
+    fn perform(l: of64, r: of64) -> u8 { (l != r) as u8 }
+    fn symbol() -> &'static str { "<>" }
+}
+
 impl BinaryOp<u8, u8, u8> for BoolOr {
     #[inline]
     fn perform(l: u8, r: u8) -> u8 { l | r }
@@ -88,7 +113,7 @@ impl BinaryOp<u8, u8, u8> for BoolAnd {
 }
 
 pub trait Widen<T> {
-    type Join: PrimInt;
+    type Join;
     fn widen(self, u: T) -> (Self::Join, Self::Join);
 }
 
@@ -157,3 +182,7 @@ impl Widen<u32> for i64 {
     fn widen(self, u: u32) -> (i64, i64) { (self, u as i64) }
 }
 
+impl Widen<f64> for OrderedFloat<f64> {
+    type Join = OrderedFloat<f64>;
+    fn widen(self, u: f64) -> (OrderedFloat<f64>, OrderedFloat<f64>) { (self, OrderedFloat(u)) }
+}

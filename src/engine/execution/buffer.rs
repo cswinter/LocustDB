@@ -53,6 +53,7 @@ impl BufferRef<Any> {
     pub fn nullable_str<'a>(self) -> BufferRef<Nullable<&'a str>> { self.transmute() }
 
     pub fn scalar_i64(self) -> BufferRef<Scalar<i64>> { self.transmute() }
+    pub fn scalar_f64(self) -> BufferRef<Scalar<of64>> { self.transmute() }
     pub fn scalar_str<'a>(self) -> BufferRef<Scalar<&'a str>> { self.transmute() }
     pub fn scalar_string(self) -> BufferRef<Scalar<String>> { self.transmute() }
 
@@ -116,9 +117,15 @@ impl From<BufferRef<i64>> for TypedBufferRef {
     }
 }
 
-impl From<BufferRef<OrderedFloat<f64>>> for TypedBufferRef {
-    fn from(buffer: BufferRef<OrderedFloat<f64>>) -> TypedBufferRef {
+impl From<BufferRef<of64>> for TypedBufferRef {
+    fn from(buffer: BufferRef<of64>) -> TypedBufferRef {
         TypedBufferRef::new(buffer.any(), EncodingType::F64)
+    }
+}
+
+impl From<BufferRef<Scalar<of64>>> for TypedBufferRef {
+    fn from(buffer: BufferRef<Scalar<of64>>) -> TypedBufferRef {
+        TypedBufferRef::new(buffer.any(), EncodingType::ScalarF64)
     }
 }
 
@@ -264,7 +271,7 @@ impl TypedBufferRef {
         Ok(self.buffer.u8())
     }
 
-    pub fn f64(&self) -> Result<BufferRef<OrderedFloat<f64>>, QueryError> {
+    pub fn f64(&self) -> Result<BufferRef<of64>, QueryError> {
         ensure!(self.tag == EncodingType::F64, "{:?} != F64", self.tag);
         Ok(self.buffer.f64())
     }
@@ -337,6 +344,11 @@ impl TypedBufferRef {
     pub fn scalar_i64(&self) -> Result<BufferRef<Scalar<i64>>, QueryError> {
         ensure!(self.tag == EncodingType::ScalarI64, "{:?} != ScalarI64", self.tag);
         Ok(self.buffer.scalar_i64())
+    }
+
+    pub fn scalar_f64(&self) -> Result<BufferRef<Scalar<of64>>, QueryError> {
+        ensure!(self.tag == EncodingType::ScalarF64, "{:?} != ScalarF64", self.tag);
+        Ok(self.buffer.scalar_f64())
     }
 
     pub fn scalar_str<'a>(&self) -> Result<BufferRef<Scalar<&'a str>>, QueryError> {

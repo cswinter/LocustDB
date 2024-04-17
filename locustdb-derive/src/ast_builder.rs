@@ -194,6 +194,8 @@ fn create_buffer(field_ident: &Ident, field_type: &Type) -> Stmt {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_premerge(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<Scalar<i64>>) {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_scalar_i64(#field_name);)
+    } else if *field_type == parse_quote!(BufferRef<Scalar<of64>>) {
+        parse_quote!(let #field_ident = self.buffer_provider.buffer_scalar_f64(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<Scalar<String>>) {
         parse_quote!(let #field_ident = self.buffer_provider.buffer_scalar_string(#field_name);)
     } else if *field_type == parse_quote!(BufferRef<Scalar<&'static str>>) {
@@ -234,6 +236,8 @@ fn convert(expr: Expr, field_type: &Type) -> Expr {
         parse_quote!(#expr.premerge().unwrap())
     } else if *field_type == parse_quote!(BufferRef<Scalar<i64>>) {
         parse_quote!(#expr.scalar_i64().unwrap())
+    } else if *field_type == parse_quote!(BufferRef<Scalar<of64>>) {
+        parse_quote!(#expr.scalar_f64().unwrap())
     } else if *field_type == parse_quote!(BufferRef<Scalar<String>>) {
         parse_quote!(#expr.scalar_string().unwrap())
     } else if *field_type == parse_quote!(BufferRef<Scalar<&'static str>>) {
@@ -246,7 +250,7 @@ fn convert(expr: Expr, field_type: &Type) -> Expr {
 fn hash(field_ident: &Ident, field_type: &Type) -> Stmt {
     if *field_type == parse_quote!(String) {
         parse_quote!(hasher.update(&#field_ident.as_bytes());)
-    } else if *field_type == parse_quote!(usize) || *field_type == parse_quote!(i64) {
+    } else if *field_type == parse_quote!(usize) || *field_type == parse_quote!(i64) || *field_type == parse_quote!(f64) {
         parse_quote!(hasher.update(&#field_ident.to_ne_bytes());)
     } else if *field_type == parse_quote!(u8) {
         parse_quote!(hasher.update(&[#field_ident]);)

@@ -8,7 +8,6 @@ use std::io::Cursor;
 
 use num::PrimInt;
 use byteorder::{NativeEndian, ReadBytesExt};
-use ordered_float::OrderedFloat;
 use crate::ingest::raw_val::RawVal;
 use itertools::Itertools;
 

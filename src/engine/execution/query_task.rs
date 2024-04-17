@@ -505,6 +505,7 @@ impl BasicTypeColumn {
                 BasicTypeColumn::Mixed(vals)
             }
             EncodingType::ScalarI64
+            | EncodingType::ScalarF64
             | EncodingType::ScalarStr
             | EncodingType::ScalarString
             | EncodingType::ConstVal

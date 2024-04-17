@@ -3,7 +3,6 @@ use std::fmt;
 use std::fmt::Write;
 
 use itertools::Itertools;
-use ordered_float::OrderedFloat;
 
 use crate::bitvec::*;
 use crate::engine::data_types::*;

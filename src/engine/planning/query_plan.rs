@@ -488,6 +488,12 @@ pub enum QueryPlan {
         #[output]
         scalar_i64: BufferRef<Scalar<i64>>,
     },
+    ScalarF64 {
+        value: f64,
+        hide_value: bool,
+        #[output]
+        scalar_f64: BufferRef<Scalar<of64>>,
+    },
     ScalarStr {
         value: String,
         #[internal]
@@ -837,6 +843,10 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                 ),
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs)),
+                    BasicType::Float,
+                ),
+                Function2::comparison_op(
+                    Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs)),
                     BasicType::String,
                 ),
             ],
@@ -847,6 +857,10 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs)),
                     BasicType::Integer,
+                ),
+                Function2::comparison_op(
+                    Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs)),
+                    BasicType::Float,
                 ),
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs)),
@@ -863,6 +877,10 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                 ),
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs)),
+                    BasicType::Float,
+                ),
+                Function2::comparison_op(
+                    Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs)),
                     BasicType::String,
                 ),
             ],
@@ -873,6 +891,10 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs)),
                     BasicType::Integer,
+                ),
+                Function2::comparison_op(
+                    Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs)),
+                    BasicType::Float,
                 ),
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs)),
@@ -889,6 +911,10 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                 ),
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs)),
+                    BasicType::Float,
+                ),
+                Function2::comparison_op(
+                    Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs)),
                     BasicType::String,
                 ),
             ],
@@ -899,6 +925,10 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs)),
                     BasicType::Integer,
+                ),
+                Function2::comparison_op(
+                    Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs)),
+                    BasicType::Float,
                 ),
                 Function2::comparison_op(
                     Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs)),
@@ -1252,6 +1282,10 @@ impl QueryPlan {
             Const(RawVal::Int(i)) => (
                 planner.scalar_i64(i, false).into(),
                 Type::scalar(BasicType::Integer),
+            ),
+            Const(RawVal::Float(i)) => (
+                planner.scalar_f64(i.0, false).into(),
+                Type::scalar(BasicType::Float),
             ),
             Const(RawVal::Str(ref s)) => (
                 planner.scalar_str(s).into(),
@@ -1705,6 +1739,11 @@ pub(super) fn prepare<'a>(
             hide_value,
             scalar_i64,
         } => operator::scalar_i64(value, hide_value, scalar_i64),
+        QueryPlan::ScalarF64 {
+            value,
+            hide_value,
+            scalar_f64,
+        } => operator::scalar_f64(value, hide_value, scalar_f64),
         QueryPlan::ScalarStr {
             value,
             pinned_string,

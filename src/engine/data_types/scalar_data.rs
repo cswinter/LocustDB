@@ -16,6 +16,12 @@ impl<'a> Data<'a> for ScalarVal<i64> {
     }
 }
 
+impl<'a> Data<'a> for ScalarVal<of64> {
+    fn cast_scalar_f64(&self) -> of64 {
+        self.val
+    }
+}
+
 impl<'a> Data<'a> for ScalarVal<&'a str> {
     default fn len(&self) -> usize {
         1
@@ -66,7 +72,7 @@ impl<'a, T: ScalarData<T>> Data<'a> for ScalarVal<T> {
         panic!("{}", self.type_error("slice_box"))
     }
     default fn type_error(&self, func_name: &str) -> String {
-        format!("Vec<{:?}>.{}", T::t(), func_name)
+        format!("ScalaVal<{:?}>.{}", T::t(), func_name)
     }
 
     default fn append_all(&mut self, _: &dyn Data<'a>, _: usize) -> Option<BoxedData<'a>> {
@@ -74,7 +80,7 @@ impl<'a, T: ScalarData<T>> Data<'a> for ScalarVal<T> {
     }
 
     default fn display(&self) -> String {
-        format!("Scalar<{:?}>{:?}", T::t(), &self)
+        format!("ScalarVal<{:?}>{:?}", T::t(), &self)
     }
 
     // Copied from Data and marked default because specialization demands it
@@ -86,6 +92,9 @@ impl<'a, T: ScalarData<T>> Data<'a> for ScalarVal<T> {
     }
     default fn cast_scalar_i64(&self) -> i64 {
         panic!("{}", self.type_error("cast_scalar_i64"))
+    }
+    default fn cast_scalar_f64(&self) -> of64 {
+        panic!("{}", self.type_error("cast_scalar_f64"))
     }
 }
 
@@ -110,6 +119,18 @@ impl ScalarData<i64> for i64 {
     }
     fn t() -> EncodingType {
         EncodingType::ScalarI64
+    }
+}
+
+impl ScalarData<of64> for of64 {
+    fn unwrap(vec: &dyn Data) -> of64 {
+        vec.cast_scalar_f64()
+    }
+    fn raw_val(val: &of64) -> RawVal {
+        RawVal::Float(*val)
+    }
+    fn t() -> EncodingType {
+        EncodingType::ScalarF64
     }
 }
 

@@ -35,6 +35,7 @@ pub enum EncodingType {
 
     // Single scalar value
     ScalarI64,
+    ScalarF64,
     ScalarStr,
     ScalarString,
     ConstVal,
@@ -68,17 +69,13 @@ impl EncodingType {
     /// Types that already represent null values will return themselves.
     pub fn nullable(&self) -> EncodingType {
         match self {
-            EncodingType::Str | EncodingType::NullableStr => {
-                EncodingType::NullableStr
-            }
+            EncodingType::Str | EncodingType::NullableStr => EncodingType::NullableStr,
             EncodingType::I64 | EncodingType::NullableI64 => EncodingType::NullableI64,
             EncodingType::U8 | EncodingType::NullableU8 => EncodingType::NullableU8,
             EncodingType::U16 | EncodingType::NullableU16 => EncodingType::NullableU16,
             EncodingType::U32 | EncodingType::NullableU32 => EncodingType::NullableU32,
             EncodingType::U64 | EncodingType::NullableU64 => EncodingType::NullableU64,
-            EncodingType::F64 | EncodingType::NullableF64=> {
-                EncodingType::NullableF64
-            }
+            EncodingType::F64 | EncodingType::NullableF64 => EncodingType::NullableF64,
             EncodingType::Val => EncodingType::Val,
             EncodingType::OptStr => EncodingType::OptStr,
             EncodingType::OptF64 => EncodingType::OptF64,
@@ -122,6 +119,7 @@ impl EncodingType {
             | EncodingType::Bitvec
             | EncodingType::Val
             | EncodingType::Null
+            | EncodingType::ScalarF64
             | EncodingType::ScalarI64
             | EncodingType::ScalarStr
             | EncodingType::ScalarString
@@ -136,9 +134,7 @@ impl EncodingType {
     /// Returns whether the encoding type can represent null values without an associated null map.
     pub fn is_naturally_nullable(&self) -> bool {
         match self {
-            EncodingType::Val
-            | EncodingType::OptStr
-            | EncodingType::OptF64 => true,
+            EncodingType::Val | EncodingType::OptStr | EncodingType::OptF64 => true,
             EncodingType::NullableStr
             | EncodingType::NullableI64
             | EncodingType::NullableU8
@@ -156,6 +152,7 @@ impl EncodingType {
             | EncodingType::USize
             | EncodingType::Bitvec
             | EncodingType::Null
+            | EncodingType::ScalarF64
             | EncodingType::ScalarI64
             | EncodingType::ScalarStr
             | EncodingType::ScalarString
@@ -187,6 +184,7 @@ impl EncodingType {
             | EncodingType::Bitvec
             | EncodingType::Val
             | EncodingType::Null
+            | EncodingType::ScalarF64
             | EncodingType::ScalarI64
             | EncodingType::ScalarStr
             | EncodingType::ScalarString
@@ -223,6 +221,7 @@ impl EncodingType {
             | EncodingType::ValRows
             | EncodingType::Premerge
             | EncodingType::MergeOp => false,
+            EncodingType::ScalarF64
             | EncodingType::ScalarI64
             | EncodingType::ScalarStr
             | EncodingType::ScalarString
@@ -257,6 +256,7 @@ impl EncodingType {
             | EncodingType::Premerge
             | EncodingType::Null
             | EncodingType::MergeOp => false,
+            EncodingType::ScalarF64
             | EncodingType::ScalarI64
             | EncodingType::ScalarStr
             | EncodingType::ScalarString
@@ -302,14 +302,15 @@ impl EncodingType {
             EncodingType::OptStr => 17,
             EncodingType::OptF64 => 18,
             EncodingType::Null => 19,
-            EncodingType::ScalarI64 => 20,
-            EncodingType::ScalarStr => 21,
-            EncodingType::ScalarString => 22,
-            EncodingType::ConstVal => 23,
-            EncodingType::ByteSlices(x) => 32 + u8::try_from(x).unwrap(),
+            EncodingType::ScalarF64 => 20,
+            EncodingType::ScalarI64 => 21,
+            EncodingType::ScalarStr => 22,
+            EncodingType::ScalarString => 23,
+            EncodingType::ConstVal => 24,
             EncodingType::ValRows => 25,
             EncodingType::Premerge => 26,
             EncodingType::MergeOp => 27,
+            EncodingType::ByteSlices(x) => 64 + u8::try_from(x).unwrap(),
         }
     }
 }

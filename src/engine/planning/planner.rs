@@ -409,6 +409,10 @@ impl BufferProvider {
         self.named_buffer(name, EncodingType::ScalarI64).scalar_i64().unwrap()
     }
 
+    pub fn buffer_scalar_f64(&mut self, name: &'static str) -> BufferRef<Scalar<of64>> {
+        self.named_buffer(name, EncodingType::ScalarF64).scalar_f64().unwrap()
+    }
+
     pub fn buffer_scalar_str<'a>(&mut self, name: &'static str) -> BufferRef<Scalar<&'a str>> {
         self.named_buffer(name, EncodingType::ScalarStr).scalar_str().unwrap()
     }

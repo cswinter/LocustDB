@@ -1606,3 +1606,27 @@ fn test_top_n_of_null() {
         ],
     );
 }
+
+#[test]
+fn test_int_less_than() {
+    test_query_ec(
+        "SELECT id, non_dense_ints FROM default WHERE non_dense_ints < 3 ORDER BY id LIMIT 2;",
+        &[vec![Int(0), Int(0)], vec![Int(1), Int(2)]],
+    );
+}
+
+#[test]
+fn test_float_less_than() {
+    test_query_ec(
+        "SELECT id, float FROM default WHERE float < 0.0001 ORDER BY id LIMIT 2;",
+        &[vec![Int(2), Float(-124.0)], vec![Int(5), Float(1e-6)]],
+    );
+}
+
+#[test]
+fn test_float_greater_than() {
+    test_query_ec(
+        "SELECT id, float FROM default WHERE float > 0.0001 ORDER BY id LIMIT 2;",
+        &[vec![Int(0), Float(0.123412)], vec![Int(1), Float(0.0003)]],
+    );
+}

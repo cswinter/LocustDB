@@ -61,6 +61,7 @@ use super::numeric_operators::*;
 use super::parameterized_vec_vec_int_op::*;
 use super::partition::Partition;
 use super::propagate_nullability::PropagateNullability;
+use super::scalar_f64::ScalarF64;
 use super::scalar_i64::ScalarI64;
 use super::scalar_str::ScalarStr;
 use super::select::*;
@@ -658,6 +659,18 @@ pub mod operator {
         })
     }
 
+    pub fn scalar_f64<'a>(
+        val: f64,
+        hide_value: bool,
+        output: BufferRef<Scalar<of64>>,
+    ) -> BoxedOperator<'a> {
+        Box::new(ScalarF64 {
+            val: OrderedFloat(val),
+            hide_value,
+            output,
+        })
+    }
+
     pub fn scalar_str(
         val: String,
         pinned: BufferRef<Scalar<String>>,
@@ -737,6 +750,13 @@ pub mod operator {
             lhs: ScalarI64, rhs: IntegerNoU64;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+
+            lhs: Float, rhs: ScalarF64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            lhs: ScalarF64, rhs: Float;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThan> }));
+            lhs: Float, rhs: Float;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThan> }))
         }
     }
@@ -760,6 +780,13 @@ pub mod operator {
             lhs: ScalarI64, rhs: IntegerNoU64;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+
+            lhs: Float, rhs: ScalarF64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+            lhs: ScalarF64, rhs: Float;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }));
+            lhs: Float, rhs: Float;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<LessThanEquals> }))
         }
     }
@@ -783,6 +810,13 @@ pub mod operator {
             lhs: ScalarI64, rhs: IntegerNoU64;
             Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Equals> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Equals> }));
+
+            lhs: Float, rhs: ScalarF64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<Equals> }));
+            lhs: ScalarF64, rhs: Float;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<Equals> }));
+            lhs: Float, rhs: Float;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<Equals> }))
         }
     }
@@ -806,6 +840,13 @@ pub mod operator {
             lhs: ScalarI64, rhs: IntegerNoU64;
             Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<NotEquals> }));
             lhs: IntegerNoU64, rhs: IntegerNoU64;
+            Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }));
+
+            lhs: Float, rhs: ScalarF64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }));
+            lhs: ScalarF64, rhs: Float;
+            Ok(Box::new(BinaryVSOperator { lhs: rhs, rhs: lhs, output, op: PhantomData::<NotEquals> }));
+            lhs: Float, rhs: Float;
             Ok(Box::new(BinaryOperator { lhs, rhs, output, op: PhantomData::<NotEquals> }))
         }
     }
