@@ -16,6 +16,8 @@ use crate::logging_client::ColumnData;
 use crate::mem_store::partition::{ColumnLocator, Partition};
 use crate::mem_store::*;
 
+use self::meta_store::PartitionMetadata;
+
 pub struct Table {
     name: String,
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,

@@ -9,6 +9,7 @@ use std::{mem, str};
 
 use futures::channel::oneshot;
 use futures::executor::block_on;
+use inner_locustdb::meta_store::PartitionMetadata;
 use itertools::Itertools;
 
 use crate::disk_store::storage::{Storage, WALSegment};
@@ -28,6 +29,7 @@ use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 use crate::{mem_store::*, NoopStorage};
 
+use self::meta_store::SubpartitionMetadata;
 use self::raw_col::MixedCol;
 
 pub struct InnerLocustDB {

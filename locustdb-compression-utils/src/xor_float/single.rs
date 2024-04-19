@@ -157,7 +157,7 @@ pub fn verbose_encode(name: &str, floats: &[f32], max_regret: u32, mantissa: Opt
     }
 
     // 8 bytes per value and 8 addtional bytes for the length
-    let uncompressed_size = floats.len() * std::mem::size_of::<f32>() + 8;
+    let uncompressed_size = std::mem::size_of_val(floats) + 8;
     println!(
         "Compression ratio of {:.2} for {name} (max_regret={max_regret})",
         uncompressed_size as f64 / write_bytes.len() as f64,

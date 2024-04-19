@@ -1,16 +1,14 @@
+mod azure_writer;
 mod file_writer;
 mod gcs_writer;
-mod azure_writer;
+pub mod meta_store;
 pub mod noop_storage;
+mod serialization;
 pub mod storage;
 
 lazy_static! {
     static ref RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
 }
-
-use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
 
 use crate::mem_store::column::Column;
 use crate::perf_counter::QueryPerfCounter;
@@ -34,29 +32,3 @@ pub trait ColumnLoader: Sync + Send + 'static {
 }
 
 pub type PartitionID = u64;
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PartitionMetadata {
-    pub id: PartitionID,
-    pub tablename: String,
-    pub offset: usize,
-    pub len: usize,
-    pub subpartitions: Vec<SubpartitionMetadata>,
-    pub column_name_to_subpartition_index: HashMap<String, usize>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SubpartitionMetadata {
-    // pub column_names: HashSet<String>,
-    pub size_bytes: u64,
-    pub subpartition_key: String,
-}
-
-impl PartitionMetadata {
-    pub fn subpartition_key(&self, column_name: &str) -> String {
-        let subpartition_index = self.column_name_to_subpartition_index[column_name];
-        self.subpartitions[subpartition_index]
-            .subpartition_key
-            .clone()
-    }
-}

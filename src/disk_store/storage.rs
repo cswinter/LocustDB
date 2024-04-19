@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use super::azure_writer::AzureBlobWriter;
 use super::file_writer::{BlobWriter, FileBlobWriter};
 use super::gcs_writer::GCSBlobWriter;
-use super::{ColumnLoader, PartitionMetadata, SubpartitionMetadata};
+use super::{ColumnLoader, PartitionID};
+use super::meta_store::{MetaStore, PartitionMetadata, SubpartitionMetadata};
 use crate::logging_client::EventBuffer;
 use crate::mem_store::{Column, DataSource};
 use crate::perf_counter::{PerfCounter, QueryPerfCounter};
@@ -19,15 +20,6 @@ pub struct WALSegment<'a> {
     pub data: Cow<'a, EventBuffer>,
 }
 
-type TableName = String;
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct MetaStore {
-    pub next_wal_id: u64,
-    pub partitions: HashMap<TableName, HashMap<PartitionID, PartitionMetadata>>,
-}
-
-type PartitionID = u64;
 
 impl ColumnLoader for Storage {
     fn load_column(
@@ -122,7 +114,7 @@ impl Storage {
         let mut meta_store: MetaStore = if writer.exists(meta_db_path).unwrap() {
             let data = writer.load(meta_db_path).unwrap();
             perf_counter.disk_read_meta_store(data.len() as u64);
-            bincode::deserialize(&data).unwrap()
+            MetaStore::deserialize(&data).unwrap()
         } else {
             MetaStore {
                 next_wal_id: 0,
@@ -165,7 +157,7 @@ impl Storage {
     }
 
     fn write_metastore(&self, meta_store: &MetaStore) {
-        let data = bincode::serialize(meta_store).unwrap();
+        let data = meta_store.serialize();
         self.perf_counter.disk_write_meta_store(data.len() as u64);
         self.writer.store(&self.meta_db_path, &data).unwrap();
     }

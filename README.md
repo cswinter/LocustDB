@@ -123,6 +123,15 @@ cd LocustDB
 cargo run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-trips
 ```
 
+### Regenerating Cap'n Proto definitions
+
+LocustDB uses Cap'n Proto for encoding data sent between the logging/query client and server, and for persisting data to disk.
+To regenerate the Cap'n Proto, follow this process:
+
+1. [Install the Cap'n Proto CLI tool][install-capnproto]
+2. `cargo install capnpc`
+3. `capnp compile -orust src/disk_store/serialization/*.capnp`
+
 ### Running tests or benchmarks
 
 `cargo test`
@@ -139,3 +148,4 @@ Compile with `--features "enable_lz4"` to enable an additional lz4 compression p
 [blogpost-2]: https://clemenswinter.com/2018/08/13/how-read-100s-of-millions-of-records-per-second-from-a-single-disk/
 [rustup]: https://rustup.rs/
 [latest-release]: https://github.com/cswinter/LocustDB/releases/download/v0.1.0-alpha/locustdb-0.1.0-alpha-x64-linux.0-alpha
+[install-capnproto]: https://capnproto.org/install.html
