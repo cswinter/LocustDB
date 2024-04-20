@@ -3,16 +3,8 @@
 using Rust = import "rust.capnp";
 $Rust.parentModule("disk_store::serialization");
 
-
-struct MetaData {
-    tablename @0 :Text;
-    len @1 :UInt64;
-    columns @2 :List(ColumnMetaData);
-}
-
-struct ColumnMetaData {
-    name @0 :Text;
-    sizeBytes @1 :UInt64;
+struct PartitionSegment {
+    columns @0 :List(Column);
 }
 
 struct Column {
@@ -28,7 +20,7 @@ struct Column {
 
 struct Range {
     start @0 :Int64;
-    end @1: Int64;
+    end @1 :Int64;
 }
 
 struct CodecOp {
@@ -54,6 +46,7 @@ struct DataSection {
         i64 @4 :List(Int64);
         null @5 :UInt64;
         f64 @6 :List(Float64);
+        bitvec @7 :List(UInt8);
     }
 }
 
@@ -80,4 +73,5 @@ enum EncodingType {
     i64 @4;
     null @5;
     f64 @6;
+    bitvec @7;
 }

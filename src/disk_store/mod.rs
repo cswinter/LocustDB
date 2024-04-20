@@ -5,6 +5,7 @@ pub mod meta_store;
 pub mod noop_storage;
 mod serialization;
 pub mod storage;
+mod partition_segment;
 pub mod wal_segment;
 
 lazy_static! {

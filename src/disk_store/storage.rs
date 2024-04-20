@@ -5,6 +5,7 @@ use std::sync::{Arc, RwLock};
 use super::azure_writer::AzureBlobWriter;
 use super::file_writer::{BlobWriter, FileBlobWriter};
 use super::gcs_writer::GCSBlobWriter;
+use super::partition_segment::PartitionSegment;
 use super::wal_segment::WalSegment;
 use super::{ColumnLoader, PartitionID};
 use super::meta_store::{MetaStore, PartitionMetadata, SubpartitionMetadata};
@@ -160,7 +161,7 @@ impl Storage {
         for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
             let table_dir = self.tables_path.join(&partition.tablename);
             let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
-            let data = bincode::serialize(&cols).unwrap();
+            let data = PartitionSegment::serialize(&cols[..]);
             self.perf_counter
                 .new_partition_file_write(data.len() as u64);
             self.writer
@@ -300,7 +301,7 @@ impl Storage {
         let data = self.writer.load(&path).unwrap();
         self.perf_counter.disk_read_partition(data.len() as u64);
         perf_counter.disk_read(data.len() as u64);
-        bincode::deserialize(&data).unwrap()
+        PartitionSegment::deserialize(&data).unwrap().columns
     }
 }
 
