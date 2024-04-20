@@ -12,7 +12,7 @@ use futures::executor::block_on;
 use inner_locustdb::meta_store::PartitionMetadata;
 use itertools::Itertools;
 
-use crate::disk_store::storage::{Storage, WALSegment};
+use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
 use crate::engine::query_task::{BasicTypeColumn, QueryTask};
 use crate::engine::Query;
@@ -31,6 +31,7 @@ use crate::{mem_store::*, NoopStorage};
 
 use self::meta_store::SubpartitionMetadata;
 use self::raw_col::MixedCol;
+use self::wal_segment::WalSegment;
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
@@ -186,7 +187,7 @@ impl InnerLocustDB {
             let events = events.clone();
             let storage = storage.clone();
             thread::spawn(move || {
-                storage.persist_wal_segment(WALSegment {
+                storage.persist_wal_segment(WalSegment {
                     id: 0,
                     data: Cow::Borrowed(&events),
                 })

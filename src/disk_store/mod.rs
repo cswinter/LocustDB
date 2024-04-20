@@ -5,6 +5,7 @@ pub mod meta_store;
 pub mod noop_storage;
 mod serialization;
 pub mod storage;
+pub mod wal_segment;
 
 lazy_static! {
     static ref RT: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();

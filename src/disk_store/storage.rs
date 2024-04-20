@@ -1,25 +1,15 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use serde::{Deserialize, Serialize};
-
 use super::azure_writer::AzureBlobWriter;
 use super::file_writer::{BlobWriter, FileBlobWriter};
 use super::gcs_writer::GCSBlobWriter;
+use super::wal_segment::WalSegment;
 use super::{ColumnLoader, PartitionID};
 use super::meta_store::{MetaStore, PartitionMetadata, SubpartitionMetadata};
-use crate::logging_client::EventBuffer;
 use crate::mem_store::{Column, DataSource};
 use crate::perf_counter::{PerfCounter, QueryPerfCounter};
-
-#[derive(Serialize, Deserialize)]
-pub struct WALSegment<'a> {
-    pub id: u64,
-    pub data: Cow<'a, EventBuffer>,
-}
-
 
 impl ColumnLoader for Storage {
     fn load_column(
@@ -57,7 +47,7 @@ impl Storage {
         path: &Path,
         perf_counter: Arc<PerfCounter>,
         readonly: bool,
-    ) -> (Storage, Vec<WALSegment<'static>>) {
+    ) -> (Storage, Vec<WalSegment<'static>>) {
         let (writer, path): (Box<dyn BlobWriter + Send + Sync + 'static>, PathBuf) = if path.starts_with("gs://") {
             let components = path.components().collect::<Vec<_>>();
             if components.len() < 2 {
@@ -110,7 +100,7 @@ impl Storage {
         wal_dir: &Path,
         readonly: bool,
         perf_counter: &PerfCounter,
-    ) -> (MetaStore, Vec<WALSegment<'static>>) {
+    ) -> (MetaStore, Vec<WalSegment<'static>>) {
         let mut meta_store: MetaStore = if writer.exists(meta_db_path).unwrap() {
             let data = writer.load(meta_db_path).unwrap();
             perf_counter.disk_read_meta_store(data.len() as u64);
@@ -128,7 +118,7 @@ impl Storage {
         for wal_file in writer.list(wal_dir).unwrap() {
             let wal_data = writer.load(&wal_file).unwrap();
             perf_counter.disk_read_wal(wal_data.len() as u64);
-            let wal_segment: WALSegment = bincode::deserialize(&wal_data).unwrap();
+            let wal_segment = WalSegment::deserialize(&wal_data).unwrap();
             log::info!(
                 "Found wal segment {} with id {} and {} rows in {} tables",
                 wal_file.display(),
@@ -186,14 +176,14 @@ impl Storage {
         &self.meta_store
     }
 
-    pub fn persist_wal_segment(&self, mut segment: WALSegment) -> u64 {
+    pub fn persist_wal_segment(&self, mut segment: WalSegment) -> u64 {
         {
             let mut meta_store = self.meta_store.write().unwrap();
             segment.id = meta_store.next_wal_id;
             meta_store.next_wal_id += 1;
         }
         let path = self.wal_dir.join(format!("{}.wal", segment.id));
-        let data = bincode::serialize(&segment).unwrap();
+        let data = segment.serialize();
         self.perf_counter.disk_write_wal(data.len() as u64);
         self.writer.store(&path, &data).unwrap();
         data.len() as u64
