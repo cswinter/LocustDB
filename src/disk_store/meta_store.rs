@@ -1,5 +1,5 @@
-use super::serialization::dbmeta_capnp;
 use capnp::serialize_packed;
+use locustdb_serialization::dbmeta_capnp;
 use std::collections::HashMap;
 
 type TableName = String;

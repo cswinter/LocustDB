@@ -1,10 +1,9 @@
 use capnp::serialize_packed;
+use locustdb_serialization::partition_segment_capnp;
 use ordered_float::OrderedFloat;
 
 use crate::engine::EncodingType;
 use crate::mem_store::{CodecOp, Column, DataSection, DataSource};
-
-use super::serialization::partition_segment_capnp;
 
 pub struct PartitionSegment {
     pub columns: Vec<Column>,

@@ -520,15 +520,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "bit-vec"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1751,7 +1742,6 @@ dependencies = [
  "azure_identity",
  "azure_storage",
  "azure_storage_blobs",
- "bincode",
  "bit-vec",
  "blake2",
  "byteorder",
@@ -1771,6 +1761,7 @@ dependencies = [
  "lazy_static",
  "locustdb-compression-utils",
  "locustdb-derive",
+ "locustdb-serialization",
  "log",
  "lru",
  "lz4",
@@ -1822,6 +1813,14 @@ dependencies = [
  "quote",
  "regex",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "locustdb-serialization"
+version = "0.1.0"
+dependencies = [
+ "capnp",
+ "serde",
 ]
 
 [[package]]

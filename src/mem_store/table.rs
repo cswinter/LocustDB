@@ -6,13 +6,13 @@ use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
 use itertools::Itertools;
+use locustdb_serialization::event_buffer::ColumnData;
 
 use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
-use crate::logging_client::ColumnData;
 use crate::mem_store::partition::{ColumnLocator, Partition};
 use crate::mem_store::*;
 

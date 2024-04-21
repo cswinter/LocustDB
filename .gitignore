@@ -3,6 +3,7 @@
 /target/
 locustdb-derive/target/
 locustdb-compression-utils/target/
+locustdb-serialization/target/
 /data/
 **/node_modules/
 **/.locustDB_history

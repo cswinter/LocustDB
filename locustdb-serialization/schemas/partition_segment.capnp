@@ -1,8 +1,5 @@
 @0xc2e3685626e6e832;
 
-using Rust = import "rust.capnp";
-$Rust.parentModule("disk_store::serialization");
-
 struct PartitionSegment {
     columns @0 :List(Column);
 }

@@ -11,6 +11,7 @@ use futures::channel::oneshot;
 use futures::executor::block_on;
 use inner_locustdb::meta_store::PartitionMetadata;
 use itertools::Itertools;
+use locustdb_serialization::event_buffer::{ColumnData, EventBuffer};
 
 use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
@@ -20,8 +21,6 @@ use crate::ingest::colgen::GenTable;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
-use crate::logging_client::ColumnData;
-use crate::logging_client::EventBuffer;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
 use crate::perf_counter::PerfCounter;

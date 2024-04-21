@@ -1,12 +1,12 @@
 @0xdb2bd6b471f245ca;
 
-using Rust = import "rust.capnp";
-$Rust.parentModule("disk_store::serialization");
-
-
 struct WalSegment {
     id @0 :UInt64;
-    data @1 :List(TableSegment);
+    data @1 :TableSegmentList;
+}
+
+struct TableSegmentList {
+    data @0 :List(TableSegment);
 }
 
 struct TableSegment {

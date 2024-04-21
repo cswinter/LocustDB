@@ -4,11 +4,11 @@ use std::str;
 use std::sync::Arc;
 
 use futures::channel::oneshot;
+use locustdb_serialization::event_buffer::EventBuffer;
 
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
-use crate::logging_client::EventBuffer;
 use crate::mem_store::*;
 use crate::perf_counter::PerfCounter;
 use crate::scheduler::*;
