@@ -1,47 +1,15 @@
-use std::collections::HashMap;
 use std::fmt;
-use std::mem;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use locustdb_serialization::api::{Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, MultiQueryResponse, QueryResponse};
+use locustdb_serialization::event_buffer::EventBuffer;
 use reqwest::header::CONTENT_TYPE;
-use serde::{Deserialize, Serialize};
 use tokio::select;
 use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 
-use crate::server::{ColumnNameRequest, EncodingOpts, MultiQueryRequest, QueryResponse};
-use locustdb_compression_utils::column;
-
-#[derive(Default, Serialize, Deserialize, Clone)]
-pub struct EventBuffer {
-    pub tables: HashMap<String, TableBuffer>,
-}
-
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
-pub struct TableBuffer {
-    pub len: u64,
-    pub columns: HashMap<String, ColumnBuffer>,
-}
-
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
-pub struct ColumnBuffer {
-    pub data: ColumnData,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum ColumnData {
-    Dense(Vec<f64>),
-    Sparse(Vec<(u64, f64)>),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ColumnNameResponse {
-    pub columns: Vec<String>,
-    pub offset: usize,
-    pub len: usize,
-}
 
 pub struct LoggingClient {
     // Table -> Rows
@@ -72,7 +40,7 @@ struct BackgroundWorker {
 #[derive(Debug)]
 pub enum Error {
     Reqwest(reqwest::Error),
-    Bincode(bincode::Error),
+    Deserialize(capnp::Error),
     Client { status_code: u16, msg: String },
 }
 
@@ -141,10 +109,12 @@ impl LoggingClient {
             return Err(Error::Client { status_code, msg });
         }
         let bytes = response.bytes().await?.to_vec();
-        let mut rsps: Vec<QueryResponse> = bincode::deserialize(&bytes).unwrap();
+        let mut rsps = MultiQueryResponse::deserialize(&bytes).unwrap().responses;
         rsps.iter_mut().for_each(|rsp| {
             rsp.columns.iter_mut().for_each(|(_, col)| {
-                *col = mem::replace(col, column::Column::Null(0)).decompress();
+                if let Column::Xor(data) = col {
+                    *col = Column::Float(locustdb_compression_utils::xor_float::double::decode(&data[..]).unwrap())
+                }
             });
         });
         Ok(rsps)
@@ -262,7 +232,7 @@ impl BackgroundWorker {
         if request_data.is_some() {
             return;
         }
-        let serialized = bincode::serialize(&*buffer).unwrap();
+        let serialized = buffer.serialize();
         if buffer.tables.is_empty() {
             return;
         }
@@ -316,36 +286,6 @@ impl BackgroundWorker {
     }
 }
 
-impl ColumnBuffer {
-    fn push(&mut self, value: f64, len: u64) {
-        match &mut self.data {
-            ColumnData::Dense(data) => {
-                if data.len() as u64 == len {
-                    data.push(value)
-                } else {
-                    let mut sparse_data: Vec<(u64, f64)> = data
-                        .drain(..)
-                        .enumerate()
-                        .map(|(i, v)| (i as u64, v))
-                        .collect();
-                    sparse_data.push((len, value));
-                    self.data = ColumnData::Sparse(sparse_data);
-                }
-            }
-            ColumnData::Sparse(data) => data.push((len, value)),
-        }
-    }
-
-    // fn clear(&mut self) {
-    //     match &mut self.data {
-    //         ColumnData::Dense(data) => data.clear(),
-    //         ColumnData::Sparse(_) => {
-    //             self.data = ColumnData::Dense(Vec::new());
-    //         }
-    //     }
-    // }
-}
-
 impl Drop for LoggingClient {
     fn drop(&mut self) {
         self.shutdown.cancel();
@@ -374,38 +314,9 @@ impl Drop for LoggingClient {
     }
 }
 
-impl ColumnData {
-    pub fn len(&self) -> usize {
-        match self {
-            ColumnData::Dense(data) => data.len(),
-            ColumnData::Sparse(data) => data.len(),
-        }
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        match self {
-            ColumnData::Dense(data) => data.is_empty(),
-            ColumnData::Sparse(data) => data.is_empty(),
-        }
-    }
-}
-
-impl Default for ColumnData {
-    fn default() -> Self {
-        ColumnData::Dense(Vec::new())
-    }
-}
-
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
         Error::Reqwest(err)
-    }
-}
-
-impl From<bincode::Error> for Error {
-    fn from(err: bincode::Error) -> Self {
-        Error::Bincode(err)
     }
 }
 
@@ -413,7 +324,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Reqwest(err) => write!(f, "Reqwest error: {}", err),
-            Error::Bincode(err) => write!(f, "Bincode error: {}", err),
+            Error::Deserialize(err) => write!(f, "Failed to deserialize response: {}", err),
             Error::Client { status_code, msg } => {
                 write!(f, "Client error ({}): {}", status_code, msg)
             }

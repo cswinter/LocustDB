@@ -10,6 +10,8 @@ use crate::mem_store::*;
 use crate::perf_counter::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 
+use self::meta_store::PartitionMetadata;
+
 // Table, Partition, Column
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct ColumnLocator {

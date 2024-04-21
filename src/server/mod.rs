@@ -9,13 +9,18 @@ use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::channel::oneshot::Canceled;
 use itertools::Itertools;
-use locustdb_compression_utils::{column, xor_float};
+use locustdb_compression_utils::xor_float;
+use locustdb_serialization::api::{
+    self, ColumnNameRequest, EncodingOpts, MultiQueryRequest, MultiQueryResponse, QueryRequest,
+    QueryResponse,
+};
+use locustdb_serialization::event_buffer::EventBuffer;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tera::{Context, Tera};
 use tokio::sync::oneshot;
 
-use crate::{logging_client, BasicTypeColumn, LocustDB};
+use crate::{BasicTypeColumn, LocustDB};
 use crate::{QueryError, QueryOutput, Value};
 
 lazy_static! {
@@ -42,37 +47,6 @@ struct DataBatch {
 #[derive(Clone)]
 struct AppState {
     db: Arc<LocustDB>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct QueryRequest {
-    query: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ColumnNameRequest {
-    pub tables: Vec<String>,
-    pub pattern: Option<String>,
-    pub offset: Option<usize>,
-    pub limit: Option<usize>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MultiQueryRequest {
-    pub queries: Vec<String>,
-    pub encoding_opts: Option<EncodingOpts>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct QueryResponse {
-    pub columns: HashMap<String, column::Column>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EncodingOpts {
-    pub xor_float_compression: bool,
-    pub mantissa: Option<u32>,
-    pub full_precision_cols: HashSet<String>,
 }
 
 #[get("/")]
@@ -268,7 +242,10 @@ async fn multi_query_cols(
                         .collect(),
                 });
             }
-            let serialized = bincode::serialize(&query_responses).unwrap();
+            let serialized = MultiQueryResponse {
+                responses: query_responses,
+            }
+            .serialize();
             HttpResponse::Ok().body(serialized)
         }
         None => {
@@ -315,7 +292,6 @@ fn flatmap_err_response(
     }
 }
 
-// TODO: even more efficient, push all data-conversions into client
 #[post("/insert_bin")]
 async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responder {
     // PRINT FIRST 64 BYTES
@@ -332,7 +308,7 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
         .perf_counter()
         .network_read_ingestion(req_body.len() as u64);
 
-    let events: logging_client::EventBuffer = match bincode::deserialize(&req_body) {
+    let events = match EventBuffer::deserialize(&req_body) {
         Ok(events) => events,
         Err(e) => {
             log::error!("Failed to deserialize /insert_bin request: {}", e);
@@ -342,11 +318,7 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
     };
     log::info!(
         "Received request data for {} events",
-        events
-            .tables
-            .values()
-            .map(|t| t.len)
-            .sum::<u64>()
+        events.tables.values().map(|t| t.len).sum::<u64>()
     );
     data.db.ingest_efficient(events).await;
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
@@ -436,18 +408,18 @@ pub fn run(
     Ok((handle, rx))
 }
 
-fn encode_column(col: BasicTypeColumn, encode_opts: &EncodingOpts) -> column::Column {
+fn encode_column(col: BasicTypeColumn, encode_opts: &EncodingOpts) -> api::Column {
     match col {
-        BasicTypeColumn::Int(xs) => column::Column::Int(xs),
+        BasicTypeColumn::Int(xs) => api::Column::Int(xs),
         BasicTypeColumn::Float(xs) => {
             if encode_opts.xor_float_compression {
-                column::Column::compress(xs, encode_opts.mantissa)
+                api::Column::Xor(xor_float::double::encode(&xs, 100, encode_opts.mantissa))
             } else {
-                column::Column::Float(xs)
+                api::Column::Float(xs)
             }
         }
-        BasicTypeColumn::String(xs) => column::Column::String(xs),
-        BasicTypeColumn::Null(xs) => column::Column::Null(xs),
+        BasicTypeColumn::String(xs) => api::Column::String(xs),
+        BasicTypeColumn::Null(xs) => api::Column::Null(xs),
         BasicTypeColumn::Mixed(xs) => {
             let mut type_signature = 0u8;
             for val in &xs {
@@ -459,35 +431,54 @@ fn encode_column(col: BasicTypeColumn, encode_opts: &EncodingOpts) -> column::Co
                 }
             }
             if type_signature == 2 {
-                column::Column::String(xs.into_iter().map(|val| match val {
-                    Value::Str(str) => str,
-                    _ => unreachable!(),
-                }).collect())
+                api::Column::String(
+                    xs.into_iter()
+                        .map(|val| match val {
+                            Value::Str(str) => str,
+                            _ => unreachable!(),
+                        })
+                        .collect(),
+                )
             } else if type_signature == 1 {
-                column::Column::Int(xs.into_iter().map(|val| match val {
-                    Value::Int(int) => int,
-                    _ => unreachable!(),
-                }).collect())
+                api::Column::Int(
+                    xs.into_iter()
+                        .map(|val| match val {
+                            Value::Int(int) => int,
+                            _ => unreachable!(),
+                        })
+                        .collect(),
+                )
             } else if type_signature == 4 {
-                column::Column::Null(xs.len())
+                api::Column::Null(xs.len())
             } else if type_signature == 8 || type_signature == 12 {
-                let floats = xs.into_iter().map(|val| match val {
-                    Value::Float(float) => float.0,
-                    Value::Null => xor_float::NULL,
-                    _ => unreachable!(),
-                }).collect();
+                let floats: Vec<f64> = xs
+                    .into_iter()
+                    .map(|val| match val {
+                        Value::Float(float) => float.0,
+                        Value::Null => xor_float::NULL,
+                        _ => unreachable!(),
+                    })
+                    .collect();
                 if encode_opts.xor_float_compression {
-                    column::Column::compress(floats, encode_opts.mantissa)
+                    api::Column::Xor(xor_float::double::encode(
+                        &floats,
+                        100,
+                        encode_opts.mantissa,
+                    ))
                 } else {
-                    column::Column::Float(floats)
+                    api::Column::Float(floats)
                 }
             } else {
-                column::Column::Mixed(xs.into_iter().map(|val| match val {
-                    Value::Int(int) => column::Mixed::Int(int),
-                    Value::Str(str) => column::Mixed::Str(str),
-                    Value::Null => column::Mixed::Null,
-                    Value::Float(float) => column::Mixed::Float(float.0),
-                }).collect())
+                api::Column::Mixed(
+                    xs.into_iter()
+                        .map(|val| match val {
+                            Value::Int(int) => api::AnyVal::Int(int),
+                            Value::Str(str) => api::AnyVal::Str(str),
+                            Value::Null => api::AnyVal::Null,
+                            Value::Float(float) => api::AnyVal::Float(float.0),
+                        })
+                        .collect(),
+                )
             }
         }
     }

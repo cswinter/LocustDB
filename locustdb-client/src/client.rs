@@ -1,9 +1,7 @@
+use locustdb_compression_utils::xor_float;
+use locustdb_serialization::api::{Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, QueryResponse};
 use reqwest::header::CONTENT_TYPE;
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
-use locustdb_compression_utils::column;
-use std::collections::HashMap;
-use std::mem;
 use std::sync::Once;
 
 #[wasm_bindgen]
@@ -11,39 +9,6 @@ pub struct Client {
     client: reqwest::Client,
     url: String,
     log_stats: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct ColumnNameRequest {
-    tables: Vec<String>,
-    pattern: Option<String>,
-    offset: Option<usize>,
-    limit: Option<usize>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct ColumnNameResponse {
-    columns: Vec<String>,
-    offset: usize,
-    len: usize,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct MultiQueryRequest {
-    queries: Vec<String>,
-    encoding_opts: Option<EncodingOpts>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EncodingOpts {
-    pub xor_float_compression: bool,
-    pub mantissa: Option<u32>,
-    pub full_precision_cols: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct QueryResponse {
-    pub columns: HashMap<String, column::Column>,
 }
 
 static START: Once = Once::new();
@@ -97,7 +62,7 @@ impl Client {
                 Some(EncodingOpts {
                     xor_float_compression: compress,
                     mantissa: Some(mantissa),
-                    full_precision_cols,
+                    full_precision_cols: full_precision_cols.into_iter().collect(),
                 }) } else { None },
         };
         let request_start_ms = performance.now();
@@ -123,14 +88,16 @@ impl Client {
                         0
                     };
                     let coltype = match col {
-                        column::Column::Float(_) => "float",
-                        column::Column::Int(_) => "int",
-                        column::Column::String(_) => "string",
-                        column::Column::Mixed(_) => "mixed",
-                        column::Column::Null(_) => "null",
-                        column::Column::Xor(_) => "xor",
+                        Column::Float(_) => "float",
+                        Column::Int(_) => "int",
+                        Column::String(_) => "string",
+                        Column::Mixed(_) => "mixed",
+                        Column::Null(_) => "null",
+                        Column::Xor(_) => "xor",
                     };
-                    *col = mem::replace(col, column::Column::Null(0)).decompress();
+                    if let Column::Xor(compressed) = col {
+                         *col = Column::Float(xor_float::double::decode(&compressed[..]).unwrap());
+                    };
                     if self.log_stats {
                         log::info!(
                             "[{}; {}]  size: {}B  ratio: {: >2.2}x  {:2.2} B/row  {}",

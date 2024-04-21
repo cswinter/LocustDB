@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 
-use locustdb_compression_utils::column::{Column, Mixed};
+use locustdb_compression_utils::xor_float;
+use locustdb_serialization::api::{AnyVal, Column};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -95,20 +96,20 @@ fn column_to_python(py: Python, column: Column) -> PyObject {
         Column::Int(xs) => xs.into_py(py),
         Column::String(xs) => xs.into_py(py),
         Column::Mixed(xs) => {
-            PyList::new_bound(py, xs.iter().map(|x| mixed_to_python(py, x))).into_py(py)
+            PyList::new_bound(py, xs.iter().map(|x| any_to_python(py, x))).into_py(py)
         }
         Column::Null(n) => {
             PyList::new_bound(py, (0..n).map(|_| None::<()>.into_py(py))).into_py(py)
         }
-        Column::Xor(xs) => xs.into_py(py),
+        Column::Xor(xs) => xor_float::double::decode(&xs).unwrap().into_py(py),
     }
 }
 
-fn mixed_to_python(py: Python, value: &Mixed) -> PyObject {
+fn any_to_python(py: Python, value: &AnyVal) -> PyObject {
     match value {
-        Mixed::Int(i) => i.into_py(py),
-        Mixed::Float(f) => f.into_py(py),
-        Mixed::Str(s) => s.into_py(py),
-        Mixed::Null => None::<()>.into_py(py),
+        AnyVal::Int(i) => i.into_py(py),
+        AnyVal::Float(f) => f.into_py(py),
+        AnyVal::Str(s) => s.into_py(py),
+        AnyVal::Null => None::<()>.into_py(py),
     }
 }

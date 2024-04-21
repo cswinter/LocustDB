@@ -9,9 +9,11 @@ use std::{mem, str};
 
 use futures::channel::oneshot;
 use futures::executor::block_on;
+use inner_locustdb::meta_store::PartitionMetadata;
 use itertools::Itertools;
+use locustdb_serialization::event_buffer::{ColumnData, EventBuffer};
 
-use crate::disk_store::storage::{Storage, WALSegment};
+use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
 use crate::engine::query_task::{BasicTypeColumn, QueryTask};
 use crate::engine::Query;
@@ -19,8 +21,6 @@ use crate::ingest::colgen::GenTable;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
-use crate::logging_client::ColumnData;
-use crate::logging_client::EventBuffer;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
 use crate::perf_counter::PerfCounter;
@@ -28,7 +28,9 @@ use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 use crate::{mem_store::*, NoopStorage};
 
+use self::meta_store::SubpartitionMetadata;
 use self::raw_col::MixedCol;
+use self::wal_segment::WalSegment;
 
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Table>>,
@@ -184,7 +186,7 @@ impl InnerLocustDB {
             let events = events.clone();
             let storage = storage.clone();
             thread::spawn(move || {
-                storage.persist_wal_segment(WALSegment {
+                storage.persist_wal_segment(WalSegment {
                     id: 0,
                     data: Cow::Borrowed(&events),
                 })

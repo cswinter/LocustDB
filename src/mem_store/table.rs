@@ -6,15 +6,18 @@ use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
 use itertools::Itertools;
+use locustdb_serialization::event_buffer::ColumnData;
 
-use crate::disk_store::storage::{Storage, WALSegment};
+use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
 use crate::ingest::buffer::Buffer;
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
-use crate::logging_client::ColumnData;
 use crate::mem_store::partition::{ColumnLocator, Partition};
 use crate::mem_store::*;
+
+use self::meta_store::PartitionMetadata;
+use self::wal_segment::WalSegment;
 
 pub struct Table {
     name: String,
@@ -88,7 +91,7 @@ impl Table {
 
     pub fn restore_tables_from_disk(
         storage: &Storage,
-        wal_segments: Vec<WALSegment>,
+        wal_segments: Vec<WalSegment>,
         lru: &Lru,
     ) -> HashMap<String, Table> {
         let mut tables = HashMap::new();
