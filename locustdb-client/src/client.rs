@@ -1,5 +1,5 @@
 use locustdb_compression_utils::xor_float;
-use locustdb_serialization::api::{Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, QueryResponse};
+use locustdb_serialization::api::{Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, MultiQueryResponse};
 use reqwest::header::CONTENT_TYPE;
 use wasm_bindgen::prelude::*;
 use std::sync::Once;
@@ -79,7 +79,7 @@ impl Client {
         let download_finished_ms = performance.now();
 
         let rsps = if binary {
-            let mut rsps: Vec<QueryResponse> = bincode::deserialize(&bytes).unwrap();
+            let mut rsps = MultiQueryResponse::deserialize(&bytes).unwrap().responses;
             rsps.iter_mut().for_each(|rsp| {
                 rsp.columns.iter_mut().for_each(|(key, col)| {
                     let compressed_bytes = if self.log_stats {
