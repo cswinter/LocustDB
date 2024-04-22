@@ -241,23 +241,66 @@ async fn test_ingest_sparse_nullable() {
     } else {
         vec![]
     };
-    let all_nonzero = db.run_query(query, false, true, show.clone())
+    let all_nonzero = db
+        .run_query(query, false, true, show.clone())
         .await
         .unwrap()
         .unwrap();
     assert_eq!(
         all_nonzero.rows.as_ref().unwrap(),
-        &vals.iter()
+        &vals
+            .iter()
             .enumerate()
             .map(|(i, &v)| vec![Float((i * interval) as f64), Float(v)])
             .collect::<Vec<_>>()
     );
-    let all_nonzero2 = db.run_query(query2, false, true, show)
+    let all_nonzero2 = db
+        .run_query(query2, false, true, show)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(all_nonzero.rows.unwrap(), all_nonzero2.rows.unwrap(),);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_persist_meta_tables() {
+    let _ = env_logger::try_init();
+
+    let db_path: PathBuf = tempdir().unwrap().path().into();
+    let opts = locustdb::Options {
+        db_path: Some(db_path),
+        threads: 1,
+        ..locustdb::Options::default()
+    };
+    let port = 8890;
+    let (db, _handle) = create_locustdb(&opts, port);
+
+    let addr = format!("http://localhost:{port}");
+    let mut log = locustdb::logging_client::LoggingClient::new(
+        Duration::from_micros(10),
+        &addr,
+        0,
+        BufferFullPolicy::Block,
+    );
+    log.log("qwerty", [("value".to_string(), 1.0)]);
+    drop(log);
+    drop(db);
+    _handle.stop(true).await;
+
+    let (db, _handle) = create_locustdb(&opts, port);
+    let query = "SELECT name FROM _meta_tables";
+    let show = if env::var("DEBUG_TESTS").is_ok() {
+        vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    } else {
+        vec![]
+    };
+    let _meta_tables = db
+        .run_query(query, false, true, show.clone())
         .await
         .unwrap()
         .unwrap();
     assert_eq!(
-        all_nonzero.rows.unwrap(),
-        all_nonzero2.rows.unwrap(),
+        _meta_tables.rows.as_ref().unwrap(),
+        &[[Str("qwerty")]],
     );
 }
