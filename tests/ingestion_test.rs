@@ -283,6 +283,7 @@ async fn test_persist_meta_tables() {
         BufferFullPolicy::Block,
     );
     log.log("qwerty", [("value".to_string(), 1.0)]);
+    log.log("asdf", [("value".to_string(), 1.0)]);
     drop(log);
     drop(db);
     _handle.stop(true).await;
@@ -301,6 +302,6 @@ async fn test_persist_meta_tables() {
         .unwrap();
     assert_eq!(
         _meta_tables.rows.as_ref().unwrap(),
-        &[[Str("qwerty")]],
+        &[[Str("qwerty")], [Str("asdf")]],
     );
 }

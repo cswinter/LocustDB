@@ -967,7 +967,7 @@ pub mod column {
   }
 
   pub mod data {
-    pub use self::Which::{F64,SparseF64};
+    pub use self::Which::{F64,SparseF64,I64,String};
 
     #[derive(Copy, Clone)]
     pub struct Owned(());
@@ -1035,6 +1035,16 @@ pub mod column {
         !self.reader.get_pointer_field(1).is_null()
       }
       #[inline]
+      pub fn has_i64(&self) -> bool {
+        if self.reader.get_data_field::<u16>(0) != 2 { return false; }
+        !self.reader.get_pointer_field(1).is_null()
+      }
+      #[inline]
+      pub fn has_string(&self) -> bool {
+        if self.reader.get_data_field::<u16>(0) != 3 { return false; }
+        !self.reader.get_pointer_field(1).is_null()
+      }
+      #[inline]
       pub fn which(self) -> ::core::result::Result<WhichReader<'a,>, ::capnp::NotInSchema> {
         match self.reader.get_data_field::<u16>(0) {
           0 => {
@@ -1045,6 +1055,16 @@ pub mod column {
           1 => {
             ::core::result::Result::Ok(SparseF64(
               self.reader.into()
+            ))
+          }
+          2 => {
+            ::core::result::Result::Ok(I64(
+              ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(1), ::core::option::Option::None)
+            ))
+          }
+          3 => {
+            ::core::result::Result::Ok(String(
+              ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(1), ::core::option::Option::None)
             ))
           }
           x => ::core::result::Result::Err(::capnp::NotInSchema(x))
@@ -1127,6 +1147,36 @@ pub mod column {
         self.builder.into()
       }
       #[inline]
+      pub fn set_i64(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::primitive_list::Owned<i64>>) -> ::capnp::Result<()> {
+        self.builder.set_data_field::<u16>(0, 2);
+        ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(1), value, false)
+      }
+      #[inline]
+      pub fn init_i64(self, size: u32) -> ::capnp::primitive_list::Builder<'a,i64> {
+        self.builder.set_data_field::<u16>(0, 2);
+        ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), size)
+      }
+      #[inline]
+      pub fn has_i64(&self) -> bool {
+        if self.builder.get_data_field::<u16>(0) != 2 { return false; }
+        !self.builder.is_pointer_field_null(1)
+      }
+      #[inline]
+      pub fn set_string(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text_list::Owned>) -> ::capnp::Result<()> {
+        self.builder.set_data_field::<u16>(0, 3);
+        ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(1), value, false)
+      }
+      #[inline]
+      pub fn init_string(self, size: u32) -> ::capnp::text_list::Builder<'a> {
+        self.builder.set_data_field::<u16>(0, 3);
+        ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), size)
+      }
+      #[inline]
+      pub fn has_string(&self) -> bool {
+        if self.builder.get_data_field::<u16>(0) != 3 { return false; }
+        !self.builder.is_pointer_field_null(1)
+      }
+      #[inline]
       pub fn which(self) -> ::core::result::Result<WhichBuilder<'a,>, ::capnp::NotInSchema> {
         match self.builder.get_data_field::<u16>(0) {
           0 => {
@@ -1137,6 +1187,16 @@ pub mod column {
           1 => {
             ::core::result::Result::Ok(SparseF64(
               self.builder.into()
+            ))
+          }
+          2 => {
+            ::core::result::Result::Ok(I64(
+              ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(1), ::core::option::Option::None)
+            ))
+          }
+          3 => {
+            ::core::result::Result::Ok(String(
+              ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(1), ::core::option::Option::None)
             ))
           }
           x => ::core::result::Result::Err(::capnp::NotInSchema(x))
@@ -1153,38 +1213,52 @@ pub mod column {
     impl Pipeline  {
     }
     mod _private {
-      pub static ENCODED_NODE: [::capnp::Word; 45] = [
+      pub static ENCODED_NODE: [::capnp::Word; 83] = [
         ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
         ::capnp::word(69, 244, 243, 59, 189, 92, 161, 222),
         ::capnp::word(25, 0, 0, 0, 1, 0, 1, 0),
         ::capnp::word(55, 153, 166, 99, 106, 69, 152, 148),
-        ::capnp::word(3, 0, 7, 0, 1, 0, 2, 0),
+        ::capnp::word(3, 0, 7, 0, 1, 0, 4, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(21, 0, 0, 0, 242, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-        ::capnp::word(25, 0, 0, 0, 119, 0, 0, 0),
+        ::capnp::word(25, 0, 0, 0, 231, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(119, 97, 108, 95, 115, 101, 103, 109),
         ::capnp::word(101, 110, 116, 46, 99, 97, 112, 110),
         ::capnp::word(112, 58, 67, 111, 108, 117, 109, 110),
         ::capnp::word(46, 100, 97, 116, 97, 0, 0, 0),
-        ::capnp::word(8, 0, 0, 0, 3, 0, 4, 0),
+        ::capnp::word(16, 0, 0, 0, 3, 0, 4, 0),
         ::capnp::word(0, 0, 255, 255, 1, 0, 0, 0),
         ::capnp::word(0, 0, 1, 0, 1, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-        ::capnp::word(41, 0, 0, 0, 34, 0, 0, 0),
+        ::capnp::word(97, 0, 0, 0, 34, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-        ::capnp::word(36, 0, 0, 0, 3, 0, 1, 0),
-        ::capnp::word(64, 0, 0, 0, 2, 0, 1, 0),
+        ::capnp::word(92, 0, 0, 0, 3, 0, 1, 0),
+        ::capnp::word(120, 0, 0, 0, 2, 0, 1, 0),
         ::capnp::word(1, 0, 254, 255, 0, 0, 0, 0),
         ::capnp::word(1, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(159, 231, 44, 232, 43, 27, 120, 140),
-        ::capnp::word(61, 0, 0, 0, 82, 0, 0, 0),
+        ::capnp::word(117, 0, 0, 0, 82, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(2, 0, 253, 255, 1, 0, 0, 0),
+        ::capnp::word(0, 0, 1, 0, 4, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(97, 0, 0, 0, 34, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(92, 0, 0, 0, 3, 0, 1, 0),
+        ::capnp::word(120, 0, 0, 0, 2, 0, 1, 0),
+        ::capnp::word(3, 0, 252, 255, 1, 0, 0, 0),
+        ::capnp::word(0, 0, 1, 0, 5, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(117, 0, 0, 0, 58, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(112, 0, 0, 0, 3, 0, 1, 0),
+        ::capnp::word(140, 0, 0, 0, 2, 0, 1, 0),
         ::capnp::word(102, 54, 52, 0, 0, 0, 0, 0),
         ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1199,11 +1273,37 @@ pub mod column {
         ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ::capnp::word(115, 112, 97, 114, 115, 101, 70, 54),
         ::capnp::word(52, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(105, 54, 52, 0, 0, 0, 0, 0),
+        ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 3, 0, 1, 0),
+        ::capnp::word(5, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(115, 116, 114, 105, 110, 103, 0, 0),
+        ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 3, 0, 1, 0),
+        ::capnp::word(12, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+        ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ];
       pub fn get_field_types(index: u16) -> ::capnp::introspect::Type {
         match index {
           0 => <::capnp::primitive_list::Owned<f64> as ::capnp::introspect::Introspect>::introspect(),
           1 => <crate::wal_segment_capnp::column::data::sparse_f64::Owned as ::capnp::introspect::Introspect>::introspect(),
+          2 => <::capnp::primitive_list::Owned<i64> as ::capnp::introspect::Introspect>::introspect(),
+          3 => <::capnp::text_list::Owned as ::capnp::introspect::Introspect>::introspect(),
           _ => panic!("invalid field index {}", index),
         }
       }
@@ -1217,16 +1317,18 @@ pub mod column {
         members_by_name: MEMBERS_BY_NAME,
       };
       pub static NONUNION_MEMBERS : &[u16] = &[];
-      pub static MEMBERS_BY_DISCRIMINANT : &[u16] = &[0,1];
-      pub static MEMBERS_BY_NAME : &[u16] = &[0,1];
+      pub static MEMBERS_BY_DISCRIMINANT : &[u16] = &[0,1,2,3];
+      pub static MEMBERS_BY_NAME : &[u16] = &[0,2,1,3];
       pub const TYPE_ID: u64 = 0xdea1_5cbd_3bf3_f445;
     }
-    pub enum Which<A0,A1> {
+    pub enum Which<A0,A1,A2,A3> {
       F64(A0),
       SparseF64(A1),
+      I64(A2),
+      String(A3),
     }
-    pub type WhichReader<'a,> = Which<::capnp::Result<::capnp::primitive_list::Reader<'a,f64>>,crate::wal_segment_capnp::column::data::sparse_f64::Reader<'a>>;
-    pub type WhichBuilder<'a,> = Which<::capnp::Result<::capnp::primitive_list::Builder<'a,f64>>,crate::wal_segment_capnp::column::data::sparse_f64::Builder<'a>>;
+    pub type WhichReader<'a,> = Which<::capnp::Result<::capnp::primitive_list::Reader<'a,f64>>,crate::wal_segment_capnp::column::data::sparse_f64::Reader<'a>,::capnp::Result<::capnp::primitive_list::Reader<'a,i64>>,::capnp::Result<::capnp::text_list::Reader<'a>>>;
+    pub type WhichBuilder<'a,> = Which<::capnp::Result<::capnp::primitive_list::Builder<'a,f64>>,crate::wal_segment_capnp::column::data::sparse_f64::Builder<'a>,::capnp::Result<::capnp::primitive_list::Builder<'a,i64>>,::capnp::Result<::capnp::text_list::Builder<'a>>>;
 
     pub mod sparse_f64 {
       #[derive(Copy, Clone)]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::wal_segment_capnp::{self, table_segment_list};
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct EventBuffer {
     pub tables: HashMap<String, TableBuffer>,
 }
@@ -22,6 +22,8 @@ pub struct ColumnBuffer {
 pub enum ColumnData {
     Dense(Vec<f64>),
     Sparse(Vec<(u64, f64)>),
+    I64(Vec<i64>),
+    String(Vec<String>),
 }
 
 impl ColumnData {
@@ -29,6 +31,8 @@ impl ColumnData {
         match self {
             ColumnData::Dense(data) => data.len(),
             ColumnData::Sparse(data) => data.len(),
+            ColumnData::I64(data) => data.len(),
+            ColumnData::String(data) => data.len(),
         }
     }
 
@@ -37,6 +41,8 @@ impl ColumnData {
         match self {
             ColumnData::Dense(data) => data.is_empty(),
             ColumnData::Sparse(data) => data.is_empty(),
+            ColumnData::I64(data) => data.is_empty(),
+            ColumnData::String(data) => data.is_empty(),
         }
     }
 }
@@ -58,6 +64,7 @@ impl ColumnBuffer {
                 }
             }
             ColumnData::Sparse(data) => data.push((len, value)),
+            _ => unimplemented!("Cannot push to non-f64 column"),
         }
     }
 }
@@ -85,6 +92,7 @@ impl EventBuffer {
             .init_data(self.tables.len() as u32);
         for (i, (name, table)) in self.tables.iter().enumerate() {
             let mut table_builder = data.reborrow().get(i as u32);
+            table_builder.set_len(table.len);
             table_builder.set_name(name);
             let mut columns = table_builder
                 .reborrow()
@@ -102,6 +110,12 @@ impl EventBuffer {
                         let (indices, values): (Vec<_>, Vec<_>) = sparse.iter().cloned().unzip();
                         sparse_builder.reborrow().set_indices(&indices[..]).unwrap();
                         sparse_builder.reborrow().set_values(&values[..]).unwrap();
+                    }
+                    ColumnData::I64(i64s) => {
+                        column_builder.get_data().set_i64(&i64s[..]).unwrap();
+                    }
+                    ColumnData::String(strings) => {
+                        column_builder.get_data().set_string(&strings[..]).unwrap();
                     }
                 }
             }
@@ -134,6 +148,14 @@ impl EventBuffer {
                         let indices = sparse.get_indices()?;
                         let values = sparse.get_values()?;
                         ColumnData::Sparse(indices.iter().zip(values.iter()).collect())
+                    }
+                    Which::I64(i64s) => ColumnData::I64(i64s?.iter().collect()),
+                    Which::String(strs) => {
+                        let mut strings = Vec::new();
+                        for s in strs?.iter() {
+                            strings.push(s?.to_string().unwrap());
+                        }
+                        ColumnData::String(strings)
                     }
                 };
                 columns.insert(colname, ColumnBuffer { data });

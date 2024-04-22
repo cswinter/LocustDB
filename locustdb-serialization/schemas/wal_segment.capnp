@@ -24,5 +24,7 @@ struct Column {
             indices @2 :List(UInt64);
             values @3 :List(Float64);
         }
+        i64 @4 :List(Int64);
+        string @5 :List(Text);
     }
 }
