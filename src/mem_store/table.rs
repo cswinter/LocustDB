@@ -141,6 +141,8 @@ impl Table {
                                 assert!((data.len() as u64) == rows, "rows: {}, data.len(): {}", rows, data.len());
                                 InputColumn::Str(data)
                             }
+                            ColumnData::Empty => InputColumn::Null(rows as usize),
+                            ColumnData::SparseI64(data) => InputColumn::NullableInt(rows, data),
                         };
                         (k, col)
                     })

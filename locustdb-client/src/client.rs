@@ -1,8 +1,12 @@
 use locustdb_compression_utils::xor_float;
-use locustdb_serialization::api::{Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, MultiQueryResponse};
+use locustdb_serialization::api::{
+    AnyVal, Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest,
+    MultiQueryResponse,
+};
+use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer, TableBuffer};
 use reqwest::header::CONTENT_TYPE;
-use wasm_bindgen::prelude::*;
 use std::sync::Once;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct Client {
@@ -50,7 +54,14 @@ impl Client {
         Ok(serde_wasm_bindgen::to_value(&rsps.columns).unwrap())
     }
 
-    pub async fn multi_query(&self, queries: Vec<String>, binary: bool, compress: bool, mantissa: u32, full_precision_cols: Vec<String>) -> Result<JsValue, JsValue> {
+    pub async fn multi_query(
+        &self,
+        queries: Vec<String>,
+        binary: bool,
+        compress: bool,
+        mantissa: u32,
+        full_precision_cols: Vec<String>,
+    ) -> Result<JsValue, JsValue> {
         let window = web_sys::window().expect("should have a window in this context");
         let performance = window
             .performance()
@@ -63,7 +74,10 @@ impl Client {
                     xor_float_compression: compress,
                     mantissa: Some(mantissa),
                     full_precision_cols: full_precision_cols.into_iter().collect(),
-                }) } else { None },
+                })
+            } else {
+                None
+            },
         };
         let request_start_ms = performance.now();
         let response = self
@@ -82,11 +96,7 @@ impl Client {
             let mut rsps = MultiQueryResponse::deserialize(&bytes).unwrap().responses;
             rsps.iter_mut().for_each(|rsp| {
                 rsp.columns.iter_mut().for_each(|(key, col)| {
-                    let compressed_bytes = if self.log_stats {
-                        col.size_bytes()
-                    } else {
-                        0
-                    };
+                    let compressed_bytes = if self.log_stats { col.size_bytes() } else { 0 };
                     let coltype = match col {
                         Column::Float(_) => "float",
                         Column::Int(_) => "int",
@@ -96,7 +106,7 @@ impl Client {
                         Column::Xor(_) => "xor",
                     };
                     if let Column::Xor(compressed) = col {
-                         *col = Column::Float(xor_float::double::decode(&compressed[..]).unwrap());
+                        *col = Column::Float(xor_float::double::decode(&compressed[..]).unwrap());
                     };
                     if self.log_stats {
                         log::info!(
@@ -122,5 +132,49 @@ impl Client {
             vec![]
         };
         Ok(serde_wasm_bindgen::to_value(&rsps).unwrap())
+    }
+
+    pub async fn insert(
+        &self,
+        table: &str,
+        columns: Vec<String>,
+        values: Vec<JsValue>,
+    ) -> Result<(), JsValue> {
+        let columns = columns
+            .into_iter()
+            .zip(values.iter())
+            .map(|(name, value)| {
+                let val = js_value_to_any_val(value.clone());
+                let mut buffer = ColumnBuffer {
+                    data: ColumnData::default(),
+                };
+                buffer.push(val, 0);
+                (name, buffer)
+            })
+            .collect();
+        let payload = EventBuffer {
+            tables: [(table.to_string(), TableBuffer { len: 1, columns })]
+                .iter()
+                .cloned()
+                .collect(),
+        };
+        let body = payload.serialize();
+        self.client
+            .post(&format!("{}/insert_bin", self.url))
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        Ok(())
+    }
+}
+
+fn js_value_to_any_val(value: JsValue) -> AnyVal {
+    if let Some(value) = value.as_f64() {
+        AnyVal::Float(value)
+    } else if let Some(value) = value.as_string() {
+        AnyVal::Str(value)
+    } else {
+        panic!("unsupported type")
     }
 }

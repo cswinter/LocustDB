@@ -1,3 +1,4 @@
+use locustdb_serialization::api::any_val_syntax::vf64;
 use rand::Rng;
 use std::mem;
 use std::time::Duration;
@@ -57,7 +58,7 @@ async fn main() {
             .unwrap();
         log.log(
             "system_stats",
-            [("cpu".to_string(), cpu.user as f64)].iter().cloned(),
+            [("cpu".to_string(), vf64(cpu.user))].iter().cloned(),
         );
         for walk in random_walks.iter_mut() {
             if i % walk.interval == 0 {
@@ -65,8 +66,8 @@ async fn main() {
                 log.log(
                     &walk.name,
                     [
-                        ("value".to_string(), walk.curr_value),
-                        ("step".to_string(), (i / walk.interval) as f64),
+                        ("value".to_string(), vf64(walk.curr_value)),
+                        ("step".to_string(), vf64((i / walk.interval) as f64)),
                     ]
                     .iter()
                     .cloned(),
