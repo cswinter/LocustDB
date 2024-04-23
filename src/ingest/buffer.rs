@@ -48,6 +48,15 @@ impl Buffer {
                     }
                     buffered_col.push_nulls((c - next_i) as usize);
                 }
+                InputColumn::NullableInt(c, data) => {
+                    let mut next_i = 0;
+                    for (i, f) in data {
+                        buffered_col.push_nulls((i - next_i) as usize);
+                        buffered_col.push(RawVal::Int(f));
+                        next_i = i + 1;
+                    }
+                    buffered_col.push_nulls((c - next_i) as usize);
+                }
             }
             new_length = cmp::max(new_length, buffered_col.len())
         }

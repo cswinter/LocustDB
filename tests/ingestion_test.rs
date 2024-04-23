@@ -1,5 +1,6 @@
 use actix_web::dev::ServerHandle;
 use locustdb::logging_client::BufferFullPolicy;
+use locustdb_serialization::api::any_val_syntax::vf64;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
@@ -167,11 +168,11 @@ fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
     for row in 0..rows {
         for (i, table) in tables.iter().enumerate() {
             let mut row = vec![
-                ("row".to_string(), (row + offset) as f64),
-                ("table_id".to_string(), i as f64),
+                ("row".to_string(), vf64((row + offset) as f64)),
+                ("table_id".to_string(), vf64(i as f64)),
             ];
             for c in 0..random_cols {
-                row.push((format!("col_{c}"), rng.gen::<f64>()));
+                row.push((format!("col_{c}"), vf64(rng.gen::<f64>())));
             }
             log.log(table, row);
         }
@@ -224,11 +225,11 @@ async fn test_ingest_sparse_nullable() {
     let mut vals = vec![];
     let interval = 7;
     for i in 0..15 {
-        let mut row = vec![("row".to_string(), i as f64)];
+        let mut row = vec![("row".to_string(), vf64(i as f64))];
         if i % interval == 0 {
             let val = rng.gen::<f64>();
             vals.push(val);
-            row.push(("sparse_float".to_string(), val));
+            row.push(("sparse_float".to_string(), vf64(val)));
         }
         log.log("default", row);
     }
@@ -282,8 +283,8 @@ async fn test_persist_meta_tables() {
         0,
         BufferFullPolicy::Block,
     );
-    log.log("qwerty", [("value".to_string(), 1.0)]);
-    log.log("asdf", [("value".to_string(), 1.0)]);
+    log.log("qwerty", [("value".to_string(), vf64(1.0))]);
+    log.log("asdf", [("value".to_string(), vf64(1.0))]);
     drop(log);
     drop(db);
     _handle.stop(true).await;

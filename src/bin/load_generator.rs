@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use locustdb::logging_client::BufferFullPolicy;
+use locustdb_serialization::api::any_val_syntax::vf64;
 use structopt::StructOpt;
 use tokio::time;
 
@@ -60,7 +61,7 @@ async fn main() {
             for _ in 0..(rowcount.get(i).cloned().unwrap_or(1)) {
                 log.log(
                     table,
-                    (0..columns).map(|c| (format!("col_{c}"), rand::random::<f64>())),
+                    (0..columns).map(|c| (format!("col_{c}"), vf64(rand::random::<f64>()))),
                 );
             }
         }

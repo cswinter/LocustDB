@@ -226,15 +226,19 @@ impl QueryResponse {
                         }
                     }
                 }
-                Column::Null(n) => column_builder
-                    .reborrow()
-                    .init_data()
-                    .set_null(*n as u64),
-                Column::Xor(xs) => column_builder
-                    .reborrow()
-                    .init_data()
-                    .set_xor_f64(&xs[..]),
+                Column::Null(n) => column_builder.reborrow().init_data().set_null(*n as u64),
+                Column::Xor(xs) => column_builder.reborrow().init_data().set_xor_f64(&xs[..]),
             };
         }
+    }
+}
+
+pub mod any_val_syntax {
+    pub fn vf64<F>(x: F) -> super::AnyVal
+    where
+        F: TryInto<f64>,
+        <F as TryInto<f64>>::Error: std::fmt::Debug,
+    {
+        super::AnyVal::Float(x.try_into().unwrap())
     }
 }

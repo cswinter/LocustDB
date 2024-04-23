@@ -31,7 +31,12 @@ fn locustdb(m: &Bound<'_, PyModule>) -> PyResult<()> {
 impl Client {
     #[new]
     #[pyo3(signature = (url, max_buffer_size_bytes = 128 * (1 << 20), block_when_buffer_full = false, flush_interval_seconds = 1))]
-    fn new(url: &str, max_buffer_size_bytes: usize, block_when_buffer_full: bool, flush_interval_seconds: u64) -> Self {
+    fn new(
+        url: &str,
+        max_buffer_size_bytes: usize,
+        block_when_buffer_full: bool,
+        flush_interval_seconds: u64,
+    ) -> Self {
         let _guard = RT.enter();
         Self {
             client: LoggingClient::new(
@@ -47,7 +52,11 @@ impl Client {
         }
     }
 
-    fn log(&mut self, table: &str, metrics: HashMap<String, f64>) -> PyResult<()> {
+    fn log(&mut self, table: &str, metrics: HashMap<String, AnyValWrapper>) -> PyResult<()> {
+        // Safe because AnyValWrapper is a transparent wrapper around AnyVal
+        let metrics = unsafe {
+            std::mem::transmute::<HashMap<String, AnyValWrapper>, HashMap<String, AnyVal>>(metrics)
+        };
         self.client.log(table, metrics);
         Ok(())
     }
@@ -111,5 +120,24 @@ fn any_to_python(py: Python, value: &AnyVal) -> PyObject {
         AnyVal::Float(f) => f.into_py(py),
         AnyVal::Str(s) => s.into_py(py),
         AnyVal::Null => None::<()>.into_py(py),
+    }
+}
+
+#[repr(transparent)]
+struct AnyValWrapper(AnyVal);
+
+impl FromPyObject<'_> for AnyValWrapper {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        if let Ok(i) = ob.extract::<i64>() {
+            Ok(AnyValWrapper(AnyVal::Int(i)))
+        } else if let Ok(f) = ob.extract::<f64>() {
+            Ok(AnyValWrapper(AnyVal::Float(f)))
+        } else if let Ok(s) = ob.extract::<String>() {
+            Ok(AnyValWrapper(AnyVal::Str(s)))
+        } else if ob.is_none() {
+            Ok(AnyValWrapper(AnyVal::Null))
+        } else {
+            Err(PyErr::new::<PyException, _>("Invalid AnyVal"))
+        }
     }
 }

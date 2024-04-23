@@ -26,5 +26,10 @@ struct Column {
         }
         i64 @4 :List(Int64);
         string @5 :List(Text);
+        empty @6 :Void;
+        sparseI64 :group {
+            indices @7 :List(UInt64);
+            values @8 :List(Int64);
+        }
     }
 }

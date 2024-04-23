@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use locustdb::logging_client::BufferFullPolicy;
 use locustdb::LocustDB;
+use locustdb_serialization::api::any_val_syntax::vf64;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use structopt::StructOpt;
@@ -196,7 +197,7 @@ fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
             for table in small_tables {
                 log.log(
                     table,
-                    (0..1 << load_factor).map(|c| (format!("col_{c}"), rng.gen::<f64>())),
+                    (0..1 << load_factor).map(|c| (format!("col_{c}"), vf64(rng.gen::<f64>()))),
                 );
             }
         }
@@ -215,7 +216,7 @@ fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
         for table in &large_tables {
             log.log(
                 table,
-                (0..n).map(|c| (format!("col_{c:06}"), rng.gen::<f64>())),
+                (0..n).map(|c| (format!("col_{c:06}"), vf64(rng.gen::<f64>()))),
             );
         }
     }

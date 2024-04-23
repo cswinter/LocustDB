@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use locustdb_serialization::api::{Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, MultiQueryResponse, QueryResponse};
+use locustdb_serialization::api::{AnyVal, Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, MultiQueryResponse, QueryResponse};
 use locustdb_serialization::event_buffer::EventBuffer;
 use reqwest::header::CONTENT_TYPE;
 use tokio::select;
@@ -120,7 +120,7 @@ impl LoggingClient {
         Ok(rsps)
     }
 
-    pub fn log<Row: IntoIterator<Item = (String, f64)>>(&mut self, table: &str, row: Row) {
+    pub fn log<Row: IntoIterator<Item = (String, AnyVal)>>(&mut self, table: &str, row: Row) {
         let time_millis = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -163,7 +163,7 @@ impl LoggingClient {
             .columns
             .entry("timestamp".to_string())
             .or_default()
-            .push(time_millis, table.len);
+            .push(AnyVal::Float(time_millis), table.len);
         table.len += 1;
         self.total_events += 1;
     }

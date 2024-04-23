@@ -255,6 +255,8 @@ impl InnerLocustDB {
                             assert!(data.len() == rows as usize);
                             InputColumn::Str(data)
                         }
+                        ColumnData::Empty => InputColumn::Null(rows as usize),
+                        ColumnData::SparseI64(data) => InputColumn::NullableInt(rows, data),
                     };
                     (k, col)
                 })
