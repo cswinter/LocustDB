@@ -3,6 +3,7 @@ use capnp::serialize_packed;
 use locustdb_serialization::event_buffer::EventBuffer;
 use locustdb_serialization::wal_segment_capnp;
 
+#[derive(Debug)]
 pub struct WalSegment<'a> {
     pub id: u64,
     pub data: Cow<'a, EventBuffer>,

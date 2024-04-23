@@ -133,6 +133,14 @@ impl Table {
                                 }
                             }
                             ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
+                            ColumnData::I64(data) => {
+                                assert!((data.len() as u64) == rows, "rows: {}, data.len(): {}", rows, data.len());
+                                InputColumn::Int(data)
+                            }
+                            ColumnData::String(data) => {
+                                assert!((data.len() as u64) == rows, "rows: {}, data.len(): {}", rows, data.len());
+                                InputColumn::Str(data)
+                            }
                         };
                         (k, col)
                     })

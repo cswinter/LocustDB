@@ -11,7 +11,7 @@ use futures::channel::oneshot;
 use futures::executor::block_on;
 use inner_locustdb::meta_store::PartitionMetadata;
 use itertools::Itertools;
-use locustdb_serialization::event_buffer::{ColumnData, EventBuffer};
+use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer, TableBuffer};
 
 use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
@@ -78,7 +78,7 @@ impl InnerLocustDB {
             !opts.mem_lz4,
         ));
 
-        InnerLocustDB {
+        let locustdb = InnerLocustDB {
             tables: RwLock::new(tables),
             lru,
             disk_read_scheduler,
@@ -94,7 +94,9 @@ impl InnerLocustDB {
 
             idle_queue: Condvar::new(),
             task_queue: Mutex::new(VecDeque::new()),
-        }
+        };
+        let _ = locustdb.create_if_empty_no_ingest("_meta_tables");
+        locustdb
     }
 
     pub fn start_worker_threads(locustdb: &Arc<InnerLocustDB>) {
@@ -174,12 +176,40 @@ impl InnerLocustDB {
         tables.get(table).unwrap().ingest(row)
     }
 
-    pub fn ingest_efficient(&self, events: EventBuffer) {
+    pub fn ingest_efficient(&self, mut events: EventBuffer) {
         let (wal_size, wal_condvar) = &self.wal_size;
         let mut wal_size = wal_size.lock().unwrap();
         while *wal_size > self.opts.max_wal_size_bytes {
             log::warn!("wal size limit exceeded, blocking ingestion");
             wal_size = wal_condvar.wait(wal_size).unwrap();
+        }
+
+        let mut _meta_tables_rows = vec![];
+        for table in events.tables.keys() {
+            if let Some(row) = self.create_if_empty_no_ingest(table) {
+                _meta_tables_rows.push(row);
+            }
+        }
+        if !_meta_tables_rows.is_empty() {
+            let (timestamps, names): (Vec<_>, Vec<_>) = _meta_tables_rows.into_iter().unzip();
+            let len = timestamps.len() as u64;
+            let mut columns = HashMap::new();
+            columns.insert(
+                "timestamp".to_string(),
+                ColumnBuffer {
+                    data: ColumnData::I64(timestamps),
+                },
+            );
+            columns.insert(
+                "name".to_string(),
+                ColumnBuffer {
+                    data: ColumnData::String(names),
+                },
+            );
+            let meta_tables_buffer = TableBuffer { len, columns };
+            events
+                .tables
+                .insert("_meta_tables".to_string(), meta_tables_buffer);
         }
 
         let bytes_written_join_handle = self.storage.as_ref().map(|storage| {
@@ -194,7 +224,6 @@ impl InnerLocustDB {
         });
         // TODO: code duplicated in Table::restore_tables_from_disk
         for (table, data) in events.tables {
-            self.create_if_empty(&table);
             let tables = self.tables.read().unwrap();
             let table = tables.get(&table).unwrap();
             let rows = data.len;
@@ -218,6 +247,14 @@ impl InnerLocustDB {
                             }
                         }
                         ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
+                        ColumnData::I64(data) => {
+                            assert!(data.len() == rows as usize);
+                            InputColumn::Int(data)
+                        }
+                        ColumnData::String(data) => {
+                            assert!(data.len() == rows as usize);
+                            InputColumn::Str(data)
+                        }
                     };
                     (k, col)
                 })
@@ -369,6 +406,29 @@ impl InnerLocustDB {
 
     pub fn gen_partition(&self, opts: &GenTable, p: u64) {
         opts.gen(self, p);
+    }
+
+    #[must_use]
+    fn create_if_empty_no_ingest(&self, table: &str) -> Option<(i64, String)> {
+        let exists = {
+            let tables = self.tables.read().unwrap();
+            tables.contains_key(table)
+        };
+        if !exists {
+            {
+                let mut tables = self.tables.write().unwrap();
+                tables.insert(table.to_string(), Table::new(table, self.lru.clone()));
+            }
+            Some((
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
+                table.to_string(),
+            ))
+        } else {
+            None
+        }
     }
 
     fn create_if_empty(&self, table: &str) {
