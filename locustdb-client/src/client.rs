@@ -5,6 +5,7 @@ use locustdb_serialization::api::{
 };
 use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer, TableBuffer};
 use reqwest::header::CONTENT_TYPE;
+use std::collections::HashMap;
 use std::sync::Once;
 use wasm_bindgen::prelude::*;
 
@@ -49,8 +50,11 @@ impl Client {
             .json(&request_body)
             .send()
             .await
-            .unwrap();
-        let rsps: ColumnNameResponse = response.json().await.unwrap();
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+        let rsps: ColumnNameResponse = response
+            .json()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
         Ok(serde_wasm_bindgen::to_value(&rsps.columns).unwrap())
     }
 
@@ -87,13 +91,22 @@ impl Client {
             .json(&request_body)
             .send()
             .await
-            .unwrap();
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?
+            .error_for_status()
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+
         let first_response_ms = performance.now();
-        let bytes = response.bytes().await.unwrap().to_vec();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| JsValue::from_str(&format!("{}", e)))?
+            .to_vec();
         let download_finished_ms = performance.now();
 
         let rsps = if binary {
-            let mut rsps = MultiQueryResponse::deserialize(&bytes).unwrap().responses;
+            let mut rsps = MultiQueryResponse::deserialize(&bytes)
+                .map_err(|e| JsValue::from_str(&format!("Failed to deserialize response: {}", e)))?
+                .responses;
             rsps.iter_mut().for_each(|rsp| {
                 rsp.columns.iter_mut().for_each(|(key, col)| {
                     let compressed_bytes = if self.log_stats { col.size_bytes() } else { 0 };
@@ -140,20 +153,17 @@ impl Client {
         columns: Vec<String>,
         values: Vec<JsValue>,
     ) -> Result<(), JsValue> {
-        let columns = columns
-            .into_iter()
-            .zip(values.iter())
-            .map(|(name, value)| {
-                let val = js_value_to_any_val(value.clone());
-                let mut buffer = ColumnBuffer {
-                    data: ColumnData::default(),
-                };
-                buffer.push(val, 0);
-                (name, buffer)
-            })
-            .collect();
+        let mut _columns = HashMap::new();
+        for (name, value) in columns.into_iter().zip(values.iter()) {
+            let val = js_value_to_any_val(value.clone())?;
+            let mut buffer = ColumnBuffer {
+                data: ColumnData::default(),
+            };
+            buffer.push(val, 0);
+            _columns.insert(name, buffer);
+        }
         let payload = EventBuffer {
-            tables: [(table.to_string(), TableBuffer { len: 1, columns })]
+            tables: [(table.to_string(), TableBuffer { len: 1, columns: _columns })]
                 .iter()
                 .cloned()
                 .collect(),
@@ -169,12 +179,16 @@ impl Client {
     }
 }
 
-fn js_value_to_any_val(value: JsValue) -> AnyVal {
+fn js_value_to_any_val(value: JsValue) -> Result<AnyVal, JsValue> {
     if let Some(value) = value.as_f64() {
-        AnyVal::Float(value)
+        Ok(AnyVal::Float(value))
     } else if let Some(value) = value.as_string() {
-        AnyVal::Str(value)
+        Ok(AnyVal::Str(value))
     } else {
-        panic!("unsupported type")
+        Err(JsValue::from_str(&format!(
+            "unsupported type {:?} for value: {:?}",
+            value.js_typeof(),
+            value
+        )))
     }
 }
