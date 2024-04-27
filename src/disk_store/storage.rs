@@ -5,10 +5,10 @@ use std::sync::{Arc, RwLock};
 use super::azure_writer::AzureBlobWriter;
 use super::file_writer::{BlobWriter, FileBlobWriter};
 use super::gcs_writer::GCSBlobWriter;
+use super::meta_store::{MetaStore, PartitionMetadata, SubpartitionMetadata};
 use super::partition_segment::PartitionSegment;
 use super::wal_segment::WalSegment;
 use super::{ColumnLoader, PartitionID};
-use super::meta_store::{MetaStore, PartitionMetadata, SubpartitionMetadata};
 use crate::mem_store::{Column, DataSource};
 use crate::perf_counter::{PerfCounter, QueryPerfCounter};
 
@@ -49,28 +49,50 @@ impl Storage {
         perf_counter: Arc<PerfCounter>,
         readonly: bool,
     ) -> (Storage, Vec<WalSegment<'static>>) {
-        let (writer, path): (Box<dyn BlobWriter + Send + Sync + 'static>, PathBuf) = if path.starts_with("gs://") {
-            let components = path.components().collect::<Vec<_>>();
-            if components.len() < 2 {
-                panic!("Invalid GCS path: {:?}", path);
-            }
-            let bucket = components[1].as_os_str().to_str().expect("Invalid GCS path");
-            // create new path that omits the first two components
-            let path = components[2..].iter().map(|c| c.as_os_str()).collect::<PathBuf>();
-            (Box::new(GCSBlobWriter::new(bucket.to_string()).unwrap()), path)
-        } else if path.starts_with("az://") {
-            let components = path.components().collect::<Vec<_>>();
-            if components.len() < 3 {
-                panic!("Invalid Azure path: {:?}", path);
-            }
-            let account = components[1].as_os_str().to_str().expect("Invalid Azure path");
-            let container = components[2].as_os_str().to_str().expect("Invalid Azure path");
-            // create new path that omits the first three components
-            let path = components[3..].iter().map(|c| c.as_os_str()).collect::<PathBuf>();
-            (Box::new(AzureBlobWriter::new(account, container).unwrap()), path)
-        } else {
-            (Box::new(FileBlobWriter::new()), path.to_owned())
-        };
+        let (writer, path): (Box<dyn BlobWriter + Send + Sync + 'static>, PathBuf) =
+            if path.starts_with("gs://") {
+                let components = path.components().collect::<Vec<_>>();
+                if components.len() < 2 {
+                    panic!("Invalid GCS path: {:?}", path);
+                }
+                let bucket = components[1]
+                    .as_os_str()
+                    .to_str()
+                    .expect("Invalid GCS path");
+                // create new path that omits the first two components
+                let path = components[2..]
+                    .iter()
+                    .map(|c| c.as_os_str())
+                    .collect::<PathBuf>();
+                (
+                    Box::new(GCSBlobWriter::new(bucket.to_string()).unwrap()),
+                    path,
+                )
+            } else if path.starts_with("az://") {
+                let components = path.components().collect::<Vec<_>>();
+                if components.len() < 3 {
+                    panic!("Invalid Azure path: {:?}", path);
+                }
+                let account = components[1]
+                    .as_os_str()
+                    .to_str()
+                    .expect("Invalid Azure path");
+                let container = components[2]
+                    .as_os_str()
+                    .to_str()
+                    .expect("Invalid Azure path");
+                // create new path that omits the first three components
+                let path = components[3..]
+                    .iter()
+                    .map(|c| c.as_os_str())
+                    .collect::<PathBuf>();
+                (
+                    Box::new(AzureBlobWriter::new(account, container).unwrap()),
+                    path,
+                )
+            } else {
+                (Box::new(FileBlobWriter::new()), path.to_owned())
+            };
         let meta_db_path = path.join("meta");
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
@@ -159,7 +181,7 @@ impl Storage {
         subpartition_cols: Vec<Vec<Arc<Column>>>,
     ) {
         for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
-            let table_dir = self.tables_path.join(&partition.tablename);
+            let table_dir = self.tables_path.join(sanitize_table_name(&partition.tablename));
             let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
             let data = PartitionSegment::serialize(&cols[..]);
             self.perf_counter
@@ -278,7 +300,7 @@ impl Storage {
         self.write_metastore(&meta_store);
 
         // Delete old partition files
-        let table_dir = self.tables_path.join(table);
+        let table_dir = self.tables_path.join(sanitize_table_name(table));
         for (id, key) in to_delete {
             let path = table_dir.join(partition_filename(id, &key));
             self.writer.delete(&path).unwrap();
@@ -307,4 +329,26 @@ impl Storage {
 
 fn partition_filename(id: PartitionID, subpartition_key: &str) -> String {
     format!("{:05}_{}.part", id, subpartition_key)
+}
+
+/// Sanitize table name to ensure valid file name:
+/// - converts to lowercase
+/// - removes any characters that are not alphanumeric, underscore, hyphen, or dot
+/// - strip leading underscores and dots
+/// - truncates to max 255-64-1=190 characters
+/// - if name was modified, prepend underscore and append hash of original name
+fn sanitize_table_name(table_name: &str) -> String {
+    let mut name = table_name.to_lowercase();
+    name.retain(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
+    name = name.trim_start_matches(|c| c == '_' || c == '.').to_string();
+    if name.len() > 190 {
+        name = name[..190].to_string();
+    }
+    if name != table_name {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(table_name.as_bytes());
+        format!("_{}{:x}", name, hasher.finalize());
+    }
+    name
 }
