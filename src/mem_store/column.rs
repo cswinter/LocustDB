@@ -413,6 +413,11 @@ impl DataSection {
                         lz4::decode::<i64>(&mut lz4::decoder(data), &mut decoded);
                         DataSection::I64(decoded)
                     }
+                    EncodingType::F64 => {
+                        let mut decoded = vec![OrderedFloat(0.0); *decoded_bytes / *bytes_per_element];
+                        lz4::decode::<OrderedFloat<f64>>(&mut lz4::decoder(data), &mut decoded);
+                        DataSection::F64(decoded)
+                    }
                     t => panic!("Unexpected type {:?} for lz4 decode", t),
                 }
             }
