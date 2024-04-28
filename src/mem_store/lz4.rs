@@ -1,13 +1,11 @@
-extern crate lz4;
-
 use std::io::{Read, Write};
 use std::mem;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::fmt::Debug;
 
 
-pub fn decoder(data: &[u8]) -> lz4::Decoder<&[u8]> {
-    lz4::Decoder::new(data).unwrap()
+pub fn decoder(data: &[u8]) -> lz4_flex::frame::FrameDecoder<&[u8]> {
+    lz4_flex::frame::FrameDecoder::new(data)
 }
 
 pub fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
@@ -20,9 +18,9 @@ pub fn encode<T: Debug>(data: &[T]) -> Vec<u8> {
 
     let mut result = Vec::new();
     {
-        let mut encoder = lz4::EncoderBuilder::new().build(&mut result).unwrap();
+        let mut encoder = lz4_flex::frame::FrameEncoder::new(&mut result);
         encoder.write_all(data_u8).unwrap();
-        encoder.finish().1.unwrap();
+        encoder.finish().unwrap();
     }
     result
 }

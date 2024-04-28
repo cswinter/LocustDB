@@ -4,13 +4,12 @@ use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
 
-use crate::mem_store::integers::*;
 use crate::mem_store::column::*;
+use crate::mem_store::integers::*;
 use crate::mem_store::strings::*;
 use crate::stringpack::*;
 
 use super::floats::FloatColumn;
-
 
 pub trait ColumnBuilder<T: ?Sized>: Default {
     fn push(&mut self, elem: &T);
@@ -45,11 +44,17 @@ impl<T: AsRef<str>> ColumnBuilder<T> for StringColBuilder {
     }
 
     fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column> {
-        fast_build_string_column(name, self.values.iter(), self.values.len(),
-                                 self.lhex, self.uhex, self.string_bytes, present)
+        fast_build_string_column(
+            name,
+            self.values.iter(),
+            self.values.len(),
+            self.lhex,
+            self.uhex,
+            self.string_bytes,
+            present,
+        )
     }
 }
-
 
 pub struct IntColBuilder {
     data: Vec<i64>,
@@ -91,14 +96,9 @@ impl ColumnBuilder<Option<i64>> for IntColBuilder {
 
     fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column> {
         // PERF: heuristic for deciding delta encoding could probably be improved
-        let delta_encode = self.allow_delta_encode &&
-            (self.increasing * 10 > self.data.len() as u64 * 9 && cfg!(feature = "enable_lz4"));
-        IntegerColumn::new_boxed(name,
-                                 self.data,
-                                 self.min,
-                                 self.max,
-                                 delta_encode,
-                                 present)
+        let delta_encode =
+            self.allow_delta_encode && (self.increasing * 10 > self.data.len() as u64 * 9);
+        IntegerColumn::new_boxed(name, self.data, self.min, self.max, delta_encode, present)
     }
 }
 
@@ -116,28 +116,50 @@ impl ColumnBuilder<Option<f64>> for FloatColBuilder {
     }
 
     fn finalize(self, name: &str, present: Option<Vec<u8>>) -> Arc<Column> {
-        FloatColumn::new_boxed(name,
-                               self.data,
-                               present)
+        FloatColumn::new_boxed(name, self.data, present)
     }
 }
 
-
 fn is_lowercase_hex(string: &str) -> bool {
-    string.len() & 1 == 0 && string.chars().all(|c| {
-        c == '0' || c == '1' || c == '2' || c == '3' ||
-            c == '4' || c == '5' || c == '6' || c == '7' ||
-            c == '8' || c == '9' || c == 'a' || c == 'b' ||
-            c == 'c' || c == 'd' || c == 'e' || c == 'f'
-    })
+    string.len() & 1 == 0
+        && string.chars().all(|c| {
+            c == '0'
+                || c == '1'
+                || c == '2'
+                || c == '3'
+                || c == '4'
+                || c == '5'
+                || c == '6'
+                || c == '7'
+                || c == '8'
+                || c == '9'
+                || c == 'a'
+                || c == 'b'
+                || c == 'c'
+                || c == 'd'
+                || c == 'e'
+                || c == 'f'
+        })
 }
 
 fn is_uppercase_hex(string: &str) -> bool {
-    string.len() & 1 == 0 && string.chars().all(|c| {
-        c == '0' || c == '1' || c == '2' || c == '3' ||
-            c == '4' || c == '5' || c == '6' || c == '7' ||
-            c == '8' || c == '9' || c == 'A' || c == 'B' ||
-            c == 'C' || c == 'D' || c == 'E' || c == 'F'
-    })
+    string.len() & 1 == 0
+        && string.chars().all(|c| {
+            c == '0'
+                || c == '1'
+                || c == '2'
+                || c == '3'
+                || c == '4'
+                || c == '5'
+                || c == '6'
+                || c == '7'
+                || c == '8'
+                || c == '9'
+                || c == 'A'
+                || c == 'B'
+                || c == 'C'
+                || c == 'D'
+                || c == 'E'
+                || c == 'F'
+        })
 }
-

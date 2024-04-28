@@ -129,10 +129,6 @@ cargo run --release --bin repl -- --load test_data/nyc-taxi.csv.gz --reduced-tri
 
 `cargo bench`
 
-### LZ4
-
-Compile with `--features "enable_lz4"` to enable an additional lz4 compression pass which can significantly reduce data size both on disk and in-memory, at the cost of slightly slower in-memory queries.
-
 
 [nyc-taxi-trips]: https://www.dropbox.com/sh/4xm5vf1stnf7a0h/AADRRVLsqqzUNWEPzcKnGN_Pa?dl=0
 [blogpost]: https://clemenswinter.com/2018/07/09/how-to-analyze-billions-of-records-per-second-on-a-single-desktop-pc/

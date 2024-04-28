@@ -107,16 +107,13 @@ impl Column {
     }
 
     pub fn lz4_encode(&mut self) {
-        if cfg!(feature = "enable_lz4") {
-            let (encoded, worth_it) = self.data[0].lz4_encode();
-            if worth_it {
-                self.codec = self.codec.with_lz4(self.data[0].len());
-                self.data[0] = encoded;
-            }
+        let (encoded, worth_it) = self.data[0].lz4_encode();
+        if worth_it {
+            self.codec = self.codec.with_lz4(self.data[0].len());
+            self.data[0] = encoded;
         }
     }
 
-    #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(&mut self) {
         if let Some(CodecOp::LZ4(decoded_type, _)) = self.codec.ops().first().copied() {
             trace!("lz4_decode before: {:?}", self);
@@ -322,7 +319,6 @@ impl DataSection {
         }
     }
 
-    #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode(&self, decoded_type: EncodingType, len: usize) -> DataSection {
         match self {
             DataSection::U8(encoded) => match decoded_type {

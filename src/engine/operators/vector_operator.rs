@@ -509,7 +509,6 @@ pub mod operator {
         ]
     }
 
-    #[cfg(feature = "enable_lz4")]
     pub fn lz4_decode<'a>(
         encoded: BufferRef<u8>,
         decoded_len: usize,
@@ -523,15 +522,6 @@ pub mod operator {
             decoded: Number;
             Ok(Box::new(LZ4Decode::<'a, _> { encoded, decoded, decoded_len, reader, has_more: true }))
         }
-    }
-
-    #[cfg(not(feature = "enable_lz4"))]
-    pub fn lz4_decode<'a>(
-        _: BufferRef<u8>,
-        _: usize,
-        _: TypedBufferRef,
-    ) -> Result<BoxedOperator<'a>, QueryError> {
-        panic!("LZ4 is not enabled in this build of LocustDB. Recompile with `features enable_lz4`")
     }
 
     pub fn unpack_strings<'a>(

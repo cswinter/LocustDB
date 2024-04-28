@@ -66,7 +66,6 @@ mod unhexpack_strings;
 mod unpack_strings;
 mod val_rows_pack;
 mod val_rows_unpack;
-#[cfg(feature = "enable_lz4")]
 mod lz4_decode;
 mod merge_deduplicate_partitioned;
 mod partition;

@@ -18,7 +18,6 @@ pub struct DiskReadScheduler {
     task_queue: Mutex<VecDeque<DiskRun>>,
     reader_semaphore: Semaphore,
     lru: Lru,
-    #[allow(dead_code)]
     lz4_decode: bool,
 
     background_load_wait_queue: Condvar,
@@ -120,14 +119,11 @@ impl DiskReadScheduler {
             if handle.is_resident() {
                 let mut maybe_column = handle.try_get();
                 if let Some(ref mut column) = *maybe_column {
-                    #[cfg(feature = "enable_lz4")]
-                    {
-                        if self.lz4_decode {
-                            if let Some(c) = Arc::get_mut(column) {
-                                c.lz4_decode()
-                            };
-                            handle.update_size_bytes(column.heap_size_of_children());
-                        }
+                    if self.lz4_decode {
+                        if let Some(c) = Arc::get_mut(column) {
+                            c.lz4_decode()
+                        };
+                        handle.update_size_bytes(column.heap_size_of_children());
                     }
                     self.lru.touch(handle.key());
                     return column.clone();
@@ -157,12 +153,9 @@ impl DiskReadScheduler {
                     let mut maybe_column = _handle.try_get();
                     // TODO: if not main handle, put it at back of lru
                     self.lru.put(_handle.key().clone());
-                    #[cfg(feature = "enable_lz4")]
-                    {
-                        if self.lz4_decode {
-                            column.lz4_decode();
-                            _handle.update_size_bytes(column.heap_size_of_children());
-                        }
+                    if self.lz4_decode {
+                        column.lz4_decode();
+                        _handle.update_size_bytes(column.heap_size_of_children());
                     }
                     let column = Arc::new(column);
                     *maybe_column = Some(column.clone());
