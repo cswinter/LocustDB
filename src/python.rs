@@ -61,6 +61,26 @@ impl Client {
         Ok(())
     }
 
+    fn log_batch(
+        &mut self,
+        table: &str,
+        metrics: HashMap<String, Vec<AnyValWrapper>>,
+    ) -> PyResult<()> {
+        let len = metrics.values().next().map(|x| x.len()).unwrap_or(0);
+        assert!(metrics.values().all(|x| x.len() == len));
+        let mut batch = metrics
+            .keys()
+            .map(|k| (k.clone(), AnyVal::Null))
+            .collect::<HashMap<_, _>>();
+        for i in 0..len {
+            for (k, v) in &metrics {
+                *batch.get_mut(k).unwrap() = v[i].0.clone();
+            }
+            self.client.log(table, batch.clone());
+        }
+        Ok(())
+    }
+
     fn multi_query(&self, py: Python, queries: Vec<String>) -> PyResult<PyObject> {
         let results = RT
             .block_on(self.client.multi_query(queries))

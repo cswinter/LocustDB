@@ -41,7 +41,7 @@ struct BackgroundWorker {
 pub enum Error {
     Reqwest(reqwest::Error),
     Deserialize(capnp::Error),
-    Client { status_code: u16, msg: String },
+    Request { status_code: u16, msg: String },
 }
 
 pub enum BufferFullPolicy {
@@ -103,10 +103,10 @@ impl LoggingClient {
             .json(&request_body)
             .send()
             .await?;
-        if response.status().is_client_error() {
+        if response.status().is_client_error() || response.status().is_server_error() {
             let status_code = response.status().as_u16();
             let msg = response.text().await?;
-            return Err(Error::Client { status_code, msg });
+            return Err(Error::Request { status_code, msg });
         }
         let bytes = response.bytes().await?.to_vec();
         let mut rsps = MultiQueryResponse::deserialize(&bytes).unwrap().responses;
@@ -186,10 +186,10 @@ impl LoggingClient {
             .json(&request_body)
             .send()
             .await?;
-        if response.status().is_client_error() {
+        if response.status().is_client_error() || response.status().is_server_error() {
             let status_code = response.status().as_u16();
             let msg = response.text().await?;
-            return Err(Error::Client { status_code, msg });
+            return Err(Error::Request { status_code, msg });
         }
         Ok(response.json::<ColumnNameResponse>().await?)
     }
@@ -325,8 +325,8 @@ impl fmt::Display for Error {
         match self {
             Error::Reqwest(err) => write!(f, "Reqwest error: {}", err),
             Error::Deserialize(err) => write!(f, "Failed to deserialize response: {}", err),
-            Error::Client { status_code, msg } => {
-                write!(f, "Client error ({}): {}", status_code, msg)
+            Error::Request { status_code, msg } => {
+                write!(f, "Request failed ({}): {}", status_code, msg)
             }
         }
     }
