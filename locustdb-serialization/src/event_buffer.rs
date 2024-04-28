@@ -58,6 +58,7 @@ impl ColumnData {
 impl ColumnBuffer {
     pub fn push(&mut self, value: AnyVal, existing_len: u64) {
         match (&mut self.data, value) {
+            (_, AnyVal::Null) => {}
             (ColumnData::Empty, AnyVal::Float(value)) => {
                 if existing_len == 0 {
                     self.data = ColumnData::Dense(vec![value])
