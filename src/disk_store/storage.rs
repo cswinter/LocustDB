@@ -318,7 +318,7 @@ impl Storage {
             .subpartition_key(column_name);
         let path = self
             .tables_path
-            .join(table_name)
+            .join(sanitize_table_name(table_name))
             .join(partition_filename(partition, &subpartition_key));
         let data = self.writer.load(&path).unwrap();
         self.perf_counter.disk_read_partition(data.len() as u64);
