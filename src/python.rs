@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use futures::stream::Any;
 use locustdb_compression_utils::xor_float;
 use locustdb_serialization::api::{AnyVal, Column};
 use pyo3::exceptions::PyException;
