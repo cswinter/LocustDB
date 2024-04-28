@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use futures::stream::Any;
 use locustdb_compression_utils::xor_float;
 use locustdb_serialization::api::{AnyVal, Column};
 use pyo3::exceptions::PyException;
@@ -148,16 +149,21 @@ struct AnyValWrapper(AnyVal);
 
 impl FromPyObject<'_> for AnyValWrapper {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        if let Ok(i) = ob.extract::<i64>() {
-            Ok(AnyValWrapper(AnyVal::Int(i)))
+        let val = if let Ok(i) = ob.extract::<i64>() {
+            AnyVal::Int(i)
         } else if let Ok(f) = ob.extract::<f64>() {
-            Ok(AnyValWrapper(AnyVal::Float(f)))
+            if f.is_nan() {
+                AnyVal::Null
+            } else {
+                AnyVal::Float(f)
+            }
         } else if let Ok(s) = ob.extract::<String>() {
-            Ok(AnyValWrapper(AnyVal::Str(s)))
+            AnyVal::Str(s)
         } else if ob.is_none() {
-            Ok(AnyValWrapper(AnyVal::Null))
+            AnyVal::Null
         } else {
-            Err(PyErr::new::<PyException, _>("Invalid AnyVal"))
-        }
+            return Err(PyErr::new::<PyException, _>("Invalid AnyVal"));
+        };
+        Ok(AnyValWrapper(val))
     }
 }
