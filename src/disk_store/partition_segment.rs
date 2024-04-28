@@ -83,6 +83,12 @@ impl PartitionSegment {
                         }
                         DataSection::Null(count) => ds.set_null(*count as u64),
                         DataSection::Bitvec(x) => ds.set_bitvec(&x[..]).unwrap(),
+                        DataSection::LZ4 { decoded_bytes, bytes_per_element, data } => {
+                            let mut lz4 = ds.init_lz4();
+                            lz4.set_decoded_bytes(*decoded_bytes as u64);
+                            lz4.set_bytes_per_element(*bytes_per_element as u64);
+                            lz4.set_data(&data[..]).unwrap();
+                        }
                     }
                 }
             }
@@ -200,6 +206,16 @@ impl PartitionSegment {
                             let mut buffer = Vec::with_capacity(data.len() as usize);
                             buffer.extend(data);
                             DataSection::Bitvec(buffer)
+                        }
+                        Lz4(lz4) => {
+                            let data = lz4.get_data().unwrap();
+                            let mut buffer = Vec::with_capacity(data.len() as usize);
+                            buffer.extend(data);
+                            DataSection::LZ4 {
+                                decoded_bytes: lz4.get_decoded_bytes() as usize,
+                                bytes_per_element: lz4.get_bytes_per_element() as usize,
+                                data: buffer,
+                            }
                         }
                     }
                 })

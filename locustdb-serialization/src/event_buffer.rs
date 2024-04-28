@@ -195,8 +195,9 @@ impl EventBuffer {
     }
 
     pub fn deserialize(data: &[u8]) -> capnp::Result<Self> {
-        let message_reader =
-            capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())?;
+        let mut options = capnp::message::ReaderOptions::new();
+        options.traversal_limit_in_words(Some(256 * 1024 * 1024));
+        let message_reader = capnp::serialize_packed::read_message(data, options)?;
         let table_segment_list =
             message_reader.get_root::<wal_segment_capnp::table_segment_list::Reader>()?;
         let data = EventBuffer::deserialize_reader(table_segment_list)?;

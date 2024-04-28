@@ -44,6 +44,11 @@ struct DataSection {
         null @5 :UInt64;
         f64 @6 :List(Float64);
         bitvec @7 :List(UInt8);
+        lz4 :group {
+            decodedBytes @8 :UInt64;
+            bytesPerElement @9 :UInt64;
+            data @10 :List(UInt8);
+        }
     }
 }
 

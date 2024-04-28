@@ -48,4 +48,3 @@ impl<'a> fmt::Debug for UnpackStrings<'a> {
         write!(f, "UnpackStrings {{ packed: {}, unpacked: {} }}", self.packed, self.unpacked)
     }
 }
-

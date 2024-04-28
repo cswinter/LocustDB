@@ -226,7 +226,7 @@ fn repl(locustdb: &LocustDB) {
             println!("Special commands:
                       help - Display this message
                       :load <TABLE> <SCHEMA> <FILES>... - Load FILES into TABLE according to SCHEMA.
-                      :memtree(<N>) - Display breakdown of memory usage up to a depth of N (at most 4).
+                      :memtree(<N>,[TABLE]) - Display breakdown of memory usage up to a depth of N (at most 4).
                       :explain <QUERY> - Run and display the query plan for QUERY.
                       :show(<N>) <QUERY> - Run QUERY and show all intermediary results in partition N.:w
                       :table_stats - Print columns and basic statistics for all tables.
@@ -241,15 +241,37 @@ fn repl(locustdb: &LocustDB) {
         let mut show = vec![];
         let mut s: &str = &s;
         if s.starts_with(":memtree") {
-            let depth = if s.starts_with(":memtree(") {
-                let end = s.find(')').unwrap();
-                s[9..end]
-                    .parse::<usize>()
-                    .expect("must pass integer to :memtree(x) command")
+            let (depth, table) = if s.starts_with(":memtree(") {
+                match s.find(')') {
+                    Some(end) => match s.find(',') {
+                        Some(comma) => {
+                            if comma >= end {
+                                println!("Expected comma before closing paren in :memtree command");
+                                continue;
+                            }
+                            (
+                                s[9..comma]
+                                    .parse::<usize>()
+                                    .expect("must pass integer to :memtree(x) command"),
+                                Some(s[comma+1..end].trim_start_matches(' ').to_string()),
+                            )
+                        }
+                        None => (
+                            s[9..end]
+                                .parse::<usize>()
+                                .expect("must pass integer to :memtree(x) command"),
+                            None,
+                        ),
+                    },
+                    None => {
+                        println!("Expected closing parenthesis in :memtree command");
+                        continue;
+                    }
+                }
             } else {
-                2
+                (2, None)
             };
-            match block_on(locustdb.mem_tree(depth)) {
+            match block_on(locustdb.mem_tree(depth, table)) {
                 Ok(trees) => {
                     for tree in trees {
                         println!("{}\n", &tree)

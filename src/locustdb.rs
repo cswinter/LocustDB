@@ -155,7 +155,7 @@ impl LocustDB {
         for receiver in receivers {
             receiver.await?;
         }
-        self.mem_tree(2).await
+        self.mem_tree(2, None).await
     }
 
     pub fn recover(&self) {
@@ -163,9 +163,9 @@ impl LocustDB {
         InnerLocustDB::start_worker_threads(&self.inner_locustdb);
     }
 
-    pub async fn mem_tree(&self, depth: usize) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
+    pub async fn mem_tree(&self, depth: usize, table: Option<String>) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
-        let (task, receiver) = <dyn Task>::from_fn(move || inner.mem_tree(depth));
+        let (task, receiver) = <dyn Task>::from_fn(move || inner.mem_tree(depth, table.clone()));
         self.schedule(task);
         receiver.await
     }

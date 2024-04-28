@@ -152,10 +152,7 @@ impl Column {
         tree.rows += self.len;
         if depth > 1 {
             let signature = self.codec().signature(false);
-            let codec_tree = tree
-                .encodings
-                .entry(signature.clone())
-                .or_default();
+            let codec_tree = tree.encodings.entry(signature.clone()).or_default();
             codec_tree.codec = signature;
             codec_tree.size_bytes += size_bytes;
             codec_tree.rows += self.len;
@@ -203,6 +200,11 @@ pub enum DataSection {
     F64(Vec<OrderedFloat<f64>>),
     Null(usize),
     Bitvec(Vec<u8>),
+    LZ4 {
+        decoded_bytes: usize,
+        bytes_per_element: usize,
+        data: Vec<u8>,
+    },
 }
 
 impl DataSection {
@@ -216,6 +218,7 @@ impl DataSection {
             DataSection::F64(ref x) => x,
             DataSection::Null(ref x) => x,
             DataSection::Bitvec(ref x) => x,
+            DataSection::LZ4 { data, .. } => data,
         }
     }
 
@@ -229,6 +232,7 @@ impl DataSection {
             DataSection::F64(ref x) => x.len(),
             DataSection::Null(ref x) => *x,
             DataSection::Bitvec(ref x) => x.len(),
+            DataSection::LZ4 { data, .. } => data.len(),
         }
     }
 
@@ -242,6 +246,7 @@ impl DataSection {
             DataSection::F64(ref x) => x.capacity(),
             DataSection::Null(ref x) => *x,
             DataSection::Bitvec(ref x) => x.capacity(),
+            DataSection::LZ4 { data, .. } => data.capacity(),
         }
     }
 
@@ -255,6 +260,7 @@ impl DataSection {
             DataSection::F64(_) => EncodingType::F64,
             DataSection::Null(_) => EncodingType::Null,
             DataSection::Bitvec(_) => EncodingType::Bitvec,
+            DataSection::LZ4 { .. } => EncodingType::U8,
         }
     }
 
@@ -266,7 +272,11 @@ impl DataSection {
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (
-                    DataSection::U8(encoded),
+                    DataSection::LZ4 {
+                        data: encoded,
+                        decoded_bytes: x.len(),
+                        bytes_per_element: 1,
+                    },
                     len * 100 < x.len() * min_reduction,
                 )
             }
@@ -275,7 +285,11 @@ impl DataSection {
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (
-                    DataSection::U8(encoded),
+                    DataSection::LZ4 {
+                        data: encoded,
+                        decoded_bytes: x.len() * 2,
+                        bytes_per_element: 2,
+                    },
                     len * 100 < x.len() * 2 * min_reduction,
                 )
             }
@@ -284,7 +298,11 @@ impl DataSection {
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (
-                    DataSection::U8(encoded),
+                    DataSection::LZ4 {
+                        data: encoded,
+                        decoded_bytes: x.len() * 4,
+                        bytes_per_element: 4,
+                    },
                     len * 100 < x.len() * 4 * min_reduction,
                 )
             }
@@ -293,7 +311,11 @@ impl DataSection {
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (
-                    DataSection::U8(encoded),
+                    DataSection::LZ4 {
+                        data: encoded,
+                        decoded_bytes: x.len() * 8,
+                        bytes_per_element: 8,
+                    },
                     len * 100 < x.len() * 8 * min_reduction,
                 )
             }
@@ -302,7 +324,11 @@ impl DataSection {
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (
-                    DataSection::U8(encoded),
+                    DataSection::LZ4 {
+                        data: encoded,
+                        decoded_bytes: x.len() * 8,
+                        bytes_per_element: 8,
+                    },
                     len * 100 < x.len() * 8 * min_reduction,
                 )
             }
@@ -311,20 +337,27 @@ impl DataSection {
                 encoded.shrink_to_fit();
                 let len = encoded.len();
                 (
-                    DataSection::U8(encoded),
+                    DataSection::LZ4 {
+                        data: encoded,
+                        decoded_bytes: x.len() * 8,
+                        bytes_per_element: 8,
+                    },
                     len * 100 < x.len() * 8 * min_reduction,
                 )
             }
             DataSection::Null(ref x) => (DataSection::Null(*x), false),
+            DataSection::LZ4 { .. } => panic!("Trying to lz4 encode lz4 data section"),
         }
     }
 
     pub fn lz4_decode(&self, decoded_type: EncodingType, len: usize) -> DataSection {
         match self {
+            // This code can be removed, only for backwards compatibility with small region of commits (all LZ4 encoded data sections use LZ4 variant now)
             DataSection::U8(encoded) => match decoded_type {
                 EncodingType::U8 => {
-                    let mut decoded = vec![0; len];
-                    lz4::decode::<u8>(&mut lz4::decoder(encoded), &mut decoded);
+                    let mut decoded = vec![];
+                    let mut decoder = lz4::decoder(encoded);
+                    std::io::copy(&mut decoder, &mut decoded).unwrap();
                     DataSection::U8(decoded)
                 }
                 EncodingType::U16 => {
@@ -349,7 +382,41 @@ impl DataSection {
                 }
                 t => panic!("Unexpected type {:?} for lz4 decode", t),
             },
-            _ => panic!("Trying to lz4 encode non u8 data section"),
+            DataSection::LZ4 {
+                decoded_bytes,
+                data,
+                bytes_per_element,
+            } => {
+                match decoded_type {
+                    EncodingType::U8 => {
+                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                        lz4::decode::<u8>(&mut lz4::decoder(data), &mut decoded);
+                        DataSection::U8(decoded)
+                    }
+                    EncodingType::U16 => {
+                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                        lz4::decode::<u16>(&mut lz4::decoder(data), &mut decoded);
+                        DataSection::U16(decoded)
+                    }
+                    EncodingType::U32 => {
+                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                        lz4::decode::<u32>(&mut lz4::decoder(data), &mut decoded);
+                        DataSection::U32(decoded)
+                    }
+                    EncodingType::U64 => {
+                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                        lz4::decode::<u64>(&mut lz4::decoder(data), &mut decoded);
+                        DataSection::U64(decoded)
+                    }
+                    EncodingType::I64 => {
+                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                        lz4::decode::<i64>(&mut lz4::decoder(data), &mut decoded);
+                        DataSection::I64(decoded)
+                    }
+                    t => panic!("Unexpected type {:?} for lz4 decode", t),
+                }
+            }
+            _ => panic!("Trying to lz4 encode non u8/non lz4 data section"),
         }
     }
 
@@ -363,19 +430,23 @@ impl DataSection {
                 DataSection::I64(ref mut x) => x.shrink_to_fit(),
                 DataSection::F64(ref mut x) => x.shrink_to_fit(),
                 DataSection::Null(_) => {}
+                DataSection::LZ4 { data, .. } => data.shrink_to_fit(),
             }
         }
     }
 
     pub fn heap_size_of_children(&self) -> usize {
         match self {
-            DataSection::U8(ref x) | DataSection::Bitvec(ref x) => x.capacity() * mem::size_of::<u8>(),
+            DataSection::U8(ref x) | DataSection::Bitvec(ref x) => {
+                x.capacity() * mem::size_of::<u8>()
+            }
             DataSection::U16(ref x) => x.capacity() * mem::size_of::<u16>(),
             DataSection::U32(ref x) => x.capacity() * mem::size_of::<u32>(),
             DataSection::U64(ref x) => x.capacity() * mem::size_of::<u64>(),
             DataSection::I64(ref x) => x.capacity() * mem::size_of::<i64>(),
             DataSection::F64(ref x) => x.capacity() * mem::size_of::<OrderedFloat<f64>>(),
             DataSection::Null(_) => 0,
+            DataSection::LZ4 { data, .. } => data.capacity() * mem::size_of::<u8>(),
         }
     }
 }

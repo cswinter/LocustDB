@@ -48,7 +48,6 @@ pub fn decode<T>(src: &mut dyn Read, dst: &mut [T]) -> usize {
     read / mem::size_of::<T>()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
