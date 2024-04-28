@@ -200,6 +200,16 @@ pub mod operator {
                 present,
                 nullable_data: nullable_data.nullable_u8()?,
             })),
+            EncodingType::U16 => Ok(Box::new(AssembleNullable {
+                data: data.u16()?,
+                present,
+                nullable_data: nullable_data.nullable_u16()?,
+            })),
+            EncodingType::U32 => Ok(Box::new(AssembleNullable {
+                data: data.u32()?,
+                present,
+                nullable_data: nullable_data.nullable_u32()?,
+            })),
             EncodingType::I64 => Ok(Box::new(AssembleNullable {
                 data: data.i64()?,
                 present,
@@ -229,6 +239,16 @@ pub mod operator {
                 data: data.u8()?,
                 present,
                 nullable_data: nullable_data.nullable_u8()?,
+            })),
+            EncodingType::U16 => Ok(Box::new(MakeNullable {
+                data: data.u16()?,
+                present,
+                nullable_data: nullable_data.nullable_u16()?,
+            })),
+            EncodingType::U32 => Ok(Box::new(MakeNullable {
+                data: data.u32()?,
+                present,
+                nullable_data: nullable_data.nullable_u32()?,
             })),
             EncodingType::I64 => Ok(Box::new(MakeNullable {
                 data: data.i64()?,
@@ -269,6 +289,16 @@ pub mod operator {
                 from: nullability,
                 to: data.u8()?,
                 output: output.nullable_u8()?,
+            })),
+            EncodingType::U16 => Ok(Box::new(PropagateNullability {
+                from: nullability,
+                to: data.u16()?,
+                output: output.nullable_u16()?,
+            })),
+            EncodingType::U32 => Ok(Box::new(PropagateNullability {
+                from: nullability,
+                to: data.u32()?,
+                output: output.nullable_u32()?,
             })),
             EncodingType::I64 => Ok(Box::new(PropagateNullability {
                 from: nullability,
