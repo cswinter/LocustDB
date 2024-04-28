@@ -153,6 +153,8 @@ impl FromPyObject<'_> for AnyValWrapper {
         } else if let Ok(f) = ob.extract::<f64>() {
             if f.is_nan() {
                 AnyVal::Null
+            } else if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+                AnyVal::Int(f as i64)
             } else {
                 AnyVal::Float(f)
             }
