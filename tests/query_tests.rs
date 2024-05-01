@@ -1630,3 +1630,12 @@ fn test_float_greater_than() {
         &[vec![Int(0), Float(0.123412)], vec![Int(1), Float(0.0003)]],
     );
 }
+
+
+// #[test]
+// fn test_missing_count() {
+//     test_query_ec(
+//         "SELECT COUNT(0) AS count FROM _meta_tables WHERE \"name\" = 'geistesblitz_dashboard'",
+//         &[vec![Int(0)]],
+//     );
+// }
