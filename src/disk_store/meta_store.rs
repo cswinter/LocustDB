@@ -48,7 +48,7 @@ impl MetaStore {
         let mut i = 0;
         for table in self.partitions.values() {
             for partition in table.values() {
-                let mut subpartition_index_to_column_names = vec![Vec::new(); table.len()];
+                let mut subpartition_index_to_column_names = vec![Vec::new(); partition.subpartitions.len()];
                 for (column_name, subpartition_index) in
                     &partition.column_name_to_subpartition_index
                 {
