@@ -1358,6 +1358,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         }
         Cast { ref input, .. } => encoding_range(input, qp),
         LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), qp),
+        PcoDecode { bytes, .. } => encoding_range(&bytes.into(), qp),
         DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
         UnpackStrings { .. } | UnhexpackStrings { .. } | Length { .. } => None,
