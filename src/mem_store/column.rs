@@ -110,12 +110,12 @@ impl Column {
 
     pub fn lz4_or_pco_encode(&mut self) {
         let (lz4_encoded, lz4_ratio) = self.data[0].lz4_encode();
-        let (pco_encoded, pco_ratio) = self.data[0].pco_encode();
+        let (pco_encoded, pco_ratio, is_fp32) = self.data[0].pco_encode();
         if lz4_ratio < pco_ratio && lz4_ratio < 0.9 {
             self.codec = self.codec.with_lz4(self.data[0].len());
             self.data[0] = lz4_encoded;
         } else if pco_ratio < 0.9 {
-            self.codec = self.codec.with_pco(self.data[0].len());
+            self.codec = self.codec.with_pco(self.data[0].len(), is_fp32);
             self.data[0] = pco_encoded;
         }
     }
@@ -127,7 +127,7 @@ impl Column {
             self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);
             trace!("lz4_decode after: {:?}", self);
         }
-        if let Some(CodecOp::Pco(decoded_type, _)) = self.codec.ops().first().copied() {
+        if let Some(CodecOp::Pco(decoded_type, ..)) = self.codec.ops().first().copied() {
             trace!("lz4_decode before: {:?}", self);
             self.codec = self.codec.without_pco();
             self.data[0] = self.data[0].pco_decode(decoded_type);
@@ -221,6 +221,7 @@ pub enum DataSection {
         decoded_bytes: usize,
         bytes_per_element: usize,
         data: Vec<u8>,
+        is_fp32: bool,
     },
 }
 
@@ -307,13 +308,14 @@ impl DataSection {
         (encoded_data, ratio)
     }
 
-    pub fn pco_encode(&self) -> (DataSection, f64) {
-        let (mut encoded, bytes_per_element) = match self {
+    pub fn pco_encode(&self) -> (DataSection, f64, bool) {
+        let (mut encoded, bytes_per_element, is_fp32) = match self {
             DataSection::U8(ref x) | DataSection::Bitvec(ref x) => {
                 let data_u32 = x.iter().map(|&v| v as u32).collect::<Vec<u32>>();
                 (
                     simpler_compress(&data_u32, DEFAULT_COMPRESSION_LEVEL).unwrap(),
                     1,
+                    false,
                 )
             }
             DataSection::U16(ref x) => {
@@ -321,20 +323,48 @@ impl DataSection {
                 (
                     simpler_compress(&data_u32, DEFAULT_COMPRESSION_LEVEL).unwrap(),
                     2,
+                    false,
                 )
             }
-            DataSection::U32(ref x) => (simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(), 4),
-            DataSection::U64(ref x) => (simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(), 8),
-            DataSection::I64(ref x) => (simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(), 8),
-            DataSection::F64(ref x) => (
-                simpler_compress(
-                    unsafe { std::mem::transmute::<&Vec<OrderedFloat<f64>>, &Vec<f64>>(x) },
-                    DEFAULT_COMPRESSION_LEVEL,
-                )
-                .unwrap(),
-                8,
+            DataSection::U32(ref x) => (
+                simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(),
+                4,
+                false,
             ),
-            DataSection::Null(ref x) => return (DataSection::Null(*x), 1.0),
+            DataSection::U64(ref x) => (
+                simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(),
+                8,
+                false,
+            ),
+            DataSection::I64(ref x) => (
+                simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(),
+                8,
+                false,
+            ),
+            DataSection::F64(ref x) => {
+                if x.iter().all(|f| (f.0 as f32) as f64 == f.0) {
+                    (
+                        simpler_compress(
+                            &x.iter().map(|f| f.0 as f32).collect::<Vec<f32>>(),
+                            DEFAULT_COMPRESSION_LEVEL,
+                        )
+                        .unwrap(),
+                        8,
+                        true,
+                    )
+                } else {
+                    (
+                        simpler_compress(
+                            unsafe { std::mem::transmute::<&Vec<OrderedFloat<f64>>, &Vec<f64>>(x) },
+                            DEFAULT_COMPRESSION_LEVEL,
+                        )
+                        .unwrap(),
+                        8,
+                        false,
+                    )
+                }
+            }
+            DataSection::Null(ref x) => return (DataSection::Null(*x), 1.0, false),
             DataSection::LZ4 { .. } => panic!("Trying to pco encode lz4 data section"),
             DataSection::Pco { .. } => panic!("Trying to pco encode pco data section"),
         };
@@ -344,8 +374,9 @@ impl DataSection {
             data: encoded,
             decoded_bytes: self.len() * bytes_per_element,
             bytes_per_element,
+            is_fp32,
         };
-        (encoded_data, ratio)
+        (encoded_data, ratio, is_fp32)
     }
 
     pub fn lz4_decode(&self, decoded_type: EncodingType, len: usize) -> DataSection {
@@ -428,10 +459,7 @@ impl DataSection {
 
     pub fn pco_decode(&self, decoded_type: EncodingType) -> DataSection {
         match self {
-            DataSection::Pco {
-                data,
-                ..
-            } => match decoded_type {
+            DataSection::Pco { data, is_fp32, .. } => match decoded_type {
                 EncodingType::U8 => DataSection::U8(
                     simple_decompress::<u32>(data)
                         .unwrap()
@@ -449,7 +477,14 @@ impl DataSection {
                 EncodingType::U32 => DataSection::U32(simple_decompress(data).unwrap()),
                 EncodingType::U64 => DataSection::U64(simple_decompress(data).unwrap()),
                 EncodingType::I64 => DataSection::I64(simple_decompress(data).unwrap()),
-                EncodingType::F64 => DataSection::F64(unsafe {
+                EncodingType::F64 if *is_fp32 => DataSection::F64(
+                    simple_decompress::<f32>(data)
+                        .unwrap()
+                        .into_iter()
+                        .map(|v| OrderedFloat(v as f64))
+                        .collect(),
+                ),
+                EncodingType::F64 if !is_fp32 => DataSection::F64(unsafe {
                     std::mem::transmute::<Vec<f64>, Vec<of64>>(
                         simple_decompress::<f64>(data).unwrap(),
                     )

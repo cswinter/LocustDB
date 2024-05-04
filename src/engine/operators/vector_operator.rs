@@ -528,12 +528,13 @@ pub mod operator {
         encoded: BufferRef<u8>,
         decoded_len: usize,
         decoded: TypedBufferRef,
+        is_fp32: bool,
     ) -> Result<BoxedOperator<'a>, QueryError> {
         use crate::engine::operators::pco_decode::PcoDecode;
         reify_types! {
             "pco_decode";
             decoded: Number;
-            Ok(Box::new(PcoDecode { encoded, decoded, decoded_len, has_more: true }))
+            Ok(Box::new(PcoDecode { encoded, decoded, decoded_len, has_more: true, is_fp32 }))
         }
     }
 

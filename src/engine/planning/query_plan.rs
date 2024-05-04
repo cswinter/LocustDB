@@ -139,6 +139,7 @@ pub enum QueryPlan {
     PcoDecode {
         bytes: BufferRef<u8>,
         decoded_len: usize,
+        is_fp32: bool,
         #[output(t = "base=provided")]
         decoded: TypedBufferRef,
     },
@@ -1803,7 +1804,8 @@ pub(super) fn prepare<'a>(
             bytes,
             decoded_len,
             decoded,
-        } => operator::pco_decode(bytes, decoded_len, decoded)?,
+            is_fp32,
+        } => operator::pco_decode(bytes, decoded_len, decoded, is_fp32)?,
         QueryPlan::UnpackStrings {
             bytes,
             unpacked_strings,

@@ -54,10 +54,11 @@ impl PartitionSegment {
                             lz4.set_type(encoding_type_to_capnp(t));
                             lz4.set_len_decoded(decoded_length as u64);
                         }
-                        CodecOp::Pco(t, decoded_length) => {
+                        CodecOp::Pco(t, decoded_length, is_fp32) => {
                             let mut pco = capnp_op.init_pco();
                             pco.set_type(encoding_type_to_capnp(t));
                             pco.set_len_decoded(decoded_length as u64);
+                            pco.set_is_fp32(is_fp32);
                         }
                         CodecOp::UnpackStrings => capnp_op.set_unpack_strings(()),
                         CodecOp::UnhexpackStrings(uppercase, total_bytes) => {
@@ -94,10 +95,11 @@ impl PartitionSegment {
                             lz4.set_bytes_per_element(*bytes_per_element as u64);
                             lz4.set_data(&data[..]).unwrap();
                         }
-                        DataSection::Pco { decoded_bytes, bytes_per_element, data } => {
+                        DataSection::Pco { decoded_bytes, bytes_per_element, data, is_fp32 } => {
                             let mut pco = ds.init_pco();
                             pco.set_decoded_bytes(*decoded_bytes as u64);
                             pco.set_bytes_per_element(*bytes_per_element as u64);
+                            pco.set_is_fp32(*is_fp32);
                             pco.set_data(&data[..]).unwrap();
                         }
                     }
@@ -161,6 +163,7 @@ impl PartitionSegment {
                             CodecOp::Pco(
                                 deserialize_type(pco.get_type().unwrap()),
                                 pco.get_len_decoded() as usize,
+                                pco.get_is_fp32(),
                             )
                         }
                         UnpackStrings(_) => CodecOp::UnpackStrings,
@@ -242,6 +245,7 @@ impl PartitionSegment {
                             DataSection::Pco {
                                 decoded_bytes: pco.get_decoded_bytes() as usize,
                                 bytes_per_element: pco.get_bytes_per_element() as usize,
+                                is_fp32: pco.get_is_fp32(),
                                 data: buffer,
                             }
                         }

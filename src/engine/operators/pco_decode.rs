@@ -2,6 +2,7 @@ use crate::engine::*;
 
 use std::fmt;
 
+use ordered_float::OrderedFloat;
 use pco::standalone::simple_decompress;
 
 pub struct PcoDecode<T> {
@@ -9,13 +10,14 @@ pub struct PcoDecode<T> {
     pub decoded: BufferRef<T>,
     pub decoded_len: usize,
     pub has_more: bool,
+    pub is_fp32: bool,
 }
 
 impl<'a, T: VecData<T> + PcoDecodable<T> + 'static> VecOperator<'a> for PcoDecode<T> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let decoded = {
             let encoded = scratchpad.get(self.encoded);
-            T::pco_decompress(&encoded)
+            T::pco_decompress(&encoded, self.is_fp32)
         };
         scratchpad.set(self.decoded, decoded);
         Ok(())
@@ -46,11 +48,11 @@ impl<T> fmt::Debug for PcoDecode<T> {
 }
 
 trait PcoDecodable<T> {
-    fn pco_decompress(data: &[u8]) -> Vec<T>;
+    fn pco_decompress(data: &[u8], is_fp32: bool) -> Vec<T>;
 }
 
 impl PcoDecodable<u8> for u8 {
-    fn pco_decompress(data: &[u8]) -> Vec<u8> {
+    fn pco_decompress(data: &[u8], _: bool) -> Vec<u8> {
         simple_decompress::<u32>(data)
             .unwrap()
             .into_iter()
@@ -60,7 +62,7 @@ impl PcoDecodable<u8> for u8 {
 }
 
 impl PcoDecodable<u16> for u16 {
-    fn pco_decompress(data: &[u8]) -> Vec<u16> {
+    fn pco_decompress(data: &[u8], _: bool) -> Vec<u16> {
         simple_decompress::<u32>(data)
             .unwrap()
             .into_iter()
@@ -70,27 +72,35 @@ impl PcoDecodable<u16> for u16 {
 }
 
 impl PcoDecodable<u32> for u32 {
-    fn pco_decompress(data: &[u8]) -> Vec<u32> {
+    fn pco_decompress(data: &[u8], _: bool) -> Vec<u32> {
         simple_decompress::<u32>(data).unwrap()
     }
 }
 
 impl PcoDecodable<u64> for u64 {
-    fn pco_decompress(data: &[u8]) -> Vec<u64> {
+    fn pco_decompress(data: &[u8], _: bool) -> Vec<u64> {
         simple_decompress::<u64>(data).unwrap()
     }
 }
 
 impl PcoDecodable<i64> for i64 {
-    fn pco_decompress(data: &[u8]) -> Vec<i64> {
+    fn pco_decompress(data: &[u8], _: bool) -> Vec<i64> {
         simple_decompress::<i64>(data).unwrap()
     }
 }
 
 impl PcoDecodable<of64> for of64 {
-    fn pco_decompress(data: &[u8]) -> Vec<of64> {
-        unsafe {
-            std::mem::transmute::<Vec<f64>, Vec<of64>>(simple_decompress::<f64>(data).unwrap())
+    fn pco_decompress(data: &[u8], is_fp32: bool) -> Vec<of64> {
+        if is_fp32 {
+            simple_decompress::<f32>(data)
+                .unwrap()
+                .into_iter()
+                .map(|x| OrderedFloat(x as f64))
+                .collect()
+        } else {
+            unsafe {
+                std::mem::transmute::<Vec<f64>, Vec<of64>>(simple_decompress::<f64>(data).unwrap())
+            }
         }
     }
 }

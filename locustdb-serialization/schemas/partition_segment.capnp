@@ -54,6 +54,7 @@ struct DataSection {
             decodedBytes @11 :UInt64;
             bytesPerElement @12 :UInt64;
             data @13 :List(UInt8);
+            isFp32 @14 :Bool;
         }
     }
 }
@@ -71,6 +72,7 @@ struct LZ4 {
 struct Pco {
     type @0 :EncodingType;
     lenDecoded @1 :UInt64;
+    isFp32 @2 :Bool;
 }
 
 struct UnhexpackStrings {
