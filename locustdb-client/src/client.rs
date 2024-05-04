@@ -102,6 +102,7 @@ impl Client {
             .map_err(|e| JsValue::from_str(&format!("{}", e)))?
             .to_vec();
         let download_finished_ms = performance.now();
+        let bytes_len = bytes.len();
 
         let rsps = if binary {
             let mut rsps = MultiQueryResponse::deserialize(&bytes)
@@ -123,12 +124,13 @@ impl Client {
                     };
                     if self.log_stats {
                         log::info!(
-                            "[{}; {}]  size: {}B  ratio: {: >2.2}x  {:2.2} B/row  {}",
+                            "[{}; {}]  size: {}B  ratio: {: >2.2}x  {:2.2} B/row  {:2.2} B/row (e2e all cols) {}",
                             coltype,
                             col.len(),
                             compressed_bytes,
                             col.size_bytes() as f64 / compressed_bytes as f64,
                             compressed_bytes as f64 / col.len().max(1) as f64,
+                            bytes_len as f64 / col.len().max(1) as f64,
                             key,
                         );
                     }
@@ -163,10 +165,16 @@ impl Client {
             _columns.insert(name, buffer);
         }
         let payload = EventBuffer {
-            tables: [(table.to_string(), TableBuffer { len: 1, columns: _columns })]
-                .iter()
-                .cloned()
-                .collect(),
+            tables: [(
+                table.to_string(),
+                TableBuffer {
+                    len: 1,
+                    columns: _columns,
+                },
+            )]
+            .iter()
+            .cloned()
+            .collect(),
         };
         let body = payload.serialize();
         self.client
