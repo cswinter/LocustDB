@@ -1373,8 +1373,7 @@ fn test_group_by_string() {
 #[test]
 fn test_group_by_string_nonexistant() {
     test_hex_scrambled_int(
-        //"SELECT scrambled, notacolumn, count(1) FROM test ORDER BY count(1) DESC LIMIT 5;",
-        "SELECT scrambled, notacolumn, count(1) FROM test ORDER BY count(1) DESC;",
+        "SELECT scrambled, notacolumn, count(1) FROM test ORDER BY count(1) DESC LIMIT 5;",
         &[
             [Str("R"), Null, Int(125)],
             [Str("h"), Null, Int(120)],

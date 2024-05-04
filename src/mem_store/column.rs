@@ -1,4 +1,4 @@
-use pco::standalone::simpler_compress;
+use pco::standalone::{simple_decompress, simpler_compress};
 use pco::DEFAULT_COMPRESSION_LEVEL;
 use std::fmt;
 use std::mem;
@@ -120,11 +120,17 @@ impl Column {
         }
     }
 
-    pub fn lz4_decode(&mut self) {
+    pub fn lz4_or_pco_decode(&mut self) {
         if let Some(CodecOp::LZ4(decoded_type, _)) = self.codec.ops().first().copied() {
             trace!("lz4_decode before: {:?}", self);
             self.codec = self.codec.without_lz4();
             self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);
+            trace!("lz4_decode after: {:?}", self);
+        }
+        if let Some(CodecOp::Pco(decoded_type, _)) = self.codec.ops().first().copied() {
+            trace!("lz4_decode before: {:?}", self);
+            self.codec = self.codec.without_pco();
+            self.data[0] = self.data[0].pco_decode(decoded_type);
             trace!("lz4_decode after: {:?}", self);
         }
     }
@@ -416,7 +422,41 @@ impl DataSection {
                 }
                 t => panic!("Unexpected type {:?} for lz4 decode", t),
             },
-            _ => panic!("Trying to lz4 encode non u8/non lz4 data section"),
+            _ => panic!("Trying to lz4 decode non u8/non lz4 data section"),
+        }
+    }
+
+    pub fn pco_decode(&self, decoded_type: EncodingType) -> DataSection {
+        match self {
+            DataSection::Pco {
+                data,
+                ..
+            } => match decoded_type {
+                EncodingType::U8 => DataSection::U8(
+                    simple_decompress::<u32>(data)
+                        .unwrap()
+                        .into_iter()
+                        .map(|v| v as u8)
+                        .collect(),
+                ),
+                EncodingType::U16 => DataSection::U16(
+                    simple_decompress::<u32>(data)
+                        .unwrap()
+                        .into_iter()
+                        .map(|v| v as u16)
+                        .collect(),
+                ),
+                EncodingType::U32 => DataSection::U32(simple_decompress(data).unwrap()),
+                EncodingType::U64 => DataSection::U64(simple_decompress(data).unwrap()),
+                EncodingType::I64 => DataSection::I64(simple_decompress(data).unwrap()),
+                EncodingType::F64 => DataSection::F64(unsafe {
+                    std::mem::transmute::<Vec<f64>, Vec<of64>>(
+                        simple_decompress::<f64>(data).unwrap(),
+                    )
+                }),
+                t => panic!("Unexpected type {:?} for pco decode", t),
+            },
+            _ => panic!("Trying to pco decode non pco data section"),
         }
     }
 

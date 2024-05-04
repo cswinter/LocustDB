@@ -121,7 +121,7 @@ impl DiskReadScheduler {
                 if let Some(ref mut column) = *maybe_column {
                     if self.lz4_decode {
                         if let Some(c) = Arc::get_mut(column) {
-                            c.lz4_decode()
+                            c.lz4_or_pco_decode()
                         };
                         handle.update_size_bytes(column.heap_size_of_children());
                     }
@@ -154,7 +154,7 @@ impl DiskReadScheduler {
                     // TODO: if not main handle, put it at back of lru
                     self.lru.put(_handle.key().clone());
                     if self.lz4_decode {
-                        column.lz4_decode();
+                        column.lz4_or_pco_decode();
                         _handle.update_size_bytes(column.heap_size_of_children());
                     }
                     let column = Arc::new(column);

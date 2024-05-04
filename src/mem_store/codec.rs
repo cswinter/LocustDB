@@ -119,6 +119,29 @@ impl Codec {
         codec
     }
 
+    pub fn without_pco(&self) -> Codec {
+        let mut ops = Vec::with_capacity(self.ops.len() - 1);
+        let mut decoded_type = None;
+        for &op in &self.ops {
+            if let CodecOp::Pco(t, _) = op {
+                decoded_type = Some(t);
+                continue;
+            }
+            ops.push(op);
+        }
+        let mut codec = if ops.is_empty() {
+            Codec::identity(self.decoded_type)
+        } else {
+            let mut section_types = self.section_types.clone();
+            if let Some(decoded) = decoded_type {
+                section_types[0] = decoded;
+            }
+            Codec::new(ops, section_types)
+        };
+        codec.set_column_name(&self.column_name);
+        codec
+    }
+
     pub fn decode(&self, plan: TypedBufferRef, planner: &mut QueryPlanner) -> TypedBufferRef {
         self.decode_ops(&self.ops, plan, planner)
     }
