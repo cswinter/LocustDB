@@ -54,6 +54,12 @@ impl PartitionSegment {
                             lz4.set_type(encoding_type_to_capnp(t));
                             lz4.set_len_decoded(decoded_length as u64);
                         }
+                        CodecOp::Pco(t, decoded_length, is_fp32) => {
+                            let mut pco = capnp_op.init_pco();
+                            pco.set_type(encoding_type_to_capnp(t));
+                            pco.set_len_decoded(decoded_length as u64);
+                            pco.set_is_fp32(is_fp32);
+                        }
                         CodecOp::UnpackStrings => capnp_op.set_unpack_strings(()),
                         CodecOp::UnhexpackStrings(uppercase, total_bytes) => {
                             let mut uhps = capnp_op.init_unhexpack_strings();
@@ -88,6 +94,13 @@ impl PartitionSegment {
                             lz4.set_decoded_bytes(*decoded_bytes as u64);
                             lz4.set_bytes_per_element(*bytes_per_element as u64);
                             lz4.set_data(&data[..]).unwrap();
+                        }
+                        DataSection::Pco { decoded_bytes, bytes_per_element, data, is_fp32 } => {
+                            let mut pco = ds.init_pco();
+                            pco.set_decoded_bytes(*decoded_bytes as u64);
+                            pco.set_bytes_per_element(*bytes_per_element as u64);
+                            pco.set_is_fp32(*is_fp32);
+                            pco.set_data(&data[..]).unwrap();
                         }
                     }
                 }
@@ -143,6 +156,14 @@ impl PartitionSegment {
                             CodecOp::LZ4(
                                 deserialize_type(lz4.get_type().unwrap()),
                                 lz4.get_len_decoded() as usize,
+                            )
+                        }
+                        Pco(pco) => {
+                            let pco = pco.unwrap();
+                            CodecOp::Pco(
+                                deserialize_type(pco.get_type().unwrap()),
+                                pco.get_len_decoded() as usize,
+                                pco.get_is_fp32(),
                             )
                         }
                         UnpackStrings(_) => CodecOp::UnpackStrings,
@@ -214,6 +235,17 @@ impl PartitionSegment {
                             DataSection::LZ4 {
                                 decoded_bytes: lz4.get_decoded_bytes() as usize,
                                 bytes_per_element: lz4.get_bytes_per_element() as usize,
+                                data: buffer,
+                            }
+                        }
+                        Pco(pco) => {
+                            let data = pco.get_data().unwrap();
+                            let mut buffer = Vec::with_capacity(data.len() as usize);
+                            buffer.extend(data);
+                            DataSection::Pco {
+                                decoded_bytes: pco.get_decoded_bytes() as usize,
+                                bytes_per_element: pco.get_bytes_per_element() as usize,
+                                is_fp32: pco.get_is_fp32(),
                                 data: buffer,
                             }
                         }

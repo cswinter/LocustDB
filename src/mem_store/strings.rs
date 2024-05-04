@@ -49,7 +49,7 @@ where
             } else {
                 Column::new(name, len, None, codec, vec![data])
             };
-            column.lz4_encode();
+            column.lz4_or_pco_encode();
             return Arc::new(column);
         }
     }
@@ -123,7 +123,7 @@ where
         data_sections.push(DataSection::Bitvec(present));
     }
     let mut column = Column::new(name, len, range, codec, data_sections);
-    column.lz4_encode();
+    column.lz4_or_pco_encode();
     Arc::new(column)
 }
 

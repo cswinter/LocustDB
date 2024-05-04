@@ -135,6 +135,14 @@ pub enum QueryPlan {
         #[output(t = "base=provided")]
         decoded: TypedBufferRef,
     },
+    /// LZ4 decodes `bytes` into `decoded_len` elements of type `t`.
+    PcoDecode {
+        bytes: BufferRef<u8>,
+        decoded_len: usize,
+        is_fp32: bool,
+        #[output(t = "base=provided")]
+        decoded: TypedBufferRef,
+    },
     /// Decodes a byte array of tightly packed strings.
     UnpackStrings {
         bytes: BufferRef<u8>,
@@ -1351,6 +1359,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         }
         Cast { ref input, .. } => encoding_range(input, qp),
         LZ4Decode { bytes, .. } => encoding_range(&bytes.into(), qp),
+        PcoDecode { bytes, .. } => encoding_range(&bytes.into(), qp),
         DeltaDecode { ref plan, .. } => encoding_range(plan, qp),
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
         UnpackStrings { .. } | UnhexpackStrings { .. } | Length { .. } => None,
@@ -1791,6 +1800,12 @@ pub(super) fn prepare<'a>(
             decoded_len,
             decoded,
         } => operator::lz4_decode(bytes, decoded_len, decoded)?,
+        QueryPlan::PcoDecode {
+            bytes,
+            decoded_len,
+            decoded,
+            is_fp32,
+        } => operator::pco_decode(bytes, decoded_len, decoded, is_fp32)?,
         QueryPlan::UnpackStrings {
             bytes,
             unpacked_strings,

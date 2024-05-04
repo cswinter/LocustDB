@@ -245,9 +245,9 @@ impl Options {
         if self.read_threads == 0 {
             return Err("read_threads must be greater than 0".to_string());
         }
-        if self.partition_combine_factor == 0 {
-            return Err("partition_combine_factor must be greater than 0".to_string());
-        }
+        // if self.partition_combine_factor == 0 {
+        //     return Err("partition_combine_factor must be greater than 0".to_string());
+        // }
         if self.batch_size % 8 != 0 {
             return Err("batch_size must be a multiple of 8".to_string());
         }

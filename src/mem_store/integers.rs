@@ -83,7 +83,7 @@ impl IntegerColumn {
                 }
             }
         };
-        column.lz4_encode();
+        column.lz4_or_pco_encode();
         Arc::new(column)
     }
 
