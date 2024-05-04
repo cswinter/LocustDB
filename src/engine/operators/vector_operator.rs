@@ -524,6 +524,19 @@ pub mod operator {
         }
     }
 
+    pub fn pco_decode<'a>(
+        encoded: BufferRef<u8>,
+        decoded_len: usize,
+        decoded: TypedBufferRef,
+    ) -> Result<BoxedOperator<'a>, QueryError> {
+        use crate::engine::operators::pco_decode::PcoDecode;
+        reify_types! {
+            "pco_decode";
+            decoded: Number;
+            Ok(Box::new(PcoDecode { encoded, decoded, decoded_len, has_more: true }))
+        }
+    }
+
     pub fn unpack_strings<'a>(
         packed: BufferRef<u8>,
         unpacked: BufferRef<&'a str>,

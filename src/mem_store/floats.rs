@@ -2,6 +2,7 @@ use ordered_float::OrderedFloat;
 
 use crate::mem_store::*;
 use std::sync::Arc;
+use crate::bitvec::BitVec;
 
 pub struct FloatColumn;
 
@@ -13,13 +14,24 @@ impl FloatColumn {
         });
         values.shrink_to_fit();
         let mut column = match null {
-            Some(present) => Column::new(
-                name,
-                values.len(),
-                None,
-                vec![CodecOp::PushDataSection(1), CodecOp::Nullable],
-                vec![values.into(), DataSection::Bitvec(present)],
-            ),
+            Some(present) => {
+                // Values for null entries are arbitrary, replace them with values that give high compression
+                let mut last_value = OrderedFloat(0.0);
+                for (i, value) in values.iter_mut().enumerate() {
+                    if !present.is_set(i) {
+                        *value = last_value;
+                    } else {
+                        last_value = *value;
+                    }
+                }
+                Column::new(
+                    name,
+                    values.len(),
+                    None,
+                    vec![CodecOp::PushDataSection(1), CodecOp::Nullable],
+                    vec![values.into(), DataSection::Bitvec(present)],
+                )
+            },
             None => Column::new(
                 name,
                 values.len(),
@@ -28,7 +40,7 @@ impl FloatColumn {
                 vec![DataSection::F64(values)],
             ),
         };
-        column.lz4_encode();
+        column.lz4_or_pco_encode();
         Arc::new(column)
     }
 }

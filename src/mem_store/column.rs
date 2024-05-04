@@ -1,3 +1,5 @@
+use pco::standalone::simpler_compress;
+use pco::DEFAULT_COMPRESSION_LEVEL;
 use std::fmt;
 use std::mem;
 use std::sync::Arc;
@@ -106,11 +108,15 @@ impl Column {
         }
     }
 
-    pub fn lz4_encode(&mut self) {
-        let (encoded, worth_it) = self.data[0].lz4_encode();
-        if worth_it {
+    pub fn lz4_or_pco_encode(&mut self) {
+        let (lz4_encoded, lz4_ratio) = self.data[0].lz4_encode();
+        let (pco_encoded, pco_ratio) = self.data[0].pco_encode();
+        if lz4_ratio < pco_ratio && lz4_ratio < 0.9 {
             self.codec = self.codec.with_lz4(self.data[0].len());
-            self.data[0] = encoded;
+            self.data[0] = lz4_encoded;
+        } else if pco_ratio < 0.9 {
+            self.codec = self.codec.with_pco(self.data[0].len());
+            self.data[0] = pco_encoded;
         }
     }
 
@@ -205,6 +211,11 @@ pub enum DataSection {
         bytes_per_element: usize,
         data: Vec<u8>,
     },
+    Pco {
+        decoded_bytes: usize,
+        bytes_per_element: usize,
+        data: Vec<u8>,
+    },
 }
 
 impl DataSection {
@@ -219,6 +230,7 @@ impl DataSection {
             DataSection::Null(ref x) => x,
             DataSection::Bitvec(ref x) => x,
             DataSection::LZ4 { data, .. } => data,
+            DataSection::Pco { data, .. } => data,
         }
     }
 
@@ -233,6 +245,7 @@ impl DataSection {
             DataSection::Null(ref x) => *x,
             DataSection::Bitvec(ref x) => x.len(),
             DataSection::LZ4 { data, .. } => data.len(),
+            DataSection::Pco { data, .. } => data.len(),
         }
     }
 
@@ -247,6 +260,7 @@ impl DataSection {
             DataSection::Null(ref x) => *x,
             DataSection::Bitvec(ref x) => x.capacity(),
             DataSection::LZ4 { data, .. } => data.capacity(),
+            DataSection::Pco { data, .. } => data.capacity(),
         }
     }
 
@@ -261,93 +275,71 @@ impl DataSection {
             DataSection::Null(_) => EncodingType::Null,
             DataSection::Bitvec(_) => EncodingType::Bitvec,
             DataSection::LZ4 { .. } => EncodingType::U8,
+            DataSection::Pco { .. } => EncodingType::U8,
         }
     }
 
-    pub fn lz4_encode(&self) -> (DataSection, bool) {
-        let min_reduction = 90;
-        match self {
+    pub fn lz4_encode(&self) -> (DataSection, f64) {
+        let (mut encoded, bytes_per_element) = match self {
+            DataSection::U8(ref x) | DataSection::Bitvec(ref x) => (lz4::encode(x), 1),
+            DataSection::U16(ref x) => (lz4::encode(x), 2),
+            DataSection::U32(ref x) => (lz4::encode(x), 4),
+            DataSection::U64(ref x) => (lz4::encode(x), 8),
+            DataSection::I64(ref x) => (lz4::encode(x), 8),
+            DataSection::F64(ref x) => (lz4::encode(x), 8),
+            DataSection::Null(ref x) => return (DataSection::Null(*x), 1.0),
+            DataSection::LZ4 { .. } => panic!("Trying to lz4 encode lz4 data section"),
+            DataSection::Pco { .. } => panic!("Trying to lz4 encode pco data section"),
+        };
+        encoded.shrink_to_fit();
+        let ratio = encoded.len() as f64 / (self.len() * bytes_per_element) as f64;
+        let encoded_data = DataSection::LZ4 {
+            data: encoded,
+            decoded_bytes: self.len() * bytes_per_element,
+            bytes_per_element,
+        };
+        (encoded_data, ratio)
+    }
+
+    pub fn pco_encode(&self) -> (DataSection, f64) {
+        let (mut encoded, bytes_per_element) = match self {
             DataSection::U8(ref x) | DataSection::Bitvec(ref x) => {
-                let mut encoded = lz4::encode(x);
-                encoded.shrink_to_fit();
-                let len = encoded.len();
+                let data_u32 = x.iter().map(|&v| v as u32).collect::<Vec<u32>>();
                 (
-                    DataSection::LZ4 {
-                        data: encoded,
-                        decoded_bytes: x.len(),
-                        bytes_per_element: 1,
-                    },
-                    len * 100 < x.len() * min_reduction,
+                    simpler_compress(&data_u32, DEFAULT_COMPRESSION_LEVEL).unwrap(),
+                    1,
                 )
             }
             DataSection::U16(ref x) => {
-                let mut encoded = lz4::encode(x);
-                encoded.shrink_to_fit();
-                let len = encoded.len();
+                let data_u32 = x.iter().map(|&v| v as u32).collect::<Vec<u32>>();
                 (
-                    DataSection::LZ4 {
-                        data: encoded,
-                        decoded_bytes: x.len() * 2,
-                        bytes_per_element: 2,
-                    },
-                    len * 100 < x.len() * 2 * min_reduction,
+                    simpler_compress(&data_u32, DEFAULT_COMPRESSION_LEVEL).unwrap(),
+                    2,
                 )
             }
-            DataSection::U32(ref x) => {
-                let mut encoded = lz4::encode(x);
-                encoded.shrink_to_fit();
-                let len = encoded.len();
-                (
-                    DataSection::LZ4 {
-                        data: encoded,
-                        decoded_bytes: x.len() * 4,
-                        bytes_per_element: 4,
-                    },
-                    len * 100 < x.len() * 4 * min_reduction,
+            DataSection::U32(ref x) => (simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(), 4),
+            DataSection::U64(ref x) => (simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(), 8),
+            DataSection::I64(ref x) => (simpler_compress(x, DEFAULT_COMPRESSION_LEVEL).unwrap(), 8),
+            DataSection::F64(ref x) => (
+                simpler_compress(
+                    unsafe { std::mem::transmute::<&Vec<OrderedFloat<f64>>, &Vec<f64>>(x) },
+                    DEFAULT_COMPRESSION_LEVEL,
                 )
-            }
-            DataSection::U64(ref x) => {
-                let mut encoded = lz4::encode(x);
-                encoded.shrink_to_fit();
-                let len = encoded.len();
-                (
-                    DataSection::LZ4 {
-                        data: encoded,
-                        decoded_bytes: x.len() * 8,
-                        bytes_per_element: 8,
-                    },
-                    len * 100 < x.len() * 8 * min_reduction,
-                )
-            }
-            DataSection::I64(ref x) => {
-                let mut encoded = lz4::encode(x);
-                encoded.shrink_to_fit();
-                let len = encoded.len();
-                (
-                    DataSection::LZ4 {
-                        data: encoded,
-                        decoded_bytes: x.len() * 8,
-                        bytes_per_element: 8,
-                    },
-                    len * 100 < x.len() * 8 * min_reduction,
-                )
-            }
-            DataSection::F64(ref x) => {
-                let mut encoded = lz4::encode(x);
-                encoded.shrink_to_fit();
-                let len = encoded.len();
-                (
-                    DataSection::LZ4 {
-                        data: encoded,
-                        decoded_bytes: x.len() * 8,
-                        bytes_per_element: 8,
-                    },
-                    len * 100 < x.len() * 8 * min_reduction,
-                )
-            }
-            DataSection::Null(ref x) => (DataSection::Null(*x), false),
-            DataSection::LZ4 { .. } => panic!("Trying to lz4 encode lz4 data section"),
-        }
+                .unwrap(),
+                8,
+            ),
+            DataSection::Null(ref x) => return (DataSection::Null(*x), 1.0),
+            DataSection::LZ4 { .. } => panic!("Trying to pco encode lz4 data section"),
+            DataSection::Pco { .. } => panic!("Trying to pco encode pco data section"),
+        };
+        encoded.shrink_to_fit();
+        let ratio = encoded.len() as f64 / (self.len() * bytes_per_element) as f64;
+        let encoded_data = DataSection::Pco {
+            data: encoded,
+            decoded_bytes: self.len() * bytes_per_element,
+            bytes_per_element,
+        };
+        (encoded_data, ratio)
     }
 
     pub fn lz4_decode(&self, decoded_type: EncodingType, len: usize) -> DataSection {
@@ -391,41 +383,39 @@ impl DataSection {
                 decoded_bytes,
                 data,
                 bytes_per_element,
-            } => {
-                match decoded_type {
-                    EncodingType::U8 => {
-                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
-                        lz4::decode::<u8>(&mut lz4::decoder(data), &mut decoded);
-                        DataSection::U8(decoded)
-                    }
-                    EncodingType::U16 => {
-                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
-                        lz4::decode::<u16>(&mut lz4::decoder(data), &mut decoded);
-                        DataSection::U16(decoded)
-                    }
-                    EncodingType::U32 => {
-                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
-                        lz4::decode::<u32>(&mut lz4::decoder(data), &mut decoded);
-                        DataSection::U32(decoded)
-                    }
-                    EncodingType::U64 => {
-                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
-                        lz4::decode::<u64>(&mut lz4::decoder(data), &mut decoded);
-                        DataSection::U64(decoded)
-                    }
-                    EncodingType::I64 => {
-                        let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
-                        lz4::decode::<i64>(&mut lz4::decoder(data), &mut decoded);
-                        DataSection::I64(decoded)
-                    }
-                    EncodingType::F64 => {
-                        let mut decoded = vec![OrderedFloat(0.0); *decoded_bytes / *bytes_per_element];
-                        lz4::decode::<OrderedFloat<f64>>(&mut lz4::decoder(data), &mut decoded);
-                        DataSection::F64(decoded)
-                    }
-                    t => panic!("Unexpected type {:?} for lz4 decode", t),
+            } => match decoded_type {
+                EncodingType::U8 => {
+                    let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                    lz4::decode::<u8>(&mut lz4::decoder(data), &mut decoded);
+                    DataSection::U8(decoded)
                 }
-            }
+                EncodingType::U16 => {
+                    let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                    lz4::decode::<u16>(&mut lz4::decoder(data), &mut decoded);
+                    DataSection::U16(decoded)
+                }
+                EncodingType::U32 => {
+                    let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                    lz4::decode::<u32>(&mut lz4::decoder(data), &mut decoded);
+                    DataSection::U32(decoded)
+                }
+                EncodingType::U64 => {
+                    let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                    lz4::decode::<u64>(&mut lz4::decoder(data), &mut decoded);
+                    DataSection::U64(decoded)
+                }
+                EncodingType::I64 => {
+                    let mut decoded = vec![0; *decoded_bytes / *bytes_per_element];
+                    lz4::decode::<i64>(&mut lz4::decoder(data), &mut decoded);
+                    DataSection::I64(decoded)
+                }
+                EncodingType::F64 => {
+                    let mut decoded = vec![OrderedFloat(0.0); *decoded_bytes / *bytes_per_element];
+                    lz4::decode::<OrderedFloat<f64>>(&mut lz4::decoder(data), &mut decoded);
+                    DataSection::F64(decoded)
+                }
+                t => panic!("Unexpected type {:?} for lz4 decode", t),
+            },
             _ => panic!("Trying to lz4 encode non u8/non lz4 data section"),
         }
     }
@@ -441,6 +431,7 @@ impl DataSection {
                 DataSection::F64(ref mut x) => x.shrink_to_fit(),
                 DataSection::Null(_) => {}
                 DataSection::LZ4 { data, .. } => data.shrink_to_fit(),
+                DataSection::Pco { data, .. } => data.shrink_to_fit(),
             }
         }
     }
@@ -457,6 +448,7 @@ impl DataSection {
             DataSection::F64(ref x) => x.capacity() * mem::size_of::<OrderedFloat<f64>>(),
             DataSection::Null(_) => 0,
             DataSection::LZ4 { data, .. } => data.capacity() * mem::size_of::<u8>(),
+            DataSection::Pco { data, .. } => data.capacity() * mem::size_of::<u8>(),
         }
     }
 }

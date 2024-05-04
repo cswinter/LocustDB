@@ -135,6 +135,13 @@ pub enum QueryPlan {
         #[output(t = "base=provided")]
         decoded: TypedBufferRef,
     },
+    /// LZ4 decodes `bytes` into `decoded_len` elements of type `t`.
+    PcoDecode {
+        bytes: BufferRef<u8>,
+        decoded_len: usize,
+        #[output(t = "base=provided")]
+        decoded: TypedBufferRef,
+    },
     /// Decodes a byte array of tightly packed strings.
     UnpackStrings {
         bytes: BufferRef<u8>,
@@ -1791,6 +1798,11 @@ pub(super) fn prepare<'a>(
             decoded_len,
             decoded,
         } => operator::lz4_decode(bytes, decoded_len, decoded)?,
+        QueryPlan::PcoDecode {
+            bytes,
+            decoded_len,
+            decoded,
+        } => operator::pco_decode(bytes, decoded_len, decoded)?,
         QueryPlan::UnpackStrings {
             bytes,
             unpacked_strings,

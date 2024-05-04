@@ -84,6 +84,18 @@ impl Codec {
         codec
     }
 
+    pub fn with_pco(&self, decoded_length: usize) -> Codec {
+        let mut ops = vec![CodecOp::Pco(self.section_types[0], decoded_length)];
+        for &op in &self.ops {
+            ops.push(op);
+        }
+        let mut section_types = self.section_types.clone();
+        section_types[0] = EncodingType::U8;
+        let mut codec = Codec::new(ops, section_types);
+        codec.set_column_name(&self.column_name);
+        codec
+    }
+
     pub fn without_lz4(&self) -> Codec {
         let mut ops = Vec::with_capacity(self.ops.len() - 1);
         let mut decoded_type = None;
@@ -150,6 +162,9 @@ impl Codec {
                 }
                 CodecOp::LZ4(t, decoded_length) => {
                     planner.lz4_decode(stack.pop().unwrap().u8().unwrap(), decoded_length, t)
+                }
+                CodecOp::Pco(t, decoded_length) => {
+                    planner.pco_decode(stack.pop().unwrap().u8().unwrap(), decoded_length, t)
                 }
                 CodecOp::UnpackStrings => planner
                     .unpack_strings(stack.pop().unwrap().u8().unwrap())
@@ -313,6 +328,7 @@ pub enum CodecOp {
     PushDataSection(usize),
     DictLookup(EncodingType),
     LZ4(EncodingType, usize),
+    Pco(EncodingType, usize),
     UnpackStrings,
     UnhexpackStrings(bool, usize),
     Unknown,
@@ -344,6 +360,7 @@ impl CodecOp {
                     }
                 }
                 CodecOp::LZ4(t, _) => *t,
+                CodecOp::Pco(t, _) => *t,
                 CodecOp::UnpackStrings => EncodingType::Str,
                 CodecOp::UnhexpackStrings(_, _) => EncodingType::Str,
                 CodecOp::PushDataSection(i) => section_types[*i],
@@ -363,6 +380,7 @@ impl CodecOp {
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => false,
             CodecOp::LZ4(_, _) => false,
+            CodecOp::Pco(_, _) => false,
             CodecOp::UnpackStrings => false,
             CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_summation_preserving()"),
@@ -378,6 +396,7 @@ impl CodecOp {
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
             CodecOp::LZ4(_, _) => false,
+            CodecOp::Pco(_, _) => false,
             CodecOp::UnpackStrings => false,
             CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_order_preserving()"),
@@ -394,6 +413,7 @@ impl CodecOp {
             CodecOp::PushDataSection(_) => true,
             CodecOp::DictLookup(_) => true,
             CodecOp::LZ4(_, _) => false,
+            CodecOp::Pco(_, _) => false,
             CodecOp::UnpackStrings => false,
             CodecOp::UnhexpackStrings(_, _) => false,
             CodecOp::Unknown => panic!("Unknown.is_fixed_width()"),
@@ -409,6 +429,7 @@ impl CodecOp {
             CodecOp::PushDataSection(_) => 0,
             CodecOp::DictLookup(_) => 3,
             CodecOp::LZ4(_, _) => 1,
+            CodecOp::Pco(_, _) => 1,
             CodecOp::UnpackStrings => 1,
             CodecOp::UnhexpackStrings(_, _) => 1,
             CodecOp::Unknown => panic!("Unknown.is_fixed_width()"),
@@ -434,6 +455,13 @@ impl CodecOp {
                     format!("LZ4({:?}, {})", t, decoded_len)
                 } else {
                     format!("LZ4({:?})", t)
+                }
+            }
+            CodecOp::Pco(t, decoded_len) => {
+                if alternate {
+                    format!("Pco({:?}, {})", t, decoded_len)
+                } else {
+                    format!("Pco({:?})", t)
                 }
             }
             CodecOp::UnpackStrings => "StrUnpack".to_string(),

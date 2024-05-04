@@ -44,6 +44,10 @@ struct Opt {
     #[structopt(long, name = "PART_SIZE", default_value = "8388608")]
     max_partition_size_bytes: u64,
 
+    /// Combine partitions when the size of every original partition is less than this factor of the combined partition size
+    #[structopt(long, name = "FACTOR", default_value = "4")]
+    partition_combine_factor: u64,
+
     /// Comma separated list specifying the types and (optionally) names of all columns in files specified by `--load` option.
     /// Valid types: `s`, `string`, `i`, `integer`, `ns` (nullable string), `ni` (nullable integer)
     /// Example schema without column names: `int,string,string,string,int`
@@ -119,6 +123,7 @@ fn main() {
         server,
         max_wal_size_bytes,
         max_partition_size_bytes,
+        partition_combine_factor,
         cors_allow_all,
         cors_allow_origin,
         addrs,
@@ -135,7 +140,7 @@ fn main() {
         seq_disk_read,
         max_wal_size_bytes,
         max_partition_size_bytes,
-        partition_combine_factor: 4,
+        partition_combine_factor,
         batch_size,
         max_partition_length: 1024 * 1024,
     };

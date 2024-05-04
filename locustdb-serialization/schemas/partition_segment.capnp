@@ -31,6 +31,7 @@ struct CodecOp {
         unpackStrings @6 :Void;
         unhexpackStrings @7 :UnhexpackStrings;
         nullable  @8 :Void;
+        pco @9 :Pco;
     }
 }
 
@@ -49,6 +50,11 @@ struct DataSection {
             bytesPerElement @9 :UInt64;
             data @10 :List(UInt8);
         }
+        pco :group {
+            decodedBytes @11 :UInt64;
+            bytesPerElement @12 :UInt64;
+            data @13 :List(UInt8);
+        }
     }
 }
 
@@ -58,6 +64,11 @@ struct Add {
 }
 
 struct LZ4 {
+    type @0 :EncodingType;
+    lenDecoded @1 :UInt64;
+}
+
+struct Pco {
     type @0 :EncodingType;
     lenDecoded @1 :UInt64;
 }
