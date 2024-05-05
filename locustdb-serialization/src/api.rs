@@ -438,8 +438,8 @@ struct DeltaStats {
 }
 
 fn determine_delta_compressability(ints: &[i64]) -> DeltaStats {
-    let mut min_delta = i128::MAX;
-    let mut max_delta = i128::MIN;
+    let mut min_delta;
+    let mut max_delta;
     let mut min_delta_delta = i128::MAX;
     let mut max_delta_delta = i128::MIN;
 
@@ -454,6 +454,8 @@ fn determine_delta_compressability(ints: &[i64]) -> DeltaStats {
 
     let mut previous = ints[1];
     let mut previous_delta = (ints[1] - ints[0]) as i128;
+    min_delta = previous_delta;
+    max_delta = previous_delta;
     for curr in &ints[2..] {
         let delta = (*curr - previous) as i128;
         min_delta = min_delta.min(delta);
