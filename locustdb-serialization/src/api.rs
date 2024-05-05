@@ -445,10 +445,10 @@ fn determine_delta_compressability(ints: &[i64]) -> DeltaStats {
 
     if ints.len() < 2 {
         return DeltaStats {
-            min_delta,
-            max_delta,
-            min_delta_delta,
-            max_delta_delta,
+            min_delta: i128::MIN,
+            max_delta: i128::MAX,
+            min_delta_delta: i128::MIN,
+            max_delta_delta: i128::MAX,
         };
     }
 
