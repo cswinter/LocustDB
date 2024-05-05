@@ -334,44 +334,21 @@ fn partition_filename(id: PartitionID, subpartition_key: &str) -> String {
 /// Sanitize table name to ensure valid file name:
 /// - converts to lowercase
 /// - removes any characters that are not alphanumeric, underscore, hyphen, or dot
-/// - strip leading underscores and dots
-/// - truncates to max 255-64-1=190 characters
+/// - strip leading dashes and dots
+/// - truncates to max 255-64-2=189 characters
 /// - if name was modified, prepend underscore and append hash of original name
 fn sanitize_table_name(table_name: &str) -> String {
     let mut name = table_name.to_lowercase();
     name.retain(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
-    name = name.trim_start_matches(|c| c == '_' || c == '.').to_string();
-    if name.len() > 190 {
-        name = name[..190].to_string();
+    name = name.trim_start_matches(|c| c == '-' || c == '.').to_string();
+    if name.len() > 189 {
+        name = name[..189].to_string();
     }
     if name != table_name {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(table_name.as_bytes());
-        format!("_{}{:x}", name, hasher.finalize());
+        name = format!("-{}-{:x}", name, hasher.finalize());
     }
     name
 }
-
-
-// /// Sanitize table name to ensure valid file name:
-// /// - converts to lowercase
-// /// - removes any characters that are not alphanumeric, underscore, hyphen, or dot
-// /// - strip leading dashes and dots
-// /// - truncates to max 255-64-2=189 characters
-// /// - if name was modified, prepend underscore and append hash of original name
-// fn sanitize_table_name(table_name: &str) -> String {
-//     let mut name = table_name.to_lowercase();
-//     name.retain(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
-//     name = name.trim_start_matches(|c| c == '-' || c == '.').to_string();
-//     if name.len() > 189 {
-//         name = name[..189].to_string();
-//     }
-//     if name != table_name {
-//         use sha2::{Digest, Sha256};
-//         let mut hasher = Sha256::new();
-//         hasher.update(table_name.as_bytes());
-//         name = format!("-{}-{:x}", name, hasher.finalize());
-//     }
-//     name
-// }
