@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use super::azure_writer::AzureBlobWriter;
-use super::file_writer::{BlobWriter, FileBlobWriter};
+use super::file_writer::{BlobWriter, FileBlobWriter, VersionedChecksummedBlobWriter};
 use super::gcs_writer::GCSBlobWriter;
 use super::meta_store::{MetaStore, PartitionMetadata, SubpartitionMetadata};
 use super::partition_segment::PartitionSegment;
@@ -93,6 +93,7 @@ impl Storage {
             } else {
                 (Box::new(FileBlobWriter::new()), path.to_owned())
             };
+        let writer = Box::new(VersionedChecksummedBlobWriter::new(writer));
         let meta_db_path = path.join("meta");
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
