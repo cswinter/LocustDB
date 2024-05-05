@@ -1,5 +1,5 @@
 use capnp::serialize_packed;
-use locustdb_serialization::partition_segment_capnp;
+use locustdb_serialization::{default_reader_options, partition_segment_capnp};
 use ordered_float::OrderedFloat;
 
 use crate::engine::EncodingType;
@@ -89,13 +89,22 @@ impl PartitionSegment {
                         }
                         DataSection::Null(count) => ds.set_null(*count as u64),
                         DataSection::Bitvec(x) => ds.set_bitvec(&x[..]).unwrap(),
-                        DataSection::LZ4 { decoded_bytes, bytes_per_element, data } => {
+                        DataSection::LZ4 {
+                            decoded_bytes,
+                            bytes_per_element,
+                            data,
+                        } => {
                             let mut lz4 = ds.init_lz4();
                             lz4.set_decoded_bytes(*decoded_bytes as u64);
                             lz4.set_bytes_per_element(*bytes_per_element as u64);
                             lz4.set_data(&data[..]).unwrap();
                         }
-                        DataSection::Pco { decoded_bytes, bytes_per_element, data, is_fp32 } => {
+                        DataSection::Pco {
+                            decoded_bytes,
+                            bytes_per_element,
+                            data,
+                            is_fp32,
+                        } => {
                             let mut pco = ds.init_pco();
                             pco.set_decoded_bytes(*decoded_bytes as u64);
                             pco.set_bytes_per_element(*bytes_per_element as u64);
@@ -114,7 +123,7 @@ impl PartitionSegment {
 
     pub fn deserialize(data: &[u8]) -> capnp::Result<PartitionSegment> {
         let message_reader =
-            serialize_packed::read_message(data, capnp::message::ReaderOptions::new()).unwrap();
+            serialize_packed::read_message(data, default_reader_options()).unwrap();
         let partition_segment =
             message_reader.get_root::<partition_segment_capnp::partition_segment::Reader>()?;
         let mut columns = Vec::new();

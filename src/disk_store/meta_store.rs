@@ -1,5 +1,5 @@
 use capnp::serialize_packed;
-use locustdb_serialization::dbmeta_capnp;
+use locustdb_serialization::{dbmeta_capnp, default_reader_options};
 use std::collections::HashMap;
 
 type TableName = String;
@@ -88,7 +88,7 @@ impl MetaStore {
 
     pub fn deserialize(data: &[u8]) -> capnp::Result<MetaStore> {
         let message_reader =
-            serialize_packed::read_message(&mut &data[..], ::capnp::message::ReaderOptions::new())?;
+            serialize_packed::read_message(&mut &data[..], default_reader_options())?;
         let dbmeta = message_reader.get_root::<dbmeta_capnp::d_b_meta::Reader>()?;
         let next_wal_id = dbmeta.get_next_wal_id();
         let mut partitions = HashMap::<TableName, HashMap<PartitionID, PartitionMetadata>>::new();

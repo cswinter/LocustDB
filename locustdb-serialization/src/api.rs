@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::api_capnp::{self, query_response};
+use crate::default_reader_options;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ColumnNameRequest {
@@ -104,7 +105,7 @@ impl Column {
 impl MultiQueryResponse {
     pub fn deserialize(data: &[u8]) -> capnp::Result<MultiQueryResponse> {
         let message_reader =
-            serialize_packed::read_message(data, capnp::message::ReaderOptions::new())?;
+            serialize_packed::read_message(data, default_reader_options())?;
         let multi_query_response =
             message_reader.get_root::<api_capnp::multi_query_response::Reader>()?;
         let mut responses = Vec::new();
@@ -131,7 +132,7 @@ impl MultiQueryResponse {
 impl QueryResponse {
     pub fn deserialize(data: &[u8]) -> capnp::Result<QueryResponse> {
         let message_reader =
-            serialize_packed::read_message(data, capnp::message::ReaderOptions::new()).unwrap();
+            serialize_packed::read_message(data, default_reader_options()).unwrap();
         let query_response = message_reader.get_root::<api_capnp::query_response::Reader>()?;
         QueryResponse::deserialize_reader(query_response)
     }
@@ -299,7 +300,7 @@ impl Column {
     #[cfg(test)]
     fn deserialize(data: &[u8]) -> capnp::Result<(String, Column)> {
         let message_reader =
-            serialize_packed::read_message(data, capnp::message::ReaderOptions::new()).unwrap();
+            serialize_packed::read_message(data, default_reader_options()).unwrap();
         let column = message_reader.get_root::<api_capnp::column::Reader>()?;
         Column::deserialize_reader(column)
     }

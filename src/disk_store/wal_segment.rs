@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use capnp::serialize_packed;
 use locustdb_serialization::event_buffer::EventBuffer;
-use locustdb_serialization::wal_segment_capnp;
+use locustdb_serialization::{default_reader_options, wal_segment_capnp};
 
 #[derive(Debug)]
 pub struct WalSegment<'a> {
@@ -23,7 +23,7 @@ impl<'a> WalSegment<'a> {
 
     pub fn deserialize(data: &[u8]) -> capnp::Result<WalSegment<'static>> {
         let message_reader =
-            serialize_packed::read_message(data, capnp::message::ReaderOptions::new()).unwrap();
+            serialize_packed::read_message(data, default_reader_options()).unwrap();
         let wal_segment = message_reader.get_root::<wal_segment_capnp::wal_segment::Reader>()?;
         let id = wal_segment.get_id();
         let data = EventBuffer::deserialize_reader(wal_segment.get_data()?)?;

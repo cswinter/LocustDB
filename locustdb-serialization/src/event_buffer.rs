@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::api::AnyVal;
+use crate::default_reader_options;
 use crate::wal_segment_capnp::{self, table_segment_list};
 
 #[derive(Default, Clone, Debug)]
@@ -195,9 +196,7 @@ impl EventBuffer {
     }
 
     pub fn deserialize(data: &[u8]) -> capnp::Result<Self> {
-        let mut options = capnp::message::ReaderOptions::new();
-        options.traversal_limit_in_words(Some(256 * 1024 * 1024));
-        let message_reader = capnp::serialize_packed::read_message(data, options)?;
+        let message_reader = capnp::serialize_packed::read_message(data, default_reader_options())?;
         let table_segment_list =
             message_reader.get_root::<wal_segment_capnp::table_segment_list::Reader>()?;
         let data = EventBuffer::deserialize_reader(table_segment_list)?;
