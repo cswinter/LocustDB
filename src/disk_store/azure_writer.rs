@@ -79,7 +79,8 @@ impl BlobWriter for AzureBlobWriter {
 
     fn delete(&self, path: &Path) -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
         log::debug!("Deleting blob from Azure: {:?}", path);
-        todo!();
+        RT.block_on(self.blob_client(path).delete().into_future())?;
+        Ok(())
     }
 
     fn list(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error + Send + Sync + 'static>> {
