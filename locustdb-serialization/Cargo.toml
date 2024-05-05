@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 capnp = "0.19"
 serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+pretty_assertions = "1"
