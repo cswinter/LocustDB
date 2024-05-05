@@ -139,7 +139,9 @@ impl Storage {
         let mut wal_segments = Vec::new();
         let next_wal_id = meta_store.next_wal_id;
         log::info!("Recovering from wal checkpoint {}", next_wal_id);
-        for wal_file in writer.list(wal_dir).unwrap() {
+        let wal_files = writer.list(wal_dir).unwrap();
+        log::info!("Found {} wal segments", wal_files.len());
+        for wal_file in wal_files {
             let wal_data = writer.load(&wal_file).unwrap();
             perf_counter.disk_read_wal(wal_data.len() as u64);
             let wal_segment = WalSegment::deserialize(&wal_data).unwrap();
@@ -151,11 +153,11 @@ impl Storage {
                 wal_segment.data.tables.len(),
             );
             if wal_segment.id < next_wal_id {
-                if !readonly {
+                if readonly {
+                    log::info!("Skipping wal segment {}", wal_file.display());
+                } else {
                     writer.delete(&wal_file).unwrap();
                     log::info!("Deleting wal segment {}", wal_file.display());
-                } else {
-                    log::info!("Skipping wal segment {}", wal_file.display());
                 }
             } else {
                 wal_segments.push(wal_segment);

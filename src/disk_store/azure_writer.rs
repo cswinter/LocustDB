@@ -85,7 +85,10 @@ impl BlobWriter for AzureBlobWriter {
 
     fn list(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error + Send + Sync + 'static>> {
         log::debug!("Listing blobs from Azure: {:?}", path);
-        let prefix = path.to_string_lossy().to_string();
+        let mut prefix = path.to_string_lossy().to_string();
+        if !prefix.ends_with('/') {
+            prefix.push('/');
+        }
         let mut stream = self.container_client()
                 .list_blobs()
                 .prefix(prefix)
@@ -94,11 +97,9 @@ impl BlobWriter for AzureBlobWriter {
         let mut paths = Vec::new();
         while let Some(value) = RT.block_on(stream.next()) {
             let page = value?;
+            log::debug!("Got page of blobs: {:?}", page.blobs);
             for path in page.blobs.blobs() {
                 paths.push(PathBuf::from(path.name.as_str()));
-                if paths.len() < 100 {
-                    panic!("{:?}", path);
-                }
             }
         }
         Ok(paths)

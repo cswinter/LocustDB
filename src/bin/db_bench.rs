@@ -517,3 +517,10 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
 //   ingestion bytes:    1.02GiB
 // query
 //   files opened: 25
+
+
+
+// Testing azure (requires azure credentials):
+//
+// az login
+// RUST_BACKTRACE=1 RUST_LOG=info cargo run --bin db_bench --release -- --load-factor=6 --large-only --db-path=az://locustdbstoragetesting/dev/240505-lf6
