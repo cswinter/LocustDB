@@ -319,7 +319,7 @@ impl InnerLocustDB {
         }
 
         if let Some(s) = self.storage.as_ref() {
-            s.persist_partitions_delete_wal(new_partitions)
+            s.persist_partitions_delete_wal(new_partitions);
         }
 
         for (table, id, (range, parts)) in compactions {
@@ -519,6 +519,7 @@ impl InnerLocustDB {
             } else {
                 self.wal_flush();
                 *wal_size = 0;
+                wal_condvar.notify_all();
             }
         }
     }

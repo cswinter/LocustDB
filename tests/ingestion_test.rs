@@ -1,6 +1,7 @@
 use actix_web::dev::ServerHandle;
 use locustdb::logging_client::BufferFullPolicy;
 use locustdb_serialization::api::any_val_syntax::vf64;
+use locustdb_serialization::api::Column;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
@@ -8,6 +9,7 @@ use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use locustdb::{value_syntax::*, QueryOutput};
@@ -305,4 +307,91 @@ async fn test_persist_meta_tables() {
         _meta_tables.rows.as_ref().unwrap(),
         &[[Str("qwerty")], [Str("asdf")]],
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_many_concurrent_requests() {
+    let _ = env_logger::try_init();
+
+    let db_path: PathBuf = tempdir().unwrap().path().into();
+    let opts = locustdb::Options {
+        db_path: Some(db_path),
+        threads: 1,
+        max_wal_size_bytes: 512 * (1 << 10),
+        ..locustdb::Options::default()
+    };
+    let port = 8891;
+    let (_, _handle) = create_locustdb(&opts, port);
+
+    let thread_count = 20;
+    let value_count = 20000;
+    let sum = (0..value_count).map(|i| i as f64).sum::<f64>();
+    let mut logging_thread_handles = vec![];
+    for tid in 0..thread_count {
+        let thread_handle = thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let _guard = rt.enter();
+            let table = format!("table_{:02}", tid);
+            let addr = format!("http://localhost:{port}");
+            let mut log = locustdb::logging_client::LoggingClient::new(
+                Duration::from_millis(10),
+                &addr,
+                1 << 20,
+                BufferFullPolicy::Block,
+            );
+            for i in 0..value_count {
+                log.log(&table, [("value".to_string(), vf64(i))]);
+                if i % (value_count / 10) == 0 {
+                    rt.block_on(log.flush());
+                    log::info!("[logger {tid}] Logged {i} rows");
+                }
+            }
+            drop(log);
+            log::info!("[logger {tid}] completed");
+        });
+        logging_thread_handles.push(thread_handle);
+    }
+
+    let mut query_thread_handles = vec![];
+    for tid in 0..thread_count {
+        let thread_handle = thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let _guard = rt.enter();
+            let addr = format!("http://localhost:{port}");
+            let client = locustdb::logging_client::LoggingClient::new(
+                Duration::from_micros(10),
+                &addr,
+                0,
+                BufferFullPolicy::Block,
+            );
+            let query = format!("SELECT SUM(value) AS total FROM table_{:02}", tid);
+            let mut last_log_time = Instant::now();
+            loop {
+                if let Ok(result) = &rt.block_on(client.multi_query(vec![query.clone()])) {
+                    if let Some(Column::Float(vec)) = &result[0].columns.get("total") {
+                        if vec[0] == sum {
+                            log::info!("[query {}] Query result is correct", tid);
+                            break;
+                        } else if last_log_time.elapsed() > Duration::from_secs(5) {
+                            log::info!("[query {}] Query result is incorrect: {:?}", tid, vec);
+                            last_log_time = Instant::now();
+                        }
+                    }
+                }
+            }
+        });
+        query_thread_handles.push(thread_handle);
+    }
+
+    for (i, handle) in logging_thread_handles.into_iter().enumerate() {
+        log::info!("Waiting for logging thread {}", i);
+        handle.join().unwrap();
+    }
+    for (i, handle) in query_thread_handles.into_iter().enumerate() {
+        log::info!("Waiting for query thread {}", i);
+        handle.join().unwrap();
+    }
+    log::info!("All threads finished");
+    log::info!("Stopping server");
+    _handle.stop(true).await;
 }

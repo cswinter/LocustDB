@@ -21,6 +21,7 @@ use self::wal_segment::WalSegment;
 
 pub struct Table {
     name: String,
+    // `partitions` lock has to be always acquired before `buffer` lock
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     next_partition_id: AtomicU64,
     next_partition_offset: AtomicUsize,
@@ -50,10 +51,10 @@ impl Table {
     }
 
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
+        let buffer = self.buffer.lock().unwrap();
         let partitions = self.partitions.read().unwrap();
         let mut partitions: Vec<_> = partitions.values().cloned().collect();
         let offset = partitions.iter().map(|p| p.len()).sum::<usize>();
-        let buffer = self.buffer.lock().unwrap();
         if buffer.len() > 0 {
             partitions.push(Arc::new(
                 Partition::from_buffer(
