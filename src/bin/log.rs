@@ -1,4 +1,5 @@
 use locustdb_serialization::api::any_val_syntax::vf64;
+use locustdb_serialization::api::AnyVal;
 use rand::Rng;
 use std::mem;
 use std::time::Duration;
@@ -22,6 +23,10 @@ struct Opt {
     /// Logging interval in milliseconds
     #[structopt(long, name = "INTERVAL", default_value = "100")]
     interval: u64,
+
+    /// Prefix for table names
+    #[structopt(long, name = "PREFIX", default_value = "")]
+    table_prefix: String,
 }
 
 struct RandomWalk {
@@ -33,7 +38,7 @@ struct RandomWalk {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let Opt { addr, interval } = Opt::from_args();
+    let Opt { addr, interval, table_prefix } = Opt::from_args();
     let mut log = locustdb::logging_client::LoggingClient::new(
         Duration::from_secs(1),
         &addr,
@@ -43,7 +48,7 @@ async fn main() {
     let mut rng = rand::thread_rng();
     let mut random_walks = (0..5)
         .map(|i| RandomWalk {
-            name: format!("random_walk_{}", i),
+            name: format!("{table_prefix}random_walk_{}", i),
             curr_value: 0.0,
             interval: rng.gen_range(1, 10),
         })
@@ -67,7 +72,7 @@ async fn main() {
                     &walk.name,
                     [
                         ("value".to_string(), vf64(walk.curr_value)),
-                        ("step".to_string(), vf64((i / walk.interval) as f64)),
+                        ("step".to_string(), AnyVal::Int((i / walk.interval) as i64)),
                     ]
                     .iter()
                     .cloned(),

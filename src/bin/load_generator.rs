@@ -31,6 +31,10 @@ struct Opt {
     /// Number of columns logged per row
     #[structopt(long, name = "COLUMNS", default_value = "20")]
     columns: u64,
+
+    /// Prefix for table names
+    #[structopt(long, name = "PREFIX", default_value = "")]
+    table_prefix: String,
 }
 
 #[tokio::main]
@@ -42,10 +46,11 @@ async fn main() {
         tables: n_tables,
         rowcount,
         columns,
+        table_prefix,
     } = Opt::from_args();
     let rowcount = rowcount.unwrap_or_else(Vec::new);
     let tables: Vec<_> = (0..n_tables)
-        .map(|i| format!("{}_{i}", random_word::gen(random_word::Lang::En),))
+        .map(|i| format!("{table_prefix}{}_{i}", random_word::gen(random_word::Lang::En),))
         .collect();
     let mut log = locustdb::logging_client::LoggingClient::new(
         Duration::from_secs(1),
