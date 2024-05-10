@@ -857,6 +857,27 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     Box::new(|qp, lhs, rhs| qp.less_than(lhs, rhs)),
                     BasicType::String,
                 ),
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to comapre differently (value might be smaller but compares as equal)
+                        let rhs = int_to_float_cast(qp, rhs).unwrap();
+                        qp.less_than(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Float,
+                    type_rhs: BasicType::Integer,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        let lhs = int_to_float_cast(qp, lhs).unwrap();
+                        qp.less_than(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Integer,
+                    type_rhs: BasicType::Float,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
             ],
         ),
         (
@@ -891,6 +912,27 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     Box::new(|qp, lhs, rhs| qp.less_than(rhs, lhs)),
                     BasicType::String,
                 ),
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to comapre differently (value might be smaller but compares as equal)
+                        let rhs = int_to_float_cast(qp, rhs).unwrap();
+                        qp.less_than(rhs, lhs)
+                    }),
+                    type_lhs: BasicType::Float,
+                    type_rhs: BasicType::Integer,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        let lhs = int_to_float_cast(qp, lhs).unwrap();
+                        qp.less_than(rhs, lhs)
+                    }),
+                    type_lhs: BasicType::Integer,
+                    type_rhs: BasicType::Float,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
             ],
         ),
         (
@@ -908,6 +950,27 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     Box::new(|qp, lhs, rhs| qp.less_than_equals(rhs, lhs)),
                     BasicType::String,
                 ),
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to comapre differently (value might be smaller but compares as equal)
+                        let rhs = int_to_float_cast(qp, rhs).unwrap();
+                        qp.less_than_equals(rhs, lhs)
+                    }),
+                    type_lhs: BasicType::Float,
+                    type_rhs: BasicType::Integer,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        let lhs = int_to_float_cast(qp, lhs).unwrap();
+                        qp.less_than_equals(rhs, lhs)
+                    }),
+                    type_lhs: BasicType::Integer,
+                    type_rhs: BasicType::Float,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
             ],
         ),
         (
@@ -925,6 +988,27 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     Box::new(|qp, lhs, rhs| qp.equals(lhs, rhs)),
                     BasicType::String,
                 ),
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to comapre differently (value might be smaller but compares as equal)
+                        let rhs = int_to_float_cast(qp, rhs).unwrap();
+                        qp.equals(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Float,
+                    type_rhs: BasicType::Integer,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        let lhs = int_to_float_cast(qp, lhs).unwrap();
+                        qp.equals(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Integer,
+                    type_rhs: BasicType::Float,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
             ],
         ),
         (
@@ -942,6 +1026,27 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     Box::new(|qp, lhs, rhs| qp.not_equals(lhs, rhs)),
                     BasicType::String,
                 ),
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to comapre differently (value might be smaller but compares as equal)
+                        let rhs = int_to_float_cast(qp, rhs).unwrap();
+                        qp.not_equals(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Float,
+                    type_rhs: BasicType::Integer,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        let lhs = int_to_float_cast(qp, lhs).unwrap();
+                        qp.not_equals(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Integer,
+                    type_rhs: BasicType::Float,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
             ],
         ),
     ]
@@ -2077,4 +2182,19 @@ pub(super) fn prepare<'a>(
     };
     result.push(operation);
     Ok(result.last_buffer())
+}
+
+fn int_to_float_cast(
+    planner: &mut QueryPlanner,
+    plan: TypedBufferRef,
+) -> Result<TypedBufferRef, QueryError> {
+    let target_type = match plan.tag {
+        EncodingType::I64 => EncodingType::F64,
+        EncodingType::ScalarI64 => EncodingType::ScalarF64,
+        _ => Err(QueryError::TypeError(format!(
+            "Cannot cast {:?} to float",
+            plan.tag
+        )))?,
+    };
+    Ok(planner.cast(plan, target_type))
 }

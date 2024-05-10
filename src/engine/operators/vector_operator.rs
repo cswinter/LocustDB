@@ -173,6 +173,8 @@ fn short_type_name<T: ?Sized>() -> String {
 
 #[allow(clippy::branches_sharing_code)]
 pub mod operator {
+    use vector_operator::operators::scalar_i64_to_scalar_f64::ScalarI64ToScalarF64;
+
     use super::*;
 
     pub fn read_column_data<'a>(
@@ -1328,6 +1330,16 @@ pub mod operator {
                 "null_to_vec";
                 output: NullablePrimitive;
                 Ok(Box::new(NullToVec { input: input.any(), output, batch_size: 0 }))
+            }
+        } else if input.tag.is_constant() {
+            assert!(output.tag.is_constant(), "constant to non-constant conversion not supported");
+            if input.tag == EncodingType::ScalarI64 && output.tag == EncodingType::ScalarF64 {
+                return Ok(Box::new(ScalarI64ToScalarF64 {
+                    input: input.scalar_i64()?,
+                    output: output.scalar_f64()?,
+                }));
+            } else {
+                panic!("Scalar conversion from {:?} to {:?} is not implemented", input.tag, output.tag);
             }
         } else {
             if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {

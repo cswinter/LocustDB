@@ -57,6 +57,7 @@ mod pco_decode;
 mod propagate_nullability;
 mod scalar_f64;
 mod scalar_i64;
+mod scalar_i64_to_scalar_f64;
 mod scalar_str;
 mod select;
 mod slice_pack;

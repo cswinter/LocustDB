@@ -1693,6 +1693,13 @@ fn test_float_greater_than() {
     );
 }
 
+#[test]
+fn test_float_greater_than_int() {
+    test_query_ec(
+        "SELECT id, float FROM default WHERE float > 0 ORDER BY id LIMIT 2;",
+        &[vec![Int(0), Float(0.123412)], vec![Int(1), Float(0.0003)]],
+    );
+}
 
 // #[test]
 // fn test_missing_count() {
