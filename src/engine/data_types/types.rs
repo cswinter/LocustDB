@@ -361,13 +361,13 @@ impl BasicType {
 pub struct Type {
     pub decoded: BasicType,
     // this could just be of type `Codec`, using the identity codec instead of None
-    pub codec: Option<Codec>,
+    pub codec: Codec,
     pub is_scalar: bool,
     pub is_borrowed: bool,
 }
 
 impl Type {
-    pub fn new(basic: BasicType, codec: Option<Codec>) -> Type {
+    pub fn new(basic: BasicType, codec: Codec) -> Type {
         Type {
             decoded: basic,
             codec,
@@ -379,7 +379,7 @@ impl Type {
     pub fn encoded(codec: Codec) -> Type {
         Type {
             decoded: codec.decoded_type(),
-            codec: Some(codec),
+            codec,
             is_scalar: false,
             is_borrowed: false,
         }
@@ -388,40 +388,34 @@ impl Type {
     pub fn unencoded(basic: BasicType) -> Type {
         Type {
             decoded: basic,
-            codec: None,
+            codec: Codec::identity(basic),
             is_scalar: false,
             is_borrowed: false,
         }
     }
 
     pub fn bit_vec() -> Type {
-        Type::new(BasicType::Boolean, None).mutable()
+        Type::unencoded(BasicType::Boolean).mutable()
     }
 
     pub fn integer() -> Type {
-        Type::new(BasicType::Integer, None)
+        Type::unencoded(BasicType::Integer)
     }
 
     pub fn is_encoded(&self) -> bool {
-        self.codec.as_ref().map_or(false, |c| !c.is_identity())
+        !self.codec.is_identity()
     }
 
     pub fn is_summation_preserving(&self) -> bool {
-        self.codec
-            .as_ref()
-            .map_or(true, |c| c.is_summation_preserving())
+        self.codec.is_order_preserving()
     }
 
     pub fn is_elementwise_decodable(&self) -> bool {
-        self.codec
-            .as_ref()
-            .map_or(true, |c| c.is_elementwise_decodable())
+        self.codec.is_elementwise_decodable()
     }
 
     pub fn is_order_preserving(&self) -> bool {
-        self.codec
-            .as_ref()
-            .map_or(true, |c| c.is_order_preserving())
+        self.codec.is_order_preserving()
     }
 
     pub fn is_nullable(&self) -> bool {
@@ -431,22 +425,20 @@ impl Type {
     pub fn scalar(basic: BasicType) -> Type {
         Type {
             decoded: basic,
-            codec: None,
+            codec: Codec::identity(basic),
             is_scalar: true,
             is_borrowed: false,
         }
     }
 
     pub fn encoding_type(&self) -> EncodingType {
-        self.codec
-            .as_ref()
-            .map_or(self.decoded.to_encoded(), |x| x.encoding_type())
+        self.codec.encoding_type()
     }
 
     pub fn decoded(&self) -> Type {
         let mut result = (*self).clone();
         result.is_borrowed = !self.is_encoded();
-        result.codec = None;
+        result.codec = Codec::identity(self.decoded);
         result
     }
 

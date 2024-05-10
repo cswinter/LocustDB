@@ -592,6 +592,25 @@ fn test_min_max() {
 }
 
 #[test]
+fn test_max_of_unencoded_int() {
+    test_query_ec(
+        "SELECT MAX(largenum), MIN(largenum) FROM default;",
+        &[
+            vec![Int(9223372036854775807), Int(-9223372036854775807)]
+        ]
+    );
+}
+
+// TODO: currently fails with: `FatalError("aggregation not supported for type ((Null, U8), MaxF64)", )`
+// #[test]
+// fn test_max_of_nonexistant() {
+    // test_query_ec(
+        // "SELECT MAX(nonexistant_column), MIN(string_packed) FROM default;",
+        // &[]
+    // );
+// }
+
+#[test]
 fn test_top_n() {
     test_query_nyc(
         "SELECT passenger_count, trip_distance, total_amount FROM default ORDER BY total_amount DESC LIMIT 100;",

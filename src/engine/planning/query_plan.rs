@@ -678,7 +678,7 @@ pub fn prepare_aggregation(
         }
         Aggregator::SumI64 if matches!(plan_type.decoded, BasicType::Integer | BasicType::NullableInteger) => {
             if !plan_type.is_summation_preserving() {
-                plan = plan_type.codec.unwrap().decode(plan, planner);
+                plan = plan_type.codec.decode(plan, planner);
             }
             // PERF: determine dense groupings
             (
@@ -695,7 +695,7 @@ pub fn prepare_aggregation(
         Aggregator::SumI64 => {
             // This fell through from the previous case, so we know that this is a float summation.
             if !plan_type.is_summation_preserving() {
-                plan = plan_type.codec.unwrap().decode(plan, planner);
+                plan = plan_type.codec.decode(plan, planner);
             }
             // PERF: determine dense groupings
             (
@@ -711,7 +711,7 @@ pub fn prepare_aggregation(
         }
         Aggregator::MaxI64 | Aggregator::MinI64 if matches!(plan_type.decoded, BasicType::Integer | BasicType::NullableInteger) => {
             // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
-            plan = plan_type.codec.unwrap().decode(plan, planner);
+            plan = plan_type.codec.decode(plan, planner);
             (
                 planner.aggregate(plan, grouping_key, max_index, aggregator, EncodingType::I64),
                 Type::unencoded(BasicType::Integer),
@@ -720,7 +720,7 @@ pub fn prepare_aggregation(
         Aggregator::MaxI64 | Aggregator::MinI64 => {
             // This fell through from the previous case, so we know that this is a float summation.
             // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
-            plan = plan_type.codec.unwrap().decode(plan, planner);
+            plan = plan_type.codec.decode(plan, planner);
             let aggregator = match aggregator {
                 Aggregator::MaxI64 => Aggregator::MaxF64,
                 Aggregator::MinI64 => Aggregator::MinF64,
@@ -744,7 +744,7 @@ pub fn order_preserving(
         (plan, t)
     } else {
         let new_type = t.decoded();
-        (t.codec.unwrap().decode(plan, planner), new_type)
+        (t.codec.decode(plan, planner), new_type)
     }
 }
 
@@ -986,7 +986,7 @@ impl QueryPlan {
                             planner.null_vec_like(filter.into(), 0, EncodingType::Null)
                         }
                     };
-                    (plan, Type::new(BasicType::Null, None))
+                    (plan, Type::unencoded(BasicType::Null))
                 }
             },
             Func2(Or, ref lhs, ref rhs) => {
@@ -1071,9 +1071,7 @@ impl QueryPlan {
                         bail!(QueryError::TypeError,
                                   "Expected expression of type `String` as first argument to LIKE. Actual: {:?}", t)
                     }
-                    if let Some(codec) = t.codec {
-                        plan = codec.decode(plan, planner);
-                    }
+                    plan = t.codec.decode(plan, planner);
                     let type_out = Type::unencoded(BasicType::Boolean).mutable();
                     (planner.regex(plan.str()?, &pattern).into(), type_out)
                 }
@@ -1103,9 +1101,7 @@ impl QueryPlan {
                     if t.decoded != BasicType::String {
                         bail!(QueryError::TypeError, "Expected expression of type `String` as first argument to regex. Actual: {:?}", t)
                     }
-                    if let Some(codec) = t.codec {
-                        plan = codec.decode(plan, planner);
-                    }
+                    plan = t.codec.decode(plan, planner);
                     let type_out = Type::unencoded(BasicType::Boolean).mutable();
                     (planner.regex(plan.str()?, regex.as_str()).into(), type_out)
                 }
@@ -1143,7 +1139,7 @@ impl QueryPlan {
                     plan_lhs = if type_rhs.decoded == BasicType::Integer {
                         if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_lhs) {
                             planner
-                                .scalar_i64(type_rhs.codec.unwrap().encode_int(value), true)
+                                .scalar_i64(type_rhs.codec.encode_int(value), true)
                                 .into()
                         } else {
                             panic!("whoops");
@@ -1152,7 +1148,6 @@ impl QueryPlan {
                         type_rhs
                             .codec
                             .clone()
-                            .unwrap()
                             .encode_str(plan_lhs.scalar_str()?, planner)
                             .into()
                     } else {
@@ -1165,7 +1160,7 @@ impl QueryPlan {
                     plan_rhs = if type_lhs.decoded == BasicType::Integer {
                         if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_rhs) {
                             planner
-                                .scalar_i64(type_lhs.codec.unwrap().encode_int(value), true)
+                                .scalar_i64(type_lhs.codec.encode_int(value), true)
                                 .into()
                         } else {
                             panic!("whoops");
@@ -1174,19 +1169,14 @@ impl QueryPlan {
                         type_lhs
                             .codec
                             .clone()
-                            .unwrap()
                             .encode_str(plan_rhs.scalar_str()?, planner)
                             .into()
                     } else {
                         panic!("whoops");
                     };
                 } else {
-                    if let Some(codec) = type_lhs.codec {
-                        plan_lhs = codec.decode(plan_lhs, planner);
-                    }
-                    if let Some(codec) = type_rhs.codec {
-                        plan_rhs = codec.decode(plan_rhs, planner);
-                    }
+                    plan_lhs = type_lhs.codec.decode(plan_lhs, planner);
+                    plan_rhs = type_rhs.codec.decode(plan_rhs, planner);
                 }
 
                 let plan = (declaration.factory)(planner, plan_lhs, plan_rhs);
@@ -1204,10 +1194,7 @@ impl QueryPlan {
                     QueryPlan::compile_expr(inner, filter, columns, column_len, planner)?;
                 match ftype {
                     Func1Type::ToYear => {
-                        let decoded = match t.codec.clone() {
-                            Some(codec) => codec.decode(plan, planner),
-                            None => plan,
-                        };
+                        let decoded = t.codec.decode(plan, planner);
                         if t.decoded != BasicType::Integer {
                             bail!(
                                 QueryError::TypeError,
@@ -1218,10 +1205,7 @@ impl QueryPlan {
                         (planner.to_year(decoded), Type::integer())
                     }
                     Func1Type::Length => {
-                        let decoded = match t.codec.clone() {
-                            Some(codec) => codec.decode(plan, planner),
-                            None => plan,
-                        };
+                        let decoded = t.codec.decode(plan, planner);
                         if t.decoded != BasicType::String {
                             bail!(
                                 QueryError::TypeError,
@@ -1232,10 +1216,7 @@ impl QueryPlan {
                         (planner.length(decoded.str()?).into(), Type::integer())
                     }
                     Func1Type::Not => {
-                        let decoded = match t.codec.clone() {
-                            Some(codec) => codec.decode(plan, planner),
-                            None => plan,
-                        };
+                        let decoded = t.codec.decode(plan, planner);
                         if t.decoded != BasicType::Boolean {
                             bail!(
                                 QueryError::TypeError,
@@ -1420,7 +1401,7 @@ pub fn compile_grouping_key(
                 raw_grouping_key: filter.apply_filter(planner, constant0),
                 is_raw_grouping_key_order_preserving: true,
                 max: 0,
-                decode_plans: vec![(decoded, Type::new(BasicType::Null, None))],
+                decode_plans: vec![(decoded, Type::unencoded(BasicType::Null))],
                 encoded_group_by_placeholder,
             });
         }
@@ -1473,9 +1454,7 @@ pub fn compile_grouping_key(
             let sum = planner.add(decoded_group_by, offset.into());
             decoded_group_by = planner.cast(sum, gk_type.encoding_type());
         }
-        if let Some(codec) = gk_type.codec.clone() {
-            decoded_group_by = codec.decode(decoded_group_by, planner)
-        }
+        decoded_group_by = gk_type.codec.decode(decoded_group_by, planner);
 
         Ok(GroupByPlan {
             raw_grouping_key: gk_plan,
@@ -1511,9 +1490,7 @@ pub fn compile_grouping_key(
                 )
                 .into();
             let mut decode_plan = planner.cast(vals, query_plan.tag);
-            if let Some(codec) = plan_type.codec.clone() {
-                decode_plan = codec.decode(decode_plan, planner);
-            }
+            decode_plan = plan_type.codec.decode(decode_plan, planner);
             decode_plans.push((decode_plan, plan_type.decoded()));
         }
         Ok(GroupByPlan {
@@ -1611,7 +1588,9 @@ fn try_bitpacking(
                 let offset = planner.scalar_i64(-min, true);
                 planner.add(query_plan, offset.into()).i64()?
             } else if query_plan.is_null() {
-                planner.constant_expand(0, partition_len, EncodingType::I64).i64()?
+                planner
+                    .constant_expand(0, partition_len, EncodingType::I64)
+                    .i64()?
             } else {
                 planner.cast(query_plan, EncodingType::I64).i64()?
             };
@@ -1641,10 +1620,8 @@ fn try_bitpacking(
                     decode_plan = planner.add(decode_plan, offset.into());
                 }
                 decode_plan = planner.cast(decode_plan, plan_type.encoding_type());
-                if let Some(codec) = plan_type.codec.clone() {
-                    decode_plan = codec.decode(decode_plan, planner);
-                }
-                decode_plan 
+                decode_plan = plan_type.codec.decode(decode_plan, planner);
+                decode_plan
             };
             decode_plans.push((decode_plan, plan_type.decoded()));
 

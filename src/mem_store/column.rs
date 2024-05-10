@@ -71,7 +71,7 @@ impl DataSource for Column {
         }
     }
     fn full_type(&self) -> Type {
-        Type::new(self.basic_type(), Some(self.codec()))
+        Type::new(self.basic_type(), self.codec())
     }
 }
 

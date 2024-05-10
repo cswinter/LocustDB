@@ -138,9 +138,7 @@ impl NormalFormQuery {
                 partition_range.len(),
                 &mut planner,
             )?;
-            if let Some(codec) = plan_type.codec {
-                plan = codec.decode(plan, &mut planner);
-            }
+            plan = plan_type.codec.decode(plan, &mut planner);
             // TODO(perf): use more efficient solution than fuse_nulls for nullable columns (mostly requires better support in batch_merging)
             if plan.is_nullable() {
                 plan = planner.cast(plan, EncodingType::Val);
@@ -157,9 +155,7 @@ impl NormalFormQuery {
                 partition_range.len(),
                 &mut planner,
             )?;
-            if let Some(codec) = plan_type.codec {
-                plan = codec.decode(plan, &mut planner);
-            }
+            plan = plan_type.codec.decode(plan, &mut planner);
             if plan.is_nullable() {
                 plan = planner.fuse_nulls(plan);
             }
@@ -321,7 +317,7 @@ impl NormalFormQuery {
                     }
                 };
                 if t.is_encoded() {
-                    Ok(t.codec.unwrap().decode(compacted, &mut qp))
+                    Ok(t.codec.decode(compacted, &mut qp))
                 } else {
                     Ok(compacted)
                 }

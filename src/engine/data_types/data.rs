@@ -165,7 +165,7 @@ impl<'a> DataSource for BoxedData<'a> {
         vec![unsafe { mem::transmute::<&dyn Data, &dyn Data>(&**self) }]
     }
     fn full_type(&self) -> Type {
-        Type::new(self.encoding_type().cast_to_basic(), Some(self.codec()))
+        Type::new(self.encoding_type().cast_to_basic(), self.codec())
     }
 }
 
