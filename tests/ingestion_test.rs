@@ -311,7 +311,8 @@ async fn test_persist_meta_tables() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_many_concurrent_requests() {
-    let _ = env_logger::try_init();
+    let timeout_duration = Duration::from_secs(30);
+    let _ = env_logger::builder().is_test(true).try_init();
 
     let db_path: PathBuf = tempdir().unwrap().path().into();
     let opts = locustdb::Options {
@@ -366,6 +367,8 @@ async fn test_many_concurrent_requests() {
             );
             let query = format!("SELECT SUM(value) AS total FROM table_{:02}", tid);
             let mut last_log_time = Instant::now();
+            let mut last_sum = 0.0;
+            let mut last_update_time = Instant::now();
             loop {
                 if let Ok(result) = &rt.block_on(client.multi_query(vec![query.clone()])) {
                     if let Some(Column::Float(vec)) = &result[0].columns.get("total") {
@@ -375,8 +378,20 @@ async fn test_many_concurrent_requests() {
                         } else if last_log_time.elapsed() > Duration::from_secs(5) {
                             log::info!("[query {}] Query result is incorrect: {:?}", tid, vec);
                             last_log_time = Instant::now();
+                            if last_sum != vec[0] {
+                                last_sum = vec[0];
+                                last_update_time = Instant::now();
+                            }
                         }
                     }
+                }
+                if last_update_time.elapsed() > timeout_duration {
+                    panic!(
+                        "Query result hasn't change from {} for {:?}. Expecting {}",
+                        last_sum,
+                        last_update_time.elapsed(),
+                        sum
+                    );
                 }
             }
         });
