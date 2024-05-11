@@ -407,7 +407,7 @@ impl Type {
     }
 
     pub fn is_summation_preserving(&self) -> bool {
-        self.codec.is_order_preserving()
+        self.codec.is_summation_preserving()
     }
 
     pub fn is_elementwise_decodable(&self) -> bool {
