@@ -215,7 +215,7 @@ impl BackgroundWorker {
         }
         loop {
             self.flush().await;
-            if self.request_data.lock().unwrap().is_none() {
+            if self.request_data.lock().unwrap().is_none() && self.events.lock().unwrap().tables.is_empty() {
                 break;
             }
         }
