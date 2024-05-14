@@ -150,6 +150,7 @@ impl LoggingClient {
         }
         let mut events = self.events.lock().unwrap();
         let table = events.tables.entry(table.to_string()).or_default();
+        let mut timestamp_provided = false;
         for (column_name, value) in row {
             self.buffer_size
                 .fetch_add(8, std::sync::atomic::Ordering::SeqCst);
@@ -158,12 +159,15 @@ impl LoggingClient {
                 .entry(column_name.to_string())
                 .or_default()
                 .push(value, table.len);
+            timestamp_provided |= column_name == "timestamp";
         }
-        table
-            .columns
-            .entry("timestamp".to_string())
-            .or_default()
-            .push(AnyVal::Float(time_millis), table.len);
+        if !timestamp_provided {
+            table
+                .columns
+                .entry("timestamp".to_string())
+                .or_default()
+                .push(AnyVal::Float(time_millis), table.len);
+        }
         table.len += 1;
         self.total_events += 1;
     }
