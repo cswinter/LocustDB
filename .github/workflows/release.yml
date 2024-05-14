@@ -6,57 +6,58 @@ on:
       - '*'
 
 jobs:
-  publish:
-    name: Publish for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact_name: repl
-            asset_name: locustdb-linux-amd64
-          - os: macos-latest
-            artifact_name: repl
-            asset_name: locustdb-macos-amd64
+  # Fails, maybe because of OOM? https://github.com/cswinter/LocustDB/actions/runs/9053772291/job/24872870352
+  # publish:
+  #   name: Publish for ${{ matrix.os }}
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - os: ubuntu-latest
+  #           artifact_name: repl
+  #           asset_name: locustdb-linux-amd64
+  #         - os: macos-latest
+  #           artifact_name: repl
+  #           asset_name: locustdb-macos-amd64
 
-    steps:
-    - uses: actions/checkout@v2    
-    - uses: actions-rs/toolchain@v1
-      with:
-        components: rustfmt, clippy
+  #   steps:
+  #   - uses: actions/checkout@v2    
+  #   - uses: actions-rs/toolchain@v1
+  #     with:
+  #       components: rustfmt, clippy
 
-    - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+  #   - name: Cache cargo registry
+  #     uses: actions/cache@v1
+  #     with:
+  #       path: ~/.cargo/registry
+  #       key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+  #   - name: Cache cargo index
+  #     uses: actions/cache@v1
+  #     with:
+  #       path: ~/.cargo/git
+  #       key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+  #   - name: Cache cargo build
+  #     uses: actions/cache@v1
+  #     with:
+  #       path: target
+  #       key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Install Dependencies
-      run: ./system_dependencies.sh
+  #   - name: Install Dependencies
+  #     run: ./system_dependencies.sh
 
-    - name: Test
-      run: cargo test --release
+  #   - name: Test
+  #     run: cargo test --release
 
-    - name: Build
-      run: cargo build --release --locked
+  #   - name: Build
+  #     run: cargo build --release --locked
 
-    - name: Upload binaries to release
-      uses: svenstaro/upload-release-action@v1-release
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: target/release/${{ matrix.artifact_name }}
-        asset_name: ${{ matrix.asset_name }}
-        tag: ${{ github.ref }}
+  #   - name: Upload binaries to release
+  #     uses: svenstaro/upload-release-action@v1-release
+  #     with:
+  #       repo_token: ${{ secrets.GITHUB_TOKEN }}
+  #       file: target/release/${{ matrix.artifact_name }}
+  #       asset_name: ${{ matrix.asset_name }}
+  #       tag: ${{ github.ref }}
 
   publish-python:
     name: Publish Python for ${{ matrix.os }}
