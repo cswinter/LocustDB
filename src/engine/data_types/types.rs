@@ -271,6 +271,8 @@ impl EncodingType {
             match (self, other) {
                 (EncodingType::Val, _) => EncodingType::Val,
                 (_, EncodingType::Val) => EncodingType::Val,
+                (EncodingType::F64, EncodingType::I64) => EncodingType::Val,
+                (EncodingType::I64, EncodingType::F64) => EncodingType::Val,
                 (EncodingType::OptStr, EncodingType::Str) => EncodingType::OptStr,
                 (EncodingType::Str, EncodingType::OptStr) => EncodingType::OptStr,
                 (EncodingType::OptF64, EncodingType::F64) => EncodingType::OptF64,
