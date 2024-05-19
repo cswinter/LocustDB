@@ -72,7 +72,7 @@ async fn main() {
                     &walk.name,
                     [
                         ("value".to_string(), vf64(walk.curr_value)),
-                        ("step".to_string(), AnyVal::Int((i / walk.interval) as i64)),
+                        ("step".to_string(), AnyVal::Int((i / walk.interval) as i64 * (1 << 54))),
                     ]
                     .iter()
                     .cloned(),

@@ -122,6 +122,11 @@ impl Client {
                     if let Column::Xor(compressed) = col {
                         *col = Column::Float(xor_float::double::decode(&compressed[..]).unwrap());
                     };
+                    // JavaScript can't exactly represent integers larger than 2^53 and wasbm_bindgen will
+                    // error on conversion, so we (lossily) convert to floats here
+                    if let Column::Int(ints) = col {
+                        *col = Column::Float(ints.iter().map(|i| *i as f64).collect());
+                    }
                     if self.log_stats {
                         log::info!(
                             "[{}; {}]  size: {}B  ratio: {: >2.2}x  {:2.2} B/row  {:2.2} B/row (e2e all cols) {}",
