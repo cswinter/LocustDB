@@ -189,6 +189,7 @@ fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
         addr,
         64 * (1 << 20),
         BufferFullPolicy::Block,
+        None,
     );
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     if !opts.large_only {

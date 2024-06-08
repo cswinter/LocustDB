@@ -165,6 +165,7 @@ fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
         addr,
         64 * (1 << 20),
         BufferFullPolicy::Block,
+        None,
     );
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     for row in 0..rows {
@@ -222,6 +223,7 @@ async fn test_ingest_sparse_nullable() {
         // Set max buffer size to 0 to ensure we ingest one row at a time
         0,
         BufferFullPolicy::Block,
+        None,
     );
     let mut rng = rand::rngs::SmallRng::seed_from_u64(0);
     let mut vals = vec![];
@@ -284,6 +286,7 @@ async fn test_persist_meta_tables() {
         &addr,
         0,
         BufferFullPolicy::Block,
+        None,
     );
     log.log("qwerty", [("value".to_string(), vf64(1.0))]);
     log.log("asdf", [("value".to_string(), vf64(1.0))]);
@@ -340,6 +343,7 @@ async fn test_many_concurrent_requests() {
                 &addr,
                 1 << 20,
                 BufferFullPolicy::Block,
+                None,
             );
             for i in 0..value_count {
                 log.log(&table, [("value".to_string(), vf64(i))]);
@@ -365,6 +369,7 @@ async fn test_many_concurrent_requests() {
                 &addr,
                 0,
                 BufferFullPolicy::Block,
+                None,
             );
             let query = format!("SELECT SUM(value) AS total FROM table_{:02}", tid);
             let mut last_log_time = Instant::now();

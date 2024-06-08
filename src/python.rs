@@ -30,12 +30,13 @@ fn locustdb(m: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pymethods]
 impl Client {
     #[new]
-    #[pyo3(signature = (url, max_buffer_size_bytes = 128 * (1 << 20), block_when_buffer_full = false, flush_interval_seconds = 1))]
+    #[pyo3(signature = (url, max_buffer_size_bytes = 128 * (1 << 20), block_when_buffer_full = false, flush_interval_seconds = 1, bearer_token = None))]
     fn new(
         url: &str,
         max_buffer_size_bytes: usize,
         block_when_buffer_full: bool,
         flush_interval_seconds: u64,
+        bearer_token: Option<String>,
     ) -> Self {
         let _guard = RT.enter();
         Self {
@@ -48,6 +49,7 @@ impl Client {
                 } else {
                     BufferFullPolicy::Drop
                 },
+                bearer_token,
             ),
         }
     }

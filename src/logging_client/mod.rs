@@ -3,13 +3,15 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use locustdb_serialization::api::{AnyVal, Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest, MultiQueryResponse, QueryResponse};
+use locustdb_serialization::api::{
+    AnyVal, Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest,
+    MultiQueryResponse, QueryResponse,
+};
 use locustdb_serialization::event_buffer::EventBuffer;
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{self, CONTENT_TYPE};
 use tokio::select;
 use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
-
 
 pub struct LoggingClient {
     // Table -> Rows
@@ -24,6 +26,7 @@ pub struct LoggingClient {
     query_url: String,
     columns_url: String,
     buffer_full_policy: BufferFullPolicy,
+    bearer_token: Option<String>,
 }
 
 struct BackgroundWorker {
@@ -55,6 +58,7 @@ impl LoggingClient {
         locustdb_url: &str,
         max_buffer_size_bytes: usize,
         buffer_full_policy: BufferFullPolicy,
+        bearer_token: Option<String>,
     ) -> LoggingClient {
         let buffer: Arc<Mutex<EventBuffer>> = Arc::default();
         let shutdown = CancellationToken::new();
@@ -84,6 +88,7 @@ impl LoggingClient {
             query_url: format!("{locustdb_url}/multi_query_cols"),
             columns_url: format!("{locustdb_url}/columns"),
             buffer_full_policy,
+            bearer_token,
         }
     }
 
@@ -99,7 +104,7 @@ impl LoggingClient {
         let response = self
             .query_client
             .post(&self.query_url)
-            .header(CONTENT_TYPE, "application/json")
+            .headers(self.headers())
             .json(&request_body)
             .send()
             .await?;
@@ -113,7 +118,9 @@ impl LoggingClient {
         rsps.iter_mut().for_each(|rsp| {
             rsp.columns.iter_mut().for_each(|(_, col)| {
                 if let Column::Xor(data) = col {
-                    *col = Column::Float(locustdb_compression_utils::xor_float::double::decode(&data[..]).unwrap())
+                    *col = Column::Float(
+                        locustdb_compression_utils::xor_float::double::decode(&data[..]).unwrap(),
+                    )
                 }
             });
         });
@@ -186,7 +193,7 @@ impl LoggingClient {
         let response = self
             .query_client
             .post(&self.columns_url)
-            .header(CONTENT_TYPE, "application/json")
+            .headers(self.headers())
             .json(&request_body)
             .send()
             .await?;
@@ -205,6 +212,15 @@ impl LoggingClient {
             tokio::time::sleep(self.flush_interval).await;
         }
     }
+
+    fn headers(&self) -> header::HeaderMap {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        if let Some(bearer_token) = self.bearer_token.as_ref() {
+            headers.insert("Authorization", bearer_token.parse().unwrap());
+        }
+        headers
+    }
 }
 
 impl BackgroundWorker {
@@ -219,7 +235,9 @@ impl BackgroundWorker {
         }
         loop {
             self.flush().await;
-            if self.request_data.lock().unwrap().is_none() && self.events.lock().unwrap().tables.is_empty() {
+            if self.request_data.lock().unwrap().is_none()
+                && self.events.lock().unwrap().tables.is_empty()
+            {
                 break;
             }
         }

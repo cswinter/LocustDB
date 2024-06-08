@@ -44,6 +44,7 @@ async fn main() {
         &addr,
         1 << 50,
         BufferFullPolicy::Block,
+        None,
     );
     let mut rng = rand::thread_rng();
     let mut random_walks = (0..5)

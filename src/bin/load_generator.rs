@@ -57,6 +57,7 @@ async fn main() {
         &addr,
         1 << 28,
         BufferFullPolicy::Block,
+        None,
     );
     let mut interval = time::interval(Duration::from_millis(interval));
 
