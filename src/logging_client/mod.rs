@@ -8,7 +8,7 @@ use locustdb_serialization::api::{
     MultiQueryResponse, QueryResponse,
 };
 use locustdb_serialization::event_buffer::EventBuffer;
-use reqwest::header::{self, CONTENT_TYPE};
+use reqwest::header::{self, AUTHORIZATION, CONTENT_TYPE};
 use tokio::select;
 use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
@@ -217,7 +217,7 @@ impl LoggingClient {
         let mut headers = header::HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         if let Some(bearer_token) = self.bearer_token.as_ref() {
-            headers.insert("Authorization", bearer_token.parse().unwrap());
+            headers.insert(AUTHORIZATION, bearer_token.parse().unwrap());
         }
         headers
     }
