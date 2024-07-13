@@ -11,6 +11,7 @@
     proc_macro_hygiene,
     let_chains,
     trait_upcasting,
+    duration_constructors,
 )]
 #[macro_use]
 extern crate failure_derive;
