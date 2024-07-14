@@ -27,6 +27,10 @@ struct Opt {
     /// Prefix for table names
     #[structopt(long, name = "PREFIX", default_value = "")]
     table_prefix: String,
+
+    /// Interval multiplier for step
+    #[structopt(long, name = "STEP_MULTIPLIER", default_value = "1")]
+    step_interval: i64,
 }
 
 struct RandomWalk {
@@ -38,7 +42,7 @@ struct RandomWalk {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let Opt { addr, interval, table_prefix } = Opt::from_args();
+    let Opt { addr, interval, table_prefix, step_interval } = Opt::from_args();
     let mut log = locustdb::logging_client::LoggingClient::new(
         Duration::from_secs(1),
         &addr,
@@ -73,7 +77,7 @@ async fn main() {
                     &walk.name,
                     [
                         ("value".to_string(), vf64(walk.curr_value)),
-                        ("step".to_string(), AnyVal::Int((i / walk.interval) as i64 * (1 << 54))),
+                        ("step".to_string(), AnyVal::Int((i / walk.interval) as i64 * step_interval)),
                     ]
                     .iter()
                     .cloned(),
