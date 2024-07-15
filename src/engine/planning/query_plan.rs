@@ -1450,6 +1450,19 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
         UnpackStrings { .. } | UnhexpackStrings { .. } | Length { .. } => None,
         NullVec { .. } => Some((0, 0)),
+        CheckedMultiply { ref lhs, ref rhs, .. } => {
+            let (min_lhs, max_lhs) = encoding_range(lhs, qp)?;
+            let (min_rhs, max_rhs) = encoding_range(rhs, qp)?;
+            // TODO: overflow
+            let p1 = min_lhs * min_rhs;
+            let p2 = min_lhs * max_rhs;
+            let p3 = max_lhs * min_rhs;
+            let p4 = max_lhs * max_rhs;
+            let min = p1.min(p2).min(p3).min(p4);
+            let max = p1.max(p2).max(p3).max(p4);
+            Some((min, max))
+        }
+        ScalarI64 { value, .. } => Some((value, value)),
         ref plan => {
             error!("encoding_range not implement for {:?}", plan);
             None
