@@ -1413,6 +1413,12 @@ pub mod operator {
                 input: NullableInteger, grouping: Integer, aggregator: IntAggregator;
                 Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
             }
+        } else if matches!(aggregator, Aggregator::Count) {
+            reify_types! {
+                "aggregation";
+                input: PrimitiveNoU64, grouping: Integer;
+                Ok(Box::new(Aggregate { input, grouping, output: output.into(), max_index, a: PhantomData::<Count> }))
+            }
         } else {
             reify_types! {
                 "aggregation";
