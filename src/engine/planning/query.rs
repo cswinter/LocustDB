@@ -307,7 +307,9 @@ impl NormalFormQuery {
                     | Aggregator::MinI64
                     | Aggregator::SumF64
                     | Aggregator::MaxF64
-                    | Aggregator::MinF64 => qp.compact(aggregate, selector),
+                    | Aggregator::MinF64 => {
+                        qp.compact(aggregate, selector)
+                    }
                     Aggregator::Count => {
                         if input_nullable {
                             qp.compact(aggregate, selector)

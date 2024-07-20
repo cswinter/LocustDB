@@ -59,6 +59,12 @@ fn merge_aggregate<T: Combinable<T>>(
     right: &[T],
     aggregator: Aggregator,
 ) -> Result<Vec<T>, QueryError> {
+    if left.is_empty() {
+        return Ok(right.to_vec());
+    } else if right.is_empty() {
+        return Ok(left.to_vec());
+    }
+
     let mut result = Vec::with_capacity(ops.len());
     let mut i = 0;
     let mut j = 0;

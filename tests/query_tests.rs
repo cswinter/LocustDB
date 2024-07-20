@@ -856,6 +856,14 @@ fn test_null_aggregators2_correct() {
     );
 }
 
+// TODO: should return single row of null/0s?
+#[test]
+fn test_null_aggregators3() {
+    test_query_ec(
+"SELECT MIN(_step) AS min, MAX(_step) AS max, COUNT(_step) AS count FROM default WHERE _step IS NOT NULL",
+&[])
+}
+
 // TODO: count of all nulls should be 0, not null
 #[ignore]
 #[test]
@@ -863,6 +871,25 @@ fn test_null_count() {
     test_query_ec(
         "SELECT id/5, COUNT(this_is_not_a_column) FROM default ORDER BY id/5;",
         &[vec![Int(0), Null], vec![Int(1), Null]],
+    );
+}
+
+// TODO: should return single row of null/0s?
+#[test]
+fn test_multiply_null_by_constant() {
+    test_query_ec(
+        "SELECT MIN(_step), MAX(_step), MIN(value_loss), MAX(value_loss), COUNT(value_loss), SUM(value_loss), _step * 493 / 20004864 FROM default WHERE _step IS NOT NULL AND value_loss IS NOT NULL",
+        &[],
+    );
+}
+
+// TODO: lots of combinations of null and other types not supported for multiply/divide/...
+#[ignore]
+#[test]
+fn test_multiply_null() {
+    test_query_ec(
+        "SELECT MIN(_step), 493 * _step, _step / 10 FROM default WHERE _step IS NOT NULL AND value_loss IS NOT NULL",
+        &[],
     );
 }
 

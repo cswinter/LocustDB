@@ -311,6 +311,11 @@ impl<'a> Scratchpad<'a> {
         self.null_maps[alias.i] = self.null_maps[original.i];
     }
 
+    pub fn alias_data<T>(&mut self, original: BufferRef<Nullable<T>>, alias: BufferRef<T>) {
+        // should probably do cycle check
+        self.aliases[alias.i] = Some(original.i);
+    }
+
     pub fn is_alias<T>(&self, i: BufferRef<T>, j: BufferRef<T>) -> bool {
         self.resolve(&i) == self.resolve(&j)
     }

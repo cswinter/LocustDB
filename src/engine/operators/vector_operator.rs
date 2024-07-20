@@ -24,6 +24,7 @@ use super::column_ops::*;
 use super::combine_null_maps::CombineNullMaps;
 use super::compact::Compact;
 use super::compact_nullable::CompactNullable;
+use super::compact_nullable_nullable::CompactNullableNullable;
 use super::comparison_operators::*;
 use super::constant::Constant;
 use super::constant_expand::ConstantExpand;
@@ -52,8 +53,8 @@ use super::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
 use super::merge_drop::MergeDrop;
 use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
-use super::nonzero_compact::NonzeroCompact;
-use super::nonzero_indices::NonzeroIndices;
+use super::nonzero_compact::{NonzeroCompact, NonzeroCompactNullable};
+use super::nonzero_indices::{NonzeroIndices, NonzeroNonnullIndices};
 use super::null_to_val::NullToVal;
 use super::null_to_vec::NullToVec;
 use super::null_vec::NullVec;
@@ -1497,10 +1498,18 @@ pub mod operator {
         data: TypedBufferRef,
         compacted: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "nonzero_compact";
-            data, compacted: Integer;
-            Ok(Box::new(NonzeroCompact { data, compacted }))
+        if data.is_nullable() {
+            reify_types! {
+                "nonzero_compact";
+                data: NullableInteger;
+                Ok(Box::new(NonzeroCompactNullable { data, compacted: compacted.into() }))
+            }
+        } else {
+            reify_types! {
+                "nonzero_compact";
+                data, compacted: Integer;
+                Ok(Box::new(NonzeroCompact { data, compacted }))
+            }
         }
     }
 
@@ -1508,10 +1517,18 @@ pub mod operator {
         input: TypedBufferRef,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "nonzero_indices";
-            input: Integer, output: Integer;
-            Ok(Box::new(NonzeroIndices { input, output, offset: 0, }))
+        if input.is_nullable() {
+            reify_types! {
+                "nonzero_indices";
+                input: NullableInteger, output: Integer;
+                Ok(Box::new(NonzeroNonnullIndices { input, output, offset: 0, }))
+            }
+        } else {
+            reify_types! {
+                "nonzero_indices";
+                input: Integer, output: Integer;
+                Ok(Box::new(NonzeroIndices { input, output, offset: 0, }))
+            }
         }
     }
 
@@ -1520,7 +1537,13 @@ pub mod operator {
         select: TypedBufferRef,
         compacted: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        if data.is_nullable() {
+        if data.is_nullable() && select.is_nullable() {
+            reify_types! {
+                "compact_nullable_nullable";
+                data, compacted: NullablePrimitive, select: NullableInteger;
+                Ok(Box::new(CompactNullableNullable { data, select, compacted }))
+            }
+        } else if data.is_nullable() {
             reify_types! {
                 "compact_nullable";
                 data, compacted: NullablePrimitive, select: Integer;

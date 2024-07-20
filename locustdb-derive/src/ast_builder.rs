@@ -271,7 +271,6 @@ fn parse_type(field_ident: &Ident, type_def: String) -> Option<(Expr, Option<FnA
         static ref T: Regex = Regex::new(r#"t = "(.*)""#).unwrap();
         static ref BASE: Regex = Regex::new(r#"base=([^;]*)"#).unwrap();
         static ref NULL: Regex = Regex::new(r#"null=([^;]*)"#).unwrap();
-
     }
 
     if let Some(t) = T.captures(&type_def) {

@@ -69,6 +69,15 @@ impl BufferRef<Any> {
     fn transmute<T>(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
 }
 
+impl From<TypedBufferRef> for BufferRef<u8> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<u8> { buffer.u8().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<u16> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<u16> { buffer.u16().unwrap() }
+}
+
+
 impl From<TypedBufferRef> for BufferRef<u32> {
     fn from(buffer: TypedBufferRef) -> BufferRef<u32> { buffer.u32().unwrap() }
 }
