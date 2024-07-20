@@ -404,6 +404,7 @@ impl NormalFormQuery {
             *plan = qp.collect(*plan, &format!("grouping_{}", i));
         }
         for (i, (plan, _)) in aggregation_cols.iter_mut().enumerate() {
+            // TODO: should not fully discard null information, requires hacks in batch merging that can yield spurious nulls in the output when there are non-null values identical to the null sentinel
             if plan.is_nullable() {
                 *plan = qp.fuse_nulls(*plan);
             }
@@ -474,11 +475,13 @@ impl Query {
         let mut select_colnames = Vec::new();
         let mut final_select_ordering = Vec::new();
         for col_info in &self.select {
+            info!("Processing column: {:?}", col_info);
             let (full_expr, aggregates) = Query::extract_aggregators(
                 &col_info.expr,
                 &mut aggregate_colnames,
                 &col_info.name,
             )?;
+            info!("Full expression: {:?}", full_expr);
             if aggregates.is_empty() {
                 final_select_ordering.push(ResultColumn::Proj(select.len()));
                 let column_name = format!("_cs{}", select_colnames.len());
@@ -492,6 +495,7 @@ impl Query {
                     name: col_info.name.clone(),
                 });
             } else {
+                info!("Aggregates: {:?}", aggregates);
                 final_select_ordering.push(ResultColumn::Agg(aggregate.len()));
                 aggregate.extend(aggregates);
                 final_projection.push(ColumnInfo {

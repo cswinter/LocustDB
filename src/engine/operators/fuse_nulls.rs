@@ -4,6 +4,9 @@ use crate::bitvec::*;
 use crate::engine::*;
 use std::i64;
 
+
+pub const I64_NULL: i64 = i64::MIN;
+
 pub struct FuseNullsI64 {
     pub input: BufferRef<Nullable<i64>>,
     pub fused: BufferRef<i64>,
@@ -18,7 +21,7 @@ impl<'a> VecOperator<'a> for FuseNullsI64 {
             if (&*present).is_set(i) {
                 fused.push(input[i]);
             } else {
-                fused.push(i64::MIN);
+                fused.push(I64_NULL);
             }
         }
         Ok(())
@@ -255,7 +258,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for UnfuseIntNulls<T> {
     }
 }
 
-
+// TODO: remove OptF64 type, use special NaN value instead?
 pub struct FuseNullsF64 {
     pub input: BufferRef<Nullable<OrderedFloat<f64>>>,
     pub fused: BufferRef<Option<OrderedFloat<f64>>>,

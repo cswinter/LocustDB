@@ -657,6 +657,8 @@ pub fn prepare_aggregation(
     aggregator: Aggregator,
     planner: &mut QueryPlanner,
 ) -> Result<(TypedBufferRef, Type), QueryError> {
+    let nullable = plan.is_nullable() || plan.is_null();
+    let decoded_type = plan_type.decoded;
     Ok(match aggregator {
         Aggregator::Count => {
             let plan = if plan.tag == EncodingType::ScalarI64 {
@@ -664,6 +666,7 @@ pub fn prepare_aggregation(
             } else {
                 plan
             };
+            let aggregate_type = if nullable { EncodingType::NullableU32 } else { EncodingType::U32 };
             (
                 planner.aggregate(
                     plan,
@@ -671,12 +674,12 @@ pub fn prepare_aggregation(
                     max_index,
                     // TODO: overflow
                     Aggregator::Count,
-                    EncodingType::U32,
+                    aggregate_type,
                 ),
-                Type::encoded(Codec::integer_cast(EncodingType::U32)),
+                Type::encoded(Codec::integer_cast(aggregate_type)),
             )
         }
-        Aggregator::SumI64 if matches!(plan_type.decoded, BasicType::Integer | BasicType::NullableInteger) => {
+        Aggregator::SumI64 if matches!(decoded_type, BasicType::Integer | BasicType::NullableInteger) => {
             if !plan_type.is_summation_preserving() {
                 plan = plan_type.codec.decode(plan, planner);
             }
@@ -687,9 +690,9 @@ pub fn prepare_aggregation(
                     grouping_key,
                     max_index,
                     Aggregator::SumI64,
-                    EncodingType::I64,
+                    plan_type.decoded().encoding_type(),
                 ),
-                Type::unencoded(BasicType::Integer),
+                Type::unencoded(plan_type.decoded),
             )
         }
         Aggregator::SumI64 => {
@@ -697,6 +700,7 @@ pub fn prepare_aggregation(
             if !plan_type.is_summation_preserving() {
                 plan = plan_type.codec.decode(plan, planner);
             }
+            let aggregate_type = if nullable { BasicType::NullableFloat } else { BasicType::Float };
             // PERF: determine dense groupings
             (
                 planner.aggregate(
@@ -704,17 +708,18 @@ pub fn prepare_aggregation(
                     grouping_key,
                     max_index,
                     Aggregator::SumF64,
-                    EncodingType::F64,
+                    aggregate_type.to_encoded(),
                 ),
-                Type::unencoded(BasicType::Float),
+                Type::unencoded(aggregate_type),
             )
         }
         Aggregator::MaxI64 | Aggregator::MinI64 if matches!(plan_type.decoded, BasicType::Integer | BasicType::NullableInteger) => {
             // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
             plan = plan_type.codec.decode(plan, planner);
+            trace!("PLANNING MAX/MIN I64 {:?} {:?}", plan_type.decoded(), plan_type.decoded.to_encoded());
             (
-                planner.aggregate(plan, grouping_key, max_index, aggregator, EncodingType::I64),
-                Type::unencoded(BasicType::Integer),
+                planner.aggregate(plan, grouping_key, max_index, aggregator, plan_type.decoded.to_encoded()),
+                Type::unencoded(plan_type.decoded),
             )
         }
         Aggregator::MaxI64 | Aggregator::MinI64 => {
@@ -726,9 +731,10 @@ pub fn prepare_aggregation(
                 Aggregator::MinI64 => Aggregator::MinF64,
                 _ => unreachable!(),
             };
+            let aggregate_type = if nullable { BasicType::NullableFloat } else { BasicType::Float };
             (
-                planner.aggregate(plan, grouping_key, max_index, aggregator, EncodingType::F64),
-                Type::unencoded(BasicType::Float),
+                planner.aggregate(plan, grouping_key, max_index, aggregator, aggregate_type.to_encoded()),
+                Type::unencoded(aggregate_type),
             )
         }
         Aggregator::SumF64 => panic!("All sums are represented as SumI64 by the parser since it does not have access to type information"),
@@ -859,7 +865,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                 ),
                 Function2 {
                     factory: Box::new(|qp, lhs, rhs| {
-                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to comapre differently (value might be smaller but compares as equal)
+                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to compare differently (value might be smaller but compares as equal)
                         let rhs = int_to_float_cast(qp, rhs).unwrap();
                         qp.less_than(lhs, rhs)
                     }),
@@ -1068,14 +1074,21 @@ impl QueryPlan {
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
+                    trace!("Found column {:?}: {:?}", name, c);
                     let mut plan = planner.column_section(name, 0, c.range(), c.encoding_type());
                     let mut t = c.full_type();
+                    trace!("Column {:?} has type {:?}", name, t);
                     if !c.codec().is_elementwise_decodable() {
                         let (codec, fixed_width) = c.codec().ensure_fixed_width(plan, planner);
+                        trace!("Elementwise decoding column {:?} results in codec {:?} for {:?}", name, codec, fixed_width);
+                        let decoded = t.decoded;
                         t = Type::encoded(codec);
+                        // TODO: hacky? required because partial `coded` does not take into account base type (e.g., assembled nullable). better fix might be to adjust Codec to take `fixed_width` expression as input for column sections (and also remove popped column sections)
+                        t.decoded = decoded;
                         plan = fixed_width;
                     }
                     plan = filter.apply_filter(planner, plan);
+                    trace!("Column {:?} final type {:?}", name, t);
                     (plan, t)
                 }
                 None => {
@@ -1450,7 +1463,9 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         AssembleNullable { ref data, .. } => encoding_range(data, qp),
         UnpackStrings { .. } | UnhexpackStrings { .. } | Length { .. } => None,
         NullVec { .. } => Some((0, 0)),
-        CheckedMultiply { ref lhs, ref rhs, .. } => {
+        CheckedMultiply {
+            ref lhs, ref rhs, ..
+        } => {
             let (min_lhs, max_lhs) = encoding_range(lhs, qp)?;
             let (min_rhs, max_rhs) = encoding_range(rhs, qp)?;
             // TODO: overflow
@@ -1953,7 +1968,7 @@ pub(super) fn prepare<'a>(
             aggregator,
             aggregate,
         } => {
-            if aggregate.tag == EncodingType::F64 {
+            if aggregate.tag == EncodingType::F64 || aggregate.tag == EncodingType::NullableF64 {
                 operator::aggregate_f64(plan, grouping_key, max_index, aggregator, aggregate)?
             } else {
                 operator::aggregate(plan, grouping_key, max_index, aggregator, aggregate)?

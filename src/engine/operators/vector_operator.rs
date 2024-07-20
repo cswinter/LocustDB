@@ -22,6 +22,7 @@ use super::buffer_stream::*;
 use super::collect::Collect;
 use super::column_ops::*;
 use super::combine_null_maps::CombineNullMaps;
+use super::compact_nullable::CompactNullable;
 use super::compact::Compact;
 use super::comparison_operators::*;
 use super::constant::Constant;
@@ -1408,15 +1409,23 @@ pub mod operator {
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
         if input.is_nullable() {
-            reify_types! {
-                "nullable_aggregation";
-                input: NullableInteger, grouping: Integer, aggregator: IntAggregator;
-                Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
+            if matches!(aggregator, Aggregator::Count) {
+                reify_types! {
+                    "nullable_aggregation";
+                    input: NullablePrimitive, grouping: Integer;
+                    Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: PhantomData::<Count> }))
+                }
+            } else {
+                reify_types! {
+                    "nullable_aggregation";
+                    input: NullableInteger, grouping: Integer, aggregator: IntAggregator;
+                    Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
+                }
             }
         } else if matches!(aggregator, Aggregator::Count) {
             reify_types! {
                 "aggregation";
-                input: PrimitiveNoU64, grouping: Integer;
+                input: Primitive, grouping: Integer;
                 Ok(Box::new(Aggregate { input, grouping, output: output.into(), max_index, a: PhantomData::<Count> }))
             }
         } else {
@@ -1512,10 +1521,18 @@ pub mod operator {
         select: TypedBufferRef,
         compacted: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "compact";
-            data, compacted: Primitive, select: Integer;
-            Ok(Box::new(Compact { data, select, compacted }))
+        if data.is_nullable() {
+            reify_types! {
+                "compact_nullable";
+                data, compacted: NullablePrimitive, select: Integer;
+                Ok(Box::new(CompactNullable { data, select, compacted }))
+            }
+        } else {
+            reify_types! {
+                "compact";
+                data, compacted: Primitive, select: Integer;
+                Ok(Box::new(Compact { data, select, compacted }))
+            }
         }
     }
 

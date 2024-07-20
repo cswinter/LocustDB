@@ -601,14 +601,25 @@ fn test_max_of_unencoded_int() {
     );
 }
 
-// TODO: currently fails with: `FatalError("aggregation not supported for type ((Null, U8), MaxF64)", )`
-// #[test]
-// fn test_max_of_nonexistant() {
-    // test_query_ec(
-        // "SELECT MAX(nonexistant_column), MIN(string_packed) FROM default;",
-        // &[]
-    // );
-// }
+#[test]
+fn test_max_of_nonexistant() {
+    test_query_ec(
+        "SELECT MAX(nonexistant_column), MIN(largenum) FROM default;",
+        &[
+            vec![Null, Int(-9223372036854775807)]
+        ]
+    );
+}
+
+// TODO: not currently supporting min/max operators on strings
+#[ignore]
+#[test]
+fn test_max_of_string() {
+    test_query_ec(
+        "SELECT MAX(nonexistant_column), MIN(string_packed) FROM default;",
+        &[]
+    );
+}
 
 #[test]
 fn test_top_n() {
@@ -793,7 +804,7 @@ fn test_order_by_multiple() {
 }
 
 #[test]
-fn test_null_aggregators() {
+fn test_null_aggregators1() {
     test_query_ec(
         "SELECT id/5, SUM(nullable_int), COUNT(nullable_int2), MIN(nullable_int), MAX(nullable_int2)
          FROM default
@@ -802,6 +813,63 @@ fn test_null_aggregators() {
             vec![Int(0), Int(-31), Int(3), Int(-40), Int(9)],
             vec![Int(1), Int(33), Int(3), Int(13), Int(14)],
         ],
+    );
+}
+
+#[test]
+fn test_null_sum() {
+    test_query_ec(
+        "SELECT id/5, SUM(nullable_int)
+         FROM default
+         ORDER BY id/5;",
+        &[
+            vec![Int(0), Int(-31)],
+            vec![Int(1), Int(33)],
+        ],
+    );
+}
+
+#[test]
+fn test_null_aggregators2() {
+    test_query_ec(
+        "SELECT id/2, SUM(nullable_int), COUNT(nullable_int2), MIN(nullable_int), MAX(nullable_int2)
+         FROM default
+         ORDER BY id/2;",
+        &[
+            vec![Int(0), Int(-41), Int(1), Int(-40), Int(-40)],
+            vec![Int(1), Null, Int(1), Null, Int(0)],
+            vec![Int(2), Int(10), Int(2), Int(10), Int(9)],
+            vec![Int(3), Int(20), Null, Int(20), Null],
+            vec![Int(4), Int(13), Int(2), Int(13), Int(14)],
+        ],
+    );
+}
+
+#[ignore]
+#[test]
+fn test_null_aggregators2_correct() {
+    test_query_ec(
+        "SELECT id/2, SUM(nullable_int), COUNT(nullable_int2), MIN(nullable_int), MAX(nullable_int2)
+         FROM default
+         ORDER BY id/2;",
+        &[
+            vec![Int(0), Int(-41), Int(1), Int(-40), Int(-40)],
+            vec![Int(1), Null, Int(1), Null, Int(0)],
+            vec![Int(2), Int(10), Int(2), Int(10), Int(9)],
+            vec![Int(3), Int(20), Int(0), Int(20), Null],
+            vec![Int(4), Int(13), Int(2), Int(13), Int(14)],
+        ],
+    );
+}
+
+
+// TODO: count of all nulls should be 0, not null
+#[ignore]
+#[test]
+fn test_null_count() {
+    test_query_ec(
+        "SELECT id/5, COUNT(this_is_not_a_column) FROM default ORDER BY id/5;",
+        &[vec![Int(0), Null], vec![Int(1), Null]],
     );
 }
 

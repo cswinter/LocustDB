@@ -114,6 +114,8 @@ impl IntegerColumn {
             }
         };
 
+        info!("CREATE_COL: name: {}, len: {}, offset: {}, min: {}, max: {}, delta_encode: {}, null_map: {:?}, t: {:?}, codec: {:?}", name, len, offset, min, max, delta_encode, null_map, t, codec);
+        
         Column::new(
             name,
             len,
