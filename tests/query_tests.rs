@@ -838,6 +838,7 @@ fn test_null_aggregators2() {
     );
 }
 
+// TODO: count of all nulls should be 0, not null
 #[ignore]
 #[test]
 fn test_null_aggregators2_correct() {
