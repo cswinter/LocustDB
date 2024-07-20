@@ -718,7 +718,6 @@ pub fn prepare_aggregation(
             // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
             plan = plan_type.codec.decode(plan, planner);
             let aggregate_type = if nullable { BasicType::NullableInteger } else { BasicType::Integer };
-            trace!("PLANNING MAX/MIN I64 {:?} {:?}", plan_type.decoded(), plan_type.decoded.to_encoded());
             (
                 planner.aggregate(plan, grouping_key, max_index, aggregator, aggregate_type.to_encoded()),
                 Type::unencoded(aggregate_type),
@@ -1076,18 +1075,10 @@ impl QueryPlan {
         Ok(match *expr {
             ColName(ref name) => match columns.get::<str>(name.as_ref()) {
                 Some(c) => {
-                    trace!("Found column {:?}: {:?}", name, c);
                     let mut plan = planner.column_section(name, 0, c.range(), c.encoding_type());
                     let mut t = c.full_type();
-                    trace!("Column {:?} has type {:?}", name, t);
                     if !c.codec().is_elementwise_decodable() {
                         let (codec, fixed_width) = c.codec().ensure_fixed_width(plan, planner);
-                        trace!(
-                            "Elementwise decoding column {:?} results in codec {:?} for {:?}",
-                            name,
-                            codec,
-                            fixed_width
-                        );
                         let decoded = t.decoded;
                         t = Type::encoded(codec);
                         // TODO: hacky? required because partial `coded` does not take into account base type (e.g., assembled nullable). better fix might be to adjust Codec to take `fixed_width` expression as input for column sections (and also remove popped column sections)
@@ -1095,7 +1086,6 @@ impl QueryPlan {
                         plan = fixed_width;
                     }
                     plan = filter.apply_filter(planner, plan);
-                    trace!("Column {:?} final type {:?}", name, t);
                     (plan, t)
                 }
                 None => {
