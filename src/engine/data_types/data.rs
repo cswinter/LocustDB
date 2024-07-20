@@ -443,24 +443,6 @@ impl<'a> Data<'a> for Vec<OrderedFloat<f64>> {
     }
 }
 
-impl<'a> Data<'a> for Vec<Option<OrderedFloat<f64>>> {
-    fn cast_ref_opt_f64(&self) -> &[Option<OrderedFloat<f64>>] {
-        self
-    }
-    fn cast_ref_mut_opt_f64(&mut self) -> &mut Vec<Option<OrderedFloat<f64>>> {
-        self
-    }
-    fn to_mixed(&self) -> Vec<Val<'a>> {
-        self.iter()
-            .map(|s| match s {
-                None => Val::Null,
-                Some(s) => Val::Float(*s)
-            })
-            .collect()
-    }
-}
-
-
 impl<'a> Data<'a> for Vec<MergeOp> {
     fn cast_ref_merge_op(&self) -> &[MergeOp] {
         self
@@ -640,21 +622,6 @@ impl<'a> Data<'a> for &'a [OrderedFloat<f64>] {
 
     fn to_mixed(&self) -> Vec<Val<'a>> {
         self.iter().map(|i| Val::Float(*i)).collect()
-    }
-}
-
-impl<'a> Data<'a> for &'a [Option<OrderedFloat<f64>>] {
-    fn cast_ref_opt_f64(&self) -> &[Option<OrderedFloat<f64>>] {
-        self
-    }
-
-    fn to_mixed(&self) -> Vec<Val<'a>> {
-        self.iter()
-            .map(|s| match s {
-                None => Val::Null,
-                Some(s) => Val::Float(*s),
-            })
-            .collect()
     }
 }
 

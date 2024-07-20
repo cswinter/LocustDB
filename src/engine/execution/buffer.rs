@@ -266,11 +266,6 @@ impl TypedBufferRef {
         Ok(self.buffer.opt_str())
     }
 
-    pub fn opt_f64(&self) -> Result<BufferRef<Option<OrderedFloat<f64>>>, QueryError> {
-        ensure!(self.tag == EncodingType::OptF64, "{:?} != OptF64", self.tag);
-        Ok(self.buffer.opt_f64())
-    }
-
     pub fn i64(&self) -> Result<BufferRef<i64>, QueryError> {
         ensure!(self.tag == EncodingType::I64, "{:?} != I64", self.tag);
         Ok(self.buffer.i64())

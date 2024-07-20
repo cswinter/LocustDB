@@ -1,18 +1,24 @@
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::mem_store::*;
 
-// WARNING: Changing this enum will break backwards compatibility with existing data
+// Special NaN value that we use to represent NULLs in the data.
+pub const F64_NULL: OrderedFloat<f64> = OrderedFloat(unsafe { std::mem::transmute::<u64, f64>(0x7ffa_aaaa_aaaa_aaaau64) });
+pub const I64_NULL: i64 = i64::MAX;
+
+
+
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum EncodingType {
     // Straightforward vector or slice of basic types
     Str,
-    I64,
+    I64, // Can also represent null values as i64::MAX
     U8,
     U16,
     U32,
     U64,
-    F64,
+    F64, // Can also represent null values as F64_NULL NaN value
     Val,
     USize,
     Bitvec, // this has the same representation as U8, but will have 1/8th the length
@@ -28,7 +34,6 @@ pub enum EncodingType {
 
     // Vector of optional basic types. Used for grouping or sorting
     OptStr,
-    OptF64,
 
     // Represents null column as single `usize` value that is the length of the column
     Null,
@@ -55,7 +60,7 @@ impl EncodingType {
             EncodingType::Str => BasicType::String,
             EncodingType::I64 => BasicType::Integer,
             EncodingType::F64 => BasicType::Float,
-            EncodingType::NullableStr => BasicType::NullableString,
+            EncodingType::NullableStr | EncodingType::OptStr => BasicType::NullableString,
             EncodingType::NullableI64 => BasicType::NullableInteger,
             EncodingType::NullableF64 => BasicType::NullableFloat,
             EncodingType::Val => BasicType::Val,
@@ -78,7 +83,6 @@ impl EncodingType {
             EncodingType::F64 | EncodingType::NullableF64 => EncodingType::NullableF64,
             EncodingType::Val => EncodingType::Val,
             EncodingType::OptStr => EncodingType::OptStr,
-            EncodingType::OptF64 => EncodingType::OptF64,
             _ => panic!("{:?} does not have a corresponding nullable type", &self),
         }
     }
@@ -86,8 +90,8 @@ impl EncodingType {
     pub fn nullable_fused(&self) -> EncodingType {
         match self {
             EncodingType::NullableStr => EncodingType::OptStr,
-            EncodingType::NullableF64 => EncodingType::OptF64,
             EncodingType::NullableI64 => EncodingType::I64,
+            EncodingType::NullableF64 => EncodingType::F64,
             _ => panic!(
                 "{:?} does not have a corresponding fused nullable type",
                 &self
@@ -107,7 +111,6 @@ impl EncodingType {
             | EncodingType::NullableU64
             | EncodingType::NullableF64 => true,
             EncodingType::OptStr
-            | EncodingType::OptF64
             | EncodingType::Str
             | EncodingType::I64
             | EncodingType::U8
@@ -134,7 +137,7 @@ impl EncodingType {
     /// Returns whether the encoding type can represent null values without an associated null map.
     pub fn is_naturally_nullable(&self) -> bool {
         match self {
-            EncodingType::Val | EncodingType::OptStr | EncodingType::OptF64 => true,
+            EncodingType::Val | EncodingType::OptStr => true,
             EncodingType::NullableStr
             | EncodingType::NullableI64
             | EncodingType::NullableU8
@@ -172,7 +175,7 @@ impl EncodingType {
             EncodingType::NullableU16 => EncodingType::U16,
             EncodingType::NullableU32 => EncodingType::U32,
             EncodingType::NullableU64 => EncodingType::U64,
-            EncodingType::OptF64 | EncodingType::NullableF64 => EncodingType::F64,
+            EncodingType::NullableF64 => EncodingType::F64,
             EncodingType::Str
             | EncodingType::I64
             | EncodingType::U8
@@ -206,7 +209,6 @@ impl EncodingType {
             | EncodingType::NullableU64
             | EncodingType::NullableF64
             | EncodingType::OptStr
-            | EncodingType::OptF64
             | EncodingType::Str
             | EncodingType::I64
             | EncodingType::U8
@@ -240,7 +242,6 @@ impl EncodingType {
             | EncodingType::NullableU64
             | EncodingType::NullableF64
             | EncodingType::OptStr
-            | EncodingType::OptF64
             | EncodingType::Str
             | EncodingType::I64
             | EncodingType::U8
@@ -269,14 +270,11 @@ impl EncodingType {
             *self
         } else {
             match (self, other) {
-                (EncodingType::Val, _) => EncodingType::Val,
-                (_, EncodingType::Val) => EncodingType::Val,
-                (EncodingType::F64, EncodingType::I64) => EncodingType::Val,
-                (EncodingType::I64, EncodingType::F64) => EncodingType::Val,
-                (EncodingType::OptStr, EncodingType::Str) => EncodingType::OptStr,
-                (EncodingType::Str, EncodingType::OptStr) => EncodingType::OptStr,
-                (EncodingType::OptF64, EncodingType::F64) => EncodingType::OptF64,
-                (EncodingType::F64, EncodingType::OptF64) => EncodingType::OptF64,
+                (EncodingType::Val, _) | (_, EncodingType::Val) => EncodingType::Val,
+                (EncodingType::F64, EncodingType::I64) | (EncodingType::I64, EncodingType::F64) => EncodingType::Val,
+                (EncodingType::F64, EncodingType::Null) | (EncodingType::Null, EncodingType::F64) => EncodingType::F64,
+                (EncodingType::I64, EncodingType::Null) | (EncodingType::Null, EncodingType::I64) => EncodingType::I64,
+                (EncodingType::OptStr, EncodingType::Str) | (EncodingType::Str, EncodingType::OptStr) => EncodingType::OptStr,
                 _ => unimplemented!("lub not implemented for {:?} and {:?}", self, other),
             }
         }
@@ -302,7 +300,6 @@ impl EncodingType {
             EncodingType::NullableU64 => 15,
             EncodingType::NullableF64 => 16,
             EncodingType::OptStr => 17,
-            EncodingType::OptF64 => 18,
             EncodingType::Null => 19,
             EncodingType::ScalarF64 => 20,
             EncodingType::ScalarI64 => 21,

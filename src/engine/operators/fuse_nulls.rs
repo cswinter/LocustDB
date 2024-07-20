@@ -5,8 +5,6 @@ use crate::engine::*;
 use std::i64;
 
 
-pub const I64_NULL: i64 = i64::MIN;
-
 pub struct FuseNullsI64 {
     pub input: BufferRef<Nullable<i64>>,
     pub fused: BufferRef<i64>,
@@ -56,7 +54,7 @@ impl<'a> VecOperator<'a> for UnfuseNullsI64 {
             let fused = scratchpad.get(self.fused);
             let mut present = vec![0u8; fused.len() / 8 + 1];
             for i in 0..fused.len() {
-                if fused[i] != i64::MIN {
+                if fused[i] != I64_NULL {
                     present.set(i);
                 }
             }
@@ -258,10 +256,9 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for UnfuseIntNulls<T> {
     }
 }
 
-// TODO: remove OptF64 type, use special NaN value instead?
 pub struct FuseNullsF64 {
     pub input: BufferRef<Nullable<OrderedFloat<f64>>>,
-    pub fused: BufferRef<Option<OrderedFloat<f64>>>,
+    pub fused: BufferRef<OrderedFloat<f64>>,
 }
 
 impl<'a> VecOperator<'a> for FuseNullsF64 {
@@ -271,9 +268,9 @@ impl<'a> VecOperator<'a> for FuseNullsF64 {
         if stream { fused.clear(); }
         for i in 0..input.len() {
             if (&*present).is_set(i) {
-                fused.push(Some(input[i]));
+                fused.push(input[i]);
             } else {
-                fused.push(None);
+                fused.push(F64_NULL);
             }
         }
         Ok(())
@@ -293,51 +290,5 @@ impl<'a> VecOperator<'a> for FuseNullsF64 {
 
     fn display_op(&self, _: bool) -> String {
         format!("FuseNullsF64({})", self.fused)
-    }
-}
-
-pub struct UnfuseNullsF64 {
-    pub fused: BufferRef<Option<OrderedFloat<f64>>>,
-    pub data: BufferRef<OrderedFloat<f64>>,
-    pub present: BufferRef<u8>,
-    pub unfused: BufferRef<Nullable<OrderedFloat<f64>>>,
-}
-
-impl<'a> VecOperator<'a> for UnfuseNullsF64 {
-    fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
-        let fused = scratchpad.get(self.fused);
-        let mut data = scratchpad.get_mut(self.data);
-        let mut present = scratchpad.get_mut(self.present);
-        if stream {
-            data.clear();
-            present.clear();
-        }
-        present.resize((data.len() + fused.len() + 7) / 8, 0u8);
-        let offset = data.len();
-        for i in 0..fused.len() {
-            data.push(fused[i].unwrap_or(OrderedFloat(f64::NAN)));
-            if fused[i].is_some() {
-                present.set(offset + i);
-            }
-        }
-        Ok(())
-    }
-
-    fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.assemble_nullable(self.data, self.present, self.unfused);
-        scratchpad.set(self.data, Vec::with_capacity(batch_size));
-        scratchpad.set(self.present, Vec::new());
-    }
-
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.fused.any()] }
-    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.fused.i] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.unfused.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { true }
-    fn can_stream_output(&self, _: usize) -> bool { true }
-    fn can_block_output(&self) -> bool { true }
-    fn allocates(&self) -> bool { true }
-
-    fn display_op(&self, _: bool) -> String {
-        format!("UnfuseNullsF64({})", self.fused)
     }
 }

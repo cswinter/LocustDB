@@ -595,9 +595,7 @@ fn test_min_max() {
 fn test_max_of_unencoded_int() {
     test_query_ec(
         "SELECT MAX(largenum), MIN(largenum) FROM default;",
-        &[
-            vec![Int(9223372036854775807), Int(-9223372036854775807)]
-        ]
+        &[vec![Int(9223372036854775806), Int(-9223372036854775808)]],
     );
 }
 
@@ -605,9 +603,7 @@ fn test_max_of_unencoded_int() {
 fn test_max_of_nonexistant() {
     test_query_ec(
         "SELECT MAX(nonexistant_column), MIN(largenum) FROM default;",
-        &[
-            vec![Null, Int(-9223372036854775807)]
-        ]
+        &[vec![Null, Int(-9223372036854775808)]],
     );
 }
 
@@ -617,7 +613,7 @@ fn test_max_of_nonexistant() {
 fn test_max_of_string() {
     test_query_ec(
         "SELECT MAX(nonexistant_column), MIN(string_packed) FROM default;",
-        &[]
+        &[],
     );
 }
 
@@ -822,10 +818,7 @@ fn test_null_sum() {
         "SELECT id/5, SUM(nullable_int)
          FROM default
          ORDER BY id/5;",
-        &[
-            vec![Int(0), Int(-31)],
-            vec![Int(1), Int(33)],
-        ],
+        &[vec![Int(0), Int(-31)], vec![Int(1), Int(33)]],
     );
 }
 
@@ -862,7 +855,6 @@ fn test_null_aggregators2_correct() {
     );
 }
 
-
 // TODO: count of all nulls should be 0, not null
 #[ignore]
 #[test]
@@ -874,57 +866,77 @@ fn test_null_count() {
 }
 
 #[test]
-fn test_sort_by_nullable() {
+fn test_sort_by_nullable1() {
     test_query_ec(
         "SELECT nullable_int, nullable_int2, country
          FROM default
          ORDER BY nullable_int, nullable_int2 DESC, country;",
         &[
-            vec![Null, Int(6), Null],
-            vec![Null, Int(1), Null],
-            vec![Null, Int(0), Null],
-            vec![Null, Null, Str("France")],
-            vec![Null, Null, Str("Turkey")],
             vec![Int(-40), Int(-40), Str("USA")],
             vec![Int(-1), Null, Str("Germany")],
             vec![Int(10), Int(9), Str("France")],
             vec![Int(13), Int(14), Str("Germany")],
             vec![Int(20), Null, Null],
+            vec![Null, Null, Str("France")],
+            vec![Null, Null, Str("Turkey")],
+            vec![Null, Int(6), Null],
+            vec![Null, Int(1), Null],
+            vec![Null, Int(0), Null],
         ],
     );
+}
+
+#[test]
+fn test_sort_by_nullable2() {
     test_query_ec(
         "SELECT nullable_int2, country
          FROM default
          ORDER BY nullable_int2, country DESC;",
         &[
-            vec![Null, Str("Turkey")],
-            vec![Null, Str("Germany")],
-            vec![Null, Str("France")],
-            vec![Null, Null],
             vec![Int(-40), Str("USA")],
             vec![Int(0), Null],
             vec![Int(1), Null],
             vec![Int(6), Null],
             vec![Int(9), Str("France")],
             vec![Int(14), Str("Germany")],
+            vec![Null, Null],
+            vec![Null, Str("Turkey")],
+            vec![Null, Str("Germany")],
+            vec![Null, Str("France")],
         ],
     );
+}
+
+#[test]
+fn test_sort_by_nullable3() {
     test_query_ec(
         "SELECT nullable_int2, country
          FROM default
-         ORDER BY nullable_int2, country DESC
-         LIMIT 2;",
-        &[vec![Null, Str("Turkey")], vec![Null, Str("Germany")]],
+         ORDER BY nullable_int2 DESC, country DESC
+         LIMIT 3;",
+        &[
+            vec![Null, Null],
+            vec![Null, Str("Turkey")],
+            vec![Null, Str("Germany")],
+        ],
     );
-    // TODO: This currently fails with "NullableU8 does not have a corresponding fused nullable type"
-    // test_query_ec(
-    //     "SELECT nullable_int2
-    //      FROM default
-    //      ORDER BY nullable_int2 DESC
-    //      LIMIT 2;",
-    //     &[vec![Null], vec![Null]],
-    // );
-    // Sort by null/nonexistant column
+}
+
+// TODO: This currently fails with "NullableU8 does not have a corresponding fused nullable type"
+#[ignore]
+#[test]
+fn test_sort_by_nullable4() {
+    test_query_ec(
+        "SELECT nullable_int2
+         FROM default
+         ORDER BY nullable_int2 DESC
+         LIMIT 2;",
+        &[vec![Null], vec![Null]],
+    );
+}
+
+#[test]
+fn test_sort_by_nonexistant() {
     test_query_ec(
         "SELECT column_does_not_exist FROM default ORDER BY column_does_not_exist;",
         &[
@@ -943,128 +955,169 @@ fn test_sort_by_nullable() {
 }
 
 #[test]
-fn test_sort_by_nullable_float() {
+fn test_sort_by_nullable_float1() {
     test_query_ec(
         "SELECT nullable_float
         FROM default
         ORDER BY nullable_float;",
         &[
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
             vec![Float(1e-32)],
             vec![Float(0.4)],
             vec![Float(1.123124e30)],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
         ],
     );
+}
+
+#[test]
+fn test_sort_by_nullable_float2() {
     test_query_ec(
         "SELECT nullable_float
         FROM default
         ORDER BY nullable_float DESC;",
         &[
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Null],
             vec![Float(1.123124e30)],
             vec![Float(0.4)],
             vec![Float(1e-32)],
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
-            vec![Null],
         ],
     );
-    test_query_ec(
-        "SELECT nullable_float
-        FROM default
-        ORDER BY nullable_float DESC
-        LIMIT 4;",
-        &[
-            vec![Float(1.123124e30)],
-            vec![Float(0.4)],
-            vec![Float(1e-32)],
-            vec![Null],
-        ],
-    );
-    // This currently fails with "subpartition not supported for type Null" (when table has multiple partitions and columns are null in some partitions)
-    // test_query_ec(
-    //     "SELECT nullable_float, nullable_float2, country
-    //      FROM default
-    //      ORDER BY nullable_float, nullable_float2 DESC, country;",
-    //     &[
-    //         vec![Null, Null, Null],
-    //         vec![Null, Null, Null],
-    //         vec![Null, Null, Null],
-    //         vec![Null, Null, Null],
-    //         vec![Null, Null, Str("France")],
-    //         vec![Null, Null, Str("Germany")],
-    //         vec![Null, Null, Str("USA")],
-    //         vec![Float(1e-32), Null, Str("Turkey")],
-    //         vec![Float(0.4), Null, Str("France")],
-    //         vec![Float(1.123124e30), Null, Str("Germany")],
-    //     ],
-    // );
 }
 
 #[test]
-fn test_group_by_nullable() {
+fn test_sort_by_nullable_float3() {
+    test_query_ec(
+        "SELECT nullable_float
+        FROM default
+        ORDER BY nullable_float
+        LIMIT 4;",
+        &[
+            vec![Float(1e-32)],
+            vec![Float(0.4)],
+            vec![Float(1.123124e30)],
+            vec![Null],
+        ],
+    );
+}
+
+#[test]
+fn test_sort_by_multiple_nullable_null() {
+    test_query_ec(
+        "SELECT nullable_float, nullable_float2
+         FROM default
+         ORDER BY nullable_float, nullable_float2 DESC;",
+        &[
+            vec![Float(1e-32), Null],
+            vec![Float(0.4), Null],
+            vec![Float(1.123124e30), Null],
+            vec![Null, Null],
+            vec![Null, Null],
+            vec![Null, Null],
+            vec![Null, Null],
+            vec![Null, Null],
+            vec![Null, Null],
+            vec![Null, Null],
+        ],
+    );
+    test_query_ec(
+        "SELECT nullable_float, nullable_float2, country
+         FROM default
+         ORDER BY nullable_float, nullable_float2 DESC, country;",
+        &[
+            vec![Float(1e-32), Null, Str("Turkey")],
+            vec![Float(0.4), Null, Str("France")],
+            vec![Float(1.123124e30), Null, Str("Germany")],
+            vec![Null, Null, Str("France")],
+            vec![Null, Null, Str("Germany")],
+            vec![Null, Null, Str("USA")],
+            vec![Null, Null, Null],
+            vec![Null, Null, Null],
+            vec![Null, Null, Null],
+            vec![Null, Null, Null],
+        ],
+    );
+}
+
+#[test]
+fn test_group_by_nullable1() {
     test_query_ec(
         "SELECT country, COUNT(0)
          FROM default;",
         &[
-            vec![Null, Int(4)],
             vec![Str("France"), Int(2)],
             vec![Str("Germany"), Int(2)],
             vec![Str("Turkey"), Int(1)],
             vec![Str("USA"), Int(1)],
+            vec![Null, Int(4)],
         ],
     );
+}
+
+#[test]
+fn test_group_by_nullable2() {
     test_query_ec(
         "SELECT nullable_int, COUNT(0)
-         FROM default;",
+         FROM default
+         ORDER BY nullable_int;",
         &[
-            vec![Null, Int(5)],
             vec![Int(-40), Int(1)],
             vec![Int(-1), Int(1)],
             vec![Int(10), Int(1)],
             vec![Int(13), Int(1)],
             vec![Int(20), Int(1)],
+            vec![Null, Int(5)],
         ],
     );
+}
+
+#[test]
+fn test_group_by_nullable3() {
     test_query_ec(
         "SELECT nullable_int2, country, COUNT(0)
-         FROM default;",
+         FROM default ORDER BY nullable_int2, country;",
         &[
-            vec![Null, Null, Int(1)],
-            vec![Null, Str("France"), Int(1)],
-            vec![Null, Str("Germany"), Int(1)],
-            vec![Null, Str("Turkey"), Int(1)],
             vec![Int(-40), Str("USA"), Int(1)],
             vec![Int(0), Null, Int(1)],
             vec![Int(1), Null, Int(1)],
             vec![Int(6), Null, Int(1)],
             vec![Int(9), Str("France"), Int(1)],
             vec![Int(14), Str("Germany"), Int(1)],
+            vec![Null, Str("France"), Int(1)],
+            vec![Null, Str("Germany"), Int(1)],
+            vec![Null, Str("Turkey"), Int(1)],
+            vec![Null, Null, Int(1)],
         ],
     );
+}
+
+#[test]
+fn test_group_by_nullable4() {
     test_query_ec(
         "SELECT nullable_int, string_packed, COUNT(0)
-         FROM default;",
+         FROM default ORDER BY string_packed, nullable_int;",
         &[
             vec![Null, Str("$sss"), Int(1)],
             vec![Null, Str("AXY"), Int(1)],
+            vec![Int(20), Str("_f"), Int(1)],
+            vec![Int(-40), Str("abc"), Int(1)],
             vec![Null, Str("asd"), Int(1)],
             vec![Null, Str("axz"), Int(1)],
-            vec![Null, Str("t"), Int(1)],
-            vec![Int(-40), Str("abc"), Int(1)],
-            vec![Int(-1), Str("xyz"), Int(1)],
             vec![Int(10), Str("azy"), Int(1)],
+            vec![Null, Str("t"), Int(1)],
+            vec![Int(-1), Str("xyz"), Int(1)],
             vec![Int(13), Str("😈"), Int(1)],
-            vec![Int(20), Str("_f"), Int(1)],
         ],
     );
 }
@@ -1159,30 +1212,50 @@ fn test_is_null() {
 }
 
 #[test]
-fn test_overflow() {
+fn test_overflow1() {
     test_query_ec_err(
         "SELECT largenum + non_dense_ints FROM default;",
         QueryError::Overflow,
     );
+}
+
+#[test]
+fn test_overflow2() {
     test_query_ec_err(
         "SELECT largenum + nullable_int FROM default;",
         QueryError::Overflow,
     );
-    test_query_ec(
+}
+
+#[test]
+fn test_overflow3() {
+    test_query_ec_err(
         "SELECT largenum / nullable_int FROM default ORDER BY id;",
+        QueryError::Overflow,
+    );
+}
+
+#[test]
+fn test_overflow4() {
+    test_query_ec(
+        "SELECT largenum / (nullable_int - 1) FROM default ORDER BY id;",
         &[
-            vec![Int(9_223_372_036_854_775_807)],
-            vec![Int(-230_584_300_921_369_395)],
+            vec![Int(4611686018427387904)],
+            vec![Int(-224960293581823800)],
             vec![Null],
             vec![Null],
-            vec![Int(-922_337_203_685_477_580)],
+            vec![Int(-1024819115206086200)],
             vec![Null],
             vec![Null],
-            vec![Int(461_168_601_842_738_790)],
+            vec![Int(485440633518672410)],
             vec![Null],
-            vec![Int(709_490_156_681_136_600)],
+            vec![Int(768614336404564650)],
         ],
     );
+}
+
+#[test]
+fn test_overflow5() {
     test_query_ec_err("SELECT sum(largenum) FROM default;", QueryError::Overflow);
 }
 

@@ -14,7 +14,7 @@ pub struct MergePartitioned<T, C> {
     pub c: PhantomData<C>,
 }
 
-impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for MergePartitioned<T, C> {
+impl<'a, T: VecData<T> + 'a + Debug, C: Comparator<T>> VecOperator<'a> for MergePartitioned<T, C> {
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (merged, merge_ops) = {
             let partitioning = scratchpad.get(self.partitioning);
@@ -40,7 +40,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for Merge
 }
 
 pub fn merge_partitioned<'a, T, C>(partitioning: &[Premerge], left: &[T], right: &[T], limit: usize)
-                                   -> (Vec<T>, Vec<u8>) where T: PartialOrd + Debug + Copy + 'a, C: Comparator<T> {
+                                   -> (Vec<T>, Vec<u8>) where T: Debug + Copy + 'a, C: Comparator<T> {
     let len = cmp::min(left.len() + right.len(), limit);
     let mut result = Vec::with_capacity(len);
     let mut take_left = Vec::<u8>::with_capacity(len);

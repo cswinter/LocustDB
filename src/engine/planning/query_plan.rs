@@ -62,7 +62,7 @@ pub enum QueryPlan {
         nullable: TypedBufferRef,
     },
     /// Converts NullableI64, NullableStr, or NullableF64 into a representation where nulls are encoded as part
-    /// of the data (i64 with i64::MIN representing null for NullableI64, Option<&str> for NullableStr, and Option<OrderedFloat<f64> for NullableF64).
+    /// of the data (i64 with i64::MAX representing null for NullableI64, Option<&str> for NullableStr, and special NaN value F64_NULL representing null for NullableF64).
     FuseNulls {
         nullable: TypedBufferRef,
         #[output(t = "base=nullable;null=_fused")]
@@ -683,6 +683,7 @@ pub fn prepare_aggregation(
             if !plan_type.is_summation_preserving() {
                 plan = plan_type.codec.decode(plan, planner);
             }
+            let aggregate_type = if nullable { BasicType::NullableInteger } else { BasicType::Integer };
             // PERF: determine dense groupings
             (
                 planner.checked_aggregate(
@@ -690,9 +691,9 @@ pub fn prepare_aggregation(
                     grouping_key,
                     max_index,
                     Aggregator::SumI64,
-                    plan_type.decoded().encoding_type(),
+                    aggregate_type.to_encoded(),
                 ),
-                Type::unencoded(plan_type.decoded),
+                Type::unencoded(aggregate_type),
             )
         }
         Aggregator::SumI64 => {
@@ -716,10 +717,11 @@ pub fn prepare_aggregation(
         Aggregator::MaxI64 | Aggregator::MinI64 if matches!(plan_type.decoded, BasicType::Integer | BasicType::NullableInteger) => {
             // PERF: don't always have to decode before taking max/min, and after is more efficient (e.g. dict encoded strings)
             plan = plan_type.codec.decode(plan, planner);
+            let aggregate_type = if nullable { BasicType::NullableInteger } else { BasicType::Integer };
             trace!("PLANNING MAX/MIN I64 {:?} {:?}", plan_type.decoded(), plan_type.decoded.to_encoded());
             (
-                planner.aggregate(plan, grouping_key, max_index, aggregator, plan_type.decoded.to_encoded()),
-                Type::unencoded(plan_type.decoded),
+                planner.aggregate(plan, grouping_key, max_index, aggregator, aggregate_type.to_encoded()),
+                Type::unencoded(aggregate_type),
             )
         }
         Aggregator::MaxI64 | Aggregator::MinI64 => {
@@ -1080,7 +1082,12 @@ impl QueryPlan {
                     trace!("Column {:?} has type {:?}", name, t);
                     if !c.codec().is_elementwise_decodable() {
                         let (codec, fixed_width) = c.codec().ensure_fixed_width(plan, planner);
-                        trace!("Elementwise decoding column {:?} results in codec {:?} for {:?}", name, codec, fixed_width);
+                        trace!(
+                            "Elementwise decoding column {:?} results in codec {:?} for {:?}",
+                            name,
+                            codec,
+                            fixed_width
+                        );
                         let decoded = t.decoded;
                         t = Type::encoded(codec);
                         // TODO: hacky? required because partial `coded` does not take into account base type (e.g., assembled nullable). better fix might be to adjust Codec to take `fixed_width` expression as input for column sections (and also remove popped column sections)

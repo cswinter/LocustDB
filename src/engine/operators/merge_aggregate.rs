@@ -1,4 +1,3 @@
-use operators::fuse_nulls::I64_NULL;
 use ordered_float::OrderedFloat;
 
 use crate::engine::*;
@@ -104,10 +103,26 @@ impl Combinable<i64> for i64 {
                 Ok(combined)
             }
         }
-        // TODO: remove null handling hack
+        // TODO: remove null handling hack?
         match op {
-            Aggregator::SumI64 => null_coalesce(a, b, a.checked_add(b).ok_or(QueryError::Overflow)?),
-            Aggregator::Count => null_coalesce(a, b, a + b),
+            Aggregator::SumI64 => {
+                if a == I64_NULL {
+                    Ok(b)
+                } else if b == I64_NULL {
+                    Ok(a)
+                } else {
+                    a.checked_add(b).ok_or(QueryError::Overflow)
+                }
+            }
+            Aggregator::Count => {
+                if a == I64_NULL {
+                    Ok(b)
+                } else if b == I64_NULL {
+                    Ok(a)
+                } else {
+                    Ok(a + b)
+                }
+            }
             Aggregator::MaxI64 => null_coalesce(a, b, std::cmp::max(a, b)),
             Aggregator::MinI64 => null_coalesce(a, b, std::cmp::min(a, b)),
             _ => Err(fatal!("Unsupported aggregator for i64: {:?}", op)),
@@ -116,15 +131,21 @@ impl Combinable<i64> for i64 {
 }
 
 impl Combinable<OrderedFloat<f64>> for OrderedFloat<f64> {
-    fn combine(
-        op: Aggregator,
-        a: OrderedFloat<f64>,
-        b: OrderedFloat<f64>,
-    ) -> Result<OrderedFloat<f64>, QueryError> {
+    fn combine(op: Aggregator, a: of64, b: of64) -> Result<OrderedFloat<f64>, QueryError> {
+        // possibly Aggregator::XI64 is masking a bug
+        fn null_coalesce(a: of64, b: of64, combined: of64) -> Result<of64, QueryError> {
+            if a.to_bits() == F64_NULL.to_bits() {
+                Ok(b)
+            } else if b.to_bits() == F64_NULL.to_bits() {
+                Ok(a)
+            } else {
+                Ok(combined)
+            }
+        }
         match op {
-            Aggregator::SumF64 => Ok(a + b),
-            Aggregator::MaxF64 => Ok(std::cmp::max(a, b)),
-            Aggregator::MinF64 => Ok(std::cmp::min(a, b)),
+            Aggregator::SumF64 | Aggregator::SumI64 => null_coalesce(a, b, a + b),
+            Aggregator::MaxF64 | Aggregator::MaxI64 => null_coalesce(a, b, std::cmp::max(a, b)),
+            Aggregator::MinF64 | Aggregator::MinI64 => null_coalesce(a, b, std::cmp::min(a, b)),
             _ => Err(fatal!("Unsupported aggregator for f64: {:?}", op)),
         }
     }

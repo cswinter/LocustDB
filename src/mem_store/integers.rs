@@ -32,7 +32,7 @@ impl IntegerColumn {
             }
         }
         let interval = if min < 0 && max > 0 {
-            max as u64 + (-min) as u64
+            max as u64 + (-(min as i128)) as u64
         } else {
             (max - min) as u64
         };

@@ -18,7 +18,9 @@ impl BitVecMut for Vec<u8> {
 
     fn unset(&mut self, index: usize) {
         let slot = index >> 3;
-        self[slot] &= 0xff ^ (1 << (index as u8 & 7));
+        if slot < self.len() {
+            self[slot] &= 0xff ^ (1 << (index as u8 & 7));
+        }
     }
 }
 
