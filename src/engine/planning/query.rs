@@ -475,13 +475,11 @@ impl Query {
         let mut select_colnames = Vec::new();
         let mut final_select_ordering = Vec::new();
         for col_info in &self.select {
-            info!("Processing column: {:?}", col_info);
             let (full_expr, aggregates) = Query::extract_aggregators(
                 &col_info.expr,
                 &mut aggregate_colnames,
                 &col_info.name,
             )?;
-            info!("Full expression: {:?}", full_expr);
             if aggregates.is_empty() {
                 final_select_ordering.push(ResultColumn::Proj(select.len()));
                 let column_name = format!("_cs{}", select_colnames.len());
@@ -495,7 +493,6 @@ impl Query {
                     name: col_info.name.clone(),
                 });
             } else {
-                info!("Aggregates: {:?}", aggregates);
                 final_select_ordering.push(ResultColumn::Agg(aggregate.len()));
                 aggregate.extend(aggregates);
                 final_projection.push(ColumnInfo {
