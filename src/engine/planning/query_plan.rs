@@ -912,6 +912,27 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     Box::new(|qp, lhs, rhs| qp.less_than_equals(lhs, rhs)),
                     BasicType::String,
                 ),
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        // TODO: not strictly correct, casting int to float can lose precision, causing aliased values to compare differently (value might be smaller but compares as equal)
+                        let rhs = int_to_float_cast(qp, rhs).unwrap();
+                        qp.less_than_equals(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Float,
+                    type_rhs: BasicType::Integer,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| {
+                        let lhs = int_to_float_cast(qp, lhs).unwrap();
+                        qp.less_than_equals(lhs, rhs)
+                    }),
+                    type_lhs: BasicType::Integer,
+                    type_rhs: BasicType::Float,
+                    type_out: Type::unencoded(BasicType::Boolean).mutable(),
+                    encoding_invariance: true,
+                },
             ],
         ),
         (
