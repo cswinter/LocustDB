@@ -496,8 +496,7 @@ impl BasicTypeColumn {
             | EncodingType::NullableU32
             | EncodingType::NullableU64
             | EncodingType::NullableF64
-            | EncodingType::OptStr
-            | EncodingType::OptF64 => {
+            | EncodingType::OptStr => {
                 let mut vals = vec![];
                 for i in 0..data.len() {
                     vals.push(data.get_raw(i));

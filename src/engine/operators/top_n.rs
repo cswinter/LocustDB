@@ -34,13 +34,8 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
             }
             if indices.capacity() == indices.len() {
                 // Could replace O(n log n) sort with O(n) heapify
-                if C::is_less_than() {
-                    indices.sort_unstable_by(|i, j| keys[*i].cmp(&keys[*j]).reverse());
-                    keys.sort_unstable_by(|i, j| i.cmp(j).reverse());
-                } else {
-                    indices.sort_unstable_by(|i, j| keys[*i].cmp(&keys[*j]));
-                    keys.sort_unstable();
-                }
+                indices.sort_unstable_by(|i, j| C::ordering(keys[*i], keys[*j]).reverse());
+                keys.sort_unstable_by(|i, j| C::ordering(*i, *j).reverse());
             }
             input = Ref::map(input, |x| &x[count..]);
             self.last_index += count;
@@ -61,11 +56,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
             let indices = scratchpad.get_mut(self.indices);
             let keys = scratchpad.get_mut(self.keys);
             let mut sort_indices = (0..keys.len()).collect::<Vec<usize>>();
-            if C::is_less_than() {
-                sort_indices.sort_unstable_by_key(|i| keys[*i]);
-            } else {
-                sort_indices.sort_unstable_by(|i, j| keys[*i].cmp(&keys[*j]).reverse());
-            }
+            sort_indices.sort_unstable_by(|i, j| C::ordering(keys[*i], keys[*j]));
             let mut output = Vec::with_capacity(indices.len());
             for i in sort_indices {
                 output.push(indices[i]);
@@ -88,7 +79,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
 }
 
 #[inline]
-fn heap_replace<T: PartialOrd + Copy, C: Comparator<T>>(keys: &mut [T], values: &mut [usize], key: T, value: usize, mut node: usize) {
+fn heap_replace<T: Copy, C: Comparator<T>>(keys: &mut [T], values: &mut [usize], key: T, value: usize, mut node: usize) {
     while 2 * node + 1 < keys.len() {
         let left_child = 2 * node + 1;
         let right_child = 2 * node + 2;

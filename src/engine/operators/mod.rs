@@ -14,6 +14,8 @@ mod buffer_stream;
 mod collect;
 mod column_ops;
 mod combine_null_maps;
+mod compact_nullable_nullable;
+mod compact_nullable;
 mod compact;
 mod comparison_operators;
 mod constant;

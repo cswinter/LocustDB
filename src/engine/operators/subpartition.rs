@@ -23,28 +23,48 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + Debug> VecOperator<'a> for SubPa
         Ok(())
     }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.partitioning.any(), self.left.any(), self.right.any()] }
-    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.partitioning.i, &mut self.left.i, &mut self.right.i] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.sub_partitioning.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { false }
-    fn can_stream_output(&self, _: usize) -> bool { false }
-    fn allocates(&self) -> bool { true }
+    fn inputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.partitioning.any(), self.left.any(), self.right.any()]
+    }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> {
+        vec![
+            &mut self.partitioning.i,
+            &mut self.left.i,
+            &mut self.right.i,
+        ]
+    }
+    fn outputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.sub_partitioning.any()]
+    }
+    fn can_stream_input(&self, _: usize) -> bool {
+        false
+    }
+    fn can_stream_output(&self, _: usize) -> bool {
+        false
+    }
+    fn allocates(&self) -> bool {
+        true
+    }
 
     fn display_op(&self, _: bool) -> String {
-        format!("subpartition({}, {}, {})", self.partitioning, self.left, self.right)
+        format!(
+            "subpartition({}, {}, {})",
+            self.partitioning, self.left, self.right
+        )
     }
 }
 
 fn subpartition<'a, T: VecData<T> + 'a, C: Comparator<T>>(
     partitioning: &[Premerge],
     left: &[T],
-    right: &[T]) -> Vec<Premerge> {
+    right: &[T],
+) -> Vec<Premerge> {
     // Could probably derive better estimate
     let mut result = Vec::with_capacity(2 * partitioning.len());
     let mut i = 0;
     let mut j = 0;
     #[allow(clippy::explicit_counter_loop)] // false positive
-        for group in partitioning {
+    for group in partitioning {
         let i_max = i + group.left as usize;
         let j_max = j + group.right as usize;
         while i < i_max || j < j_max {
@@ -68,13 +88,12 @@ fn subpartition<'a, T: VecData<T> + 'a, C: Comparator<T>>(
     result
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::engine::*;
     use crate::engine::operators::merge_deduplicate_partitioned::merge_deduplicate_partitioned;
     use crate::engine::operators::partition::partition;
     use crate::engine::operators::subpartition::subpartition;
+    use crate::engine::*;
 
     use self::MergeOp::*;
 
@@ -83,43 +102,44 @@ mod tests {
         let left1 = vec!["A", "A", "A", "C", "P"];
         let right1 = vec!["A", "A", "B", "C", "X", "X", "Z"];
         let result = partition::<&str, CmpLessThan>(&left1, &right1, 7);
-        assert_eq!(result, vec![
-            Premerge { left: 3, right: 2 },
-            Premerge { left: 0, right: 1 },
-            Premerge { left: 1, right: 1 },
-            Premerge { left: 1, right: 0 },
-            Premerge { left: 0, right: 2 },
-        ]);
+        assert_eq!(
+            result,
+            vec![
+                Premerge { left: 3, right: 2 },
+                Premerge { left: 0, right: 1 },
+                Premerge { left: 1, right: 1 },
+                Premerge { left: 1, right: 0 },
+                Premerge { left: 0, right: 2 },
+            ]
+        );
 
-        let left2 = vec![1u32, 3, 7, 2, 1];
-        let right2 = vec![3u32, 5, 0, 2, 1, 2, 1];
-        let (merging, merge_ops) = merge_deduplicate_partitioned::<u32>(&result, &left2, &right2);
+        let left2 = vec![1, 3, 7, 2, 1];
+        let right2 = vec![3, 5, 0, 2, 1, 2, 1];
+        let (merging, merge_ops) = merge_deduplicate_partitioned::<u32, CmpLessThan>(&result, &left2, &right2);
         assert_eq!(&merging, &[1, 3, 5, 7, 0, 2, 1, 1, 2]);
-        assert_eq!(&merge_ops, &[
-            TakeLeft,
-            TakeLeft,
-            MergeRight,
-            TakeRight,
-            TakeLeft,
-            TakeRight,
-            TakeLeft,
-            MergeRight,
-            TakeLeft,
-            TakeRight,
-            TakeRight,
-        ]);
+        assert_eq!(
+            &merge_ops,
+            &[
+                TakeLeft, TakeLeft, MergeRight, TakeRight, TakeLeft, TakeRight, TakeLeft,
+                MergeRight, TakeLeft, TakeRight, TakeRight,
+            ]
+        );
 
         let subpartition = subpartition::<u32, CmpLessThan>(&result, &left2, &right2);
-        assert_eq!(subpartition, vec![
-            Premerge { left: 1, right: 0 },
-            Premerge { left: 1, right: 1 },
-            Premerge { left: 0, right: 1 },
-            Premerge { left: 1, right: 0 },
-            Premerge { left: 0, right: 1 },
-            Premerge { left: 1, right: 1 },
-            Premerge { left: 1, right: 0 },
-            Premerge { left: 0, right: 1 },
-            Premerge { left: 0, right: 1 },
-        ]);
+        assert_eq!(
+            subpartition,
+            vec![
+                Premerge { left: 1, right: 0 },
+                Premerge { left: 1, right: 1 },
+                Premerge { left: 0, right: 1 },
+                Premerge { left: 1, right: 0 },
+                Premerge { left: 0, right: 1 },
+                Premerge { left: 1, right: 1 },
+                Premerge { left: 1, right: 0 },
+                Premerge { left: 0, right: 1 },
+                Premerge { left: 0, right: 1 },
+            ]
+        );
+
     }
 }

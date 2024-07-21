@@ -307,7 +307,9 @@ impl NormalFormQuery {
                     | Aggregator::MinI64
                     | Aggregator::SumF64
                     | Aggregator::MaxF64
-                    | Aggregator::MinF64 => qp.compact(aggregate, selector),
+                    | Aggregator::MinF64 => {
+                        qp.compact(aggregate, selector)
+                    }
                     Aggregator::Count => {
                         if input_nullable {
                             qp.compact(aggregate, selector)
@@ -404,6 +406,7 @@ impl NormalFormQuery {
             *plan = qp.collect(*plan, &format!("grouping_{}", i));
         }
         for (i, (plan, _)) in aggregation_cols.iter_mut().enumerate() {
+            // TODO: should not fully discard null information, requires hacks in batch merging that can yield spurious nulls in the output when there are non-null values identical to the null sentinel
             if plan.is_nullable() {
                 *plan = qp.fuse_nulls(*plan);
             }

@@ -51,7 +51,24 @@ impl QueryPlanner {
 
     fn perform_rewrites(&mut self, show: bool) {
         for i in 0..self.operations.len() {
-            match propagate_nullability(&self.operations[i], &mut self.buffer_provider) {
+            let rewrite = expand_null_inside_aggregator(&self.operations[i], &mut self.buffer_provider);
+            match rewrite {
+                Rewrite::ReplaceWith(ops) => {
+                    trace!("Replacing {:#?} with {:#?}", self.operations[i], ops);
+                    if show {
+                        println!("Replacing {:#?} with {:#?}", self.operations[i], ops);
+                    }
+                    self.operations[i] = ops[0].clone();
+                    for op in ops.into_iter().skip(1) {
+                        self.operations.push(op);
+                    }
+                }
+                Rewrite::None => {}
+            }
+        }
+        for i in 0..self.operations.len() {
+            let rewrite = propagate_nullability(&self.operations[i], &mut self.buffer_provider);
+            match rewrite {
                 Rewrite::ReplaceWith(ops) => {
                     trace!("Replacing {:#?} with {:#?}", self.operations[i], ops);
                     if show {
@@ -297,6 +314,29 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
                     data: decoded_non_null,
                     nullable_data: decoded,
                 },
+            ])
+        }
+        _ => Rewrite::None,
+    }
+}
+
+/// Expand null inside of aggregate expression
+fn expand_null_inside_aggregator(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewrite {
+    match *operation {
+        Aggregate { plan, grouping_key, max_index, aggregator, aggregate  } if plan.is_null() => {
+            let null_expanded = bp.named_buffer("expanded_null", EncodingType::NullableF64);
+            Rewrite::ReplaceWith(vec![
+                Aggregate {
+                    plan: null_expanded,
+                    grouping_key,
+                    max_index,
+                    aggregator,
+                    aggregate,
+                },
+                Cast {
+                    input: plan,
+                    casted: null_expanded,
+                }
             ])
         }
         _ => Rewrite::None,

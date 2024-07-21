@@ -12,7 +12,7 @@ pub struct BatchResult<'a> {
     pub projection: Vec<usize>,
     // Maps each projection in original query to corresponding result column (`projection` is just a subset without aggregating projections)
     pub aggregations: Vec<(usize, Aggregator)>,
-    pub order_by: Vec<(usize, bool)>,
+    pub order_by: Vec<(usize, bool)>, // (index, desc)
     pub level: u32,
     pub scanned_range: Range<usize>,
     pub batch_count: usize,
@@ -20,6 +20,7 @@ pub struct BatchResult<'a> {
     // Buffers that are referenced by query result - unsafe to drop before results are converted into owned values
     pub unsafe_referenced_buffers: Vec<BoxedData<'a>>,
 }
+
 
 impl<'a> BatchResult<'a> {
     pub fn len(&self) -> usize {
@@ -136,7 +137,9 @@ pub fn combine<'a>(
             let mut partitioning = qp.partition(l, r, limit, false);
             for i in 1..(lprojection.len() - 1) {
                 let (l, r) = unify_types(&mut qp, left[lprojection[i]], right[rprojection[i]]);
-                partitioning = qp.subpartition(partitioning, l, r, false);
+                let l = null_to_val(&mut qp, l);
+                let r = null_to_val(&mut qp, r);
+                partitioning = qp.subpartition(partitioning,l, r, false);
             }
 
             let last = lprojection.len() - 1;
@@ -232,6 +235,8 @@ pub fn combine<'a>(
                     let (index1, desc) = batch1.order_by[i];
                     let (index2, _) = batch2.order_by[i];
                     let (l, r) = unify_types(&mut qp, left[index1], right[index2]);
+                    let l = null_to_val(&mut qp, l);
+                    let r = null_to_val(&mut qp, r);
                     partitioning = qp.subpartition(partitioning, l, r, desc);
                 }
                 let l = null_to_val(&mut qp, left[final_sort_col_index1]);

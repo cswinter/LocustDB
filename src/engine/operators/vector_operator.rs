@@ -23,6 +23,8 @@ use super::collect::Collect;
 use super::column_ops::*;
 use super::combine_null_maps::CombineNullMaps;
 use super::compact::Compact;
+use super::compact_nullable::CompactNullable;
+use super::compact_nullable_nullable::CompactNullableNullable;
 use super::comparison_operators::*;
 use super::constant::Constant;
 use super::constant_expand::ConstantExpand;
@@ -51,8 +53,8 @@ use super::merge_deduplicate_partitioned::MergeDeduplicatePartitioned;
 use super::merge_drop::MergeDrop;
 use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
-use super::nonzero_compact::NonzeroCompact;
-use super::nonzero_indices::NonzeroIndices;
+use super::nonzero_compact::{NonzeroCompact, NonzeroCompactNullable};
+use super::nonzero_indices::{NonzeroIndices, NonzeroNonnullIndices};
 use super::null_to_val::NullToVal;
 use super::null_to_vec::NullToVec;
 use super::null_vec::NullVec;
@@ -349,7 +351,7 @@ pub mod operator {
             })),
             EncodingType::NullableF64 => Ok(Box::new(FuseNullsF64 {
                 input: input.nullable_f64()?,
-                fused: fused.opt_f64()?,
+                fused: fused.f64()?,
             })),
             _ => Err(fatal!(
                 "fuse_nulls not implemented for type {:?}",
@@ -451,12 +453,6 @@ pub mod operator {
                 data: data.str()?,
                 present,
                 unfused: unfused.nullable_str()?,
-            })),
-            EncodingType::OptF64 => Ok(Box::new(UnfuseNullsF64 {
-                fused: fused.opt_f64()?,
-                data: data.f64()?,
-                present,
-                unfused: unfused.nullable_f64()?,
             })),
             _ => Err(fatal!(
                 "unfuse_nulls not implemented for type {:?}",
@@ -659,7 +655,11 @@ pub mod operator {
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
         if input.is_null() {
-            Ok(null_vec_like(indices.any(), output.any(), LengthSource::InputLength))
+            Ok(null_vec_like(
+                indices.any(),
+                output.any(),
+                LengthSource::InputLength,
+            ))
         } else {
             reify_types! {
                 "select";
@@ -1332,25 +1332,26 @@ pub mod operator {
                 Ok(Box::new(NullToVec { input: input.any(), output, batch_size: 0 }))
             }
         } else if input.tag.is_constant() {
-            assert!(output.tag.is_constant(), "constant to non-constant conversion not supported");
+            assert!(
+                output.tag.is_constant(),
+                "constant to non-constant conversion not supported"
+            );
             if input.tag == EncodingType::ScalarI64 && output.tag == EncodingType::ScalarF64 {
                 return Ok(Box::new(ScalarI64ToScalarF64 {
                     input: input.scalar_i64()?,
                     output: output.scalar_f64()?,
                 }));
             } else {
-                panic!("Scalar conversion from {:?} to {:?} is not implemented", input.tag, output.tag);
+                panic!(
+                    "Scalar conversion from {:?} to {:?} is not implemented",
+                    input.tag, output.tag
+                );
             }
         } else {
             if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
                 return Ok(Box::new(TypeConversionOperator {
                     input: input.str()?,
                     output: output.opt_str()?,
-                }));
-            } else if input.tag == EncodingType::F64 && output.tag == EncodingType::OptF64 {
-                return Ok(Box::new(TypeConversionOperator {
-                    input: input.f64()?,
-                    output: output.opt_f64()?,
                 }));
             }
             reify_types! {
@@ -1408,15 +1409,23 @@ pub mod operator {
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
         if input.is_nullable() {
-            reify_types! {
-                "nullable_aggregation";
-                input: NullableInteger, grouping: Integer, aggregator: IntAggregator;
-                Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
+            if matches!(aggregator, Aggregator::Count) {
+                reify_types! {
+                    "nullable_aggregation";
+                    input: NullablePrimitive, grouping: Integer;
+                    Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: PhantomData::<Count> }))
+                }
+            } else {
+                reify_types! {
+                    "nullable_aggregation";
+                    input: NullableInteger, grouping: Integer, aggregator: IntAggregator;
+                    Ok(Box::new(AggregateNullable { input, grouping, output: output.into(), max_index, a: aggregator }))
+                }
             }
         } else if matches!(aggregator, Aggregator::Count) {
             reify_types! {
                 "aggregation";
-                input: PrimitiveNoU64, grouping: Integer;
+                input: Primitive, grouping: Integer;
                 Ok(Box::new(Aggregate { input, grouping, output: output.into(), max_index, a: PhantomData::<Count> }))
             }
         } else {
@@ -1489,10 +1498,18 @@ pub mod operator {
         data: TypedBufferRef,
         compacted: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "nonzero_compact";
-            data, compacted: Integer;
-            Ok(Box::new(NonzeroCompact { data, compacted }))
+        if data.is_nullable() {
+            reify_types! {
+                "nonzero_compact";
+                data: NullableInteger;
+                Ok(Box::new(NonzeroCompactNullable { data, compacted: compacted.into() }))
+            }
+        } else {
+            reify_types! {
+                "nonzero_compact";
+                data, compacted: Integer;
+                Ok(Box::new(NonzeroCompact { data, compacted }))
+            }
         }
     }
 
@@ -1500,10 +1517,18 @@ pub mod operator {
         input: TypedBufferRef,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "nonzero_indices";
-            input: Integer, output: Integer;
-            Ok(Box::new(NonzeroIndices { input, output, offset: 0, }))
+        if input.is_nullable() {
+            reify_types! {
+                "nonzero_indices";
+                input: NullableInteger, output: Integer;
+                Ok(Box::new(NonzeroNonnullIndices { input, output, offset: 0, }))
+            }
+        } else {
+            reify_types! {
+                "nonzero_indices";
+                input: Integer, output: Integer;
+                Ok(Box::new(NonzeroIndices { input, output, offset: 0, }))
+            }
         }
     }
 
@@ -1512,10 +1537,24 @@ pub mod operator {
         select: TypedBufferRef,
         compacted: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        reify_types! {
-            "compact";
-            data, compacted: Primitive, select: Integer;
-            Ok(Box::new(Compact { data, select, compacted }))
+        if data.is_nullable() && select.is_nullable() {
+            reify_types! {
+                "compact_nullable_nullable";
+                data, compacted: NullablePrimitive, select: NullableInteger;
+                Ok(Box::new(CompactNullableNullable { data, select, compacted }))
+            }
+        } else if data.is_nullable() {
+            reify_types! {
+                "compact_nullable";
+                data, compacted: NullablePrimitive, select: Integer;
+                Ok(Box::new(CompactNullable { data, select, compacted }))
+            }
+        } else {
+            reify_types! {
+                "compact";
+                data, compacted: Primitive, select: Integer;
+                Ok(Box::new(Compact { data, select, compacted }))
+            }
         }
     }
 
@@ -1592,16 +1631,30 @@ pub mod operator {
             }));
         }
         if ranking.is_nullable() {
+            if descending {
+                reify_types! {
+                    "sort_by_nullable";
+                    ranking: NullablePrimitive;
+                    Ok(Box::new(SortByNullable { ranking, output, indices, stable, c: PhantomData::<CmpGreaterThan> }))
+                }
+            } else {
+                reify_types! {
+                    "sort_by_nullable";
+                    ranking: NullablePrimitive;
+                    Ok(Box::new(SortByNullable { ranking, output, indices, stable, c: PhantomData::<CmpLessThan> }))
+                }
+            }
+        } else if descending {
             reify_types! {
-                "sort_by_nullable";
-                ranking: NullablePrimitive;
-                Ok(Box::new(SortByNullable { ranking, output, indices, descending, stable }))
+                "sort_by";
+                ranking: Primitive;
+                Ok(Box::new(SortBy { ranking, output, indices, stable, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "sort_by";
                 ranking: Primitive;
-                Ok(Box::new(SortBy { ranking, output, indices, descending, stable }))
+                Ok(Box::new(SortBy { ranking, output, indices, stable, c: PhantomData::<CmpLessThan> }))
             }
         }
     }
@@ -1636,8 +1689,8 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_deduplicate";
-            left, right, merged_out: Primitive;
-            Ok(Box::new(MergeDeduplicate { left, right, deduplicated: merged_out, merge_ops: ops_out }))
+            left, right, merged_out: PrimitiveOrVal;
+            Ok(Box::new(MergeDeduplicate { left, right, deduplicated: merged_out, merge_ops: ops_out, comparator: PhantomData::<CmpLessThan> }))
         }
     }
 
@@ -1651,13 +1704,13 @@ pub mod operator {
         if desc {
             reify_types! {
                 "partition";
-                left, right: Primitive;
+                left, right: PrimitiveOrVal;
                 Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "partition";
-                left, right: Primitive;
+                left, right: PrimitiveOrVal;
                 Ok(Box::new(Partition { left, right, partitioning: partition_out, limit, c: PhantomData::<CmpLessThan> }))
             }
         }
@@ -1673,13 +1726,13 @@ pub mod operator {
         if desc {
             reify_types! {
                 "subpartition";
-                left, right: Primitive;
+                left, right: PrimitiveOrVal;
                 Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "subpartition";
-                left, right: Primitive;
+                left, right: PrimitiveOrVal;
                 Ok(Box::new(SubPartition { partitioning, left, right, sub_partitioning: subpartition_out, c: PhantomData::<CmpLessThan> }))
             }
         }
@@ -1694,8 +1747,8 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_deduplicate_partitioned";
-            left, right, merged_out: Primitive;
-            Ok(Box::new(MergeDeduplicatePartitioned { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out }))
+            left, right, merged_out: PrimitiveOrVal;
+            Ok(Box::new(MergeDeduplicatePartitioned { partitioning, left, right, deduplicated: merged_out, merge_ops: ops_out, c: PhantomData::<CmpLessThan> }))
         }
     }
 
@@ -1707,7 +1760,7 @@ pub mod operator {
     ) -> Result<BoxedOperator<'a>, QueryError> {
         reify_types! {
             "merge_drop";
-            left, right, merged_out: Primitive;
+            left, right, merged_out: PrimitiveOrVal;
             Ok(Box::new(MergeDrop { merge_ops, left, right, deduplicated: merged_out }))
         }
     }
@@ -1750,13 +1803,13 @@ pub mod operator {
         if desc {
             reify_types! {
                 "merge_partitioned_desc";
-                left, right, merged_out: Primitive;
+                left, right, merged_out: PrimitiveOrVal;
                 Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpGreaterThan> }))
             }
         } else {
             reify_types! {
                 "merge_partitioned_asc";
-                left, right, merged_out: Primitive;
+                left, right, merged_out: PrimitiveOrVal;
                 Ok(Box::new(MergePartitioned { partitioning, left, right, merged: merged_out, take_left: ops_out, limit, c: PhantomData::<CmpLessThan> }))
             }
         }

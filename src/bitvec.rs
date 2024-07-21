@@ -1,5 +1,6 @@
 pub trait BitVecMut {
     fn set(&mut self, index: usize);
+    fn unset(&mut self, index: usize);
 }
 
 pub trait BitVec {
@@ -13,6 +14,13 @@ impl BitVecMut for Vec<u8> {
             self.push(0);
         }
         self[slot] |= 1 << (index as u8 & 7)
+    }
+
+    fn unset(&mut self, index: usize) {
+        let slot = index >> 3;
+        if slot < self.len() {
+            self[slot] &= 0xff ^ (1 << (index as u8 & 7));
+        }
     }
 }
 

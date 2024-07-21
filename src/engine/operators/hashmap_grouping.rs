@@ -5,7 +5,7 @@ use crate::ingest::raw_val::RawVal;
 use std::hash::Hash;
 
 #[derive(Debug)]
-pub struct HashMapGrouping<T: VecData<T> + Hash> {
+pub struct HashMapGrouping<T: VecData<T> + Hash + Ord> {
     input: BufferRef<T>,
     unique_out: BufferRef<T>,
     grouping_key_out: BufferRef<u32>,
@@ -13,7 +13,7 @@ pub struct HashMapGrouping<T: VecData<T> + Hash> {
     map: FnvHashMap<T, u32>,
 }
 
-impl<'a, T: VecData<T> + Hash + 'a> HashMapGrouping<T> {
+impl<'a, T: VecData<T> + Hash + Ord + 'a> HashMapGrouping<T> {
     pub fn boxed(
         input: BufferRef<T>,
         unique_out: BufferRef<T>,
@@ -31,7 +31,7 @@ impl<'a, T: VecData<T> + Hash + 'a> HashMapGrouping<T> {
     }
 }
 
-impl<'a, T: VecData<T> + Hash + 'a> VecOperator<'a> for HashMapGrouping<T> {
+impl<'a, T: VecData<T> + Hash + Ord + 'a> VecOperator<'a> for HashMapGrouping<T> {
     fn execute(&mut self, stream: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let count = {
             let raw_grouping_key = scratchpad.get(self.input);

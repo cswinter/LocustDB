@@ -2,7 +2,6 @@ use std::cmp::min;
 
 use crate::engine::*;
 
-
 pub struct StreamBuffer<T> {
     pub input: BufferRef<T>,
     pub output: BufferRef<T>,
@@ -17,7 +16,11 @@ impl<'a, T: 'a> VecOperator<'a> for StreamBuffer<T>
 where
     T: VecData<T>,
 {
-    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
+    fn execute(
+        &mut self,
+        streaming: bool,
+        scratchpad: &mut Scratchpad<'a>,
+    ) -> Result<(), QueryError> {
         let input = scratchpad.get_pinned(self.input);
         if self.is_bitvec {
             // Basic sanity check, this will panic if the data is not u8
@@ -61,13 +64,27 @@ where
         }
     }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
-    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { false }
-    fn can_stream_output(&self, _: usize) -> bool { true }
-    fn allocates(&self) -> bool { false }
-    fn has_more(&self) -> bool { self.has_more }
+    fn inputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.input.any()]
+    }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> {
+        vec![&mut self.input.i]
+    }
+    fn outputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.output.any()]
+    }
+    fn can_stream_input(&self, _: usize) -> bool {
+        false
+    }
+    fn can_stream_output(&self, _: usize) -> bool {
+        true
+    }
+    fn allocates(&self) -> bool {
+        false
+    }
+    fn has_more(&self) -> bool {
+        self.has_more
+    }
 
     fn display_op(&self, _: bool) -> String {
         if self.is_bitvec {
@@ -77,7 +94,6 @@ where
         }
     }
 }
-
 
 pub struct StreamBufferNullable<T> {
     pub input: BufferRef<Nullable<T>>,
@@ -95,7 +111,11 @@ impl<'a, T: 'a> VecOperator<'a> for StreamBufferNullable<T>
 where
     T: VecData<T>,
 {
-    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
+    fn execute(
+        &mut self,
+        streaming: bool,
+        scratchpad: &mut Scratchpad<'a>,
+    ) -> Result<(), QueryError> {
         let (input, present) = scratchpad.get_pinned_nullable(self.input);
         let (from, to) = if streaming {
             (self.current_index, self.current_index + self.batch_size)
@@ -105,7 +125,15 @@ where
         let to = min(to, input.len());
         let result_data = Box::new(&input[from..to]);
         scratchpad.set_any(self.output_data.any(), result_data);
-        let result_present = Box::new(&present[(from / 8)..(to + 7) / 8]);
+        let result_present = if from / 8 < present.len() {
+            if (to + 7) / 8 < present.len() {
+                Box::new(&present[(from / 8)..(to + 7) / 8])
+            } else {
+                Box::new(&present[(from / 8)..])
+            }
+        } else {
+            Box::new(&present[0..0])
+        };
         scratchpad.set_any(self.output_present.any(), result_present);
         self.current_index += self.batch_size;
         self.has_more = to < input.len();
@@ -113,7 +141,11 @@ where
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.assemble_nullable_any(self.output_data, self.output_present, self.output.nullable_any());
+        scratchpad.assemble_nullable_any(
+            self.output_data,
+            self.output_present,
+            self.output.nullable_any(),
+        );
         self.batch_size = batch_size
     }
 
@@ -126,14 +158,30 @@ where
         }
     }
 
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
-    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { false }
-    fn can_stream_output(&self, _: usize) -> bool { true }
-    fn allocates(&self) -> bool { false }
-    fn has_more(&self) -> bool { self.has_more }
-    fn display_op(&self, _: bool) -> String { format!("stream({})", self.input) }
+    fn inputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.input.any()]
+    }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> {
+        vec![&mut self.input.i]
+    }
+    fn outputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.output.any()]
+    }
+    fn can_stream_input(&self, _: usize) -> bool {
+        false
+    }
+    fn can_stream_output(&self, _: usize) -> bool {
+        true
+    }
+    fn allocates(&self) -> bool {
+        false
+    }
+    fn has_more(&self) -> bool {
+        self.has_more
+    }
+    fn display_op(&self, _: bool) -> String {
+        format!("stream({})", self.input)
+    }
 }
 
 pub struct StreamNullVec {
@@ -146,7 +194,11 @@ pub struct StreamNullVec {
 }
 
 impl<'a> VecOperator<'a> for StreamNullVec {
-    fn execute(&mut self, streaming: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
+    fn execute(
+        &mut self,
+        streaming: bool,
+        scratchpad: &mut Scratchpad<'a>,
+    ) -> Result<(), QueryError> {
         let len = scratchpad.get_any(self.input).len();
         let count = if streaming {
             assert!(
@@ -165,14 +217,31 @@ impl<'a> VecOperator<'a> for StreamNullVec {
         Ok(())
     }
 
-    fn init(&mut self, _: usize, batch_size: usize, _: &mut Scratchpad<'a>) { self.batch_size = batch_size }
-    fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.input.any()] }
-    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
-    fn outputs(&self) -> Vec<BufferRef<Any>> { vec![self.output.any()] }
-    fn can_stream_input(&self, _: usize) -> bool { false }
-    fn can_stream_output(&self, _: usize) -> bool { true }
-    fn allocates(&self) -> bool { false }
-    fn display_op(&self, _: bool) -> String { format!("stream({})", self.input) }
-    fn has_more(&self) -> bool { self.has_more }
+    fn init(&mut self, _: usize, batch_size: usize, _: &mut Scratchpad<'a>) {
+        self.batch_size = batch_size
+    }
+    fn inputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.input.any()]
+    }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> {
+        vec![&mut self.input.i]
+    }
+    fn outputs(&self) -> Vec<BufferRef<Any>> {
+        vec![self.output.any()]
+    }
+    fn can_stream_input(&self, _: usize) -> bool {
+        false
+    }
+    fn can_stream_output(&self, _: usize) -> bool {
+        true
+    }
+    fn allocates(&self) -> bool {
+        false
+    }
+    fn display_op(&self, _: bool) -> String {
+        format!("stream({})", self.input)
+    }
+    fn has_more(&self) -> bool {
+        self.has_more
+    }
 }
-

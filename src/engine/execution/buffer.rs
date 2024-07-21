@@ -48,6 +48,7 @@ impl BufferRef<Any> {
     pub fn nullable_u8(self) -> BufferRef<Nullable<u8>> { self.transmute() }
     pub fn nullable_u16(self) -> BufferRef<Nullable<u16>> { self.transmute() }
     pub fn nullable_u32(self) -> BufferRef<Nullable<u32>> { self.transmute() }
+    pub fn nullable_u64(self) -> BufferRef<Nullable<u64>> { self.transmute() }
     pub fn nullable_i64(self) -> BufferRef<Nullable<i64>> { self.transmute() }
     pub fn nullable_f64(self) -> BufferRef<Nullable<OrderedFloat<f64>>> { self.transmute() }
     pub fn nullable_str<'a>(self) -> BufferRef<Nullable<&'a str>> { self.transmute() }
@@ -68,6 +69,15 @@ impl BufferRef<Any> {
     fn transmute<T>(self) -> BufferRef<T> { unsafe { mem::transmute(self) } }
 }
 
+impl From<TypedBufferRef> for BufferRef<u8> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<u8> { buffer.u8().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<u16> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<u16> { buffer.u16().unwrap() }
+}
+
+
 impl From<TypedBufferRef> for BufferRef<u32> {
     fn from(buffer: TypedBufferRef) -> BufferRef<u32> { buffer.u32().unwrap() }
 }
@@ -78,6 +88,30 @@ impl From<TypedBufferRef> for BufferRef<i64> {
 
 impl From<TypedBufferRef> for BufferRef<OrderedFloat<f64>> {
     fn from(buffer: TypedBufferRef) -> BufferRef<OrderedFloat<f64>> { buffer.f64().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<Nullable<u8>> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<Nullable<u8>> { buffer.nullable_u8().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<Nullable<u16>> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<Nullable<u16>> { buffer.nullable_u16().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<Nullable<u32>> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<Nullable<u32>> { buffer.nullable_u32().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<Nullable<u64>> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<Nullable<u64>> { buffer.nullable_u64().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<Nullable<i64>> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<Nullable<i64>> { buffer.nullable_i64().unwrap() }
+}
+
+impl From<TypedBufferRef> for BufferRef<Nullable<of64>> {
+    fn from(buffer: TypedBufferRef) -> BufferRef<Nullable<of64>> { buffer.nullable_f64().unwrap() }
 }
 
 // this is a temporary hack because there is no buffer type for ByteSlices and can be removed once there is
@@ -241,11 +275,6 @@ impl TypedBufferRef {
         Ok(self.buffer.opt_str())
     }
 
-    pub fn opt_f64(&self) -> Result<BufferRef<Option<OrderedFloat<f64>>>, QueryError> {
-        ensure!(self.tag == EncodingType::OptF64, "{:?} != OptF64", self.tag);
-        Ok(self.buffer.opt_f64())
-    }
-
     pub fn i64(&self) -> Result<BufferRef<i64>, QueryError> {
         ensure!(self.tag == EncodingType::I64, "{:?} != I64", self.tag);
         Ok(self.buffer.i64())
@@ -289,6 +318,11 @@ impl TypedBufferRef {
     pub fn nullable_u32(&self) -> Result<BufferRef<Nullable<u32>>, QueryError> {
         ensure!(self.tag == EncodingType::NullableU32, "{:?} != NullableU32", self.tag);
         Ok(self.buffer.nullable_u32())
+    }
+
+    pub fn nullable_u64(&self) -> Result<BufferRef<Nullable<u64>>, QueryError> {
+        ensure!(self.tag == EncodingType::NullableU32, "{:?} != NullableU64", self.tag);
+        Ok(self.buffer.nullable_u64())
     }
 
     pub fn nullable_i64(&self) -> Result<BufferRef<Nullable<i64>>, QueryError> {

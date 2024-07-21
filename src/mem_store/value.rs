@@ -49,6 +49,12 @@ impl<'a> From<&'a str> for Val<'a> {
     }
 }
 
+impl<'a> From<f64> for Val<'a> {
+    fn from(f: f64) -> Val<'a> {
+        Val::Float(OrderedFloat(f))
+    }
+}
+
 impl<'a, T> From<Option<T>> for Val<'a>
     where Val<'a>: From<T>
 {

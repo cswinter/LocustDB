@@ -1,6 +1,6 @@
 use ordered_float::OrderedFloat;
 
-use crate::bitvec::BitVec;
+use crate::bitvec::{BitVec, BitVecMut};
 use crate::engine::*;
 use std::i64;
 use std::marker::PhantomData;
@@ -144,7 +144,7 @@ impl<'a, T, U, V, A: Aggregator<T, V>> VecOperator<'a> for Aggregate<T, U, V, A>
 pub struct AggregateNullable<T, U, V, A> where A: Aggregator<T, V> {
     pub input: BufferRef<Nullable<T>>,
     pub grouping: BufferRef<U>,
-    pub output: BufferRef<V>,
+    pub output: BufferRef<Nullable<V>>,
     pub max_index: BufferRef<Scalar<i64>>,
     pub a: PhantomData<A>,
 }
@@ -154,24 +154,26 @@ impl<'a, T, U, V, A: Aggregator<T, V>> VecOperator<'a> for AggregateNullable<T, 
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (nums, present) = scratchpad.get_nullable(self.input);
         let grouping = scratchpad.get(self.grouping);
-        let mut accumulators = scratchpad.get_mut(self.output);
+        let (mut accumulators, mut accumulators_present) = scratchpad.get_mut_nullable(self.output);
 
         let len = scratchpad.get_scalar(&self.max_index) as usize + 1;
         if len > accumulators.len() {
             accumulators.resize(len, A::unit());
+            accumulators_present.resize((len + 7) / 8, 0);
         }
 
         for i in 0..nums.len() {
             if (&*present).is_set(i) {
                 let g = grouping[i].cast_usize();
                 accumulators[g] = A::accumulate(accumulators[g], nums[i]);
+                accumulators_present.set(g);
             }
         }
         Ok(())
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, Vec::with_capacity(0));
+        scratchpad.set_nullable(self.output, Vec::with_capacity(0), Vec::with_capacity(0));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.input.any(), self.max_index.any()] }
@@ -238,7 +240,7 @@ impl<'a, T, U, V, A: CheckedAggregator<T, V>> VecOperator<'a> for CheckedAggrega
 pub struct CheckedAggregateNullable<T, U, V, A> {
     pub input: BufferRef<Nullable<T>>,
     pub grouping: BufferRef<U>,
-    pub output: BufferRef<V>,
+    pub output: BufferRef<Nullable<V>>,
     pub max_index: BufferRef<Scalar<i64>>,
     pub a: PhantomData<A>,
 }
@@ -248,7 +250,7 @@ impl<'a, T, U, V, A: CheckedAggregator<T, V>> VecOperator<'a> for CheckedAggrega
     fn execute(&mut self, _: bool, scratchpad: &mut Scratchpad<'a>) -> Result<(), QueryError> {
         let (nums, present) = scratchpad.get_nullable(self.input);
         let grouping = scratchpad.get(self.grouping);
-        let mut accumulators = scratchpad.get_mut(self.output);
+        let (mut accumulators, mut accumulators_present) = scratchpad.get_mut_nullable(self.output);
 
         let len = scratchpad.get_scalar(&self.max_index) as usize + 1;
         if len > accumulators.len() {
@@ -262,13 +264,14 @@ impl<'a, T, U, V, A: CheckedAggregator<T, V>> VecOperator<'a> for CheckedAggrega
                 let (result, overflow) = A::accumulate_checked(accumulators[g], nums[i]);
                 any_overflow |= overflow;
                 accumulators[g] = result;
+                accumulators_present.set(g);
             }
         }
         if any_overflow { Err(QueryError::Overflow) } else { Ok(()) }
     }
 
     fn init(&mut self, _: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set(self.output, Vec::with_capacity(0));
+        scratchpad.set_nullable(self.output, Vec::with_capacity(0), Vec::with_capacity(0));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> { vec![self.grouping.any(), self.input.any(), self.max_index.any()] }

@@ -15,7 +15,7 @@ use crate::mem_store::value::Val;
 use crate::engine::data_types::*;
 
 
-pub trait VecData<T>: PartialEq + Ord + Copy + Debug + Sync + Send {
+pub trait VecData<T>: PartialEq + Copy + Debug + Sync + Send {
     fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [T] where T: 'a;
     fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<T> where T: 'a;
     fn wrap_one(_value: T) -> RawVal { panic!("Can't wrap scalar of type {:?}", Self::t()) }
@@ -46,7 +46,7 @@ impl VecData<u32> for u32 {
 impl VecData<i64> for i64 {
     fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [i64] where i64: 'a { vec.cast_ref_i64() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<i64> where i64: 'a { vec.cast_ref_mut_i64() }
-    fn wrap_one(value: i64) -> RawVal { if value == i64::MIN { RawVal::Null } else { RawVal::Int(value) } }
+    fn wrap_one(value: i64) -> RawVal { if value == I64_NULL { RawVal::Null } else { RawVal::Int(value) } }
     fn t() -> EncodingType { EncodingType::I64 }
 }
 
@@ -60,21 +60,8 @@ impl VecData<u64> for u64 {
 impl VecData<OrderedFloat<f64>> for OrderedFloat<f64> {
     fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [OrderedFloat<f64>] where OrderedFloat<f64>: 'a { vec.cast_ref_f64() }
     fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<OrderedFloat<f64>> where OrderedFloat<f64>: 'a { vec.cast_ref_mut_f64() }
-    fn wrap_one(value: OrderedFloat<f64>) -> RawVal { RawVal::Float(value) }
+    fn wrap_one(value: OrderedFloat<f64>) -> RawVal { if value.to_bits() == F64_NULL.to_bits() { RawVal::Null } else { RawVal::Float(value) } }
     fn t() -> EncodingType { EncodingType::F64 }
-}
-
-impl VecData<Option<OrderedFloat<f64>>> for Option<OrderedFloat<f64>> {
-    fn unwrap<'a, 'b>(vec: &'b dyn Data<'a>) -> &'b [Option<OrderedFloat<f64>>] where Option<OrderedFloat<f64>>: 'a { vec.cast_ref_opt_f64() }
-    fn unwrap_mut<'a, 'b>(vec: &'b mut dyn Data<'a>) -> &'b mut Vec<Option<OrderedFloat<f64>>> where Option<OrderedFloat<f64>>: 'a { vec.cast_ref_mut_opt_f64() }
-    fn wrap_one(value: Option<OrderedFloat<f64>>) -> RawVal {
-        match value {
-            Some(f) => RawVal::Float(f),
-            None => RawVal::Null,
-        }
-    }
-
-    fn t() -> EncodingType { EncodingType::OptF64 }
 }
 
 impl VecData<usize> for usize {

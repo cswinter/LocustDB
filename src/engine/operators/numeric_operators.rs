@@ -101,7 +101,9 @@ impl<LHS: PrimInt, RHS: PrimInt> BinaryOp<LHS, RHS, i64> for Division<LHS, RHS> 
 impl<LHS: PrimInt, RHS: PrimInt> CheckedBinaryOp<LHS, RHS, i64> for Division<LHS, RHS> {
     #[inline]
     fn perform_checked(lhs: LHS, rhs: RHS) -> (i64, bool) {
-        if rhs.to_i64().unwrap() == 0 {
+        let division_by_0 = rhs.to_i64().unwrap() == 0;
+        let division_by_minus1_overflow = lhs.to_i64().unwrap() <= -i64::MAX && rhs.to_i64().unwrap() == -1;
+        if  division_by_0 || division_by_minus1_overflow{
             (1, true)
         } else {
             (lhs.to_i64().unwrap() / rhs.to_i64().unwrap(), false)
