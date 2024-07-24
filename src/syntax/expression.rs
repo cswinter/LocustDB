@@ -41,6 +41,7 @@ pub enum Func1Type {
     IsNull,
     IsNotNull,
     Length,
+    Floor,
 }
 
 impl Expr {

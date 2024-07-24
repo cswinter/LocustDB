@@ -93,6 +93,15 @@ impl Cast<u64> for u32 { fn cast(self) -> u64 { u64::from(self) } }
 impl Cast<u64> for i64 { fn cast(self) -> u64 { self as u64 } }
 
 
+impl Cast<of64> for u8 { fn cast(self) -> OrderedFloat<f64> { OrderedFloat::from(self as f64) } }
+
+impl Cast<of64> for u16 { fn cast(self) -> OrderedFloat<f64> { OrderedFloat::from(self as f64) } }
+
+impl Cast<of64> for u32 { fn cast(self) -> OrderedFloat<f64> { OrderedFloat::from(self as f64) } }
+
+impl Cast<of64> for i64 { fn cast(self) -> OrderedFloat<f64> { OrderedFloat::from(self as f64) } }
+
+
 impl<'a> Cast<Val<'a>> for u8 { fn cast(self) -> Val<'a> { Val::Integer(self as i64) } }
 
 impl<'a> Cast<Val<'a>> for u16 { fn cast(self) -> Val<'a> { Val::Integer(self as i64) } }

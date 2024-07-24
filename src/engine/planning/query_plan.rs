@@ -61,6 +61,11 @@ pub enum QueryPlan {
         #[output(t = "base=data;null=_always")]
         nullable: TypedBufferRef,
     },
+    Floor {
+        input: BufferRef<of64>,
+        #[output]
+        floor: BufferRef<i64>,
+    },
     /// Converts NullableI64, NullableStr, or NullableF64 into a representation where nulls are encoded as part
     /// of the data (i64 with i64::MAX representing null for NullableI64, Option<&str> for NullableStr, and special NaN value F64_NULL representing null for NullableF64).
     FuseNulls {
@@ -1329,6 +1334,18 @@ impl QueryPlan {
                         }
                         (planner.to_year(decoded), Type::integer())
                     }
+                    Func1Type::Floor => {
+                        let decoded = t.codec.decode(plan, planner);
+                        match t.decoded {
+                            BasicType::Integer => (decoded, t),
+                            BasicType::Float => (planner.floor(decoded.f64()?).into(), t),
+                            _ => bail!(
+                                QueryError::TypeError,
+                                "Found floor({:?}), expected floor(float)",
+                                &t
+                            ),
+                        }
+                    }
                     Func1Type::Length => {
                         let decoded = t.codec.decode(plan, planner);
                         if t.decoded != BasicType::String {
@@ -1499,7 +1516,9 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
             let max = p1.max(p2).max(p3).max(p4);
             Some((min, max))
         }
+        Floor { input, .. } => encoding_range(&input.into(), qp),
         ScalarI64 { value, .. } => Some((value, value)),
+        ScalarF64 { value, .. } => Some((value.floor() as i64, value.ceil() as i64)),
         ref plan => {
             error!("encoding_range not implement for {:?}", plan);
             None
@@ -1844,6 +1863,7 @@ pub(super) fn prepare<'a>(
         QueryPlan::GetNullMap { nullable, present } => {
             operator::get_null_map(nullable.nullable_any()?, present)
         }
+        QueryPlan::Floor { input, floor } => operator::floor(input, floor),
         QueryPlan::FuseNulls { nullable, fused } => operator::fuse_nulls(nullable, fused)?,
         QueryPlan::FuseIntNulls {
             offset,
