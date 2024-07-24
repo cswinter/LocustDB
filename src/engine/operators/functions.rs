@@ -2,6 +2,8 @@ use std::i64;
 
 use chrono::{DateTime, Datelike};
 
+use crate::engine::of64;
+
 use super::map_operator::MapOp;
 
 
@@ -12,6 +14,12 @@ impl MapOp<i64, i64> for ToYear {
     fn name() -> &'static str { "to_year" }
 }
 
+pub struct Floor;
+
+impl MapOp<of64, i64> for Floor {
+    fn apply(&self, f: of64) -> i64 { f.floor() as i64 }
+    fn name() -> &'static str { "floor" }
+}
 
 pub struct BooleanNot;
 

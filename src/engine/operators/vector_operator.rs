@@ -1005,6 +1005,14 @@ pub mod operator {
             lhs: ScalarI64, rhs: Float;
             Ok(Box::new(BinarySVOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
             lhs: Float, rhs: ScalarI64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
+            lhs: ScalarF64, rhs: Integer;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
+            lhs: Integer, rhs: ScalarF64;
+            Ok(Box::new(BinaryVSOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
+            lhs: ScalarF64, rhs: Float;
+            Ok(Box::new(BinarySVOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }));
+            lhs: Float, rhs: ScalarF64;
             Ok(Box::new(BinaryVSOperator { lhs, rhs, output: output.into(), op: PhantomData::<Multiplication<_, _, OrderedFloat<f64>>> }))
         }
     }
@@ -1347,13 +1355,18 @@ pub mod operator {
                     input.tag, output.tag
                 );
             }
-        } else {
-            if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
-                return Ok(Box::new(TypeConversionOperator {
-                    input: input.str()?,
-                    output: output.opt_str()?,
-                }));
+        } else if input.tag == EncodingType::Str && output.tag == EncodingType::OptStr {
+            Ok(Box::new(TypeConversionOperator {
+                input: input.str()?,
+                output: output.opt_str()?,
+            }))
+        } else if output.tag == EncodingType::F64 {
+            reify_types! {
+                "type_conversion";
+                input: IntegerNoU64, output: Float;
+                Ok(Box::new(TypeConversionOperator { input, output }))
             }
+        } else {
             reify_types! {
                 "type_conversion";
                 input: Integer, output: Integer;
@@ -1376,6 +1389,14 @@ pub mod operator {
             input,
             output,
             map: ToYear,
+        })
+    }
+
+    pub fn floor<'a>(input: BufferRef<of64>, output: BufferRef<i64>) -> BoxedOperator<'a> {
+        Box::new(MapOperator {
+            input,
+            output,
+            map: Floor,
         })
     }
 

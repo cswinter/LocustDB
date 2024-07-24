@@ -334,7 +334,10 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
                 convert_to_native_expr(pattern)?,
             )
         }
-        _ => return Err(QueryError::NotImplemented(format!("{:?}", node))),
+        ASTNode::Floor { expr, field: DateTimeField::NoDateTime } => {
+            Expr::Func1(Func1Type::Floor, convert_to_native_expr(expr)?)
+        }
+        _ => return Err(QueryError::NotImplemented(format!("Parsing for this ASTNode not implemented: {:?}", node))),
     }))
 }
 
