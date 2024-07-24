@@ -1287,6 +1287,7 @@ fn test_overflow5() {
     test_query_ec_err("SELECT sum(largenum) FROM default;", QueryError::Overflow);
 }
 
+// TODO: sometimes flaky, only returning subset of generated data
 #[test]
 fn test_gen_table() {
     use crate::Value::*;
