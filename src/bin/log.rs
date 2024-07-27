@@ -31,6 +31,10 @@ struct Opt {
     /// Interval multiplier for step
     #[structopt(long, name = "STEP_MULTIPLIER", default_value = "1")]
     step_interval: i64,
+
+    /// Additional noise added to each value
+    #[structopt(long, name = "NOISE", default_value = "0.0")]
+    noise: f64,
 }
 
 struct RandomWalk {
@@ -42,7 +46,7 @@ struct RandomWalk {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let Opt { addr, interval, table_prefix, step_interval } = Opt::from_args();
+    let Opt { addr, interval, table_prefix, step_interval, noise } = Opt::from_args();
     let mut log = locustdb::logging_client::LoggingClient::new(
         Duration::from_secs(1),
         &addr,
@@ -76,7 +80,7 @@ async fn main() {
                 log.log(
                     &walk.name,
                     [
-                        ("value".to_string(), vf64(walk.curr_value)),
+                        ("value".to_string(), vf64(walk.curr_value + rng.gen_range(-noise, noise))),
                         ("step".to_string(), AnyVal::Int((i / walk.interval) as i64 * step_interval)),
                     ]
                     .iter()
