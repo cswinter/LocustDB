@@ -1389,7 +1389,7 @@ fn test_column_with_null_partitions() {
 fn test_long_nullable() {
     let _ = env_logger::try_init();
     let locustdb = LocustDB::memory_only();
-    let _ = block_on(locustdb.gen_table(locustdb::colgen::GenTable {
+    block_on(locustdb.gen_table(locustdb::colgen::GenTable {
         name: "test".to_string(),
         partitions: 8,
         partition_size: 2 << 14,
@@ -1397,7 +1397,7 @@ fn test_long_nullable() {
             "nullable_int".to_string(),
             locustdb::colgen::nullable_ints(vec![None, Some(1), Some(-10)], vec![0.9, 0.05, 0.05]),
         )],
-    }));
+    })).unwrap();
     let query = "SELECT nullable_int FROM test LIMIT 0;";
     let expected_rows: Vec<[Value; 1]> = vec![];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();

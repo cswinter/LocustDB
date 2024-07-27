@@ -23,6 +23,7 @@ use super::collect::Collect;
 use super::column_ops::*;
 use super::combine_null_maps::CombineNullMaps;
 use super::compact::Compact;
+use super::compact_with_nullable::CompactWithNullable;
 use super::compact_nullable::CompactNullable;
 use super::compact_nullable_nullable::CompactNullableNullable;
 use super::comparison_operators::*;
@@ -1569,6 +1570,12 @@ pub mod operator {
                 "compact_nullable";
                 data, compacted: NullablePrimitive, select: Integer;
                 Ok(Box::new(CompactNullable { data, select, compacted }))
+            }
+        } else if select.is_nullable() {
+            reify_types! {
+                "compact_with_nullable";
+                data, compacted: Primitive, select: NullableInteger;
+                Ok(Box::new(CompactWithNullable { data, select, compacted }))
             }
         } else {
             reify_types! {
