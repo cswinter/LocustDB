@@ -801,6 +801,26 @@ impl Function2 {
             encoding_invariance: true,
         }
     }
+
+    pub fn forward_left_null(t: BasicType) -> Function2 {
+        Function2 {
+            factory: Box::new(|_, lhs, _| lhs),
+            type_lhs: BasicType::Null,
+            type_rhs: t,
+            type_out: Type::unencoded(t).mutable(),
+            encoding_invariance: false,
+        }
+    }
+
+    pub fn forward_right_null(t: BasicType) -> Function2 {
+        Function2 {
+            factory: Box::new(|_, _, rhs| rhs),
+            type_lhs: t,
+            type_rhs: BasicType::Null,
+            type_out: Type::unencoded(t).mutable(),
+            encoding_invariance: false,
+        }
+    }
 }
 
 lazy_static! {
@@ -849,14 +869,26 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     type_rhs: BasicType::Integer,
                     type_out: Type::unencoded(BasicType::Integer).mutable(),
                     encoding_invariance: false,
-                }
+                },
+                Function2::forward_left_null(BasicType::Float),
+                Function2::forward_right_null(BasicType::Float),
+                Function2::forward_left_null(BasicType::Integer),
+                Function2::forward_right_null(BasicType::Integer),
+                Function2::forward_left_null(BasicType::Null),
+                Function2::forward_right_null(BasicType::Null),
             ],
         ),
         (
             Func2Type::Divide,
-            vec![Function2::integer_op(Box::new(|qp, lhs, rhs| {
-                qp.checked_divide(lhs, rhs)
-            }))],
+            vec![
+                Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_divide(lhs, rhs))),
+                Function2::forward_left_null(BasicType::Float),
+                Function2::forward_right_null(BasicType::Float),
+                Function2::forward_left_null(BasicType::Integer),
+                Function2::forward_right_null(BasicType::Integer),
+                Function2::forward_left_null(BasicType::Null),
+                Function2::forward_right_null(BasicType::Null),
+            ],
         ),
         (
             Func2Type::Modulo,
@@ -1772,7 +1804,7 @@ fn try_bitpacking(
                 max
             };
             order_preserving = order_preserving && plan_type.is_order_preserving();
-            let adjusted_query_plan = if query_plan.is_nullable() {
+            let mut adjusted_query_plan = if query_plan.is_nullable() {
                 let fused = planner.fuse_int_nulls(-min + 1, query_plan);
                 if fused.tag != EncodingType::I64 {
                     planner.cast(fused, EncodingType::I64).i64()?
@@ -1783,12 +1815,18 @@ fn try_bitpacking(
                 let offset = planner.scalar_i64(-min, true);
                 planner.add(query_plan, offset.into()).i64()?
             } else if query_plan.is_null() {
-                planner
+                let x = planner
                     .constant_expand(0, partition_len, EncodingType::I64)
-                    .i64()?
+                    .i64()?;
+                info!("EMITTING NULL CONSTANT EXPAND {:?}", x);
+                x
             } else {
                 planner.cast(query_plan, EncodingType::I64).i64()?
             };
+            adjusted_query_plan = filter
+                .apply_filter(planner, adjusted_query_plan.into())
+                .i64()
+                .expect("source type should be i64");
 
             if total_width == 0 {
                 plan = Some(adjusted_query_plan);

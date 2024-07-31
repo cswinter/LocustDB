@@ -883,12 +883,10 @@ fn test_multiply_null_by_constant() {
     );
 }
 
-// TODO: lots of combinations of null and other types not supported for multiply/divide/...
-#[ignore]
 #[test]
-fn test_multiply_null() {
+fn test_divide_multiply_null() {
     test_query_ec(
-        "SELECT MIN(_step), 493 * _step, _step / 10 FROM default WHERE _step IS NOT NULL AND value_loss IS NOT NULL",
+        "SELECT MIN(_step), _step * 12.321, 493 * _step, _step / 10 FROM default WHERE _step IS NOT NULL AND value_loss IS NOT NULL",
         &[],
     );
 }

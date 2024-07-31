@@ -21,7 +21,6 @@ pub struct BatchResult<'a> {
     pub unsafe_referenced_buffers: Vec<BoxedData<'a>>,
 }
 
-
 impl<'a> BatchResult<'a> {
     pub fn len(&self) -> usize {
         self.columns.first().map_or(0, |s| s.len())
@@ -52,7 +51,12 @@ impl<'a> BatchResult<'a> {
     }
 
     #[must_use]
-    pub fn into_columns(self) -> (HashMap<String, Arc<dyn DataSource + 'a>>, Vec<BoxedData<'a>>) {
+    pub fn into_columns(
+        self,
+    ) -> (
+        HashMap<String, Arc<dyn DataSource + 'a>>,
+        Vec<BoxedData<'a>>,
+    ) {
         let mut cols = HashMap::<String, Arc<dyn DataSource>>::default();
         let columns = self.columns.into_iter().map(Arc::new).collect::<Vec<_>>();
         for projection in self.projection {
@@ -130,25 +134,33 @@ pub fn combine<'a>(
             (vec![], ops)
         } else if lprojection.len() == 1 {
             let (l, r) = unify_types(&mut qp, left[lprojection[0]], right[rprojection[0]]);
+            let l = null_to_val(&mut qp, l);
+            let r = null_to_val(&mut qp, r);
             let (ops, merged) = qp.merge_deduplicate(l, r);
             (vec![merged.any()], ops)
         } else {
             let (l, r) = unify_types(&mut qp, left[lprojection[0]], right[rprojection[0]]);
+            let l = null_to_val(&mut qp, l);
+            let r = null_to_val(&mut qp, r);
             let mut partitioning = qp.partition(l, r, limit, false);
             for i in 1..(lprojection.len() - 1) {
                 let (l, r) = unify_types(&mut qp, left[lprojection[i]], right[rprojection[i]]);
                 let l = null_to_val(&mut qp, l);
                 let r = null_to_val(&mut qp, r);
-                partitioning = qp.subpartition(partitioning,l, r, false);
+                partitioning = qp.subpartition(partitioning, l, r, false);
             }
 
             let last = lprojection.len() - 1;
             let (l, r) = unify_types(&mut qp, left[lprojection[last]], right[rprojection[last]]);
+            let l = null_to_val(&mut qp, l);
+            let r = null_to_val(&mut qp, r);
             let (ops, merged) = qp.merge_deduplicate_partitioned(partitioning, l, r);
 
             let mut group_by_cols = Vec::with_capacity(lprojection.len());
             for i in 0..last {
                 let (l, r) = unify_types(&mut qp, left[lprojection[i]], right[rprojection[i]]);
+                let l = null_to_val(&mut qp, l);
+                let r = null_to_val(&mut qp, r);
                 let merged = qp.merge_drop(ops, l, r);
                 group_by_cols.push(merged.any());
             }
@@ -231,7 +243,7 @@ pub fn combine<'a>(
                 let (l, r) = unify_types(&mut qp, l, r);
                 let mut partitioning = qp.partition(l, r, limit, desc);
 
-                for i in 1..(batch1.order_by.len() - 1){
+                for i in 1..(batch1.order_by.len() - 1) {
                     let (index1, desc) = batch1.order_by[i];
                     let (index2, _) = batch2.order_by[i];
                     let (l, r) = unify_types(&mut qp, left[index1], right[index2]);
@@ -253,7 +265,12 @@ pub fn combine<'a>(
                     let l = null_to_val(&mut qp, left[ileft]);
                     let r = null_to_val(&mut qp, right[iright]);
                     let (l, r) = unify_types(&mut qp, l, r);
-                    assert!(l.tag == r.tag, "Types do not match: {:?} {:?}", l.tag, r.tag);
+                    assert!(
+                        l.tag == r.tag,
+                        "Types do not match: {:?} {:?}",
+                        l.tag,
+                        r.tag
+                    );
                     let merged = qp.merge_keep(merge_ops, l, r);
                     projection.push(merged.any());
                 }
@@ -266,7 +283,12 @@ pub fn combine<'a>(
                 let l = null_to_val(&mut qp, left[ileft]);
                 let r = null_to_val(&mut qp, right[iright]);
                 let (l, r) = unify_types(&mut qp, l, r);
-                assert!(l.tag == r.tag, "Types do not match: {:?} {:?}", l.tag, r.tag);
+                assert!(
+                    l.tag == r.tag,
+                    "Types do not match: {:?} {:?}",
+                    l.tag,
+                    r.tag
+                );
                 let merged = qp.merge_keep(merge_ops, l, r);
                 order_by.push((merged.any(), desc));
             }
