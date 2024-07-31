@@ -99,7 +99,7 @@ impl Cast<of64> for u16 { fn cast(self) -> OrderedFloat<f64> { OrderedFloat::fro
 
 impl Cast<of64> for u32 { fn cast(self) -> OrderedFloat<f64> { OrderedFloat::from(self as f64) } }
 
-impl Cast<of64> for i64 { fn cast(self) -> OrderedFloat<f64> { OrderedFloat::from(self as f64) } }
+impl Cast<of64> for i64 { fn cast(self) -> OrderedFloat<f64> { if self == I64_NULL { F64_NULL } else { OrderedFloat::from(self as f64) } } }
 
 
 impl<'a> Cast<Val<'a>> for u8 { fn cast(self) -> Val<'a> { Val::Integer(self as i64) } }

@@ -173,11 +173,13 @@ pub fn combine<'a>(
         for (&(ileft, aggregator), &(iright, _)) in
             batch1.aggregations.iter().zip(batch2.aggregations.iter())
         {
-            let left = left[ileft];
-            let right = right[iright];
-            let (left, right) = unify_types(&mut qp, left, right);
-            let left = null_to_val(&mut qp, left);
-            let right = null_to_val(&mut qp, right);
+            let mut left = left[ileft];
+            let mut right = right[iright];
+            if (left.tag, right.tag) == (EncodingType::I64, EncodingType::F64) {
+                left = qp.cast(left, EncodingType::F64);
+            } else if (left.tag, right.tag) == (EncodingType::F64, EncodingType::I64) {
+                right = qp.cast(right, EncodingType::F64);
+            }
             let aggregated = qp.merge_aggregate(ops, left, right, aggregator);
             aggregates.push((aggregated.any(), aggregator));
         }
