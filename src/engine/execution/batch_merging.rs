@@ -175,6 +175,9 @@ pub fn combine<'a>(
         {
             let left = left[ileft];
             let right = right[iright];
+            let (left, right) = unify_types(&mut qp, left, right);
+            let left = null_to_val(&mut qp, left);
+            let right = null_to_val(&mut qp, right);
             let aggregated = qp.merge_aggregate(ops, left, right, aggregator);
             aggregates.push((aggregated.any(), aggregator));
         }

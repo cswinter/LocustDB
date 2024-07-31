@@ -892,6 +892,17 @@ fn test_divide_multiply_null() {
 }
 
 #[test]
+fn test_aggregate_mixed_int_float_null() {
+    test_query_ec(
+        "SELECT SUM(mixed_float_int_null), COUNT(mixed_float_int_null), MIN(mixed_float_int_null), MAX(mixed_float_int_null), id / 5 FROM default",
+        &[
+            vec![Float(14.33), Int(5), Float(0.12), Float(10.0), Int(0)],
+            vec![Float(0.7), Int(3), Float(0.1), Float(0.5), Int(1)]
+        ]
+    );
+}
+
+#[test]
 fn test_sort_by_nullable1() {
     test_query_ec(
         "SELECT nullable_int, nullable_int2, country
@@ -1395,7 +1406,8 @@ fn test_long_nullable() {
             "nullable_int".to_string(),
             locustdb::colgen::nullable_ints(vec![None, Some(1), Some(-10)], vec![0.9, 0.05, 0.05]),
         )],
-    })).unwrap();
+    }))
+    .unwrap();
     let query = "SELECT nullable_int FROM test LIMIT 0;";
     let expected_rows: Vec<[Value; 1]> = vec![];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
@@ -1877,34 +1889,32 @@ fn test_float_greater_than_int() {
 //     );
 // }
 
-
 #[test]
 fn test_floor1() {
     test_query_ec(
         "SELECT MAX(id), MIN(id), FLOOR(float01 * 10) FROM default",
         &[
-              vec![Int(1), Int(1), Int(-4)],
-              vec![Int(9), Int(9), Int(-2)],
-              vec![Int(4), Int(4), Int(1)],
-              vec![Int(7), Int(5), Int(2)],
-              vec![Int(0), Int(0), Int(3)],
-              vec![Int(2), Int(2), Int(4)],
-              vec![Int(6), Int(6), Int(5)],
-              vec![Int(8), Int(8), Int(7)],
-              vec![Int(3), Int(3), Int(9)]
+            vec![Int(1), Int(1), Int(-4)],
+            vec![Int(9), Int(9), Int(-2)],
+            vec![Int(4), Int(4), Int(1)],
+            vec![Int(7), Int(5), Int(2)],
+            vec![Int(0), Int(0), Int(3)],
+            vec![Int(2), Int(2), Int(4)],
+            vec![Int(6), Int(6), Int(5)],
+            vec![Int(8), Int(8), Int(7)],
+            vec![Int(3), Int(3), Int(9)],
         ],
     );
 }
-
 
 #[test]
 fn test_floor2() {
     test_query_ec(
         "SELECT MIN(id), MAX(id), FLOOR(id * 0.23) FROM default",
         &[
-              vec![Int(0), Int(4), Int(0)],
-              vec![Int(5), Int(8), Int(1)],
-              vec![Int(9), Int(9), Int(2)],
+            vec![Int(0), Int(4), Int(0)],
+            vec![Int(5), Int(8), Int(1)],
+            vec![Int(9), Int(9), Int(2)],
         ],
     );
 }
