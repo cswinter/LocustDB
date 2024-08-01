@@ -1918,3 +1918,14 @@ fn test_floor2() {
         ],
     );
 }
+
+#[test]
+fn test_negative_constant() {
+    test_query_ec(
+        "SELECT id FROM default WHERE id - 3 <= -1.15 ORDER BY id;",
+        &[
+            vec![Int(0)],
+            vec![Int(1)],
+        ],
+    );
+}

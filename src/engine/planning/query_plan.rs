@@ -1372,6 +1372,13 @@ impl QueryPlan {
                 column_len,
                 planner,
             )?,
+            Func1(Func1Type::Negate, box Const(RawVal::Float(f))) => QueryPlan::compile_expr(
+                &Const(RawVal::Float(-f)),
+                filter,
+                columns,
+                column_len,
+                planner,
+            )?,
             Func1(ftype, ref inner) => {
                 let (plan, t) =
                     QueryPlan::compile_expr(inner, filter, columns, column_len, planner)?;
