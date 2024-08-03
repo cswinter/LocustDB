@@ -56,6 +56,7 @@ use super::merge_keep::*;
 use super::merge_partitioned::MergePartitioned;
 use super::nonzero_compact::{NonzeroCompact, NonzeroCompactNullable};
 use super::nonzero_indices::{NonzeroIndices, NonzeroNonnullIndices};
+use super::null_to_i64::NullToI64;
 use super::null_to_val::NullToVal;
 use super::null_to_vec::NullToVec;
 use super::null_vec::NullVec;
@@ -1335,10 +1336,14 @@ pub mod operator {
                 }
             }
         } else if input.tag == EncodingType::Null {
-            reify_types! {
-                "null_to_vec";
-                output: NullablePrimitive;
-                Ok(Box::new(NullToVec { input: input.any(), output, batch_size: 0 }))
+            if output.tag == EncodingType::I64 {
+                Ok(Box::new(NullToI64 { input: input.any(), output: output.i64()?, batch_size: 0 }))
+            } else {
+                reify_types! {
+                    "null_to_vec";
+                    output: NullablePrimitive;
+                    Ok(Box::new(NullToVec { input: input.any(), output, batch_size: 0 }))
+                }
             }
         } else if input.tag.is_constant() {
             assert!(

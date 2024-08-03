@@ -221,6 +221,19 @@ fn propagate_nullability(operation: &QueryPlan, bp: &mut BufferProvider) -> Rewr
             ];
             Rewrite::ReplaceWith(ops)
         }
+        Floor { input, floor } => {
+            if floor.is_nullable() {
+                let floor_non_null = bp.named_buffer("floor_non_null", floor.tag.non_nullable());
+                let mut ops = vec![Floor {
+                    input: input.forget_nullability(),
+                    floor: floor_non_null,
+                }];
+                ops.extend(combine_nulls(bp, input, input, floor_non_null, floor));
+                Rewrite::ReplaceWith(ops)
+            } else {
+                Rewrite::None
+            }
+        }
         And { lhs, rhs, and } if and.is_nullable() => {
             let and_non_null = bp.named_buffer("and_non_null", and.tag.non_nullable());
             let mut ops = vec![And {

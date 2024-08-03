@@ -62,9 +62,9 @@ pub enum QueryPlan {
         nullable: TypedBufferRef,
     },
     Floor {
-        input: BufferRef<of64>,
-        #[output]
-        floor: BufferRef<i64>,
+        input: TypedBufferRef,
+        #[output(t = "base=i64;null=input")]
+        floor: TypedBufferRef,
     },
     /// Converts NullableI64, NullableStr, or NullableF64 into a representation where nulls are encoded as part
     /// of the data (i64 with i64::MAX representing null for NullableI64, Option<&str> for NullableStr, and special NaN value F64_NULL representing null for NullableF64).
@@ -799,7 +799,7 @@ impl Function2 {
         Function2 {
             factory: Box::new(|_, lhs, _| lhs),
             input_type_signatures: vec![(BasicType::Null, t)],
-            type_out: Type::unencoded(t).mutable(),
+            type_out: Type::unencoded(BasicType::Null).mutable(),
             encoding_invariance: false,
         }
     }
@@ -808,7 +808,7 @@ impl Function2 {
         Function2 {
             factory: Box::new(|_, _, rhs| rhs),
             input_type_signatures: vec![(t, BasicType::Null)],
-            type_out: Type::unencoded(t).mutable(),
+            type_out: Type::unencoded(BasicType::Null).mutable(),
             encoding_invariance: false,
         }
     }
@@ -1372,11 +1372,11 @@ impl QueryPlan {
                     Func1Type::Floor => {
                         let decoded = t.codec.decode(plan, planner);
                         match t.decoded {
-                            BasicType::Integer => (decoded, t),
-                            BasicType::Float => (planner.floor(decoded.f64()?).into(), t),
+                            BasicType::Integer | BasicType::NullableInteger | BasicType::Null => (decoded, t),
+                            BasicType::Float | BasicType::NullableFloat => (planner.floor(decoded), t),
                             _ => bail!(
                                 QueryError::TypeError,
-                                "Found floor({:?}), expected floor(float)",
+                                "Found floor({:?}), expected floor(float|integer|null)",
                                 &t
                             ),
                         }
@@ -1551,7 +1551,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
             let max = p1.max(p2).max(p3).max(p4);
             Some((min, max))
         }
-        Floor { input, .. } => encoding_range(&input.into(), qp),
+        Floor { input, .. } => encoding_range(&input, qp),
         ScalarI64 { value, .. } => Some((value, value)),
         ScalarF64 { value, .. } => Some((value.floor() as i64, value.ceil() as i64)),
         ref plan => {
@@ -1904,7 +1904,7 @@ pub(super) fn prepare<'a>(
         QueryPlan::GetNullMap { nullable, present } => {
             operator::get_null_map(nullable.nullable_any()?, present)
         }
-        QueryPlan::Floor { input, floor } => operator::floor(input, floor),
+        QueryPlan::Floor { input, floor } => operator::floor(input.f64()?, floor.i64()?),
         QueryPlan::FuseNulls { nullable, fused } => operator::fuse_nulls(nullable, fused)?,
         QueryPlan::FuseIntNulls {
             offset,

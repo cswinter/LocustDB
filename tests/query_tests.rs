@@ -1900,13 +1900,14 @@ fn test_float_greater_than_int() {
     );
 }
 
-// #[test]
-// fn test_missing_count() {
-//     test_query_ec(
-//         "SELECT COUNT(0) AS count FROM _meta_tables WHERE \"name\" = 'geistesblitz_dashboard'",
-//         &[vec![Int(0)]],
-//     );
-// }
+#[ignore]
+#[test]
+fn test_missing_count() {
+    test_query_ec(
+        "SELECT COUNT(0) AS count FROM _meta_tables WHERE \"name\" = 'geistesblitz_dashboard'",
+        &[vec![Int(0)]],
+    );
+}
 
 #[test]
 fn test_floor1() {
@@ -1934,6 +1935,18 @@ fn test_floor2() {
             vec![Int(0), Int(4), Int(0)],
             vec![Int(5), Int(8), Int(1)],
             vec![Int(9), Int(9), Int(2)],
+        ],
+    );
+}
+
+#[test]
+fn test_floor3() {
+    test_query_ec(
+        "SELECT MIN(id), MAX(id), FLOOR(nullable_float * 1e-30) FROM default",
+        &[
+            vec![Int(2), Int(6), Int(0)],
+            vec![Int(9), Int(9), Int(1)],
+            vec![Int(0), Int(8), Null],
         ],
     );
 }

@@ -49,6 +49,7 @@ mod merge_keep;
 mod merge_partitioned;
 mod nonzero_compact;
 mod nonzero_indices;
+mod null_to_i64;
 mod null_to_val;
 mod null_to_vec;
 mod null_vec;
