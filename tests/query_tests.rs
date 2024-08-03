@@ -1974,3 +1974,12 @@ fn test_sum_where_nullable_gte_constant() {
         &[vec![Int(11)]],
     );
 }
+
+
+#[test]
+fn test_sum_where_nullable_and_bool() {
+    test_query_ec(
+        "SELECT SUM(id) FROM default WHERE nullable_float >= 0.1 AND id > 5;",
+        &[vec![Int(9)]],
+    );
+}

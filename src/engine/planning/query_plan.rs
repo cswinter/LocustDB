@@ -1186,6 +1186,11 @@ impl QueryPlan {
                     QueryPlan::compile_expr(lhs, filter, columns, column_len, planner)?;
                 let (plan_rhs, type_rhs) =
                     QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
+                if type_lhs.decoded == BasicType::Null {
+                    return Ok((plan_rhs, type_rhs));
+                } else if type_rhs.decoded == BasicType::Null {
+                    return Ok((plan_lhs, type_lhs));
+                }
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean
                 {
                     log::info!(
@@ -1213,6 +1218,11 @@ impl QueryPlan {
                     QueryPlan::compile_expr(lhs, filter, columns, column_len, planner)?;
                 let (plan_rhs, type_rhs) =
                     QueryPlan::compile_expr(rhs, filter, columns, column_len, planner)?;
+                if type_lhs.decoded == BasicType::Null {
+                    return Ok((plan_rhs, type_rhs));
+                } else if type_rhs.decoded == BasicType::Null {
+                    return Ok((plan_lhs, type_lhs));
+                }
                 if type_lhs.decoded != BasicType::Boolean || type_rhs.decoded != BasicType::Boolean
                 {
                     bail!(
@@ -1590,6 +1600,7 @@ fn encoding_range(plan: &TypedBufferRef, qp: &QueryPlanner) -> Option<(i64, i64)
         Floor { input, .. } => encoding_range(&input, qp),
         ScalarI64 { value, .. } => Some((value, value)),
         ScalarF64 { value, .. } => Some((value.floor() as i64, value.ceil() as i64)),
+        NullableFilter { ref plan, .. } => encoding_range(plan, qp),
         ref plan => {
             error!("encoding_range not implement for {:?}", plan);
             None
