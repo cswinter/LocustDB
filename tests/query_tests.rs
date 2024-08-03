@@ -1958,3 +1958,19 @@ fn test_negative_constant() {
         &[vec![Int(0)], vec![Int(1)]],
     );
 }
+
+#[test]
+fn test_select_where_nullable_gt_constant() {
+    test_query_ec(
+        "SELECT id FROM default WHERE nullable_float > 0.1;",
+        &[vec![Int(2)], vec![Int(9)]],
+    );
+}
+
+#[test]
+fn test_sum_where_nullable_gte_constant() {
+    test_query_ec(
+        "SELECT SUM(id) FROM default WHERE nullable_float >= 0.1;",
+        &[vec![Int(11)]],
+    );
+}

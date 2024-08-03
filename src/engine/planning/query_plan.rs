@@ -482,6 +482,11 @@ pub enum QueryPlan {
         #[output(t = "base=provided")]
         constant_vec: TypedBufferRef,
     },
+    /// Outputs an empty vector of the same type as `plan`.
+    Empty {
+        #[output(t = "base=provided")]
+        empty: TypedBufferRef,
+    },
     /// Creates a "null vector" of the specified length and type which encodes the number of null values as a single scalar.
     NullVec {
         len: usize,
@@ -951,6 +956,12 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
+                Function2::forward_left_null(BasicType::Float),
+                Function2::forward_right_null(BasicType::Float),
+                Function2::forward_left_null(BasicType::Integer),
+                Function2::forward_right_null(BasicType::Integer),
+                Function2::forward_left_null(BasicType::Null),
+                Function2::forward_right_null(BasicType::Null),
             ],
         ),
         (
@@ -987,6 +998,12 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
+                Function2::forward_left_null(BasicType::Float),
+                Function2::forward_right_null(BasicType::Float),
+                Function2::forward_left_null(BasicType::Integer),
+                Function2::forward_right_null(BasicType::Integer),
+                Function2::forward_left_null(BasicType::Null),
+                Function2::forward_right_null(BasicType::Null),
             ],
         ),
         (
@@ -1023,6 +1040,12 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
+                Function2::forward_left_null(BasicType::Float),
+                Function2::forward_right_null(BasicType::Float),
+                Function2::forward_left_null(BasicType::Integer),
+                Function2::forward_right_null(BasicType::Integer),
+                Function2::forward_left_null(BasicType::Null),
+                Function2::forward_right_null(BasicType::Null),
             ],
         ),
         (
@@ -1059,6 +1082,12 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
+                Function2::forward_left_null(BasicType::Float),
+                Function2::forward_right_null(BasicType::Float),
+                Function2::forward_left_null(BasicType::Integer),
+                Function2::forward_right_null(BasicType::Integer),
+                Function2::forward_left_null(BasicType::Null),
+                Function2::forward_right_null(BasicType::Null),
             ],
         ),
         (
@@ -1095,6 +1124,12 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
+                Function2::forward_left_null(BasicType::Float),
+                Function2::forward_right_null(BasicType::Float),
+                Function2::forward_left_null(BasicType::Integer),
+                Function2::forward_right_null(BasicType::Integer),
+                Function2::forward_left_null(BasicType::Null),
+                Function2::forward_right_null(BasicType::Null),
             ],
         ),
     ]
@@ -1138,6 +1173,7 @@ impl QueryPlan {
                         Filter::NullableU8(filter) => {
                             planner.null_vec_like(filter.into(), 2, EncodingType::Null)
                         }
+                        Filter::Null => planner.null_vec(0, EncodingType::Null),
                         Filter::Indices(filter) => {
                             planner.null_vec_like(filter.into(), 0, EncodingType::Null)
                         }
@@ -2285,6 +2321,7 @@ pub(super) fn prepare<'a>(
             std::mem::replace(&mut constant_vecs[index], empty_data(1)),
             constant_vec.any(),
         ),
+        QueryPlan::Empty { empty, } => operator::empty(empty)?,
         QueryPlan::Collect {
             input,
             collected,

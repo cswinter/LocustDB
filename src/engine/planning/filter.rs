@@ -4,6 +4,7 @@ use crate::engine::{BufferRef, Nullable, QueryPlanner, TypedBufferRef};
 pub enum Filter {
     #[default]
     None,
+    Null,
     U8(BufferRef<u8>),
     NullableU8(BufferRef<Nullable<u8>>),
     Indices(BufferRef<usize>),
@@ -16,6 +17,7 @@ impl Filter {
             Filter::U8(filter) => planner.filter(plan, filter),
             Filter::NullableU8(filter) => planner.nullable_filter(plan, filter),
             Filter::Indices(indices) => planner.select(plan, indices),
+            Filter::Null => planner.empty(plan.tag),
             Filter::None => plan,
         }
     }

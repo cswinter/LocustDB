@@ -32,6 +32,7 @@ use super::constant_expand::ConstantExpand;
 use super::constant_vec::ConstantVec;
 use super::delta_decode::*;
 use super::dict_lookup::*;
+use super::empty::Empty;
 use super::encode_const::*;
 use super::exists::Exists;
 use super::filter::{Filter, NullableFilter};
@@ -768,6 +769,15 @@ pub mod operator {
     pub fn constant_vec(val: BoxedData, output: BufferRef<Any>) -> BoxedOperator {
         Box::new(ConstantVec { val, output })
     }
+
+    pub fn empty<'a>(empty: TypedBufferRef) -> Result<BoxedOperator<'a>, QueryError> {
+        reify_types! {
+            "empty";
+            empty: Primitive;
+            Ok(Box::new(Empty { output: empty }))
+        }
+    }
+
 
     pub fn less_than<'a>(
         lhs: TypedBufferRef,

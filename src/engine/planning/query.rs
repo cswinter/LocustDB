@@ -68,6 +68,7 @@ impl NormalFormQuery {
         let mut filter = match filter_plan.tag {
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
+            EncodingType::Null => Filter::Null,
             _ => Filter::None,
         };
 
@@ -124,6 +125,7 @@ impl NormalFormQuery {
                     let filter = planner.nullable_filter(indices, where_true);
                     Filter::Indices(planner.select(filter, sort_indices).usize()?)
                 }
+                Filter::Null => Filter::Null,
                 Filter::None => Filter::Indices(sort_indices),
                 Filter::Indices(_) => unreachable!(),
             };
@@ -205,14 +207,15 @@ impl NormalFormQuery {
         let mut qp = QueryPlanner::default();
 
         // Filter
-        let (filter_plan, filter_type) = QueryPlan::compile_expr(
+        let (filter_plan, _) = QueryPlan::compile_expr(
             &self.filter,
             Filter::None,
             columns,
             partition_range.len(),
             &mut qp,
         )?;
-        let filter = match filter_type.encoding_type() {
+        let filter = match filter_plan.tag {
+            EncodingType::Null => Filter::Null,
             EncodingType::U8 => Filter::U8(filter_plan.u8()?),
             EncodingType::NullableU8 => Filter::NullableU8(filter_plan.nullable_u8()?),
             _ => Filter::None,

@@ -24,6 +24,7 @@ mod constant_expand;
 mod constant_vec;
 mod delta_decode;
 mod dict_lookup;
+mod empty;
 mod encode_const;
 mod exists;
 mod filter;
