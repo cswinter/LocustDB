@@ -892,6 +892,25 @@ fn test_divide_multiply_null() {
 }
 
 #[test]
+fn test_multiply_nullable_float() {
+    test_query_ec(
+        "SELECT float * nullable_float FROM default ORDER BY id;",
+        &[
+            vec![Null],
+            vec![Null],
+            vec![Float(-49.6)],
+            vec![Null],
+            vec![Null],
+            vec![Null],
+            vec![Float(0.0)],
+            vec![Null],
+            vec![Null],
+            vec![Float(1.386074859819393e36)],
+        ],
+    );
+}
+
+#[test]
 fn test_aggregate_mixed_int_float_null() {
     test_query_ec(
         "SELECT SUM(mixed_float_int_null), COUNT(mixed_float_int_null), MIN(mixed_float_int_null), MAX(mixed_float_int_null), id / 5 FROM default",
@@ -1923,9 +1942,6 @@ fn test_floor2() {
 fn test_negative_constant() {
     test_query_ec(
         "SELECT id FROM default WHERE id - 3 <= -1.15 ORDER BY id;",
-        &[
-            vec![Int(0)],
-            vec![Int(1)],
-        ],
+        &[vec![Int(0)], vec![Int(1)]],
     );
 }

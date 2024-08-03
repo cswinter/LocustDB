@@ -4,10 +4,9 @@ use serde::{Deserialize, Serialize};
 use crate::mem_store::*;
 
 // Special NaN value that we use to represent NULLs in the data.
-pub const F64_NULL: OrderedFloat<f64> = OrderedFloat(unsafe { std::mem::transmute::<u64, f64>(0x7ffa_aaaa_aaaa_aaaau64) });
+pub const F64_NULL: OrderedFloat<f64> =
+    OrderedFloat(unsafe { std::mem::transmute::<u64, f64>(0x7ffa_aaaa_aaaa_aaaau64) });
 pub const I64_NULL: i64 = i64::MAX;
-
-
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum EncodingType {
@@ -271,10 +270,15 @@ impl EncodingType {
         } else {
             match (self, other) {
                 (EncodingType::Val, _) | (_, EncodingType::Val) => EncodingType::Val,
-                (EncodingType::F64, EncodingType::I64) | (EncodingType::I64, EncodingType::F64) => EncodingType::Val,
-                (EncodingType::F64, EncodingType::Null) | (EncodingType::Null, EncodingType::F64) => EncodingType::F64,
-                (EncodingType::I64, EncodingType::Null) | (EncodingType::Null, EncodingType::I64) => EncodingType::I64,
-                (EncodingType::OptStr, EncodingType::Str) | (EncodingType::Str, EncodingType::OptStr) => EncodingType::OptStr,
+                (EncodingType::F64, EncodingType::I64) | (EncodingType::I64, EncodingType::F64) => {
+                    EncodingType::Val
+                }
+                (EncodingType::F64, EncodingType::Null)
+                | (EncodingType::Null, EncodingType::F64) => EncodingType::F64,
+                (EncodingType::I64, EncodingType::Null)
+                | (EncodingType::Null, EncodingType::I64) => EncodingType::I64,
+                (EncodingType::OptStr, EncodingType::Str)
+                | (EncodingType::Str, EncodingType::OptStr) => EncodingType::OptStr,
                 _ => unimplemented!("lub not implemented for {:?} and {:?}", self, other),
             }
         }
@@ -351,7 +355,13 @@ impl BasicType {
         match self {
             BasicType::NullableInteger => BasicType::Integer,
             BasicType::NullableString => BasicType::String,
-            _ => self,
+            BasicType::NullableFloat => BasicType::Float,
+            BasicType::String
+            | BasicType::Integer
+            | BasicType::Float
+            | BasicType::Val
+            | BasicType::Null
+            | BasicType::Boolean => self,
         }
     }
 }

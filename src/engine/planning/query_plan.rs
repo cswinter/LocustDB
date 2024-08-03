@@ -765,29 +765,23 @@ type Factory =
 
 struct Function2 {
     pub factory: Factory,
-    pub type_rhs: BasicType,
-    pub type_lhs: BasicType,
+    pub input_type_signatures: Vec<(BasicType, BasicType)>,
     pub type_out: Type,
     pub encoding_invariance: bool,
 }
 
 impl Function2 {
+    pub fn matches(&self, t_lhs: BasicType, t_rhs: BasicType) -> bool {
+        self.input_type_signatures
+            .iter()
+            .any(|(lhs, rhs)| *lhs == t_lhs && *rhs == t_rhs)
+    }
+
     pub fn integer_op(factory: Factory) -> Function2 {
         Function2 {
             factory,
-            type_lhs: BasicType::Integer,
-            type_rhs: BasicType::Integer,
+            input_type_signatures: vec![(BasicType::Integer, BasicType::Integer)],
             type_out: Type::unencoded(BasicType::Integer).mutable(),
-            encoding_invariance: false,
-        }
-    }
-
-    pub fn float_op(factory: Factory, type_lhs: BasicType, type_rhs: BasicType) -> Function2 {
-        Function2 {
-            factory,
-            type_lhs,
-            type_rhs,
-            type_out: Type::unencoded(BasicType::Float).mutable(),
             encoding_invariance: false,
         }
     }
@@ -795,8 +789,7 @@ impl Function2 {
     pub fn comparison_op(factory: Factory, t: BasicType) -> Function2 {
         Function2 {
             factory,
-            type_lhs: t,
-            type_rhs: t,
+            input_type_signatures: vec![(t, t)],
             type_out: Type::unencoded(BasicType::Boolean).mutable(),
             encoding_invariance: true,
         }
@@ -805,8 +798,7 @@ impl Function2 {
     pub fn forward_left_null(t: BasicType) -> Function2 {
         Function2 {
             factory: Box::new(|_, lhs, _| lhs),
-            type_lhs: BasicType::Null,
-            type_rhs: t,
+            input_type_signatures: vec![(BasicType::Null, t)],
             type_out: Type::unencoded(t).mutable(),
             encoding_invariance: false,
         }
@@ -815,8 +807,7 @@ impl Function2 {
     pub fn forward_right_null(t: BasicType) -> Function2 {
         Function2 {
             factory: Box::new(|_, _, rhs| rhs),
-            type_lhs: t,
-            type_rhs: BasicType::Null,
+            input_type_signatures: vec![(t, BasicType::Null)],
             type_out: Type::unencoded(t).mutable(),
             encoding_invariance: false,
         }
@@ -845,28 +836,22 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
             Func2Type::Multiply,
             vec![
                 Function2::integer_op(Box::new(|qp, lhs, rhs| qp.checked_multiply(lhs, rhs))),
-                Function2::float_op(
-                    Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs, EncodingType::F64)),
-                    BasicType::Integer,
-                    BasicType::Float,
-                ),
-                Function2::float_op(
-                    Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs, EncodingType::F64)),
-                    BasicType::Float,
-                    BasicType::Integer,
-                ),
-                Function2::float_op(
-                    Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs, EncodingType::F64)),
-                    BasicType::Float,
-                    BasicType::Float,
-                ),
+                Function2 {
+                    factory: Box::new(|qp, lhs, rhs| qp.multiply(lhs, rhs, EncodingType::F64)),
+                    input_type_signatures: vec![
+                        (BasicType::Float, BasicType::Integer),
+                        (BasicType::Integer, BasicType::Float),
+                        (BasicType::Float, BasicType::Float),
+                    ],
+                    type_out: Type::unencoded(BasicType::Float).mutable(),
+                    encoding_invariance: false,
+                },
                 Function2 {
                     factory: Box::new(|qp, lhs, rhs| {
                         let lhs = qp.cast(lhs, EncodingType::NullableI64);
                         qp.multiply(lhs, rhs, EncodingType::I64)
                     }),
-                    type_lhs: BasicType::Null,
-                    type_rhs: BasicType::Integer,
+                    input_type_signatures: vec![(BasicType::Null, BasicType::Integer)],
                     type_out: Type::unencoded(BasicType::Integer).mutable(),
                     encoding_invariance: false,
                 },
@@ -917,8 +902,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let rhs = int_to_float_cast(qp, rhs).unwrap();
                         qp.less_than(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Float,
-                    type_rhs: BasicType::Integer,
+                    input_type_signatures: vec![(BasicType::Float, BasicType::Integer)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -927,8 +911,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let lhs = int_to_float_cast(qp, lhs).unwrap();
                         qp.less_than(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Integer,
-                    type_rhs: BasicType::Float,
+                    input_type_signatures: vec![(BasicType::Integer, BasicType::Float)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -955,8 +938,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let rhs = int_to_float_cast(qp, rhs).unwrap();
                         qp.less_than_equals(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Float,
-                    type_rhs: BasicType::Integer,
+                    input_type_signatures: vec![(BasicType::Float, BasicType::Integer)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -965,8 +947,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let lhs = int_to_float_cast(qp, lhs).unwrap();
                         qp.less_than_equals(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Integer,
-                    type_rhs: BasicType::Float,
+                    input_type_signatures: vec![(BasicType::Integer, BasicType::Float)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -993,8 +974,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let rhs = int_to_float_cast(qp, rhs).unwrap();
                         qp.less_than(rhs, lhs)
                     }),
-                    type_lhs: BasicType::Float,
-                    type_rhs: BasicType::Integer,
+                    input_type_signatures: vec![(BasicType::Float, BasicType::Integer)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1003,8 +983,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let lhs = int_to_float_cast(qp, lhs).unwrap();
                         qp.less_than(rhs, lhs)
                     }),
-                    type_lhs: BasicType::Integer,
-                    type_rhs: BasicType::Float,
+                    input_type_signatures: vec![(BasicType::Integer, BasicType::Float)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1031,8 +1010,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let rhs = int_to_float_cast(qp, rhs).unwrap();
                         qp.less_than_equals(rhs, lhs)
                     }),
-                    type_lhs: BasicType::Float,
-                    type_rhs: BasicType::Integer,
+                    input_type_signatures: vec![(BasicType::Float, BasicType::Integer)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1041,8 +1019,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let lhs = int_to_float_cast(qp, lhs).unwrap();
                         qp.less_than_equals(rhs, lhs)
                     }),
-                    type_lhs: BasicType::Integer,
-                    type_rhs: BasicType::Float,
+                    input_type_signatures: vec![(BasicType::Integer, BasicType::Float)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1069,8 +1046,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let rhs = int_to_float_cast(qp, rhs).unwrap();
                         qp.equals(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Float,
-                    type_rhs: BasicType::Integer,
+                    input_type_signatures: vec![(BasicType::Float, BasicType::Integer)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1079,8 +1055,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let lhs = int_to_float_cast(qp, lhs).unwrap();
                         qp.equals(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Integer,
-                    type_rhs: BasicType::Float,
+                    input_type_signatures: vec![(BasicType::Integer, BasicType::Float)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1107,8 +1082,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let rhs = int_to_float_cast(qp, rhs).unwrap();
                         qp.not_equals(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Float,
-                    type_rhs: BasicType::Integer,
+                    input_type_signatures: vec![(BasicType::Float, BasicType::Integer)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1117,8 +1091,7 @@ fn function2_registry() -> HashMap<Func2Type, Vec<Function2>> {
                         let lhs = int_to_float_cast(qp, lhs).unwrap();
                         qp.not_equals(lhs, rhs)
                     }),
-                    type_lhs: BasicType::Integer,
-                    type_rhs: BasicType::Float,
+                    input_type_signatures: vec![(BasicType::Integer, BasicType::Float)],
                     type_out: Type::unencoded(BasicType::Boolean).mutable(),
                     encoding_invariance: true,
                 },
@@ -1305,8 +1278,10 @@ impl QueryPlan {
                     None => bail!(QueryError::NotImplemented, "function {:?}", function),
                 };
                 let declaration = match declarations.iter().find(|p| {
-                    p.type_lhs == type_lhs.decoded.non_nullable()
-                        && p.type_rhs == type_rhs.decoded.non_nullable()
+                    p.matches(
+                        type_lhs.decoded.non_nullable(),
+                        type_rhs.decoded.non_nullable(),
+                    )
                 }) {
                     Some(declaration) => declaration,
                     None => bail!(
