@@ -637,7 +637,13 @@ pub mod operator {
         filter: BufferRef<Nullable<u8>>,
         output: TypedBufferRef,
     ) -> Result<BoxedOperator<'a>, QueryError> {
-        if input.is_nullable() {
+        if input.is_null() {
+            Ok(null_vec_like(
+                filter.any(),
+                output.any(),
+                LengthSource::NonZeroU8ElementCount,
+            ))
+        } else if input.is_nullable() {
             reify_types! {
                 "nullable_filter_nullable";
                 input, output: NullablePrimitive;
