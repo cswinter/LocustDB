@@ -279,6 +279,18 @@ impl Codec {
         }
     }
 
+    pub fn encode_float(&self, x: f64) -> f64 {
+        if let CodecOp::Add(_, y) = self.ops[0] {
+            assert_eq!(self.ops.len(), 1);
+            x - y as f64
+        } else if let CodecOp::ToI64(_) = self.ops[0] {
+            assert_eq!(self.ops.len(), 1);
+            x
+        } else {
+            panic!("encode_int not supported for {:?}", &self.ops)
+        }
+    }
+
     pub(in crate::mem_store) fn set_column_name(&mut self, name: &str) {
         self.column_name = name.to_string();
     }

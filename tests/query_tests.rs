@@ -1983,3 +1983,12 @@ fn test_sum_where_nullable_and_bool() {
         &[vec![Int(9)]],
     );
 }
+
+
+#[test]
+fn test_gt_float_filter_offset_encoded_int() {
+    test_query_ec(
+        "SELECT id FROM default WHERE u8_offset_encoded >= 499.123;",
+        &[vec![Int(5)], vec![Int(8)], vec![Int(9)]],
+    );
+}

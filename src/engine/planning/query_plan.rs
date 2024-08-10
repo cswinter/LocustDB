@@ -1345,8 +1345,14 @@ impl QueryPlan {
                             planner
                                 .scalar_i64(type_rhs.codec.encode_int(value), true)
                                 .into()
+                        } else if let QueryPlan::ScalarF64 { value, .. } =
+                            *planner.resolve(&plan_lhs)
+                        {
+                            planner
+                                .scalar_f64(type_rhs.codec.encode_float(value), true)
+                                .into()
                         } else {
-                            panic!("whoops");
+                            panic!("Can't encode {:?}", plan_lhs)
                         }
                     } else if type_rhs.decoded == BasicType::String {
                         type_rhs
@@ -1355,7 +1361,7 @@ impl QueryPlan {
                             .encode_str(plan_lhs.scalar_str()?, planner)
                             .into()
                     } else {
-                        panic!("whoops");
+                        panic!("Can't encode {:?}", plan_lhs)
                     };
                 } else if declaration.encoding_invariance
                     && type_rhs.is_scalar
@@ -1366,8 +1372,14 @@ impl QueryPlan {
                             planner
                                 .scalar_i64(type_lhs.codec.encode_int(value), true)
                                 .into()
+                        } else if let QueryPlan::ScalarF64 { value, .. } =
+                            *planner.resolve(&plan_rhs)
+                        {
+                            planner
+                                .scalar_f64(type_lhs.codec.encode_float(value), true)
+                                .into()
                         } else {
-                            panic!("whoops");
+                            panic!("Can't encode {:?}", plan_rhs)
                         }
                     } else if type_lhs.decoded == BasicType::String {
                         type_lhs
@@ -1418,8 +1430,12 @@ impl QueryPlan {
                     Func1Type::Floor => {
                         let decoded = t.codec.decode(plan, planner);
                         match t.decoded {
-                            BasicType::Integer | BasicType::NullableInteger | BasicType::Null => (decoded, t),
-                            BasicType::Float | BasicType::NullableFloat => (planner.floor(decoded), t),
+                            BasicType::Integer | BasicType::NullableInteger | BasicType::Null => {
+                                (decoded, t)
+                            }
+                            BasicType::Float | BasicType::NullableFloat => {
+                                (planner.floor(decoded), t)
+                            }
                             _ => bail!(
                                 QueryError::TypeError,
                                 "Found floor({:?}), expected floor(float|integer|null)",
@@ -2332,7 +2348,7 @@ pub(super) fn prepare<'a>(
             std::mem::replace(&mut constant_vecs[index], empty_data(1)),
             constant_vec.any(),
         ),
-        QueryPlan::Empty { empty, } => operator::empty(empty)?,
+        QueryPlan::Empty { empty } => operator::empty(empty)?,
         QueryPlan::Collect {
             input,
             collected,
@@ -2348,7 +2364,9 @@ fn int_to_float_cast(
     plan: TypedBufferRef,
 ) -> Result<TypedBufferRef, QueryError> {
     let target_type = match plan.tag {
-        EncodingType::I64 => EncodingType::F64,
+        EncodingType::U8 | EncodingType::U16 | EncodingType::U32 | EncodingType::I64 => {
+            EncodingType::F64
+        }
         EncodingType::ScalarI64 => EncodingType::ScalarF64,
         _ => Err(QueryError::TypeError(format!(
             "Cannot cast {:?} to float",
