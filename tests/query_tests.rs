@@ -1992,3 +1992,12 @@ fn test_gt_float_filter_offset_encoded_int() {
         &[vec![Int(5)], vec![Int(8)], vec![Int(9)]],
     );
 }
+
+
+#[test]
+fn test_gt_float_filter_offset_encoded_nullable_int() {
+    test_query_ec(
+        "SELECT id FROM default WHERE nullable_int2 <= 0.123;",
+        &[vec![Int(1)], vec![Int(3)]],
+    );
+}

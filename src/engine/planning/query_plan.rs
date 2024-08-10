@@ -1340,7 +1340,7 @@ impl QueryPlan {
                 };
 
                 if declaration.encoding_invariance && type_lhs.is_scalar && type_rhs.is_encoded() {
-                    plan_lhs = if type_rhs.decoded == BasicType::Integer {
+                    plan_lhs = if type_rhs.decoded == BasicType::Integer || type_rhs.decoded == BasicType::NullableInteger {
                         if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_lhs) {
                             planner
                                 .scalar_i64(type_rhs.codec.encode_int(value), true)
@@ -1354,20 +1354,20 @@ impl QueryPlan {
                         } else {
                             panic!("Can't encode {:?}", plan_lhs)
                         }
-                    } else if type_rhs.decoded == BasicType::String {
+                    } else if type_rhs.decoded == BasicType::String || type_rhs.decoded == BasicType::NullableString {
                         type_rhs
                             .codec
                             .clone()
                             .encode_str(plan_lhs.scalar_str()?, planner)
                             .into()
                     } else {
-                        panic!("Can't encode {:?}", plan_lhs)
+                        panic!("Can't elide decode on {:?}", plan_rhs)
                     };
                 } else if declaration.encoding_invariance
                     && type_rhs.is_scalar
                     && type_lhs.is_encoded()
                 {
-                    plan_rhs = if type_lhs.decoded == BasicType::Integer {
+                    plan_rhs = if type_lhs.decoded == BasicType::Integer || type_lhs.decoded == BasicType::NullableInteger {
                         if let QueryPlan::ScalarI64 { value, .. } = *planner.resolve(&plan_rhs) {
                             planner
                                 .scalar_i64(type_lhs.codec.encode_int(value), true)
@@ -1381,14 +1381,14 @@ impl QueryPlan {
                         } else {
                             panic!("Can't encode {:?}", plan_rhs)
                         }
-                    } else if type_lhs.decoded == BasicType::String {
+                    } else if type_lhs.decoded == BasicType::String || type_lhs.decoded == BasicType::NullableString {
                         type_lhs
                             .codec
                             .clone()
                             .encode_str(plan_rhs.scalar_str()?, planner)
                             .into()
                     } else {
-                        panic!("whoops");
+                        panic!("Can't elide decode on {:?}", type_lhs);
                     };
                 } else {
                     plan_lhs = type_lhs.codec.decode(plan_lhs, planner);
@@ -2366,6 +2366,9 @@ fn int_to_float_cast(
     let target_type = match plan.tag {
         EncodingType::U8 | EncodingType::U16 | EncodingType::U32 | EncodingType::I64 => {
             EncodingType::F64
+        }
+        EncodingType::NullableU8 | EncodingType::NullableU16 | EncodingType::NullableU32 | EncodingType::NullableI64 => {
+            EncodingType::NullableF64
         }
         EncodingType::ScalarI64 => EncodingType::ScalarF64,
         _ => Err(QueryError::TypeError(format!(
