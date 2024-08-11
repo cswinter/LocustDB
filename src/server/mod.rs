@@ -52,6 +52,7 @@ struct AppState {
 #[get("/")]
 async fn index(data: web::Data<AppState>) -> impl Responder {
     let mut context = Context::new();
+
     let mut ts: Vec<String> = data
         .db
         .table_stats()
@@ -62,6 +63,21 @@ async fn index(data: web::Data<AppState>) -> impl Responder {
         .collect::<Vec<_>>();
     ts.sort();
     context.insert("tables", &ts);
+
+    let perf_counter = data.db.perf_counter();
+    context.insert("disk_write_bytes", &perf_counter.disk_write_bytes());
+    context.insert("disk_write_new_partition_bytes", &perf_counter.disk_write_new_partition_bytes());
+    context.insert("disk_write_compaction_bytes", &perf_counter.disk_write_compaction_bytes());
+    context.insert("disk_write_meta_store_bytes", &perf_counter.disk_write_meta_store_bytes());
+    context.insert("files_created", &perf_counter.files_created());
+    context.insert("files_created_wal", &perf_counter.files_created_wal());
+    context.insert("files_created_new_partition", &perf_counter.files_created_new_partition());
+    context.insert("files_created_meta_store", &perf_counter.files_created_meta_store());
+    context.insert("ingestion_requests", &perf_counter.ingestion_requests());
+    context.insert("ingestion_bytes", &perf_counter.network_read_ingestion_bytes());
+    context.insert("files_opened_partition", &perf_counter.files_opened_partition());
+    context.insert("disk_read_partition_bytes", &perf_counter.disk_read_partition_bytes());
+
     let body = TEMPLATES.render("index.html", &context).unwrap();
     HttpResponse::Ok()
         .content_type("text/html; charset=utf8")

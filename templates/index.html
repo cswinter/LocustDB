@@ -33,6 +33,20 @@
         {% endfor %}
     </ul>
 
+    <h2>Perf stats</h2>
+    disk_write_bytes: {{ disk_write_bytes }}<br>
+    disk_write_new_partition_bytes: {{ disk_write_new_partition_bytes }}<br>
+    disk_write_compaction_bytes: {{ disk_write_compaction_bytes }}<br>
+    disk_write_meta_store_bytes: {{ disk_write_meta_store_bytes }}<br>
+    files_created: {{ files_created }}<br>
+    files_created_wal: {{ files_created_wal }}<br>
+    files_created_new_partition: {{ files_created_new_partition }}<br>
+    files_created_meta_store: {{ files_created_meta_store }}<br>
+    ingestion_requests: {{ ingestion_requests }}<br>
+    ingestion_bytes: {{ ingestion_bytes }}<br>
+    files_opened_partition: {{ files_opened_partition }}<br>
+    disk_read_partition_bytes: {{ disk_read_partition_bytes }}<br>
+
     <h2>Run query</h2>
     <!-- Large text input box for queries -->
     <form id="query-form">

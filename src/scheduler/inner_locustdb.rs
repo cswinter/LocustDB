@@ -386,7 +386,7 @@ impl InnerLocustDB {
             None =>
                 log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?})"),
             Some((lock_time, write_time_partitions, write_time_meta, delete_time_wal)) => {
-                log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?}), lock: {lock_time:?}, write partitions: {write_time_partitions:?}, write meta: {write_time_meta:?}, delete wal: {delete_time_wal:?}");
+                log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?}, lock: {lock_time:?}, write partitions: {write_time_partitions:?}, write meta: {write_time_meta:?}, delete wal: {delete_time_wal:?})");
             }
         }
     }
