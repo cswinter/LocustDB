@@ -3,6 +3,7 @@
 struct DBMeta {
     nextWalId @0 :UInt64;
     partitions @1 :List(PartitionMetadata);
+    strings @2 :List(Text);  # unused in legacy format
 }
 
 struct PartitionMetadata {
@@ -16,5 +17,6 @@ struct PartitionMetadata {
 struct SubpartitionMetadata {
     sizeBytes @0 :UInt64;
     subpartitionKey @1 :Text;
-    columns @2 :List(Text);
+    columns @2 :List(Text);  # deprecated in favor of internedColumns
+    internedColumns @3 :List(UInt64);
 }

@@ -42,18 +42,24 @@ impl MetaStore {
         let mut dbmeta = builder.init_root::<dbmeta_capnp::d_b_meta::Builder>();
         dbmeta.set_next_wal_id(self.next_wal_id);
 
+        let mut column_name_to_id: HashMap<&str, u64> = HashMap::new();
+
         let total_partitions = self.partitions.values().map(|x| x.len()).sum::<usize>();
         assert!(total_partitions < std::u32::MAX as usize);
-        let mut partitions_builder = dbmeta.init_partitions(total_partitions as u32);
+        let mut partitions_builder = dbmeta.reborrow().init_partitions(total_partitions as u32);
         let mut i = 0;
         for table in self.partitions.values() {
             for partition in table.values() {
-                let mut subpartition_index_to_column_names = vec![Vec::new(); partition.subpartitions.len()];
+                let mut subpartition_index_to_column_names =
+                    vec![Vec::new(); partition.subpartitions.len()];
                 for (column_name, subpartition_index) in
                     &partition.column_name_to_subpartition_index
                 {
-                    subpartition_index_to_column_names[*subpartition_index]
-                        .push(column_name.clone());
+                    let next_column_id = column_name_to_id.len() as u64;
+                    let column_id = *column_name_to_id
+                        .entry(column_name.as_str())
+                        .or_insert_with(|| next_column_id);
+                    subpartition_index_to_column_names[*subpartition_index].push(column_id);
                 }
                 let mut partition_builder = partitions_builder.reborrow().get(i);
                 partition_builder.set_id(partition.id);
@@ -67,18 +73,21 @@ impl MetaStore {
                     let mut subpartition_builder = subpartitions_builder.reborrow().get(i as u32);
                     subpartition_builder.set_size_bytes(subpartition.size_bytes);
                     subpartition_builder.set_subpartition_key(&subpartition.subpartition_key);
-                    let mut columns_builder = subpartition_builder
-                        .init_columns(subpartition_index_to_column_names[i].len() as u32);
-                    for (i, column_name) in
-                        std::mem::take(&mut subpartition_index_to_column_names[i])
-                            .into_iter()
-                            .enumerate()
+                    let mut interned_columns_builder = subpartition_builder
+                        .init_interned_columns(subpartition_index_to_column_names[i].len() as u32);
+                    for (i, column_id) in std::mem::take(&mut subpartition_index_to_column_names[i])
+                        .into_iter()
+                        .enumerate()
                     {
-                        columns_builder.set(i as u32, column_name);
+                        interned_columns_builder.set(i as u32, column_id);
                     }
                 }
                 i += 1;
             }
+        }
+        let mut strings_builder = dbmeta.init_strings(column_name_to_id.len() as u32);
+        for (column_name, column_id) in column_name_to_id {
+            strings_builder.set(column_id as u32, column_name);
         }
 
         let mut buf = Vec::new();
@@ -91,6 +100,10 @@ impl MetaStore {
             serialize_packed::read_message(&mut &data[..], default_reader_options())?;
         let dbmeta = message_reader.get_root::<dbmeta_capnp::d_b_meta::Reader>()?;
         let next_wal_id = dbmeta.get_next_wal_id();
+        let mut strings = Vec::new();
+        for string in dbmeta.get_strings()? {
+            strings.push(string?.to_string().unwrap());
+        }
         let mut partitions = HashMap::<TableName, HashMap<PartitionID, PartitionMetadata>>::new();
         for partition in dbmeta.get_partitions()? {
             let id = partition.get_id();
@@ -108,6 +121,10 @@ impl MetaStore {
                 });
                 for column in subpartition.get_columns()? {
                     let column = column?.to_string().unwrap();
+                    column_name_to_subpartition_index.insert(column, i);
+                }
+                for column_string_id in subpartition.get_interned_columns()? {
+                    let column = strings[column_string_id as usize].clone();
                     column_name_to_subpartition_index.insert(column, i);
                 }
             }
