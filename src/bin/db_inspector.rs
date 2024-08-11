@@ -30,8 +30,7 @@ struct Opt {
     table: Option<String>,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     env_logger::init();
     let opts = Opt::from_args();
     let (storage, wal) = Storage::new(&opts.db_path, Arc::new(PerfCounter::default()), true);
