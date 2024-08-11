@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use super::azure_writer::AzureBlobWriter;
 use super::file_writer::{BlobWriter, FileBlobWriter, VersionedChecksummedBlobWriter};
@@ -218,11 +219,14 @@ impl Storage {
     pub fn persist_partitions_delete_wal(
         &self,
         partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
-    ) {
+    ) -> (Duration, Duration, Duration, Duration) {
         // Lock meta store
+        let start_time_lock = std::time::Instant::now();
         let mut meta_store = self.meta_store.write().unwrap();
+        let lock_time = start_time_lock.elapsed();
 
         // Write out new partition files
+        let start_time_write_partitions = std::time::Instant::now();
         for (partition, subpartition_cols) in partitions {
             self.write_subpartitions(&partition, subpartition_cols);
             meta_store
@@ -231,14 +235,21 @@ impl Storage {
                 .or_default()
                 .insert(partition.id, partition);
         }
+        let write_time_partitions = start_time_write_partitions.elapsed();
 
         // Atomically overwrite meta store file
+        let start_time_write_meta = std::time::Instant::now();
         self.write_metastore(&meta_store);
+        let write_time_meta = start_time_write_meta.elapsed();
 
         // Delete WAL files
+        let start_time_delete_wal = std::time::Instant::now();
         for file in self.writer.list(&self.wal_dir).unwrap() {
             self.writer.delete(&file).unwrap();
         }
+        let delete_time_wal = start_time_delete_wal.elapsed();
+
+        (lock_time, write_time_partitions, write_time_meta, delete_time_wal)
     }
 
     // Combine set of partitions into single new partition.

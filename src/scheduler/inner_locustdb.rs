@@ -286,6 +286,7 @@ impl InnerLocustDB {
         let tables = self.tables.read().unwrap();
         let mut new_partitions = Vec::new();
         let mut compactions = Vec::new();
+        let start_time_batching = Instant::now();
         for table in tables.values() {
             if let Some(partition) = table.batch() {
                 let columns: Vec<_> = partition
@@ -317,11 +318,14 @@ impl InnerLocustDB {
                 compactions.push((table.name(), table.next_partition_id(), compaction));
             }
         }
+        let time_batching = start_time_batching.elapsed();
 
+        let mut persist_timings = None;
         if let Some(s) = self.storage.as_ref() {
-            s.persist_partitions_delete_wal(new_partitions);
+            persist_timings = Some(s.persist_partitions_delete_wal(new_partitions));
         }
 
+        let start_time_compaction = Instant::now();
         for (table, id, (range, parts)) in compactions {
             // get table, create new merged partition/sub-partitions (not registered with table)
             // - get names of all columns
@@ -375,8 +379,16 @@ impl InnerLocustDB {
             // replace old partitions with new partition
             tables[table].compact(id, range.start, columns, &parts);
         }
+        let time_compaction = start_time_compaction.elapsed();
 
-        log::info!("Performed wal flush in {:?}", start_time.elapsed());
+        let total_time = start_time.elapsed();
+        match persist_timings {
+            None =>
+                log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?})"),
+            Some((lock_time, write_time_partitions, write_time_meta, delete_time_wal)) => {
+                log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?}), lock: {lock_time:?}, write partitions: {write_time_partitions:?}, write meta: {write_time_meta:?}, delete wal: {delete_time_wal:?}");
+            }
+        }
     }
 
     pub fn restore(&self, id: PartitionID, column: Column) {
