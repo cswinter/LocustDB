@@ -40,9 +40,33 @@ fn main() {
         println!("### META STORE ###");
         println!("Next WAL ID: {}", meta.next_wal_id);
         println!("Number of partitions: {:?}", meta.partitions.len());
+        let column_names: usize = meta
+            .partitions
+            .values()
+            .flat_map(|table| {
+                table
+                    .values()
+                    .map(|part| part.column_name_to_subpartition_index.len())
+            })
+            .sum();
+        let column_name_byes: usize = meta
+            .partitions
+            .values()
+            .flat_map(|table| {
+                table.values().flat_map(|part| {
+                    part.column_name_to_subpartition_index
+                        .keys()
+                        .map(|s| s.len())
+                })
+            })
+            .sum();
+        println!("Number of column names (duplicated across partitions): {}", column_names);
+        println!("Column name bytes: {}", column_name_byes);
         if opts.meta > 0 {
             for (table, partitions) in &meta.partitions {
-                if let Some(filter) = &opts.table && filter != table {
+                if let Some(filter) = &opts.table
+                    && filter != table
+                {
                     continue;
                 }
                 for partition in partitions.values() {
@@ -65,11 +89,23 @@ fn main() {
                             println!(
                                 "  Subpartition {} has {} columns ({} bytes)",
                                 i,
-                                partition.column_name_to_subpartition_index.values().filter(|&&idx| idx == i).count(),
+                                partition
+                                    .column_name_to_subpartition_index
+                                    .values()
+                                    .filter(|&&idx| idx == i)
+                                    .count(),
                                 subpartition.size_bytes,
                             );
                             if opts.meta > 2 {
-                                println!("    {:?}", partition.column_name_to_subpartition_index.iter().filter(|(_, &idx)| idx == i).map(|(name, _)| name).collect::<Vec<_>>());
+                                println!(
+                                    "    {:?}",
+                                    partition
+                                        .column_name_to_subpartition_index
+                                        .iter()
+                                        .filter(|(_, &idx)| idx == i)
+                                        .map(|(name, _)| name)
+                                        .collect::<Vec<_>>()
+                                );
                             }
                         }
                     }
