@@ -70,12 +70,12 @@ impl Table {
         partitions
     }
 
-    pub fn snapshot_parts(&self, parts: &[PartitionID]) -> Vec<Arc<Partition>> {
+    pub fn snapshot_parts(&self, parts: &[PartitionID], snapshot_buffer: bool) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
         let mut partitions: Vec<_> = parts.iter().map(|id| partitions[id].clone()).collect();
         let offset = partitions.iter().map(|p| p.len()).sum::<usize>();
         let buffer = self.buffer.lock().unwrap();
-        if buffer.len() > 0 {
+        if buffer.len() > 0 && snapshot_buffer {
             partitions.push(Arc::new(
                 Partition::from_buffer(
                     self.name(),

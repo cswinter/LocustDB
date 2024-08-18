@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -133,6 +134,7 @@ impl Storage {
         } else {
             MetaStore {
                 next_wal_id: 0,
+                earliest_uncommited_wal_id: 0,
                 partitions: HashMap::new(),
             }
         };
@@ -185,7 +187,9 @@ impl Storage {
         subpartition_cols: Vec<Vec<Arc<Column>>>,
     ) {
         for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
-            let table_dir = self.tables_path.join(sanitize_table_name(&partition.tablename));
+            let table_dir = self
+                .tables_path
+                .join(sanitize_table_name(&partition.tablename));
             let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
             let data = PartitionSegment::serialize(&cols[..]);
             self.perf_counter
@@ -216,40 +220,43 @@ impl Storage {
         data.len() as u64
     }
 
-    pub fn persist_partitions_delete_wal(
+    pub fn uncommited_wal_ids(&self) -> Range<u64> {
+        let meta_store = self.meta_store.read().unwrap();
+        meta_store.earliest_uncommited_wal_id..meta_store.next_wal_id
+    }
+
+    pub fn persist_partitions(
         &self,
         partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
-    ) -> (Duration, Duration, Duration, Duration) {
-        // Lock meta store
-        let start_time_lock = std::time::Instant::now();
-        let mut meta_store = self.meta_store.write().unwrap();
-        let lock_time = start_time_lock.elapsed();
+    ) -> (Duration, Duration) {
+        let mut total_write_time = Duration::default();
+        let mut total_lock_time = Duration::default();
 
         // Write out new partition files
-        let start_time_write_partitions = std::time::Instant::now();
         for (partition, subpartition_cols) in partitions {
+            let start_time = std::time::Instant::now();
             self.write_subpartitions(&partition, subpartition_cols);
+            total_write_time += start_time.elapsed();
+
+            let start_time = std::time::Instant::now();
+            let mut meta_store = self.meta_store.write().unwrap();
             meta_store
                 .partitions
                 .entry(partition.tablename.clone())
                 .or_default()
                 .insert(partition.id, partition);
+            total_lock_time += start_time.elapsed();
         }
-        let write_time_partitions = start_time_write_partitions.elapsed();
 
-        // Atomically overwrite meta store file
-        let start_time_write_meta = std::time::Instant::now();
-        self.write_metastore(&meta_store);
-        let write_time_meta = start_time_write_meta.elapsed();
+        (total_write_time, total_lock_time)
+    }
 
-        // Delete WAL files
-        let start_time_delete_wal = std::time::Instant::now();
-        for file in self.writer.list(&self.wal_dir).unwrap() {
-            self.writer.delete(&file).unwrap();
+    /// Delete WAL segments with ids in the given range.
+    pub fn delete_wal_segments(&self, ids: Range<u64>) {
+        for id in ids {
+            let path = self.wal_dir.join(format!("{}.wal", id));
+            self.writer.delete(&path).unwrap();
         }
-        let delete_time_wal = start_time_delete_wal.elapsed();
-
-        (lock_time, write_time_partitions, write_time_meta, delete_time_wal)
     }
 
     // Combine set of partitions into single new partition.
@@ -314,24 +321,31 @@ impl Storage {
         to_delete
     }
 
-    pub fn commit_compacts(
-        &self,
-        to_delete: Vec<(String, Vec<(u64, String)>)>,
-    ) {
-        // Persist metastore
-        {
-            let meta_store = self.meta_store.read().unwrap();
-            self.write_metastore(&meta_store);
-        }
-
+    pub fn delete_orphaned_partitions(&self, to_delete: Vec<(String, Vec<(u64, String)>)>) {
         // Delete old partition files
         for (table, to_delete) in &to_delete {
             for (id, key) in to_delete {
-            let table_dir = self.tables_path.join(sanitize_table_name(table));
+                let table_dir = self.tables_path.join(sanitize_table_name(table));
                 let path = table_dir.join(partition_filename(*id, key));
                 self.writer.delete(&path).unwrap();
             }
         }
+    }
+
+    pub fn persist_metastore(&self, earliest_uncommited_wal_id: u64) -> (Duration, Duration) {
+        let clone_start_time = std::time::Instant::now();
+        {
+            self.meta_store.write().unwrap().earliest_uncommited_wal_id =
+                earliest_uncommited_wal_id;
+        }
+        let meta_store = { self.meta_store.read().unwrap().clone() };
+        let clone_elapsed = clone_start_time.elapsed();
+
+        let write_start_time = std::time::Instant::now();
+        self.write_metastore(&meta_store);
+        let write_elapsed = write_start_time.elapsed();
+
+        (clone_elapsed, write_elapsed)
     }
 
     pub fn load_column(
@@ -367,7 +381,9 @@ fn partition_filename(id: PartitionID, subpartition_key: &str) -> String {
 fn sanitize_table_name(table_name: &str) -> String {
     let mut name = table_name.to_lowercase();
     name.retain(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
-    name = name.trim_start_matches(|c| c == '-' || c == '.').to_string();
+    name = name
+        .trim_start_matches(|c| c == '-' || c == '.')
+        .to_string();
     if name.len() > 189 {
         name = name[..189].to_string();
     }

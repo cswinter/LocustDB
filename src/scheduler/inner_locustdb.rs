@@ -282,7 +282,25 @@ impl InnerLocustDB {
 
     /// Creates new partition from currently open buffer in each table, persists partitions to disk, and deletes WAL.
     pub(crate) fn wal_flush(&self) {
+        log::info!("Commencing WAL flush");
         let start_time = Instant::now();
+        let mut time_write_partitions = Duration::default();
+        let mut time_meta_update = Duration::default();
+        let mut time_clone_metastore = Duration::default();
+        let mut time_persist_metastore = Duration::default();
+        let mut time_delete_partitions = Duration::default();
+        let mut time_delete_wal = Duration::default();
+
+        // Create new partitions from open buffers
+        // Before flushing table buffers, we acquire the wal_size lock to prevent any concurrent additions to table buffers,
+        // and record the range of unflushed WAL entries.
+        let (wal_size, wal_condvar) = &self.wal_size;
+        let mut wal_size = wal_size.lock().unwrap();
+        let uncommited_wal_ids = self
+            .storage
+            .as_ref()
+            .map(|s| s.uncommited_wal_ids())
+            .unwrap_or(0..0);
         let tables = self.tables.read().unwrap();
         let mut new_partitions = Vec::new();
         let mut compactions = Vec::new();
@@ -319,11 +337,14 @@ impl InnerLocustDB {
                 compactions.push((table.name(), table.next_partition_id(), compaction));
             }
         }
+        *wal_size = 0;
+        wal_condvar.notify_all();
+        drop(wal_size);
         let time_batching = start_time_batching.elapsed();
 
-        let mut persist_timings = None;
+        // Persist new partitions
         if let Some(s) = self.storage.as_ref() {
-            persist_timings = Some(s.persist_partitions_delete_wal(new_partitions));
+            (time_write_partitions, time_meta_update) = s.persist_partitions(new_partitions);
         }
 
         let start_time_compaction = Instant::now();
@@ -335,7 +356,7 @@ impl InnerLocustDB {
             // - create subpartitions
             let colnames = tables[table].column_names(&parts);
             let mut columns = Vec::with_capacity(colnames.len());
-            let data = tables[table].snapshot_parts(&parts);
+            let data = tables[table].snapshot_parts(&parts, false);
             for column in &colnames {
                 let query = Query::read_column(table, column);
                 let (sender, receiver) = oneshot::channel();
@@ -375,7 +396,14 @@ impl InnerLocustDB {
             let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
             // write subpartitions to disk, update metastore unlinking old partitions, delete old partitions
             if let Some(storage) = self.storage.as_ref() {
-                let to_delete = storage.prepare_compact(table, id, metadata, subpartitions, &parts, range.start);
+                let to_delete = storage.prepare_compact(
+                    table,
+                    id,
+                    metadata,
+                    subpartitions,
+                    &parts,
+                    range.start,
+                );
                 partitions_to_delete.push((table.to_string(), to_delete));
             }
 
@@ -385,17 +413,23 @@ impl InnerLocustDB {
         let time_compaction = start_time_compaction.elapsed();
 
         if let Some(storage) = self.storage.as_ref() {
-            storage.commit_compacts(partitions_to_delete);
+            (time_clone_metastore, time_persist_metastore) =
+                storage.persist_metastore(uncommited_wal_ids.end);
+
+            let start_time = Instant::now();
+            storage.delete_orphaned_partitions(partitions_to_delete);
+            time_delete_partitions = start_time.elapsed();
+
+            let start_time = Instant::now();
+            storage.delete_wal_segments(uncommited_wal_ids);
+            time_delete_wal = start_time.elapsed();
         }
 
         let total_time = start_time.elapsed();
-        match persist_timings {
-            None =>
-                log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?})"),
-            Some((lock_time, write_time_partitions, write_time_meta, delete_time_wal)) => {
-                log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?}, lock: {lock_time:?}, write partitions: {write_time_partitions:?}, write meta: {write_time_meta:?}, delete wal: {delete_time_wal:?})");
-            }
-        }
+        log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?}, \
+                    meta partitions: {time_meta_update:?}, write partitions: {time_write_partitions:?}, \
+                    clone meta: {time_clone_metastore:?}, write meta: {time_persist_metastore:?}, delete wal: {time_delete_wal:?} \
+                    delete partitions: {time_delete_partitions:?})",);
     }
 
     pub fn restore(&self, id: PartitionID, column: Column) {
@@ -528,17 +562,13 @@ impl InnerLocustDB {
     }
 
     fn enforce_wal_limit(&self) {
-        let (wal_size, wal_condvar) = &self.wal_size;
-        let mut wal_size = wal_size.lock().unwrap();
+        let (wal_size, _) = &self.wal_size;
         while self.running.load(Ordering::SeqCst) {
-            if *wal_size < self.opts.max_wal_size_bytes {
-                (wal_size, _) = wal_condvar
-                    .wait_timeout(wal_size, Duration::from_secs(1))
-                    .unwrap();
-            } else {
+            let wal_size = { *wal_size.lock().unwrap() };
+            if wal_size > self.opts.max_wal_size_bytes {
                 self.wal_flush();
-                *wal_size = 0;
-                wal_condvar.notify_all();
+            } else {
+                thread::sleep(Duration::from_millis(1000));
             }
         }
     }

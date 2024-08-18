@@ -10,7 +10,10 @@ type PartitionID = u64;
 
 #[derive(Clone)]
 pub struct MetaStore {
+    // ID for the next WAL segment to be written
     pub next_wal_id: u64,
+    // ID of the earliest WAL segment that has not been flushed into partitions (this WAL segment may not exist yet)
+    pub earliest_uncommited_wal_id: u64,
     pub partitions: HashMap<TableName, HashMap<PartitionID, PartitionMetadata>>,
 }
 
@@ -188,6 +191,7 @@ impl MetaStore {
 
         Ok(MetaStore {
             next_wal_id,
+            earliest_uncommited_wal_id: next_wal_id,
             partitions,
         })
     }
