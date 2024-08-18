@@ -104,13 +104,13 @@ impl Table {
         storage: &Storage,
         wal_segments: Vec<WalSegment>,
         lru: &Lru,
-    ) -> HashMap<String, Table> {
+    ) -> HashMap<String, Arc<Table>> {
         let mut tables = HashMap::new();
         for partitions in storage.meta_store().read().unwrap().partitions.values() {
             for md in partitions.values() {
                 let table = tables
                     .entry(md.tablename.clone())
-                    .or_insert_with(|| Table::new(&md.tablename, lru.clone()));
+                    .or_insert_with(|| Arc::new(Table::new(&md.tablename, lru.clone())));
                 table.insert_nonresident_partition(md);
             }
         }
@@ -124,7 +124,7 @@ impl Table {
                 let rows = table_data.len;
                 let table = tables
                     .entry(table_name.clone())
-                    .or_insert_with(|| Table::new(&table_name, lru.clone()));
+                    .or_insert_with(|| Arc::new(Table::new(&table_name, lru.clone())));
                 let columns = table_data
                     .columns
                     .into_iter()

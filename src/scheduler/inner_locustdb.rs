@@ -36,7 +36,7 @@ use self::raw_col::MixedCol;
 use self::wal_segment::WalSegment;
 
 pub struct InnerLocustDB {
-    tables: RwLock<HashMap<String, Table>>,
+    tables: RwLock<HashMap<String, Arc<Table>>>,
     lru: Lru,
     disk_read_scheduler: Arc<DiskReadScheduler>,
 
@@ -302,7 +302,7 @@ impl InnerLocustDB {
         // record the range of unflushed WAL entries, freeze table buffers, and reset WAL size.
         // After this block, ingestion is unblocked again.
         let start_time_freeze_buffers = Instant::now();
-        let table_names;
+        let tables;
         let uncommited_wal_ids;
         {
             let (wal_size, wal_condvar) = &self.wal_size;
@@ -312,9 +312,14 @@ impl InnerLocustDB {
                 .as_ref()
                 .map(|s| s.uncommited_wal_ids())
                 .unwrap_or(0..0);
-            let tables = self.tables.read().unwrap();
-            table_names = tables.keys().cloned().collect::<Vec<_>>();
-            for table in tables.values() {
+            tables = self
+                .tables
+                .read()
+                .unwrap()
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
+            for table in &tables {
                 table.freeze_buffer();
             }
             *wal_size = 0;
@@ -325,17 +330,17 @@ impl InnerLocustDB {
         // Iterate over all tables and create new partitions from frozen buffers.
         let start_time_batching = Instant::now();
         let (tx, rx) = mpsc::channel();
-        for table in &table_names {
-            let table = table.to_string();
+        let table_count = tables.len();
+        for table in tables {
             let this = self.clone();
             let tx = tx.clone();
             self.walflush_threadpool.execute(move || {
-                tx.send(this.flush_table_buffer(&table)).unwrap();
+                tx.send(this.flush_table_buffer(table)).unwrap();
             });
         }
         let mut new_partitions = Vec::new();
         let mut compactions = Vec::new();
-        for (new_partition, maybe_compaction) in rx.iter().take(table_names.len()) {
+        for (new_partition, maybe_compaction) in rx.iter().take(table_count) {
             if let Some((metadata, subpartitions)) = new_partition {
                 new_partitions.push((metadata, subpartitions));
             }
@@ -350,7 +355,7 @@ impl InnerLocustDB {
             (time_write_partitions, time_meta_update) = s.persist_partitions(new_partitions);
         }
 
-        // Write new segments from compactions and apply compaction in-memory
+        // Write new segments from compactions to storage and apply compaction in-memory
         let start_time_compaction = Instant::now();
         let (tx, rx) = mpsc::channel();
         let num_compactions = compactions.len();
@@ -358,13 +363,14 @@ impl InnerLocustDB {
             let tx = tx.clone();
             let this = self.clone();
             self.walflush_threadpool.execute(move || {
-                let to_delete = this.compact(&table, id, range, &parts);
+                let to_delete = this.compact(table, id, range, &parts);
                 tx.send(to_delete).unwrap();
             });
         }
         let partitions_to_delete = rx.iter().take(num_compactions).flatten().collect();
         let time_compaction = start_time_compaction.elapsed();
 
+        // Update metastore and clean up orphaned partitions and WAL segments
         if let Some(storage) = self.storage.as_ref() {
             (time_clone_metastore, time_persist_metastore) =
                 storage.persist_metastore(uncommited_wal_ids.end);
@@ -390,16 +396,15 @@ impl InnerLocustDB {
     #[must_use]
     pub fn flush_table_buffer(
         &self,
-        table: &str,
+        table: Arc<Table>,
     ) -> (
         Option<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
-        Option<(String, u64, Range<usize>, Vec<u64>)>,
+        Option<(Arc<Table>, u64, Range<usize>, Vec<u64>)>,
     ) {
         let mut new_partition = None;
         let mut maybe_compaction = None;
 
-        let maybe_partition = { self.tables.read().unwrap()[table].batch() };
-        if let Some(partition) = maybe_partition {
+        if let Some(partition) = table.batch() {
             let columns: Vec<_> = partition
                 .col_handles()
                 .map(|c| c.try_get().as_ref().unwrap().clone())
@@ -417,7 +422,7 @@ impl InnerLocustDB {
                 .collect();
             let partition_metadata = PartitionMetadata {
                 id: partition.id,
-                tablename: table.to_string(),
+                tablename: table.name().to_string(),
                 len: partition.len(),
                 offset: partition.range().start,
                 subpartitions: metadata,
@@ -426,11 +431,9 @@ impl InnerLocustDB {
             new_partition = Some((partition_metadata, subpartitions));
         }
 
-        let tables = self.tables.read().unwrap();
-        let table = &tables[table];
         if let Some((range, parts)) = table.plan_compaction(self.opts.partition_combine_factor) {
             maybe_compaction = Some((
-                table.name().to_string(),
+                table.clone(),
                 table.next_partition_id(),
                 range,
                 parts,
@@ -440,21 +443,22 @@ impl InnerLocustDB {
         (new_partition, maybe_compaction)
     }
 
-    fn compact(&self, table: &str, id: PartitionID, range: Range<usize>, parts: &[u64]) -> Option<(String, Vec<(u64, String)>)> {
+    fn compact(
+        &self,
+        table: Arc<Table>,
+        id: PartitionID,
+        range: Range<usize>,
+        parts: &[u64],
+    ) -> Option<(String, Vec<(u64, String)>)> {
         // get table, create new merged partition/sub-partitions (not registered with table)
         // - get names of all columns
         // - run query for each column, construct Column
         // - create subpartitions
-        let (colnames, data) = {
-            let tables = self.tables.read().unwrap();
-            (
-                tables[table].column_names(parts),
-                tables[table].snapshot_parts(parts),
-            )
-        };
+        let colnames = table.column_names(parts);
+        let data = table.snapshot_parts(parts);
         let mut columns = Vec::with_capacity(colnames.len());
         for column in &colnames {
-            let query = Query::read_column(table, column);
+            let query = Query::read_column(table.name(), column);
             let (sender, receiver) = oneshot::channel();
             let query_task = QueryTask::new(
                 query,
@@ -483,20 +487,22 @@ impl InnerLocustDB {
             assert_eq!(
                 range.len(),
                 column_builder.len(),
-                "range={range:?}, column_builder.len() = {}, table = {table},  column = {column}",
+                "range={range:?}, column_builder.len() = {}, table = {},  column = {column}",
                 column_builder.len(),
+                table.name(),
             );
             columns.push(column_builder.finalize(column));
         }
         let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
 
         // replace old partitions with new partition
-        self.tables.read().unwrap()[table].compact(id, range.start, columns, parts);
+        table.compact(id, range.start, columns, parts);
 
         // write new subpartitions to disk and update in-memory metastore
         self.storage.as_ref().map(|s| {
-            let to_delete = s.prepare_compact(table, id, metadata, subpartitions, parts, range.start);
-            (table.to_string(), to_delete)
+            let to_delete =
+                s.prepare_compact(table.name(), id, metadata, subpartitions, parts, range.start);
+            (table.name().to_string(), to_delete)
         })
     }
 
@@ -553,7 +559,10 @@ impl InnerLocustDB {
         if !exists {
             {
                 let mut tables = self.tables.write().unwrap();
-                tables.insert(table.to_string(), Table::new(table, self.lru.clone()));
+                tables.insert(
+                    table.to_string(),
+                    Arc::new(Table::new(table, self.lru.clone())),
+                );
             }
             Some((
                 SystemTime::now()
@@ -575,7 +584,10 @@ impl InnerLocustDB {
         if !exists {
             {
                 let mut tables = self.tables.write().unwrap();
-                tables.insert(table.to_string(), Table::new(table, self.lru.clone()));
+                tables.insert(
+                    table.to_string(),
+                    Arc::new(Table::new(table, self.lru.clone())),
+                );
             }
             self.ingest_single(
                 "_meta_tables",
