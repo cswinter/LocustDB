@@ -291,23 +291,37 @@ impl InnerLocustDB {
         let mut time_delete_partitions = Duration::default();
         let mut time_delete_wal = Duration::default();
 
-        // Create new partitions from open buffers
-        // Before flushing table buffers, we acquire the wal_size lock to prevent any concurrent additions to table buffers,
-        // and record the range of unflushed WAL entries.
-        let (wal_size, wal_condvar) = &self.wal_size;
-        let mut wal_size = wal_size.lock().unwrap();
-        let uncommited_wal_ids = self
-            .storage
-            .as_ref()
-            .map(|s| s.uncommited_wal_ids())
-            .unwrap_or(0..0);
-        let tables = self.tables.read().unwrap();
+        // Acquire wal_size lock to block creation of new WAL segments and modifications of open buffers,
+        // record the range of unflushed WAL entries, freeze table buffers, and reset WAL size.
+        // After this block, ingestion is unblocked again.
+        let start_time_freeze_buffers = Instant::now();
+        let table_names;
+        let uncommited_wal_ids;
+        {
+            let (wal_size, wal_condvar) = &self.wal_size;
+            let mut wal_size = wal_size.lock().unwrap();
+            uncommited_wal_ids = self
+                .storage
+                .as_ref()
+                .map(|s| s.uncommited_wal_ids())
+                .unwrap_or(0..0);
+            let tables = self.tables.read().unwrap();
+            table_names = tables.keys().cloned().collect::<Vec<_>>();
+            for table in tables.values() {
+                table.freeze_buffer();
+            }
+            *wal_size = 0;
+            wal_condvar.notify_all();
+        }
+        let time_freeze_buffers = start_time_freeze_buffers.elapsed();
+
+        // Iterate over all tables and create new partitions from frozen buffers.
+        let start_time_batching = Instant::now();
         let mut new_partitions = Vec::new();
         let mut compactions = Vec::new();
-        let start_time_batching = Instant::now();
-        for table in tables.values() {
-            // TODO: use double buffering to quickly create new open buffer that unblocks ingestion
-            if let Some(partition) = table.batch() {
+        for table in &table_names {
+            let maybe_partition = { self.tables.read().unwrap()[table].batch() };
+            if let Some(partition) = maybe_partition {
                 let columns: Vec<_> = partition
                     .col_handles()
                     .map(|c| c.try_get().as_ref().unwrap().clone())
@@ -324,7 +338,7 @@ impl InnerLocustDB {
                     .collect();
                 let partition_metadata = PartitionMetadata {
                     id: partition.id,
-                    tablename: table.name().to_string(),
+                    tablename: table.to_string(),
                     len: partition.len(),
                     offset: partition.range().start,
                     subpartitions: metadata,
@@ -333,13 +347,12 @@ impl InnerLocustDB {
                 new_partitions.push((partition_metadata, subpartitions));
             }
 
+            let tables = self.tables.read().unwrap();
+            let table = &tables[table];
             if let Some(compaction) = table.plan_compaction(self.opts.partition_combine_factor) {
-                compactions.push((table.name(), table.next_partition_id(), compaction));
+                compactions.push((table.name().to_string(), table.next_partition_id(), compaction));
             }
         }
-        *wal_size = 0;
-        wal_condvar.notify_all();
-        drop(wal_size);
         let time_batching = start_time_batching.elapsed();
 
         // Persist new partitions
@@ -349,14 +362,16 @@ impl InnerLocustDB {
 
         let start_time_compaction = Instant::now();
         let mut partitions_to_delete = Vec::new();
-        for (table, id, (range, parts)) in compactions {
+        for (table, id, (range, parts)) in &compactions {
             // get table, create new merged partition/sub-partitions (not registered with table)
             // - get names of all columns
             // - run query for each column, construct Column
             // - create subpartitions
-            let colnames = tables[table].column_names(&parts);
+            let (colnames, data) = {
+                let tables = self.tables.read().unwrap();
+                (tables[table].column_names(parts), tables[table].snapshot_parts(parts))
+            };
             let mut columns = Vec::with_capacity(colnames.len());
-            let data = tables[table].snapshot_parts(&parts, false);
             for column in &colnames {
                 let query = Query::read_column(table, column);
                 let (sender, receiver) = oneshot::channel();
@@ -398,17 +413,17 @@ impl InnerLocustDB {
             if let Some(storage) = self.storage.as_ref() {
                 let to_delete = storage.prepare_compact(
                     table,
-                    id,
+                    *id,
                     metadata,
                     subpartitions,
-                    &parts,
+                    parts,
                     range.start,
                 );
                 partitions_to_delete.push((table.to_string(), to_delete));
             }
 
             // replace old partitions with new partition
-            tables[table].compact(id, range.start, columns, &parts);
+            self.tables.read().unwrap()[table].compact(*id, range.start, columns, parts);
         }
         let time_compaction = start_time_compaction.elapsed();
 
@@ -426,7 +441,8 @@ impl InnerLocustDB {
         }
 
         let total_time = start_time.elapsed();
-        log::info!("Performed wal flush in {total_time:?} (batching: {time_batching:?}, compaction: {time_compaction:?}, \
+        log::info!("Performed wal flush in {total_time:?} \
+                    freeze buffers: {time_freeze_buffers:?}, batching: {time_batching:?}, compaction: {time_compaction:?}, \
                     meta partitions: {time_meta_update:?}, write partitions: {time_write_partitions:?}, \
                     clone meta: {time_clone_metastore:?}, write meta: {time_persist_metastore:?}, delete wal: {time_delete_wal:?} \
                     delete partitions: {time_delete_partitions:?})",);

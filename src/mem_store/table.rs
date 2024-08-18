@@ -21,11 +21,14 @@ use self::wal_segment::WalSegment;
 
 pub struct Table {
     name: String,
-    // `partitions` lock has to be always acquired before `buffer` lock
+    // `partitions` lock has to be always acquired before `buffer` and `frozen_buffer` lock
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     next_partition_id: AtomicU64,
     next_partition_offset: AtomicUsize,
     buffer: Mutex<Buffer>,
+    // When flushing WAL, buffer is swapped with `frozen_buffer` to quickly snapshot all buffer
+    // data in existing WAL segments and unblock writing new WAL segments that will be flushed later.
+    frozen_buffer: Mutex<Buffer>,
     /// LRU that keeps track of when each (table, partition, column) segment was last accessed.
     lru: Lru,
 
@@ -41,6 +44,7 @@ impl Table {
             next_partition_id: AtomicU64::new(0),
             next_partition_offset: AtomicUsize::new(0),
             buffer: Mutex::new(Buffer::default()),
+            frozen_buffer: Mutex::new(Buffer::default()),
             lru,
             column_names: RwLock::default(),
         }
@@ -51,10 +55,24 @@ impl Table {
     }
 
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
-        let buffer = self.buffer.lock().unwrap();
         let partitions = self.partitions.read().unwrap();
+        let frozen_buffer = self.frozen_buffer.lock().unwrap();
+        let buffer = self.buffer.lock().unwrap();
         let mut partitions: Vec<_> = partitions.values().cloned().collect();
-        let offset = partitions.iter().map(|p| p.len()).sum::<usize>();
+        let mut offset = partitions.iter().map(|p| p.len()).sum::<usize>();
+        if frozen_buffer.len() > 0 {
+            partitions.push(Arc::new(
+                Partition::from_buffer(
+                    self.name(),
+                    u64::MAX,
+                    frozen_buffer.clone(),
+                    self.lru.clone(),
+                    offset,
+                )
+                .0,
+            ));
+            offset += frozen_buffer.len();
+        }
         if buffer.len() > 0 {
             partitions.push(Arc::new(
                 Partition::from_buffer(
@@ -70,24 +88,19 @@ impl Table {
         partitions
     }
 
-    pub fn snapshot_parts(&self, parts: &[PartitionID], snapshot_buffer: bool) -> Vec<Arc<Partition>> {
+    pub fn snapshot_parts(
+        &self,
+        parts: &[PartitionID],
+    ) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
-        let mut partitions: Vec<_> = parts.iter().map(|id| partitions[id].clone()).collect();
-        let offset = partitions.iter().map(|p| p.len()).sum::<usize>();
-        let buffer = self.buffer.lock().unwrap();
-        if buffer.len() > 0 && snapshot_buffer {
-            partitions.push(Arc::new(
-                Partition::from_buffer(
-                    self.name(),
-                    u64::MAX,
-                    buffer.clone(),
-                    self.lru.clone(),
-                    offset,
-                )
-                .0,
-            ));
-        }
-        partitions
+        parts.iter().map(|id| partitions[id].clone()).collect()
+    }
+
+    pub fn freeze_buffer(&self) {
+        let mut buffer = self.buffer.lock().unwrap();
+        let mut frozen_buffer = self.frozen_buffer.lock().unwrap();
+        assert!(frozen_buffer.len() == 0, "Frozen buffer is not empty");
+        std::mem::swap(&mut *buffer, &mut *frozen_buffer);
     }
 
     pub fn restore_tables_from_disk(
@@ -148,7 +161,12 @@ impl Table {
                                 }
                             }
                             ColumnData::String(data) => {
-                                assert!((data.len() as u64) == rows, "rows: {}, data.len(): {}", rows, data.len());
+                                assert!(
+                                    (data.len() as u64) == rows,
+                                    "rows: {}, data.len(): {}",
+                                    rows,
+                                    data.len()
+                                );
                                 InputColumn::Str(data)
                             }
                             ColumnData::Empty => InputColumn::Null(rows as usize),
@@ -228,7 +246,7 @@ impl Table {
 
     /// Creates a new partition from current buffer and returns it.
     pub(crate) fn batch(&self) -> Option<Arc<Partition>> {
-        let mut buffer = self.buffer.lock().unwrap();
+        let mut buffer = self.frozen_buffer.lock().unwrap();
         if buffer.len() == 0 {
             return None;
         }
