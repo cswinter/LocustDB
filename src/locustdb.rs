@@ -216,6 +216,8 @@ pub struct Options {
     pub batch_size: usize,
     /// Maximum number of rows in a partitions. Not implemented.
     pub max_partition_length: usize,
+    /// Number of parallel threads used during WAL flush table batching and compacting
+    pub wal_flush_compaction_threads: usize,
 }
 
 impl Default for Options {
@@ -233,6 +235,7 @@ impl Default for Options {
             partition_combine_factor: 4,
             batch_size: 1024,
             max_partition_length: 1024 * 1024,
+            wal_flush_compaction_threads: 1,
         }
     }
 }

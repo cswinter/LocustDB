@@ -1,4 +1,5 @@
 use capnp::serialize_packed;
+use itertools::Itertools;
 use locustdb_serialization::{dbmeta_capnp, default_reader_options};
 use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
 use pco::standalone::{simple_decompress, simpler_compress};
@@ -100,7 +101,7 @@ impl MetaStore {
                     let mut subpartition_builder = subpartitions_builder.reborrow().get(i as u32);
                     subpartition_builder.set_size_bytes(subpartition.size_bytes);
                     subpartition_builder.set_subpartition_key(&subpartition.subpartition_key);
-                    let subpartition_column_ids_sorted = itertools::Itertools::sorted(subpartition_index_to_column_names[i].iter().cloned());
+                    let subpartition_column_ids_sorted: Vec<_> = subpartition_index_to_column_names[i].iter().cloned().sorted().collect();
                     let all_column_ids_compressed = simpler_compress(&subpartition_column_ids_sorted, DEFAULT_COMPRESSION_LEVEL).unwrap();
                     subpartition_builder.set_compressed_interned_columns(&all_column_ids_compressed[..]);
                 }

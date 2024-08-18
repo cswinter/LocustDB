@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -12,6 +14,7 @@ use futures::executor::block_on;
 use inner_locustdb::meta_store::PartitionMetadata;
 use itertools::Itertools;
 use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer, TableBuffer};
+use threadpool::ThreadPool;
 
 use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
@@ -48,6 +51,8 @@ pub struct InnerLocustDB {
     running: AtomicBool,
     idle_queue: Condvar,
     task_queue: Mutex<VecDeque<Arc<dyn Task>>>,
+
+    walflush_threadpool: ThreadPool,
 }
 
 impl InnerLocustDB {
@@ -94,6 +99,8 @@ impl InnerLocustDB {
 
             idle_queue: Condvar::new(),
             task_queue: Mutex::new(VecDeque::new()),
+
+            walflush_threadpool: ThreadPool::new(opts.wal_flush_compaction_threads),
         };
         let _ = locustdb.create_if_empty_no_ingest("_meta_tables");
         locustdb
@@ -107,7 +114,7 @@ impl InnerLocustDB {
         let cloned = locustdb.clone();
         thread::spawn(move || InnerLocustDB::enforce_mem_limit(&cloned));
         let cloned = locustdb.clone();
-        thread::spawn(move || InnerLocustDB::enforce_wal_limit(&cloned));
+        thread::spawn(move || cloned.enforce_wal_limit());
     }
 
     pub fn snapshot(&self, table: &str) -> Option<Vec<Arc<Partition>>> {
@@ -281,7 +288,7 @@ impl InnerLocustDB {
     }
 
     /// Creates new partition from currently open buffer in each table, persists partitions to disk, and deletes WAL.
-    pub(crate) fn wal_flush(&self) {
+    pub(crate) fn wal_flush(self: &Arc<InnerLocustDB>) {
         log::info!("Commencing WAL flush");
         let start_time = Instant::now();
         let mut time_write_partitions = Duration::default();
@@ -317,40 +324,23 @@ impl InnerLocustDB {
 
         // Iterate over all tables and create new partitions from frozen buffers.
         let start_time_batching = Instant::now();
+        let (tx, rx) = mpsc::channel();
+        for table in &table_names {
+            let table = table.to_string();
+            let this = self.clone();
+            let tx = tx.clone();
+            self.walflush_threadpool.execute(move || {
+                tx.send(this.flush_table_buffer(&table)).unwrap();
+            });
+        }
         let mut new_partitions = Vec::new();
         let mut compactions = Vec::new();
-        for table in &table_names {
-            let maybe_partition = { self.tables.read().unwrap()[table].batch() };
-            if let Some(partition) = maybe_partition {
-                let columns: Vec<_> = partition
-                    .col_handles()
-                    .map(|c| c.try_get().as_ref().unwrap().clone())
-                    .sorted_by(|a, b| a.name().cmp(b.name()));
-                let (metadata, subpartitions) = subpartition(&self.opts, columns);
-                let column_name_to_subpartition_index = subpartitions
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(i, subpartition)| {
-                        subpartition
-                            .iter()
-                            .map(move |column| (column.name().to_string(), i))
-                    })
-                    .collect();
-                let partition_metadata = PartitionMetadata {
-                    id: partition.id,
-                    tablename: table.to_string(),
-                    len: partition.len(),
-                    offset: partition.range().start,
-                    subpartitions: metadata,
-                    column_name_to_subpartition_index,
-                };
-                new_partitions.push((partition_metadata, subpartitions));
+        for (new_partition, maybe_compaction) in rx.iter().take(table_names.len()) {
+            if let Some((metadata, subpartitions)) = new_partition {
+                new_partitions.push((metadata, subpartitions));
             }
-
-            let tables = self.tables.read().unwrap();
-            let table = &tables[table];
-            if let Some(compaction) = table.plan_compaction(self.opts.partition_combine_factor) {
-                compactions.push((table.name().to_string(), table.next_partition_id(), compaction));
+            if let Some(compaction) = maybe_compaction {
+                compactions.push(compaction);
             }
         }
         let time_batching = start_time_batching.elapsed();
@@ -362,70 +352,17 @@ impl InnerLocustDB {
 
         // Write new segments from compactions and apply compaction in-memory
         let start_time_compaction = Instant::now();
-        let mut partitions_to_delete = Vec::new();
-        for (table, id, (range, parts)) in &compactions {
-            // get table, create new merged partition/sub-partitions (not registered with table)
-            // - get names of all columns
-            // - run query for each column, construct Column
-            // - create subpartitions
-            let (colnames, data) = {
-                let tables = self.tables.read().unwrap();
-                (tables[table].column_names(parts), tables[table].snapshot_parts(parts))
-            };
-            let mut columns = Vec::with_capacity(colnames.len());
-            for column in &colnames {
-                let query = Query::read_column(table, column);
-                let (sender, receiver) = oneshot::channel();
-                let query_task = QueryTask::new(
-                    query,
-                    false,
-                    false,
-                    vec![],
-                    data.clone(),
-                    self.disk_read_scheduler().clone(),
-                    SharedSender::new(sender),
-                    self.opts.batch_size,
-                )
-                .unwrap();
-                self.schedule(query_task);
-                let result = block_on(receiver).unwrap().unwrap();
-                let mut column_builder = MixedCol::default();
-                let column_data = result.columns.into_iter().next().unwrap().1;
-                match column_data {
-                    BasicTypeColumn::Int(ints) => column_builder.push_ints(ints),
-                    BasicTypeColumn::Float(floats) => column_builder.push_floats(floats),
-                    BasicTypeColumn::String(strings) => column_builder.push_strings(strings),
-                    BasicTypeColumn::Null(count) => column_builder.push_nulls(count),
-                    BasicTypeColumn::Mixed(raws) => {
-                        raws.into_iter().for_each(|r| column_builder.push(r))
-                    }
-                }
-                assert_eq!(
-                    range.len(),
-                    column_builder.len(),
-                    "range={range:?}, column_builder.len() = {}, table = {table},  column = {column}",
-                    column_builder.len(),
-
-                );
-                columns.push(column_builder.finalize(column));
-            }
-            let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
-            // write new subpartitions to disk and update in-memory metastore
-            if let Some(storage) = self.storage.as_ref() {
-                let to_delete = storage.prepare_compact(
-                    table,
-                    *id,
-                    metadata,
-                    subpartitions,
-                    parts,
-                    range.start,
-                );
-                partitions_to_delete.push((table.to_string(), to_delete));
-            }
-
-            // replace old partitions with new partition
-            self.tables.read().unwrap()[table].compact(*id, range.start, columns, parts);
+        let (tx, rx) = mpsc::channel();
+        let num_compactions = compactions.len();
+        for (table, id, range, parts) in compactions {
+            let tx = tx.clone();
+            let this = self.clone();
+            self.walflush_threadpool.execute(move || {
+                let to_delete = this.compact(&table, id, range, &parts);
+                tx.send(to_delete).unwrap();
+            });
         }
+        let partitions_to_delete = rx.iter().take(num_compactions).flatten().collect();
         let time_compaction = start_time_compaction.elapsed();
 
         if let Some(storage) = self.storage.as_ref() {
@@ -447,6 +384,120 @@ impl InnerLocustDB {
                     meta partitions: {time_meta_update:?}, write partitions: {time_write_partitions:?}, \
                     clone meta: {time_clone_metastore:?}, write meta: {time_persist_metastore:?}, delete wal: {time_delete_wal:?} \
                     delete partitions: {time_delete_partitions:?})",);
+    }
+
+    #[allow(clippy::type_complexity)]
+    #[must_use]
+    pub fn flush_table_buffer(
+        &self,
+        table: &str,
+    ) -> (
+        Option<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
+        Option<(String, u64, Range<usize>, Vec<u64>)>,
+    ) {
+        let mut new_partition = None;
+        let mut maybe_compaction = None;
+
+        let maybe_partition = { self.tables.read().unwrap()[table].batch() };
+        if let Some(partition) = maybe_partition {
+            let columns: Vec<_> = partition
+                .col_handles()
+                .map(|c| c.try_get().as_ref().unwrap().clone())
+                .sorted_by(|a, b| a.name().cmp(b.name()))
+                .collect();
+            let (metadata, subpartitions) = subpartition(&self.opts, columns);
+            let column_name_to_subpartition_index = subpartitions
+                .iter()
+                .enumerate()
+                .flat_map(|(i, subpartition)| {
+                    subpartition
+                        .iter()
+                        .map(move |column| (column.name().to_string(), i))
+                })
+                .collect();
+            let partition_metadata = PartitionMetadata {
+                id: partition.id,
+                tablename: table.to_string(),
+                len: partition.len(),
+                offset: partition.range().start,
+                subpartitions: metadata,
+                column_name_to_subpartition_index,
+            };
+            new_partition = Some((partition_metadata, subpartitions));
+        }
+
+        let tables = self.tables.read().unwrap();
+        let table = &tables[table];
+        if let Some((range, parts)) = table.plan_compaction(self.opts.partition_combine_factor) {
+            maybe_compaction = Some((
+                table.name().to_string(),
+                table.next_partition_id(),
+                range,
+                parts,
+            ));
+        }
+
+        (new_partition, maybe_compaction)
+    }
+
+    fn compact(&self, table: &str, id: PartitionID, range: Range<usize>, parts: &[u64]) -> Option<(String, Vec<(u64, String)>)> {
+        // get table, create new merged partition/sub-partitions (not registered with table)
+        // - get names of all columns
+        // - run query for each column, construct Column
+        // - create subpartitions
+        let (colnames, data) = {
+            let tables = self.tables.read().unwrap();
+            (
+                tables[table].column_names(parts),
+                tables[table].snapshot_parts(parts),
+            )
+        };
+        let mut columns = Vec::with_capacity(colnames.len());
+        for column in &colnames {
+            let query = Query::read_column(table, column);
+            let (sender, receiver) = oneshot::channel();
+            let query_task = QueryTask::new(
+                query,
+                false,
+                false,
+                vec![],
+                data.clone(),
+                self.disk_read_scheduler().clone(),
+                SharedSender::new(sender),
+                self.opts.batch_size,
+            )
+            .unwrap();
+            self.schedule(query_task);
+            let result = block_on(receiver).unwrap().unwrap();
+            let mut column_builder = MixedCol::default();
+            let column_data = result.columns.into_iter().next().unwrap().1;
+            match column_data {
+                BasicTypeColumn::Int(ints) => column_builder.push_ints(ints),
+                BasicTypeColumn::Float(floats) => column_builder.push_floats(floats),
+                BasicTypeColumn::String(strings) => column_builder.push_strings(strings),
+                BasicTypeColumn::Null(count) => column_builder.push_nulls(count),
+                BasicTypeColumn::Mixed(raws) => {
+                    raws.into_iter().for_each(|r| column_builder.push(r))
+                }
+            }
+            assert_eq!(
+                range.len(),
+                column_builder.len(),
+                "range={range:?}, column_builder.len() = {}, table = {table},  column = {column}",
+                column_builder.len(),
+            );
+            columns.push(column_builder.finalize(column));
+        }
+        let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
+
+        // replace old partitions with new partition
+        self.tables.read().unwrap()[table].compact(id, range.start, columns, parts);
+
+        // write new subpartitions to disk and update in-memory metastore
+        self.storage.as_ref().map(|s| {
+            let to_delete = s.prepare_compact(table, id, metadata, subpartitions, parts, range.start);
+            (table.to_string(), to_delete)
+        })
     }
 
     pub fn restore(&self, id: PartitionID, column: Column) {
@@ -578,7 +629,7 @@ impl InnerLocustDB {
         }
     }
 
-    fn enforce_wal_limit(&self) {
+    fn enforce_wal_limit(self: Arc<InnerLocustDB>) {
         let (wal_size, _) = &self.wal_size;
         while self.running.load(Ordering::SeqCst) {
             let wal_size = { *wal_size.lock().unwrap() };

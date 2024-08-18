@@ -105,6 +105,7 @@ impl QueryTask {
                     name,
                 })
                 .sorted_by(|a, b| a.name.cmp(&b.name))
+                .collect()
         }
 
         let referenced_cols = query.find_referenced_cols();

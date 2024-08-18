@@ -34,7 +34,7 @@ fnv = "1.0"
 futures = "0.3"
 google-cloud-storage = { version = "0.16", features = ["rustls-tls", "auth"], default-features = false }
 hex = "0.3"
-itertools = "0.5"
+itertools = "0.13"
 lazy_static = "1.4.0"
 locustdb-compression-utils = {path = "./locustdb-compression-utils", version = "0.2.0"}
 locustdb-derive = {path = "./locustdb-derive", version = "0.2.1"}
@@ -63,6 +63,7 @@ structopt = "0.3"
 systemstat = "0.1.8"
 tempfile = "3"
 tera = "1"
+threadpool = "1.8.1"
 time = "0.2"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"

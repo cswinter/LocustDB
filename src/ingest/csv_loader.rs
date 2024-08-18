@@ -136,7 +136,7 @@ impl Options {
     }
 }
 
-pub fn ingest_file(ldb: &InnerLocustDB, opts: &Options) -> Result<(), String> {
+pub fn ingest_file(ldb: &Arc<InnerLocustDB>, opts: &Options) -> Result<(), String> {
     // Can't combine these two branches because csv::Reader takes a type param which differs for creating from Reader/File
     if opts.unzip {
         let f = File::open(&opts.filename).map_err(|x| x.to_string())?;
@@ -173,7 +173,7 @@ pub fn ingest_file(ldb: &InnerLocustDB, opts: &Options) -> Result<(), String> {
 }
 
 fn auto_ingest<T>(
-    ldb: &InnerLocustDB,
+    ldb: &Arc<InnerLocustDB>,
     records: T,
     colnames: &[String],
     opts: &Options,

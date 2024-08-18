@@ -288,7 +288,7 @@ async fn columns(
     let limit = req_body.limit.unwrap_or(usize::MAX);
     let offset = req_body.offset.unwrap_or(0).min(len.saturating_sub(limit));
     HttpResponse::Ok().json(json!({
-        "columns": cols.iter().cloned().sorted().into_iter().skip(offset).take(limit).collect::<Vec<_>>(),
+        "columns": cols.iter().cloned().sorted().skip(offset).take(limit).collect::<Vec<_>>(),
         "offset": offset,
         "len": len,
     }))

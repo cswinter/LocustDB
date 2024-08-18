@@ -102,6 +102,10 @@ struct Opt {
     /// Maximum length of temporary buffer used in streaming stages during query execution
     #[structopt(long, default_value = "1024")]
     batch_size: usize,
+
+    /// Number of parallel threads used during WAL flush table batching and compacting
+    #[structopt(long, default_value = "1")]
+    wal_flush_compaction_threads: usize,
 }
 
 fn main() {
@@ -128,6 +132,7 @@ fn main() {
         cors_allow_origin,
         addrs,
         batch_size,
+        wal_flush_compaction_threads,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -143,6 +148,7 @@ fn main() {
         partition_combine_factor,
         batch_size,
         max_partition_length: 1024 * 1024,
+        wal_flush_compaction_threads,
     };
 
     if options.readahead > options.mem_size_limit_tables {

@@ -285,7 +285,8 @@ impl Table {
         let by_offset: Vec<Arc<Partition>> = partitions
             .values()
             .cloned()
-            .sorted_by(|p1, p2| p1.range().start.cmp(&p2.range().start));
+            .sorted_by(|p1, p2| p1.range().start.cmp(&p2.range().start))
+            .collect();
         let cumulative = by_offset
             .iter()
             .rev()
@@ -400,7 +401,7 @@ impl Table {
                 columns.insert(col.clone());
             }
         }
-        columns.into_iter().sorted()
+        columns.into_iter().sorted().collect()
     }
 
     pub fn search_column_names(&self, pattern: &str) -> Vec<String> {
@@ -410,12 +411,14 @@ impl Table {
                 .iter()
                 .filter(|col| re.is_match(col))
                 .cloned()
-                .sorted(),
+                .sorted()
+                .collect(),
             Err(_) => column_names
                 .iter()
                 .filter(|col| col.contains(pattern))
                 .cloned()
-                .sorted(),
+                .sorted()
+                .collect(),
         }
     }
 
