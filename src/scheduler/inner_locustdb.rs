@@ -288,6 +288,7 @@ impl InnerLocustDB {
         let mut compactions = Vec::new();
         let start_time_batching = Instant::now();
         for table in tables.values() {
+            // TODO: use double buffering to quickly create new open buffer that unblocks ingestion
             if let Some(partition) = table.batch() {
                 let columns: Vec<_> = partition
                     .col_handles()
@@ -326,6 +327,7 @@ impl InnerLocustDB {
         }
 
         let start_time_compaction = Instant::now();
+        let mut partitions_to_delete = Vec::new();
         for (table, id, (range, parts)) in compactions {
             // get table, create new merged partition/sub-partitions (not registered with table)
             // - get names of all columns
@@ -373,13 +375,18 @@ impl InnerLocustDB {
             let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
             // write subpartitions to disk, update metastore unlinking old partitions, delete old partitions
             if let Some(storage) = self.storage.as_ref() {
-                storage.compact(table, id, metadata, subpartitions, &parts, range.start);
+                let to_delete = storage.prepare_compact(table, id, metadata, subpartitions, &parts, range.start);
+                partitions_to_delete.push((table.to_string(), to_delete));
             }
 
             // replace old partitions with new partition
             tables[table].compact(id, range.start, columns, &parts);
         }
         let time_compaction = start_time_compaction.elapsed();
+
+        if let Some(storage) = self.storage.as_ref() {
+            storage.commit_compacts(partitions_to_delete);
+        }
 
         let total_time = start_time.elapsed();
         match persist_timings {

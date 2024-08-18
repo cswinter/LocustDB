@@ -226,6 +226,7 @@ impl Table {
         buffer.push_untyped_cols(columns);
     }
 
+    /// Creates a new partition from current buffer and returns it.
     pub(crate) fn batch(&self) -> Option<Arc<Partition>> {
         let mut buffer = self.buffer.lock().unwrap();
         if buffer.len() == 0 {

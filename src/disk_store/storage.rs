@@ -253,7 +253,7 @@ impl Storage {
     }
 
     // Combine set of partitions into single new partition.
-    pub fn compact(
+    pub fn prepare_compact(
         &self,
         table: &str,
         id: PartitionID,
@@ -261,7 +261,7 @@ impl Storage {
         subpartitions: Vec<Vec<Arc<Column>>>,
         old_partitions: &[PartitionID],
         offset: usize,
-    ) {
+    ) -> Vec<(u64, String)> {
         log::debug!(
             "compacting {} parititions into {} for table {}",
             old_partitions.len(),
@@ -278,6 +278,7 @@ impl Storage {
                     .map(move |name| (name, i))
             })
             .collect();
+
         // Persist new partition files
         let partition = PartitionMetadata {
             id,
@@ -289,7 +290,7 @@ impl Storage {
         };
         self.write_subpartitions(&partition, subpartitions);
 
-        // Atomically update metastore
+        // Update metastore
         let mut meta_store = self.meta_store.write().unwrap();
         let all_partitions = meta_store.partitions.get_mut(table).unwrap();
         let to_delete: Vec<(u64, String)> = old_partitions
@@ -309,15 +310,27 @@ impl Storage {
             .get_mut(table)
             .unwrap()
             .insert(partition.id, partition);
-        drop(meta_store);
-        let meta_store = self.meta_store.read().unwrap();
-        self.write_metastore(&meta_store);
+
+        to_delete
+    }
+
+    pub fn commit_compacts(
+        &self,
+        to_delete: Vec<(String, Vec<(u64, String)>)>,
+    ) {
+        // Persist metastore
+        {
+            let meta_store = self.meta_store.read().unwrap();
+            self.write_metastore(&meta_store);
+        }
 
         // Delete old partition files
-        let table_dir = self.tables_path.join(sanitize_table_name(table));
-        for (id, key) in to_delete {
-            let path = table_dir.join(partition_filename(id, &key));
-            self.writer.delete(&path).unwrap();
+        for (table, to_delete) in &to_delete {
+            for (id, key) in to_delete {
+            let table_dir = self.tables_path.join(sanitize_table_name(table));
+                let path = table_dir.join(partition_filename(*id, key));
+                self.writer.delete(&path).unwrap();
+            }
         }
     }
 
