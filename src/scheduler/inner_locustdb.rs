@@ -360,6 +360,7 @@ impl InnerLocustDB {
             (time_write_partitions, time_meta_update) = s.persist_partitions(new_partitions);
         }
 
+        // Write new segments from compactions and apply compaction in-memory
         let start_time_compaction = Instant::now();
         let mut partitions_to_delete = Vec::new();
         for (table, id, (range, parts)) in &compactions {
@@ -409,7 +410,7 @@ impl InnerLocustDB {
                 columns.push(column_builder.finalize(column));
             }
             let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
-            // write subpartitions to disk, update metastore unlinking old partitions, delete old partitions
+            // write new subpartitions to disk and update in-memory metastore
             if let Some(storage) = self.storage.as_ref() {
                 let to_delete = storage.prepare_compact(
                     table,

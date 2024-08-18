@@ -21,7 +21,7 @@ use self::wal_segment::WalSegment;
 
 pub struct Table {
     name: String,
-    // `partitions` lock has to be always acquired before `buffer` and `frozen_buffer` lock
+    // To prevent deadlocks, `frozen_buffer` lock has to be always acquired before `partitions` before `buffer`
     partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     next_partition_id: AtomicU64,
     next_partition_offset: AtomicUsize,
@@ -55,8 +55,8 @@ impl Table {
     }
 
     pub fn snapshot(&self) -> Vec<Arc<Partition>> {
-        let partitions = self.partitions.read().unwrap();
         let frozen_buffer = self.frozen_buffer.lock().unwrap();
+        let partitions = self.partitions.read().unwrap();
         let buffer = self.buffer.lock().unwrap();
         let mut partitions: Vec<_> = partitions.values().cloned().collect();
         let mut offset = partitions.iter().map(|p| p.len()).sum::<usize>();
@@ -88,17 +88,14 @@ impl Table {
         partitions
     }
 
-    pub fn snapshot_parts(
-        &self,
-        parts: &[PartitionID],
-    ) -> Vec<Arc<Partition>> {
+    pub fn snapshot_parts(&self, parts: &[PartitionID]) -> Vec<Arc<Partition>> {
         let partitions = self.partitions.read().unwrap();
         parts.iter().map(|id| partitions[id].clone()).collect()
     }
 
     pub fn freeze_buffer(&self) {
-        let mut buffer = self.buffer.lock().unwrap();
         let mut frozen_buffer = self.frozen_buffer.lock().unwrap();
+        let mut buffer = self.buffer.lock().unwrap();
         assert!(frozen_buffer.len() == 0, "Frozen buffer is not empty");
         std::mem::swap(&mut *buffer, &mut *frozen_buffer);
     }
