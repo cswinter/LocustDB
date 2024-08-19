@@ -116,14 +116,14 @@ impl InnerLocustDB {
         thread::spawn(move || cloned.enforce_wal_limit());
     }
 
-    pub fn snapshot(&self, table: &str) -> Option<Vec<Arc<Partition>>> {
+    pub fn snapshot(&self, table: &str, column_filter: Option<&[String]>) -> Option<Vec<Arc<Partition>>> {
         let tables = self.tables.read().unwrap();
-        tables.get(table).map(|t| t.snapshot())
+        tables.get(table).map(|t| t.snapshot(column_filter))
     }
 
     pub fn full_snapshot(&self) -> Vec<Vec<Arc<Partition>>> {
         let tables = self.tables.read().unwrap();
-        tables.values().map(|t| t.snapshot()).collect()
+        tables.values().map(|t| t.snapshot(None)).collect()
     }
 
     pub fn stop(&self) {

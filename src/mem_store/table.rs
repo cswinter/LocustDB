@@ -54,18 +54,22 @@ impl Table {
         &self.name
     }
 
-    pub fn snapshot(&self) -> Vec<Arc<Partition>> {
+    pub fn snapshot(&self, column_filter: Option<&[String]>) -> Vec<Arc<Partition>> {
         let frozen_buffer = self.frozen_buffer.lock().unwrap();
         let partitions = self.partitions.read().unwrap();
         let buffer = self.buffer.lock().unwrap();
         let mut partitions: Vec<_> = partitions.values().cloned().collect();
         let mut offset = partitions.iter().map(|p| p.len()).sum::<usize>();
         if frozen_buffer.len() > 0 {
+            let buffer = match column_filter {
+                Some(columns) => frozen_buffer.filter(columns),
+                None => frozen_buffer.clone(),
+            };
             partitions.push(Arc::new(
                 Partition::from_buffer(
                     self.name(),
                     u64::MAX,
-                    frozen_buffer.clone(),
+                    buffer,
                     self.lru.clone(),
                     offset,
                 )
@@ -74,11 +78,15 @@ impl Table {
             offset += frozen_buffer.len();
         }
         if buffer.len() > 0 {
+            let buffer = match column_filter {
+                Some(columns) => buffer.filter(columns),
+                None => buffer.clone(),
+            };
             partitions.push(Arc::new(
                 Partition::from_buffer(
                     self.name(),
                     u64::MAX,
-                    buffer.clone(),
+                    buffer,
                     self.lru.clone(),
                     offset,
                 )
@@ -335,7 +343,7 @@ impl Table {
             size_bytes: 0,
             columns: HashMap::default(),
         };
-        let partitions = self.snapshot();
+        let partitions = self.snapshot(None);
         for partition in partitions {
             partition.mem_tree(&mut tree.columns, if depth == 1 { 1 } else { depth - 1 });
             tree.rows += partition.len();
@@ -348,7 +356,7 @@ impl Table {
     }
 
     pub fn stats(&self) -> TableStats {
-        let partitions = self.snapshot();
+        let partitions = self.snapshot(None);
         let size_per_column = Table::size_per_column(&partitions);
         let buffer = self.buffer.lock().unwrap();
         TableStats {

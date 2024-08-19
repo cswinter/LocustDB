@@ -72,11 +72,7 @@ impl Partition {
         for name in md.column_name_to_subpartition_index.keys() {
             cols.insert(
                 name.clone(),
-                ColumnHandle::non_resident(
-                    table,
-                    md.id,
-                    name.clone(),
-                ),
+                ColumnHandle::non_resident(table, md.id, name.clone()),
             );
         }
         Partition {
@@ -284,11 +280,7 @@ impl ColumnHandle {
         }
     }
 
-    fn non_resident(
-        table: &str,
-        id: PartitionID,
-        name: String,
-    ) -> ColumnHandle {
+    fn non_resident(table: &str, id: PartitionID, name: String) -> ColumnHandle {
         ColumnHandle {
             key: ColumnLocator::new(table, id, &name),
             name,

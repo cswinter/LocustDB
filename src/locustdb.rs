@@ -50,7 +50,8 @@ impl LocustDB {
             Err(err) => return Ok(Err(err)),
         };
 
-        let mut data = match self.inner_locustdb.snapshot(&query.table) {
+        let referenced_cols: Vec<_> = query.find_referenced_cols().into_iter().collect();
+        let mut data = match self.inner_locustdb.snapshot(&query.table, Some(&referenced_cols[..])) {
             Some(data) => data,
             None => {
                 return Ok(Err(QueryError::NotImplemented(format!(

@@ -96,10 +96,22 @@ impl Buffer {
     }
 
     pub fn heap_size_of_children(&self) -> usize {
-        self.buffer.values().map(|v| {
+        self.buffer
+            .values()
+            .map(|v| {
                 // Currently does not take into account the memory of String.
                 v.heap_size_of_children()
             })
             .sum()
+    }
+
+    pub fn filter(&self, columns: &[String]) -> Buffer {
+        Buffer {
+            buffer: columns
+                .iter()
+                .filter_map(|name| self.buffer.get(name).map(|col| (name.clone(), col.clone())))
+                .collect(),
+            length: self.length,
+        }
     }
 }
