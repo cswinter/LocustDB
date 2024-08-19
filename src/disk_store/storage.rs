@@ -140,8 +140,8 @@ impl Storage {
         };
 
         let mut wal_segments = Vec::new();
-        let next_wal_id = meta_store.next_wal_id;
-        log::info!("Recovering from wal checkpoint {}", next_wal_id);
+        let earliest_uncommited_wal_id = meta_store.earliest_uncommited_wal_id;
+        log::info!("Recovering from wal checkpoint {}", earliest_uncommited_wal_id);
         let wal_files = writer.list(wal_dir).unwrap();
         log::info!("Found {} wal segments", wal_files.len());
         for wal_file in wal_files {
@@ -155,7 +155,7 @@ impl Storage {
                 wal_segment.data.tables.values().map(|t| t.len).sum::<u64>(),
                 wal_segment.data.tables.len(),
             );
-            if wal_segment.id < next_wal_id {
+            if wal_segment.id < earliest_uncommited_wal_id {
                 if readonly {
                     log::info!("Skipping wal segment {}", wal_file.display());
                 } else {

@@ -47,7 +47,7 @@ impl MetaStore {
     pub fn serialize(&self) -> Vec<u8> {
         let mut builder = ::capnp::message::Builder::new_default();
         let mut dbmeta = builder.init_root::<dbmeta_capnp::d_b_meta::Builder>();
-        dbmeta.set_next_wal_id(self.next_wal_id);
+        dbmeta.set_next_wal_id(self.earliest_uncommited_wal_id);
 
         let total_partitions = self.partitions.values().map(|x| x.len()).sum::<usize>();
         assert!(total_partitions < std::u32::MAX as usize);
