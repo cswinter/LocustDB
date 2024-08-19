@@ -50,8 +50,15 @@ impl LocustDB {
             Err(err) => return Ok(Err(err)),
         };
 
-        let referenced_cols: Vec<_> = query.find_referenced_cols().into_iter().collect();
-        let mut data = match self.inner_locustdb.snapshot(&query.table, Some(&referenced_cols[..])) {
+        let referenced_cols = query.find_referenced_cols();
+        let colsvec;
+        let column_filter = if referenced_cols.contains("*") {
+            None
+        } else {
+            colsvec = referenced_cols.into_iter().collect::<Vec<_>>();
+            Some(&colsvec[..])
+        };
+        let mut data = match self.inner_locustdb.snapshot(&query.table, column_filter) {
             Some(data) => data,
             None => {
                 return Ok(Err(QueryError::NotImplemented(format!(
@@ -164,7 +171,11 @@ impl LocustDB {
         InnerLocustDB::start_worker_threads(&self.inner_locustdb);
     }
 
-    pub async fn mem_tree(&self, depth: usize, table: Option<String>) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
+    pub async fn mem_tree(
+        &self,
+        depth: usize,
+        table: Option<String>,
+    ) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
         let inner = self.inner_locustdb.clone();
         let (task, receiver) = <dyn Task>::from_fn(move || inner.mem_tree(depth, table.clone()));
         self.schedule(task);
@@ -231,7 +242,7 @@ impl Default for Options {
             mem_lz4: true,
             readahead: 256 * 1024 * 1024, // 256 MiB
             seq_disk_read: false,
-            max_wal_size_bytes: 64 * 1024 * 1024, // 64 MiB
+            max_wal_size_bytes: 64 * 1024 * 1024,      // 64 MiB
             max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
             partition_combine_factor: 4,
             batch_size: 1024,
