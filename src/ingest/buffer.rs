@@ -106,11 +106,17 @@ impl Buffer {
     }
 
     pub fn filter(&self, columns: &[String]) -> Buffer {
+        let mut columns: HashMap<_, _> = columns
+            .iter()
+            .filter_map(|name| self.buffer.get(name).map(|col| (name.clone(), col.clone())))
+            .collect();
+        // Need at least one column to have a length
+        if columns.is_empty() {
+            let (key, val) = self.buffer.iter().next().unwrap();
+            columns.insert(key.clone(), val.clone());
+        }
         Buffer {
-            buffer: columns
-                .iter()
-                .filter_map(|name| self.buffer.get(name).map(|col| (name.clone(), col.clone())))
-                .collect(),
+            buffer: columns,
             length: self.length,
         }
     }
