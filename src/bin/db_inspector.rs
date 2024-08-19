@@ -33,7 +33,7 @@ struct Opt {
 fn main() {
     env_logger::init();
     let opts = Opt::from_args();
-    let (storage, wal) = Storage::new(&opts.db_path, Arc::new(PerfCounter::default()), true);
+    let (storage, wal, _) = Storage::new(&opts.db_path, Arc::new(PerfCounter::default()), true);
 
     {
         let meta = storage.meta_store().read().unwrap();

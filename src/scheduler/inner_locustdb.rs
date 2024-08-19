@@ -59,19 +59,19 @@ impl InnerLocustDB {
     pub fn new(opts: &Options) -> InnerLocustDB {
         let lru = Lru::default();
         let perf_counter = Arc::new(PerfCounter::default());
-        let (storage, tables) = match opts.db_path.clone() {
+        let (storage, tables, wal_size) = match opts.db_path.clone() {
             Some(path) => {
                 let perf_counter = perf_counter.clone();
                 let lru = lru.clone();
                 std::thread::spawn(move || {
-                    let (storage, wal) = Storage::new(&path, perf_counter, false);
+                    let (storage, wal, wal_size) = Storage::new(&path, perf_counter, false);
                     let tables = Table::restore_tables_from_disk(&storage, wal, &lru);
-                    (Some(Arc::new(storage)), tables)
+                    (Some(Arc::new(storage)), tables, wal_size)
                 })
                 .join()
                 .unwrap()
             }
-            None => (None, HashMap::new()),
+            None => (None, HashMap::new(), 0),
         };
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
             storage
@@ -91,8 +91,7 @@ impl InnerLocustDB {
 
             storage,
 
-            // TODO: doesn't take into account size of existing wal after restart
-            wal_size: (Mutex::new(0), Condvar::new()),
+            wal_size: (Mutex::new(wal_size), Condvar::new()),
 
             opts: opts.clone(),
             perf_counter,

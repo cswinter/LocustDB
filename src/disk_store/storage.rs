@@ -50,7 +50,7 @@ impl Storage {
         path: &Path,
         perf_counter: Arc<PerfCounter>,
         readonly: bool,
-    ) -> (Storage, Vec<WalSegment<'static>>) {
+    ) -> (Storage, Vec<WalSegment<'static>>, u64) {
         let (writer, path): (Box<dyn BlobWriter + Send + Sync + 'static>, PathBuf) =
             if path.starts_with("gs://") {
                 let components = path.components().collect::<Vec<_>>();
@@ -99,7 +99,7 @@ impl Storage {
         let meta_db_path = path.join("meta");
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
-        let (meta_store, wal_segments) = Storage::recover(
+        let (meta_store, wal_segments, wal_size) = Storage::recover(
             writer.as_ref(),
             &meta_db_path,
             &wal_dir,
@@ -117,6 +117,7 @@ impl Storage {
                 perf_counter,
             },
             wal_segments,
+            wal_size,
         )
     }
 
@@ -126,7 +127,7 @@ impl Storage {
         wal_dir: &Path,
         readonly: bool,
         perf_counter: &PerfCounter,
-    ) -> (MetaStore, Vec<WalSegment<'static>>) {
+    ) -> (MetaStore, Vec<WalSegment<'static>>, u64) {
         let mut meta_store: MetaStore = if writer.exists(meta_db_path).unwrap() {
             let data = writer.load(meta_db_path).unwrap();
             perf_counter.disk_read_meta_store(data.len() as u64);
@@ -144,6 +145,7 @@ impl Storage {
         log::info!("Recovering from wal checkpoint {}", earliest_uncommited_wal_id);
         let wal_files = writer.list(wal_dir).unwrap();
         log::info!("Found {} wal segments", wal_files.len());
+        let mut wal_size = 0;
         for wal_file in wal_files {
             let wal_data = writer.load(&wal_file).unwrap();
             perf_counter.disk_read_wal(wal_data.len() as u64);
@@ -167,12 +169,13 @@ impl Storage {
                 meta_store.next_wal_id = meta_store
                     .next_wal_id
                     .max(wal_segments.last().unwrap().id + 1);
+                wal_size += wal_data.len() as u64;
             }
         }
 
         wal_segments.sort_by_key(|s| s.id);
 
-        (meta_store, wal_segments)
+        (meta_store, wal_segments, wal_size)
     }
 
     fn write_metastore(&self, meta_store: &MetaStore) {
