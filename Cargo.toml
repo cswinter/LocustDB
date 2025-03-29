@@ -46,11 +46,11 @@ num = "0.4"
 num_cpus = "1.0"
 ordered-float = { version = "3", features = ["serde"] }
 pco = "0.4.2"
-pyo3 = {features = ["extension-module"], version = "0.21", optional = true}
+pyo3 = {features = ["extension-module"], version = "0.24", optional = true}
 rand = "0.5"
 random_word = { version = "0.4", features = ["en", "fr", "de"] }
 regex = "1"
-reqwest = { version = "0.11", default_features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 rustyline = "1.0"
 scoped_threadpool = "0.1"
 seahash = "3.0"

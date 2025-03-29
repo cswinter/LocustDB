@@ -83,73 +83,85 @@ impl Client {
         Ok(())
     }
 
-    fn multi_query(&self, py: Python, queries: Vec<String>) -> PyResult<PyObject> {
+    fn multi_query<'a>(&self, py: Python<'a>, queries: Vec<String>) -> PyResult<Bound<'a, PyList>> {
         let results = RT
             .block_on(self.client.multi_query(queries))
             .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
-        let py_result = PyList::new_bound(
+        PyList::new(
             py,
             results.into_iter().map(|result| {
-                let columns = PyDict::new_bound(py);
+                let columns = PyDict::new(py);
                 for (key, value) in result.columns {
                     columns.set_item(key, column_to_python(py, value)).unwrap();
                 }
                 columns
             }),
-        );
-        Ok(py_result.into_py(py))
+        )
     }
 
-    fn query(&self, py: Python, query: String) -> PyResult<PyObject> {
+    fn query<'a>(&self, py: Python<'a>, query: String) -> PyResult<Bound<'a, PyDict>> {
         let result = RT
             .block_on(self.client.multi_query(vec![query]))
             .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
         assert_eq!(result.len(), 1);
-        let columns = PyDict::new_bound(py);
+        let columns = PyDict::new(py);
         for (key, value) in result.into_iter().next().unwrap().columns {
             columns.set_item(key, column_to_python(py, value)).unwrap();
         }
-        Ok(columns.into_py(py))
+        Ok(columns)
     }
 
     #[pyo3(signature = (table, pattern = None))]
-    fn columns(&self, py: Python, table: String, pattern: Option<String>) -> PyResult<PyObject> {
+    fn columns<'a>(
+        &self,
+        py: Python<'a>,
+        table: String,
+        pattern: Option<String>,
+    ) -> PyResult<Bound<'a, PyAny>> {
         let response = RT
             .block_on(self.client.columns(table, pattern))
             .map_err(|e| PyErr::new::<PyException, _>(format!("{}", e)))?;
-        Ok(response.columns.into_py(py))
+        response.columns.into_pyobject(py)
     }
 }
 
 fn column_to_python(py: Python, column: Column) -> PyObject {
     match column {
-        Column::Float(xs) => xs.into_py(py),
-        Column::Int(xs) => xs.into_py(py),
-        Column::String(xs) => xs.into_py(py),
-        Column::Mixed(xs) => {
-            PyList::new_bound(py, xs.iter().map(|x| any_to_python(py, x))).into_py(py)
-        }
-        Column::Null(n) => {
-            PyList::new_bound(py, (0..n).map(|_| None::<()>.into_py(py))).into_py(py)
-        }
-        Column::Xor(xs) => xor_float::double::decode(&xs).unwrap().into_py(py),
+        Column::Float(xs) => xs.into_pyobject(py).unwrap().into(),
+        Column::Int(xs) => xs.into_pyobject(py).unwrap().into(),
+        Column::String(xs) => xs.into_pyobject(py).unwrap().into(),
+        Column::Mixed(xs) => PyList::new(py, xs.iter().map(|x| any_to_python(py, x)))
+            .unwrap()
+            .into_pyobject(py)
+            .unwrap()
+            .into(),
+        Column::Null(n) => PyList::new(py, (0..n).map(|_| None::<()>.into_pyobject(py).unwrap()))
+            .unwrap()
+            .into_pyobject(py)
+            .unwrap()
+            .into(),
+        Column::Xor(xs) => xor_float::double::decode(&xs)
+            .unwrap()
+            .into_pyobject(py)
+            .unwrap()
+            .into(),
     }
 }
 
 fn any_to_python(py: Python, value: &AnyVal) -> PyObject {
     match value {
-        AnyVal::Int(i) => i.into_py(py),
-        AnyVal::Float(f) => f.into_py(py),
-        AnyVal::Str(s) => s.into_py(py),
-        AnyVal::Null => None::<()>.into_py(py),
+        AnyVal::Int(i) => i.into_pyobject(py).unwrap().into(),
+        AnyVal::Float(f) => f.into_pyobject(py).unwrap().into(),
+        AnyVal::Str(s) => s.into_pyobject(py).unwrap().into(),
+        AnyVal::Null => None::<()>.into_pyobject(py).unwrap().into(),
     }
 }
 
 #[repr(transparent)]
 struct AnyValWrapper(AnyVal);
 
-impl FromPyObject<'_> for AnyValWrapper {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for AnyValWrapper {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let val = if let Ok(i) = ob.extract::<i64>() {
             AnyVal::Int(i)
         } else if let Ok(f) = ob.extract::<f64>() {
