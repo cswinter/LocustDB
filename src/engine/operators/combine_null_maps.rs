@@ -19,7 +19,7 @@ impl<'a> VecOperator<'a> for CombineNullMaps {
     }
 
     fn init(&mut self, total_count: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        let output = vec![0u8; (batch_size.min(total_count) + 7) / 8];
+        let output = vec![0u8; batch_size.min(total_count).div_ceil(8)];
         scratchpad.set(self.output, output);
     }
 

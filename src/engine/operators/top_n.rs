@@ -41,7 +41,7 @@ impl<'a, T: VecData<T> + 'a, C: Comparator<T> + fmt::Debug> VecOperator<'a> for 
             self.last_index += count;
         }
 
-        assert!(indices.len() == indices.capacity() || input.len() == 0);
+        assert!(indices.len() == indices.capacity() || input.is_empty());
         for (i, &key) in input.iter().enumerate() {
             if C::cmp(key, keys[0]) {
                 heap_replace::<_, C>(&mut keys, &mut indices, key, self.last_index + i, 0);

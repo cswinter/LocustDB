@@ -45,7 +45,7 @@ impl Client {
         //let start_time = Instant::now();
         let response = self
             .client
-            .post(&format!("{}/columns", self.url))
+            .post(format!("{}/columns", self.url))
             .header(CONTENT_TYPE, "application/json")
             .json(&request_body)
             .send()
@@ -86,7 +86,7 @@ impl Client {
         let request_start_ms = performance.now();
         let response = self
             .client
-            .post(&format!("{}/multi_query_cols", self.url))
+            .post(format!("{}/multi_query_cols", self.url))
             .header(CONTENT_TYPE, "application/json")
             .json(&request_body)
             .send()
@@ -183,7 +183,7 @@ impl Client {
         };
         let body = payload.serialize();
         self.client
-            .post(&format!("{}/insert_bin", self.url))
+            .post(format!("{}/insert_bin", self.url))
             .body(body)
             .send()
             .await

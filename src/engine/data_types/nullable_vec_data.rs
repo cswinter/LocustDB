@@ -38,7 +38,7 @@ impl<'a, T: VecData<T> + 'a> Data<'a> for NullableVec<T> {
         // TODO: more efficient implementation that doesn't clone?
         let to = min(to, self.len());
         let data = self.data[from..to].to_vec();
-        let mut present = vec![0u8; (to - from + 7) / 8];
+        let mut present = vec![0u8; (to - from).div_ceil(8)];
         for i in from..to {
             if self.present.is_set(i) {
                 present.set(i - from);

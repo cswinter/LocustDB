@@ -9,7 +9,6 @@ use crate::ingest::raw_val::RawVal;
 use crate::mem_store::*;
 use crate::syntax::expression::*;
 use std::collections::HashMap;
-use std::i64;
 use std::sync::Arc;
 
 #[derive(ASTBuilder, Debug, Clone)]

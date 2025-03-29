@@ -1,6 +1,5 @@
 use crate::engine::data_types::*;
 use crate::mem_store::*;
-use std::{u16, u32, u8};
 use std::sync::Arc;
 
 pub struct IntegerColumn;
@@ -36,17 +35,17 @@ impl IntegerColumn {
         } else {
             (max - min) as u64
         };
-        let mut column = if min >= 0 && max <= From::from(u8::MAX) {
+        let mut column = if min >= 0 && max <= u8::MAX as i64 {
             IntegerColumn::create_col::<u8>(name, values, 0, min0, max0, delta_encode, null, EncodingType::U8)
-        } else if interval <= From::from(u8::MAX) {
+        } else if interval <= u8::MAX as u64 {
             IntegerColumn::create_col::<u8>(name, values, min, min0, max0, delta_encode, null, EncodingType::U8)
-        } else if min >= 0 && max <= From::from(u16::MAX) {
+        } else if min >= 0 && max <= u16::MAX as i64 {
             IntegerColumn::create_col::<u16>(name, values, 0, min0, max0, delta_encode, null, EncodingType::U16)
-        } else if interval <= From::from(u16::MAX) {
+        } else if interval <= u16::MAX as u64 {
             IntegerColumn::create_col::<u16>(name, values, min, min0, max0, delta_encode, null, EncodingType::U16)
-        } else if min >= 0 && max <= From::from(u32::MAX) {
+        } else if min >= 0 && max <= u32::MAX as i64 {
             IntegerColumn::create_col::<u32>(name, values, 0, min0, max0, delta_encode, null, EncodingType::U32)
-        } else if interval <= From::from(u32::MAX) {
+        } else if interval <= u32::MAX as u64 {
             IntegerColumn::create_col::<u32>(name, values, min, min0, max0, delta_encode, null, EncodingType::U32)
         } else {
             values.shrink_to_fit();

@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
-use std::u64;
 
 #[derive(Debug, Clone)]
 pub struct ColumnInfo {

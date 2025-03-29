@@ -1,4 +1,3 @@
-use std::iter::repeat;
 use std::mem;
 use std::ops::BitOr;
 use std::sync::Arc;
@@ -47,7 +46,7 @@ impl MixedCol {
     pub fn push_nulls(&mut self, count: usize) {
         if count > 0 {
             self.types = self.types | ColType::null();
-            self.data.extend(repeat(RawVal::Null).take(count));
+            self.data.extend(std::iter::repeat_n(RawVal::Null, count));
         }
     }
 
@@ -57,7 +56,7 @@ impl MixedCol {
 
     pub fn finalize(self, name: &str) -> Arc<Column> {
         let present =  if self.types.contains_null {
-            let mut present = vec![0u8; (self.data.len() + 7) / 8];
+            let mut present = vec![0u8; self.data.len().div_ceil(8)];
             for (i, v) in self.data.iter().enumerate() {
                 if *v != RawVal::Null {
                     present[i / 8] |= 1 << (i % 8);

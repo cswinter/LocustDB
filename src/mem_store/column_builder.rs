@@ -1,5 +1,4 @@
 use std::cmp;
-use std::i64;
 use std::sync::Arc;
 
 use ordered_float::OrderedFloat;
@@ -39,7 +38,7 @@ impl<T: AsRef<str>> ColumnBuilder<T> for StringColBuilder {
         let elem = elem.as_ref();
         self.lhex = self.lhex && is_lowercase_hex(elem);
         self.uhex = self.uhex && is_uppercase_hex(elem);
-        self.string_bytes += elem.as_bytes().len();
+        self.string_bytes += elem.len();
         self.values.push(elem);
     }
 

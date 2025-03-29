@@ -9,7 +9,6 @@ pub struct PcoDecode<T> {
     pub encoded: BufferRef<u8>,
     pub decoded: BufferRef<T>,
     pub decoded_len: usize,
-    pub has_more: bool,
     pub is_fp32: bool,
 }
 

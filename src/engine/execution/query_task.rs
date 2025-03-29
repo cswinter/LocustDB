@@ -166,7 +166,7 @@ impl QueryTask {
         let mut batch_results = BTreeMap::<usize, BatchResult>::new();
         let mut explains = Vec::new();
         while let Some((partition, id)) = self.next_partition() {
-            let show = self.show.iter().any(|&x| x == id);
+            let show = self.show.contains(&id);
             let cols =
                 partition.get_cols(&self.referenced_cols, &self.db, self.perf_counter.as_ref());
             rows_scanned += cols.iter().next().map_or(0, |c| c.1.len());
@@ -290,7 +290,7 @@ impl QueryTask {
         self.perf_counter.scanned(rows_scanned as u64);
         state.rows_collected += rows_collected;
 
-        let result = unsafe { mem::transmute::<_, BatchResult<'static>>(result) };
+        let result = unsafe { mem::transmute::<BatchResult, BatchResult<'static>>(result) };
         state
             .partial_results
             .insert(result.scanned_range.start, result);

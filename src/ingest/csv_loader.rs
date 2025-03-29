@@ -296,7 +296,7 @@ impl RawCol {
         self.types = self.types | ColType::determine(elem);
         self.lhex = self.lhex && is_lowercase_hex(elem);
         self.uhex = self.uhex && is_uppercase_hex(elem);
-        self.string_bytes += elem.as_bytes().len();
+        self.string_bytes += elem.len();
         if self.allow_null {
             if elem.is_empty() {
                 self.any_null = true;

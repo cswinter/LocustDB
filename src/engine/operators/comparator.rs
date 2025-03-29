@@ -107,7 +107,7 @@ impl Comparator<OrderedFloat<f64>> for CmpLessThan {
     }
 }
 
-impl<'a> Comparator<&'a str> for CmpLessThan {
+impl Comparator<&'_ str> for CmpLessThan {
     fn cmp(left: &str, right: &str) -> bool {
         left < right
     }
@@ -301,7 +301,7 @@ impl Comparator<Option<OrderedFloat<f64>>> for CmpGreaterThan {
     }
 }
 
-impl<'a> Comparator<&'a str> for CmpGreaterThan {
+impl Comparator<&str> for CmpGreaterThan {
     fn cmp(left: &str, right: &str) -> bool {
         left > right
     }

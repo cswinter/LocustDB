@@ -18,7 +18,7 @@ where
         if self.batch_size > len {
             let (mut output, mut present) = scratchpad.get_mut_nullable(self.output);
             output.truncate(len);
-            present.truncate((len + 7) / 8);
+            present.truncate(len.div_ceil(8));
         }
         Ok(())
     }
@@ -28,14 +28,16 @@ where
         scratchpad.set_nullable(
             self.output,
             vec![T::default(); batch_size],
-            vec![0u8; (batch_size + 7) / 8],
+            vec![0u8; batch_size.div_ceil(8)],
         );
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.input.any()]
     }
-    fn inputs_mut(&mut self) -> Vec<&mut usize> { vec![&mut self.input.i] }
+    fn inputs_mut(&mut self) -> Vec<&mut usize> {
+        vec![&mut self.input.i]
+    }
     fn outputs(&self) -> Vec<BufferRef<Any>> {
         vec![self.output.any()]
     }

@@ -50,7 +50,7 @@ impl MetaStore {
         dbmeta.set_next_wal_id(self.earliest_uncommited_wal_id);
 
         let total_partitions = self.partitions.values().map(|x| x.len()).sum::<usize>();
-        assert!(total_partitions < std::u32::MAX as usize);
+        assert!(total_partitions < u32::MAX as usize);
         let mut i = 0;
 
         let unique_strings = self
@@ -64,13 +64,13 @@ impl MetaStore {
         let mut string_bytes: Vec<u8> = Vec::new();
         let mut lens = Vec::new();
         for string in &sorted_strings {
-            assert!(string.len() <= std::u16::MAX as usize);
+            assert!(string.len() <= u16::MAX as usize);
             lens.push(string.len() as u16);
             string_bytes.extend(string.as_bytes());
         }
         dbmeta.reborrow().set_compressed_strings(&compress_prepend_size(&string_bytes));
         dbmeta.reborrow().set_lengths_compressed_strings(&lens[..]).unwrap();
-        assert!(sorted_strings.len() < std::u32::MAX as usize);
+        assert!(sorted_strings.len() < u32::MAX as usize);
         let column_name_to_id = sorted_strings
             .iter()
             .cloned()
@@ -94,7 +94,7 @@ impl MetaStore {
                 partition_builder.set_tablename(&partition.tablename);
                 partition_builder.set_offset(partition.offset as u64);
                 partition_builder.set_len(partition.len as u64);
-                assert!(partition.subpartitions.len() < std::u32::MAX as usize);
+                assert!(partition.subpartitions.len() < u32::MAX as usize);
                 let mut subpartitions_builder =
                     partition_builder.init_subpartitions(partition.subpartitions.len() as u32);
                 for (i, subpartition) in partition.subpartitions.iter().enumerate() {

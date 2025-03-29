@@ -149,7 +149,7 @@ impl EventBuffer {
     }
 
     pub fn serialize_builder(&self, table_segment_list: &mut table_segment_list::Builder) {
-        assert!(self.tables.len() < std::u32::MAX as usize);
+        assert!(self.tables.len() < u32::MAX as usize);
         let mut data = table_segment_list
             .reborrow()
             .init_data(self.tables.len() as u32);
@@ -169,7 +169,7 @@ impl EventBuffer {
                     }
                     ColumnData::Sparse(sparse) => {
                         let mut sparse_builder = column_builder.get_data().init_sparse_f64();
-                        assert!(sparse.len() < std::u32::MAX as usize);
+                        assert!(sparse.len() < u32::MAX as usize);
                         let (indices, values): (Vec<_>, Vec<_>) = sparse.iter().cloned().unzip();
                         sparse_builder.reborrow().set_indices(&indices[..]).unwrap();
                         sparse_builder.reborrow().set_values(&values[..]).unwrap();
@@ -185,7 +185,7 @@ impl EventBuffer {
                     }
                     ColumnData::SparseI64(sparse) => {
                         let mut sparse_builder = column_builder.get_data().init_sparse_i64();
-                        assert!(sparse.len() < std::u32::MAX as usize);
+                        assert!(sparse.len() < u32::MAX as usize);
                         let (indices, values): (Vec<_>, Vec<_>) = sparse.iter().cloned().unzip();
                         sparse_builder.reborrow().set_indices(&indices[..]).unwrap();
                         sparse_builder.reborrow().set_values(&values[..]).unwrap();

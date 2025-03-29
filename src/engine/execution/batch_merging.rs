@@ -4,7 +4,6 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
-use std::usize;
 
 #[derive(Debug)]
 pub struct BatchResult<'a> {

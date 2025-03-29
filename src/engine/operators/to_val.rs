@@ -17,7 +17,7 @@ impl<'a> VecOperator<'a> for ValToNullableStr<'a> {
             data.clear();
             present.clear();
         }
-        present.resize((data.len() + vals.len() + 7) / 8, 0u8);
+        present.resize((data.len() + vals.len()).div_ceil(8), 0u8);
         let offset = data.len();
         for (i, &val) in vals.iter().enumerate() {
             match val {

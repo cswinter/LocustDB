@@ -49,7 +49,7 @@ where
     }
 
     fn init(&mut self, total_count: usize, _: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set_nullable(self.output, Vec::with_capacity(total_count), Vec::with_capacity((total_count + 7) / 8));
+        scratchpad.set_nullable(self.output, Vec::with_capacity(total_count), Vec::with_capacity(total_count.div_ceil(8)));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> {

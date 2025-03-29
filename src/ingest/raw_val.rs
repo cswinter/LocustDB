@@ -86,7 +86,7 @@ impl<T: Into<RawVal>> From<Option<T>> for RawVal {
     }
 }
 
-impl<'a> From<&'a str> for RawVal {
+impl From<&str> for RawVal {
     fn from(val: &str) -> RawVal {
         RawVal::Str(val.to_string())
     }

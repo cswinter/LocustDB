@@ -3,34 +3,29 @@
 use futures::executor::block_on;
 use locustdb::{LocustDB, Options};
 use std::env;
-use std::u32;
+use std::sync::OnceLock;
 extern crate test;
 
-static mut DB: Option<LocustDB> = None;
+static DB: OnceLock<LocustDB> = OnceLock::new();
 
 fn db() -> &'static LocustDB {
-    unsafe {
+    DB.get_or_init(|| {
         // Prints each argument on a separate line
         let thread_count = env::var_os("LOCUSTDB_THREADS")
             .map(|x| x.to_str().unwrap().parse::<usize>().unwrap());
-        match DB {
-            Some(ref locustdb) => locustdb,
-            None => {
-                let mut opts = Options::default();
-                opts.threads = thread_count.unwrap_or(opts.threads);
-                let locustdb = LocustDB::new(&opts);
+        
+        let mut opts = Options::default();
+        opts.threads = thread_count.unwrap_or(opts.threads);
+        let locustdb = LocustDB::new(&opts);
 
-                eprintln!("Synthesizing tables");
-                gen_table(&locustdb, "trips_e8", 100, 1 << 20);
-                gen_table(&locustdb, "trips_e7", 80, 1 << 17);
-                gen_table(&locustdb, "trips_e6", 64, 1 << 14);
-                eprintln!("Done");
+        eprintln!("Synthesizing tables");
+        gen_table(&locustdb, "trips_e8", 100, 1 << 20);
+        gen_table(&locustdb, "trips_e7", 80, 1 << 17);
+        gen_table(&locustdb, "trips_e6", 64, 1 << 14);
+        eprintln!("Done");
 
-                DB = Some(locustdb);
-                DB.as_ref().unwrap()
-            }
-        }
-    }
+        locustdb
+    })
 }
 
 
