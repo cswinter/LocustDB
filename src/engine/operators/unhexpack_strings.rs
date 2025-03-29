@@ -33,7 +33,7 @@ impl<'a> VecOperator<'a> for UnhexpackStrings<'a> {
                 assert!(stringstore.len() + bytes.len() <= stringstore.capacity());
                 stringstore.extend_from_slice(bytes);
                 decoded.push(unsafe {
-                    mem::transmute::<_, &'a str>(
+                    mem::transmute::<&str, &'a str>(
                         str::from_utf8_unchecked(&stringstore[stringstore.len() - bytes.len()..])
                     )
                 });

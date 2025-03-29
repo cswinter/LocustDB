@@ -2,7 +2,6 @@ use ordered_float::OrderedFloat;
 
 use crate::bitvec::*;
 use crate::engine::*;
-use std::i64;
 
 
 pub struct FuseNullsI64 {
@@ -134,7 +133,7 @@ impl<'a> VecOperator<'a> for UnfuseNullsStr<'a> {
             data.clear();
             present.clear();
         }
-        present.resize((data.len() + fused.len() + 7) / 8, 0u8);
+        present.resize((data.len() + fused.len()).div_ceil(8), 0u8);
         let offset = data.len();
         for i in 0..fused.len() {
             data.push(fused[i].unwrap_or(""));
@@ -224,7 +223,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for UnfuseIntNulls<T> {
             data.clear();
             present.clear();
         }
-        present.resize((data.len() + fused.len() + 7) / 8, 0u8);
+        present.resize((data.len() + fused.len()).div_ceil(8), 0u8);
         let offset = data.len();
         for i in 0..fused.len() {
             if fused[i] == T::zero() {

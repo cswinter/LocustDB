@@ -385,7 +385,7 @@ fn sanitize_table_name(table_name: &str) -> String {
     let mut name = table_name.to_lowercase();
     name.retain(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
     name = name
-        .trim_start_matches(|c| c == '-' || c == '.')
+        .trim_start_matches(['-', '.'])
         .to_string();
     if name.len() > 189 {
         name = name[..189].to_string();

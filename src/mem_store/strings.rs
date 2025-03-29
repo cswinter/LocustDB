@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::str;
 use std::sync::Arc;
-use std::{u16, u32, u8};
 
 type HashMapSea<K, V> = HashMap<K, V, BuildHasherDefault<SeaHasher>>;
 type HashSetSea<K> = HashSet<K, BuildHasherDefault<SeaHasher>>;

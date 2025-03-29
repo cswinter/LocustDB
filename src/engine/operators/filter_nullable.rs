@@ -34,7 +34,7 @@ where
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set_nullable(self.output, Vec::with_capacity(batch_size), Vec::with_capacity((batch_size + 7) / 8));
+        scratchpad.set_nullable(self.output, Vec::with_capacity(batch_size), Vec::with_capacity(batch_size.div_ceil(8)));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> {
@@ -93,7 +93,7 @@ where
     }
 
     fn init(&mut self, _: usize, batch_size: usize, scratchpad: &mut Scratchpad<'a>) {
-        scratchpad.set_nullable(self.output, Vec::with_capacity(batch_size), Vec::with_capacity((batch_size + 7) / 8));
+        scratchpad.set_nullable(self.output, Vec::with_capacity(batch_size), Vec::with_capacity(batch_size.div_ceil(8)));
     }
 
     fn inputs(&self) -> Vec<BufferRef<Any>> {

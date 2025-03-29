@@ -2,7 +2,6 @@ use std::cmp::min;
 use std::fmt::{Debug, Display, Write};
 use std::fmt;
 use std::hash::Hash;
-use std::i64;
 use std::mem;
 use std::io::Cursor;
 

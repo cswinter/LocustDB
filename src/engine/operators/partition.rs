@@ -2,7 +2,6 @@ use crate::engine::*;
 use std::cmp;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::u32;
 
 #[derive(Debug)]
 pub struct Partition<T, C> {

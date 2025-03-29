@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::mem_store::*;
 
 // Special NaN value that we use to represent NULLs in the data.
+#[allow(clippy::transmute_int_to_float)]
 pub const F64_NULL: OrderedFloat<f64> =
     OrderedFloat(unsafe { std::mem::transmute::<u64, f64>(0x7ffa_aaaa_aaaa_aaaau64) });
 pub const I64_NULL: i64 = i64::MAX;

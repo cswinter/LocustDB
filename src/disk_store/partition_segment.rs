@@ -81,7 +81,7 @@ impl PartitionSegment {
                         DataSection::U64(x) => ds.set_u64(&x[..]).unwrap(),
                         DataSection::I64(x) => ds.set_i64(&x[..]).unwrap(),
                         DataSection::F64(x) => {
-                            assert!(x.len() < std::u32::MAX as usize);
+                            assert!(x.len() < u32::MAX as usize);
                             let mut builder = ds.init_f64(x.len() as u32);
                             for (i, f) in x.iter().enumerate() {
                                 builder.set(i as u32, f.0);

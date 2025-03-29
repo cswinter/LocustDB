@@ -33,8 +33,8 @@ where
         let (from, to) = if streaming {
             if self.is_bitvec {
                 (
-                    (self.current_index + 7) / 8,
-                    (self.current_index + self.batch_size + 7) / 8,
+                    self.current_index.div_ceil(8),
+                    (self.current_index + self.batch_size).div_ceil(8),
                 )
             } else {
                 (self.current_index, self.current_index + self.batch_size)
@@ -126,8 +126,8 @@ where
         let result_data = Box::new(&input[from..to]);
         scratchpad.set_any(self.output_data.any(), result_data);
         let result_present = if from / 8 < present.len() {
-            if (to + 7) / 8 < present.len() {
-                Box::new(&present[(from / 8)..(to + 7) / 8])
+            if to.div_ceil(8) < present.len() {
+                Box::new(&present[(from / 8)..to.div_ceil(8)])
             } else {
                 Box::new(&present[(from / 8)..])
             }

@@ -26,7 +26,7 @@ impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for CompactNul
             }
         }
         data.truncate(j);
-        present.truncate((j + 7) / 8);
+        present.truncate(j.div_ceil(8));
         Ok(())
     }
 

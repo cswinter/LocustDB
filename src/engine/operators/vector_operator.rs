@@ -535,7 +535,7 @@ pub mod operator {
         reify_types! {
             "pco_decode";
             decoded: Number;
-            Ok(Box::new(PcoDecode { encoded, decoded, decoded_len, has_more: true, is_fp32 }))
+            Ok(Box::new(PcoDecode { encoded, decoded, decoded_len, is_fp32 }))
         }
     }
 
