@@ -4,6 +4,7 @@ version = "0.2.2"
 edition = "2021"
 description = "Serialization formats used by LocustDB for peristent storage and client/server communication."
 license-file = "../LICENSE"
+repository = "https://github.com/cswinter/locustdb"
 
 [dependencies]
 capnp = "0.19"
