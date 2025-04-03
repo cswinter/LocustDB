@@ -37,7 +37,7 @@ hex = "0.3"
 itertools = "0.13"
 lazy_static = "1.4.0"
 locustdb-compression-utils = {path = "./locustdb-compression-utils", version = "0.2.0"}
-locustdb-derive = {path = "./locustdb-derive", version = "0.2.1"}
+locustdb-derive = {path = "./locustdb-derive", version = "0.2.2"}
 locustdb-serialization = {path = "./locustdb-serialization", version = "0.2.2"}
 log = {features = ["max_level_trace", "release_max_level_debug"], version = "0.4"}
 lru = "0.12"
