@@ -79,40 +79,41 @@ impl SimpleTracer {
             let span = &self.completed_spans[i];
             let indent = "  ".repeat(span.depth);
 
-            // Format duration with appropriate units
-            let duration_str = format_duration(span.duration);
+            // Render span name, duration, and annotations
+            result.push_str(&format!(
+                "{}{}: {}\n",
+                indent,
+                span.name,
+                format_duration(span.duration)
+            ));
+            for (key, value) in &span.annotations {
+                result.push_str(&format!("{}  - {}: {}\n", indent, key, value));
+            }
 
             // If span has more than 10 children, aggregate similar subspans
             if span.child_count > 10 {
-                // Add the span name and duration
-                result.push_str(&format!("{}{}: {}\n", indent, span.name, duration_str));
-
-                // Add annotations if any
-                for (key, value) in &span.annotations {
-                    result.push_str(&format!("{}  - {}: {}\n", indent, key, value));
-                }
-
-                // Find and aggregate all direct children of this span
+                // Find and aggregate all children of this span
                 let mut aggregated_spans: HashMap<String, (Duration, usize)> = HashMap::new();
-                let mut child_i = i;
-                let mut child_count = 0;
+                let mut path = Vec::new();
+                let mut last_depth = span.depth;
 
-                while child_count < span.child_count && child_i < self.completed_spans.len() - 1 {
-                    child_i += 1;
-                    let child = &self.completed_spans[child_i];
-                    if child.depth == span.depth + 1 {
-                        let entry = aggregated_spans
-                            .entry(child.name.clone())
-                            .or_insert((Duration::ZERO, 0));
-                        entry.0 += child.duration;
-                        entry.1 += 1;
-                        child_count += 1;
+                while i > 0 && self.completed_spans[i - 1].depth > span.depth {
+                    i -= 1;
+                    if last_depth == self.completed_spans[i].depth {
+                        path.pop();
                     }
+                    path.push(self.completed_spans[i].name.clone());
+                    let name = path.join(".");
+                    let entry = aggregated_spans.entry(name).or_insert((Duration::ZERO, 0));
+                    entry.0 += self.completed_spans[i].duration;
+                    entry.1 += 1;
+
+                    last_depth = self.completed_spans[i].depth;
                 }
 
-                // Print aggregated children
+                // Print aggregated children sorted by name
                 let mut agg_spans: Vec<_> = aggregated_spans.into_iter().collect();
-                agg_spans.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Sort by duration (descending)
+                agg_spans.sort_by(|a, b| a.0.cmp(&b.0));
 
                 for (name, (total_duration, count)) in agg_spans {
                     let child_indent = "  ".repeat(span.depth + 1);
@@ -129,14 +130,6 @@ impl SimpleTracer {
 
                 // Skip the children we've already summarized
                 i -= span.child_count;
-            } else {
-                // Add the span name and duration
-                result.push_str(&format!("{}{}: {}\n", indent, span.name, duration_str));
-
-                // Add annotations if any
-                for (key, value) in &span.annotations {
-                    result.push_str(&format!("{}  - {}: {}\n", indent, key, value));
-                }
             }
         }
 
