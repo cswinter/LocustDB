@@ -201,7 +201,7 @@ where
         if row_num % opts.partition_size == opts.partition_size - 1 {
             let cols = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
             ldb.ingest_heterogeneous(&opts.tablename, cols);
-            ldb.wal_flush();
+            ldb.trigger_wal_flush();
         }
         row_num += 1;
     }
@@ -211,7 +211,7 @@ where
         ldb.ingest_heterogeneous(&opts.tablename, cols);
     }
     // ingest_heterogeneous does not write to WAL, so need to flush to ensure data is persisted as partitions
-    ldb.wal_flush();
+    ldb.trigger_wal_flush();
     Ok(())
 }
 

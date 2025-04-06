@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 use super::azure_writer::AzureBlobWriter;
 use super::file_writer::{BlobWriter, FileBlobWriter, VersionedChecksummedBlobWriter};
@@ -13,6 +12,7 @@ use super::wal_segment::WalSegment;
 use super::{ColumnLoader, PartitionID};
 use crate::mem_store::{Column, DataSource};
 use crate::perf_counter::{PerfCounter, QueryPerfCounter};
+use crate::simple_trace::SimpleTracer;
 
 impl ColumnLoader for Storage {
     fn load_column(
@@ -142,7 +142,10 @@ impl Storage {
 
         let mut wal_segments = Vec::new();
         let earliest_uncommited_wal_id = meta_store.earliest_uncommited_wal_id;
-        log::info!("Recovering from wal checkpoint {}", earliest_uncommited_wal_id);
+        log::info!(
+            "Recovering from wal checkpoint {}",
+            earliest_uncommited_wal_id
+        );
         let wal_files = writer.list(wal_dir).unwrap();
         log::info!("Found {} wal segments", wal_files.len());
         let mut wal_size = 0;
@@ -178,10 +181,12 @@ impl Storage {
         (meta_store, wal_segments, wal_size)
     }
 
-    fn write_metastore(&self, meta_store: &MetaStore) {
-        let data = meta_store.serialize();
+    fn write_metastore(&self, meta_store: &MetaStore, tracer: &mut SimpleTracer) {
+        let span_write_metastore = tracer.start_span("write_metastore");
+        let data = meta_store.serialize(tracer);
         self.perf_counter.disk_write_meta_store(data.len() as u64);
         self.writer.store(&self.meta_db_path, &data).unwrap();
+        tracer.end_span(span_write_metastore);
     }
 
     fn write_subpartitions(
@@ -231,35 +236,37 @@ impl Storage {
     pub fn persist_partitions(
         &self,
         partitions: Vec<(PartitionMetadata, Vec<Vec<Arc<Column>>>)>,
-    ) -> (Duration, Duration) {
-        let mut total_write_time = Duration::default();
-        let mut total_lock_time = Duration::default();
+        tracer: &mut SimpleTracer,
+    ) {
+        let span_persist_partitions = tracer.start_span("persist_partitions");
 
         // Write out new partition files
         for (partition, subpartition_cols) in partitions {
-            let start_time = std::time::Instant::now();
+            let span_write_subpartitions = tracer.start_span("write_subpartitions");
             self.write_subpartitions(&partition, subpartition_cols);
-            total_write_time += start_time.elapsed();
+            tracer.end_span(span_write_subpartitions);
 
-            let start_time = std::time::Instant::now();
+            let span_lock_meta_store = tracer.start_span("lock_meta_store");
             let mut meta_store = self.meta_store.write().unwrap();
             meta_store
                 .partitions
                 .entry(partition.tablename.clone())
                 .or_default()
                 .insert(partition.id, partition);
-            total_lock_time += start_time.elapsed();
+            tracer.end_span(span_lock_meta_store);
         }
 
-        (total_write_time, total_lock_time)
+        tracer.end_span(span_persist_partitions);
     }
 
     /// Delete WAL segments with ids in the given range.
-    pub fn delete_wal_segments(&self, ids: Range<u64>) {
+    pub fn delete_wal_segments(&self, ids: Range<u64>, tracer: &mut SimpleTracer) {
+        let span_delete_wal_segments = tracer.start_span("delete_wal_segments");
         for id in ids {
             let path = self.wal_dir.join(format!("{}.wal", id));
             self.writer.delete(&path).unwrap();
         }
+        tracer.end_span(span_delete_wal_segments);
     }
 
     // Combine set of partitions into single new partition.
@@ -324,8 +331,13 @@ impl Storage {
         to_delete
     }
 
-    pub fn delete_orphaned_partitions(&self, to_delete: Vec<(String, Vec<(u64, String)>)>) {
+    pub fn delete_orphaned_partitions(
+        &self,
+        to_delete: Vec<(String, Vec<(u64, String)>)>,
+        tracer: &mut SimpleTracer,
+    ) {
         // Delete old partition files
+        let span_delete_orphaned_partitions = tracer.start_span("delete_orphaned_partitions");
         for (table, to_delete) in &to_delete {
             for (id, key) in to_delete {
                 let table_dir = self.tables_path.join(sanitize_table_name(table));
@@ -333,22 +345,21 @@ impl Storage {
                 self.writer.delete(&path).unwrap();
             }
         }
+        tracer.end_span(span_delete_orphaned_partitions);
     }
 
-    pub fn persist_metastore(&self, earliest_uncommited_wal_id: u64) -> (Duration, Duration) {
-        let clone_start_time = std::time::Instant::now();
+    pub fn persist_metastore(&self, earliest_uncommited_wal_id: u64, tracer: &mut SimpleTracer) {
+        let span_persist_metastore = tracer.start_span("persist_metastore");
+        let span_clone_meta_store = tracer.start_span("clone_meta_store");
         {
             self.meta_store.write().unwrap().earliest_uncommited_wal_id =
                 earliest_uncommited_wal_id;
         }
         let meta_store = { self.meta_store.read().unwrap().clone() };
-        let clone_elapsed = clone_start_time.elapsed();
+        tracer.end_span(span_clone_meta_store);
 
-        let write_start_time = std::time::Instant::now();
-        self.write_metastore(&meta_store);
-        let write_elapsed = write_start_time.elapsed();
-
-        (clone_elapsed, write_elapsed)
+        self.write_metastore(&meta_store, tracer);
+        tracer.end_span(span_persist_metastore);
     }
 
     pub fn load_column(
@@ -384,9 +395,7 @@ fn partition_filename(id: PartitionID, subpartition_key: &str) -> String {
 fn sanitize_table_name(table_name: &str) -> String {
     let mut name = table_name.to_lowercase();
     name.retain(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
-    name = name
-        .trim_start_matches(['-', '.'])
-        .to_string();
+    name = name.trim_start_matches(['-', '.']).to_string();
     if name.len() > 189 {
         name = name[..189].to_string();
     }
