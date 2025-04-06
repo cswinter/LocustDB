@@ -127,9 +127,6 @@ impl SimpleTracer {
                         result.push_str(&format!("{}{}: {}\n", child_indent, name, duration_str));
                     }
                 }
-
-                // Skip the children we've already summarized
-                i -= span.child_count;
             }
         }
 
