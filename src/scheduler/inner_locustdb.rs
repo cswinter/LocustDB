@@ -382,7 +382,7 @@ impl InnerLocustDB {
 
         tracer.end_span(span_wal_flush);
 
-        log::info!("{}", tracer.summary());
+        log::info!("Completed WAL flush\n{}", tracer.summary());
     }
 
     /// Triggers a WAL flush and returns a channel that will be notified when the flush is complete.
