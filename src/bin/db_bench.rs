@@ -163,6 +163,10 @@ async fn main() {
         "  partition: {}",
         perf_counter.files_created_new_partition()
     );
+    println!(
+        "  compaction: {}",
+        perf_counter.files_created_compaction()
+    );
     println!("  meta:      {}", perf_counter.files_created_meta_store());
     println!("network");
     println!(

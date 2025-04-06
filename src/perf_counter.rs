@@ -16,7 +16,7 @@ pub struct PerfCounter {
     files_created_wal: AtomicU64,
     files_created_meta_store: AtomicU64,
     files_created_new_partition: AtomicU64,
-
+    files_created_compaction: AtomicU64,
     file_accessed_partition: AtomicU64,
 
     ingestion_requests: AtomicU64,
@@ -57,6 +57,7 @@ impl PerfCounter {
     }
 
     pub fn disk_write_compaction(&self, bytes: u64) {
+        self.files_created_compaction.fetch_add(1, ORDERING);
         self.disk_write_compaction_bytes.fetch_add(bytes, ORDERING);
     }
 
@@ -126,6 +127,10 @@ impl PerfCounter {
 
     pub fn files_created_new_partition(&self) -> u64 {
         self.files_created_new_partition.load(ORDERING)
+    }
+
+    pub fn files_created_compaction(&self) -> u64 {
+        self.files_created_compaction.load(ORDERING)
     }
 
     pub fn files_created_meta_store(&self) -> u64 {

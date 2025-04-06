@@ -193,6 +193,7 @@ impl Storage {
         &self,
         partition: &PartitionMetadata,
         subpartition_cols: Vec<Vec<Arc<Column>>>,
+        is_compaction: bool,
     ) {
         for (metadata, cols) in partition.subpartitions.iter().zip(subpartition_cols) {
             let table_dir = self
@@ -200,8 +201,12 @@ impl Storage {
                 .join(sanitize_table_name(&partition.tablename));
             let cols = cols.iter().map(|col| &**col).collect::<Vec<_>>();
             let data = PartitionSegment::serialize(&cols[..]);
-            self.perf_counter
-                .new_partition_file_write(data.len() as u64);
+            if is_compaction {
+                self.perf_counter.disk_write_compaction(data.len() as u64);
+            } else {
+                self.perf_counter
+                    .new_partition_file_write(data.len() as u64);
+            };
             self.writer
                 .store(
                     &table_dir.join(partition_filename(partition.id, &metadata.subpartition_key)),
@@ -243,7 +248,7 @@ impl Storage {
         // Write out new partition files
         for (partition, subpartition_cols) in partitions {
             let span_write_subpartitions = tracer.start_span("write_subpartitions");
-            self.write_subpartitions(&partition, subpartition_cols);
+            self.write_subpartitions(&partition, subpartition_cols, false);
             tracer.end_span(span_write_subpartitions);
 
             let span_lock_meta_store = tracer.start_span("lock_meta_store");
@@ -305,7 +310,7 @@ impl Storage {
             subpartitions: metadata,
             column_name_to_subpartition_index,
         };
-        self.write_subpartitions(&partition, subpartitions);
+        self.write_subpartitions(&partition, subpartitions, true);
 
         // Update metastore
         let mut meta_store = self.meta_store.write().unwrap();
