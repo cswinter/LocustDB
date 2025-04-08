@@ -387,10 +387,14 @@ impl InnerLocustDB {
 
     /// Triggers a WAL flush and blocks until it is complete.
     pub fn trigger_wal_flush(&self) {
-        let (sender, receiver) = mpsc::channel();
-        let mut pending_wal_flushes = self.pending_wal_flushes.0.lock().unwrap();
-        pending_wal_flushes.push(sender);
-        self.pending_wal_flushes.1.notify_all();
+        let receiver = {
+            let (sender, receiver) = mpsc::channel();
+            let mut pending_wal_flushes = self.pending_wal_flushes.0.lock().unwrap();
+            pending_wal_flushes.push(sender);
+            self.pending_wal_flushes.1.notify_all();
+            receiver
+        };
+        // Have to ensure that lock guard is dropped before waiting on receiver
         receiver.recv().unwrap()
     }
 
@@ -662,7 +666,10 @@ impl InnerLocustDB {
                         .wait_timeout_while(
                             pending_wal_flushes,
                             Duration::from_millis(1000),
-                            |pending_wal_flushes| pending_wal_flushes.is_empty(),
+                            |pending_wal_flushes| {
+                                pending_wal_flushes.is_empty()
+                                    && self.running.load(Ordering::SeqCst)
+                            },
                         )
                         .unwrap();
                 }
