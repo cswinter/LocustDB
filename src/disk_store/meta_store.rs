@@ -6,6 +6,8 @@ use pco::standalone::{simple_decompress, simpler_compress};
 use pco::DEFAULT_COMPRESSION_LEVEL;
 use std::collections::{HashMap, HashSet};
 
+use crate::simple_trace::SimpleTracer;
+
 type TableName = String;
 type PartitionID = u64;
 
@@ -15,9 +17,14 @@ pub struct MetaStore {
     pub next_wal_id: u64,
     // ID of the earliest WAL segment that has not been flushed into partitions (this WAL segment may not exist yet)
     pub earliest_uncommited_wal_id: u64,
+    /// Maps each table to it's set of partitions.
+    /// Each partition is a contigous subset of rows in the table.
     pub partitions: HashMap<TableName, HashMap<PartitionID, PartitionMetadata>>,
 }
 
+/// Metadata for a partition of a table.
+/// A partition is a contigous subset of rows in the table.
+/// A partition may be split into subpartitions, each of which holds a subset of the columns of the partition.
 #[derive(Clone, Debug)]
 pub struct PartitionMetadata {
     pub id: PartitionID,
@@ -44,7 +51,9 @@ impl PartitionMetadata {
 }
 
 impl MetaStore {
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self, tracer: &mut SimpleTracer) -> Vec<u8> {
+        let span_serialize = tracer.start_span("serialize_metastore");
+
         let mut builder = ::capnp::message::Builder::new_default();
         let mut dbmeta = builder.init_root::<dbmeta_capnp::d_b_meta::Builder>();
         dbmeta.set_next_wal_id(self.earliest_uncommited_wal_id);
@@ -53,14 +62,28 @@ impl MetaStore {
         assert!(total_partitions < u32::MAX as usize);
         let mut i = 0;
 
+        // Find all unique column names
+        let span_string_interning = tracer.start_span("string_interning");
+        let mut total_column_names = 0;
         let unique_strings = self
             .partitions
             .values()
             .flat_map(|x| x.values())
-            .flat_map(|x| x.column_name_to_subpartition_index.keys())
+            .flat_map(|x| {
+                total_column_names += x.column_name_to_subpartition_index.len();
+                x.column_name_to_subpartition_index.keys()
+            })
             .collect::<HashSet<_>>();
         let mut sorted_strings = unique_strings.iter().cloned().collect::<Vec<_>>();
+        tracer.end_span(span_string_interning);
+
+        // Sort unique column names
+        let span_string_sorting = tracer.start_span("string_sorting");
         sorted_strings.sort();
+        tracer.end_span(span_string_sorting);
+
+        // Write out all column name strings and lenghts into contiguous memory
+        let span_string_writing = tracer.start_span("string_writing");
         let mut string_bytes: Vec<u8> = Vec::new();
         let mut lens = Vec::new();
         for string in &sorted_strings {
@@ -68,8 +91,24 @@ impl MetaStore {
             lens.push(string.len() as u16);
             string_bytes.extend(string.as_bytes());
         }
-        dbmeta.reborrow().set_compressed_strings(&compress_prepend_size(&string_bytes));
-        dbmeta.reborrow().set_lengths_compressed_strings(&lens[..]).unwrap();
+        tracer.end_span(span_string_writing);
+
+        // Compress column names
+        let span_string_compression = tracer.start_span("string_compression");
+        let compressed_strings = compress_prepend_size(&string_bytes);
+        tracer.end_span(span_string_compression);
+
+        // Set the serialized data into the capnproto message
+        dbmeta
+            .reborrow()
+            .set_compressed_strings(&compressed_strings);
+        dbmeta
+            .reborrow()
+            .set_lengths_compressed_strings(&lens[..])
+            .unwrap();
+
+        // Create a mapping from column names to their indices
+        let span_column_name_mapping = tracer.start_span("column_name_mapping");
         assert!(sorted_strings.len() < u32::MAX as usize);
         let column_name_to_id = sorted_strings
             .iter()
@@ -77,7 +116,14 @@ impl MetaStore {
             .enumerate()
             .map(|(i, s)| (s, i as u64))
             .collect::<HashMap<_, _>>();
+        tracer.end_span(span_column_name_mapping);
 
+        let column_names_bytes = string_bytes.len() as u64;
+        let compressed_column_names_bytes = compressed_strings.len() as u64;
+        let column_name_lengths_bytes = (size_of::<u16>() * lens.len()) as u64;
+
+        // Serialize partitions
+        let span_partition_serialization = tracer.start_span("partition_serialization");
         let mut partitions_builder = dbmeta.reborrow().init_partitions(total_partitions as u32);
         for table in self.partitions.values() {
             for partition in table.values() {
@@ -101,20 +147,44 @@ impl MetaStore {
                     let mut subpartition_builder = subpartitions_builder.reborrow().get(i as u32);
                     subpartition_builder.set_size_bytes(subpartition.size_bytes);
                     subpartition_builder.set_subpartition_key(&subpartition.subpartition_key);
-                    let subpartition_column_ids_sorted: Vec<_> = subpartition_index_to_column_names[i].iter().cloned().sorted().collect();
-                    let all_column_ids_compressed = simpler_compress(&subpartition_column_ids_sorted, DEFAULT_COMPRESSION_LEVEL).unwrap();
-                    subpartition_builder.set_compressed_interned_columns(&all_column_ids_compressed[..]);
+                    let subpartition_column_ids_sorted: Vec<_> = subpartition_index_to_column_names
+                        [i]
+                        .iter()
+                        .cloned()
+                        .sorted()
+                        .collect();
+                    let all_column_ids_compressed = simpler_compress(
+                        &subpartition_column_ids_sorted,
+                        DEFAULT_COMPRESSION_LEVEL,
+                    )
+                    .unwrap();
+                    subpartition_builder
+                        .set_compressed_interned_columns(&all_column_ids_compressed[..]);
                 }
                 i += 1;
             }
         }
-        let mut strings_builder = dbmeta.init_strings(column_name_to_id.len() as u32);
-        for (column_name, column_id) in column_name_to_id {
-            strings_builder.set(column_id as u32, column_name);
-        }
+        tracer.end_span(span_partition_serialization);
 
+        // Write out the capnproto message
+        let span_message_serialization = tracer.start_span("message_serialization");
         let mut buf = Vec::new();
         serialize_packed::write_message(&mut buf, &builder).unwrap();
+        tracer.end_span(span_message_serialization);
+        tracer.end_span(span_serialize);
+
+        tracer.annotate("table_count", self.partitions.len());
+        tracer.annotate("partition_count", total_partitions);
+        tracer.annotate("unique_column_count", sorted_strings.len());
+        tracer.annotate("column_count", total_column_names);
+        tracer.annotate("total_bytes", buf.len());
+        tracer.annotate("column_names_bytes", column_names_bytes);
+        tracer.annotate(
+            "compressed_column_names_bytes",
+            compressed_column_names_bytes,
+        );
+        tracer.annotate("column_name_lengths_bytes", column_name_lengths_bytes);
+
         buf
     }
 
@@ -169,7 +239,8 @@ impl MetaStore {
                 // v2
                 let compressed_interned_columns = subpartition.get_compressed_interned_columns()?;
                 if !compressed_interned_columns.is_empty() {
-                    let interned_columns = simple_decompress::<u64>(compressed_interned_columns).unwrap();
+                    let interned_columns =
+                        simple_decompress::<u64>(compressed_interned_columns).unwrap();
                     for column_id in interned_columns {
                         let column = strings[column_id as usize].clone();
                         column_name_to_subpartition_index.insert(column, i);

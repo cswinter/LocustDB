@@ -10,7 +10,7 @@
     box_patterns,
     proc_macro_hygiene,
     let_chains,
-    duration_constructors,
+    duration_constructors
 )]
 #[macro_use]
 extern crate failure_derive;
@@ -20,7 +20,7 @@ extern crate lazy_static;
 extern crate log;
 pub use crate::disk_store::noop_storage::NoopStorage;
 
-pub use crate::engine::query_task::{QueryOutput, BasicTypeColumn};
+pub use crate::engine::query_task::{BasicTypeColumn, QueryOutput};
 pub use crate::errors::QueryError;
 pub use crate::ingest::colgen;
 pub use crate::ingest::csv_loader::Options as LoadOptions;
@@ -44,6 +44,7 @@ mod mem_store;
 pub mod perf_counter;
 mod scheduler;
 pub mod server;
+mod simple_trace;
 mod stringpack;
 mod syntax;
 pub mod unit_fmt;
