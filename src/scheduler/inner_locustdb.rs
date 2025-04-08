@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -385,13 +385,13 @@ impl InnerLocustDB {
         log::info!("Completed WAL flush\n{}", tracer.summary());
     }
 
-    /// Triggers a WAL flush and returns a channel that will be notified when the flush is complete.
-    pub fn trigger_wal_flush(&self) -> Receiver<()> {
+    /// Triggers a WAL flush and blocks until it is complete.
+    pub fn trigger_wal_flush(&self) {
         let (sender, receiver) = mpsc::channel();
         let mut pending_wal_flushes = self.pending_wal_flushes.0.lock().unwrap();
         pending_wal_flushes.push(sender);
         self.pending_wal_flushes.1.notify_all();
-        receiver
+        receiver.recv().unwrap()
     }
 
     #[allow(clippy::type_complexity)]
@@ -649,14 +649,11 @@ impl InnerLocustDB {
         let (pending_wal_flushes_mutex, pending_wal_flushes_condvar) = &self.pending_wal_flushes;
         while self.running.load(Ordering::SeqCst) {
             let wal_size = { *wal_size.lock().unwrap() };
-            let pending_wal_flushes = {
-                let mut pending_wal_flushes = pending_wal_flushes_mutex.lock().unwrap();
-                mem::take(&mut *pending_wal_flushes)
-            };
+            let pending_wal_flushes = mem::take(&mut *pending_wal_flushes_mutex.lock().unwrap());
             if wal_size > self.opts.max_wal_size_bytes || !pending_wal_flushes.is_empty() {
                 self.wal_flush();
                 for sender in pending_wal_flushes {
-                    sender.send(()).unwrap();
+                    let _ = sender.send(());
                 }
             } else {
                 let pending_wal_flushes = pending_wal_flushes_mutex.lock().unwrap();
@@ -670,6 +667,9 @@ impl InnerLocustDB {
                         .unwrap();
                 }
             }
+        }
+        for sender in pending_wal_flushes_mutex.lock().unwrap().drain(..) {
+            sender.send(()).unwrap();
         }
     }
 

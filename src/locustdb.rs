@@ -199,7 +199,7 @@ impl LocustDB {
 
     pub fn force_flush(&self) {
         let inner = self.inner_locustdb.clone();
-        inner.trigger_wal_flush().recv().unwrap();
+        inner.trigger_wal_flush();
     }
 
     pub fn evict_cache(&self) -> usize {
