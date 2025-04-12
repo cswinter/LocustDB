@@ -11,8 +11,7 @@ use super::partition_segment::PartitionSegment;
 use super::wal_segment::WalSegment;
 use super::{ColumnLoader, PartitionID};
 use crate::mem_store::{Column, DataSource};
-use crate::perf_counter::{PerfCounter, QueryPerfCounter};
-use crate::simple_trace::SimpleTracer;
+use crate::observability::{PerfCounter, QueryPerfCounter, SimpleTracer};
 
 impl ColumnLoader for Storage {
     fn load_column(

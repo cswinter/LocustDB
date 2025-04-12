@@ -10,7 +10,7 @@ use crate::disk_store::*;
 use crate::mem_store::partition::ColumnHandle;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::*;
-use crate::perf_counter::QueryPerfCounter;
+use crate::observability::QueryPerfCounter;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub struct DiskReadScheduler {

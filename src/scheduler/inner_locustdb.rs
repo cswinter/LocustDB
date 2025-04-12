@@ -1,14 +1,16 @@
 use std::borrow::Cow;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{mem, str};
 
+use datasize::data_size;
 use futures::channel::oneshot;
 use futures::executor::block_on;
 use inner_locustdb::meta_store::PartitionMetadata;
@@ -26,10 +28,9 @@ use crate::ingest::raw_val::RawVal;
 use crate::locustdb::Options;
 use crate::mem_store::partition::Partition;
 use crate::mem_store::table::*;
-use crate::perf_counter::PerfCounter;
+use crate::observability::{metrics, PerfCounter, SimpleTracer};
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
-use crate::simple_trace::SimpleTracer;
 use crate::{mem_store::*, NoopStorage};
 
 use self::meta_store::SubpartitionMetadata;
@@ -113,10 +114,12 @@ impl InnerLocustDB {
             let cloned = locustdb.clone();
             thread::spawn(move || InnerLocustDB::worker_loop(cloned));
         }
-        let cloned = locustdb.clone();
-        thread::spawn(move || InnerLocustDB::enforce_mem_limit(&cloned));
-        let cloned = locustdb.clone();
-        thread::spawn(move || cloned.enforce_wal_limit());
+        let ldb = locustdb.clone();
+        thread::spawn(move || InnerLocustDB::enforce_mem_limit(&ldb));
+        let ldb = locustdb.clone();
+        thread::spawn(move || ldb.enforce_wal_limit());
+        let ldb = locustdb.clone();
+        thread::spawn(move || ldb.log_metrics());
     }
 
     pub fn snapshot(
@@ -623,8 +626,21 @@ impl InnerLocustDB {
                     .map(|table| table.heap_size_of_children())
                     .sum()
             };
-            if mem_usage_bytes > ldb.opts.mem_size_limit_tables {
-                info!("Evicting. mem_usage_bytes = {}", mem_usage_bytes);
+            let mem_usage_metastore =
+                data_size(&*ldb.storage.as_ref().unwrap().meta_store().read().unwrap());
+            metrics::META_STORE_BYTES.set(mem_usage_metastore as f64);
+
+            metrics::COLUMN_CACHE_BYTES.set(mem_usage_bytes as f64);
+            metrics::COLUMN_CACHE_UTILIZATION.set(
+                (mem_usage_bytes + mem_usage_metastore) as f64
+                    / ldb.opts.mem_size_limit_tables as f64,
+            );
+
+            if (mem_usage_bytes + mem_usage_metastore) > ldb.opts.mem_size_limit_tables {
+                info!(
+                    "Evicting. mem_usage_bytes = {} mem_usage_metastore = {}",
+                    mem_usage_bytes, mem_usage_metastore
+                );
                 while mem_usage_bytes > ldb.opts.mem_size_limit_tables {
                     match ldb.lru.evict() {
                         Some(victim) => {
@@ -680,6 +696,78 @@ impl InnerLocustDB {
         }
     }
 
+    fn log_metrics(self: Arc<InnerLocustDB>) {
+        let mut last_log_time = Instant::now() - Duration::from_secs(self.opts.metrics_interval);
+        let mut last_value = HashMap::new();
+        while self.running.load(Ordering::SeqCst) {
+            if last_log_time.elapsed() >= Duration::from_secs(self.opts.metrics_interval) {
+                last_log_time = Instant::now();
+                metrics::WAL_SIZE_BYTES.set(*self.wal_size.0.lock().unwrap() as f64);
+                metrics::WAL_UTILIZATION.set(*self.wal_size.0.lock().unwrap() as f64 / self.opts.max_wal_size_bytes as f64);
+
+                let metrics = prometheus::gather();
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+                let mut columns = HashMap::new();
+                columns.insert(
+                    "timestamp".to_string(),
+                    ColumnBuffer {
+                        data: ColumnData::I64(vec![timestamp]),
+                    },
+                );
+                self.log_table_stats();
+
+
+                for metric_family in metrics {
+                    for metric in metric_family.get_metric() {
+                        let value = if let Some(gauge) = metric.get_gauge().as_ref() {
+                            gauge.value()
+                        } else if let Some(counter) = metric.get_counter().as_ref() {
+                            counter.value()
+                        } else {
+                            continue;
+                        };
+                        columns.insert(
+                            metric_family.name().to_string(),
+                            ColumnBuffer {
+                                data: ColumnData::Dense(vec![value]),
+                            },
+                        );
+                        match last_value.entry(metric_family.name().to_string()) {
+                            Entry::Occupied(mut last_value) => {
+                                let rate =
+                                    (value - last_value.get()) / self.opts.metrics_interval as f64;
+                                columns.insert(
+                                    format!("rate.{}", metric_family.name()),
+                                    ColumnBuffer {
+                                        data: ColumnData::Dense(vec![rate]),
+                                    },
+                                );
+                                last_value.insert(value);
+                            }
+                            Entry::Vacant(last_value) => {
+                                last_value.insert(value);
+                            }
+                        }
+                    }
+                }
+
+                let table_buffer = TableBuffer { len: 1, columns };
+                let event_buffer = EventBuffer {
+                    tables: HashMap::from([(
+                        self.opts.metrics_table_name.to_string(),
+                        table_buffer,
+                    )]),
+                };
+                self.ingest_efficient(event_buffer);
+            }
+
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
+
     pub fn opts(&self) -> &Options {
         &self.opts
     }
@@ -706,6 +794,33 @@ impl InnerLocustDB {
         tables
             .get(table)
             .map_or(vec![], |t| t.search_column_names(column))
+    }
+
+    fn log_table_stats(&self) {
+        let mut total_rows = 0;
+        let mut total_values = 0;
+        let mut total_partition_columns = 0;
+        let mut total_bytes = 0;
+        let mut table_count = 0;
+        let mut total_partitions = 0;
+        for table in self.tables.read().unwrap().values() {
+            table_count += 1;
+            for partition in table.partitions.read().unwrap().values() {
+                total_partitions += 1;
+
+                let len = partition.range().len();
+                total_rows += len;
+                total_partition_columns += partition.cols.len();
+                total_bytes += partition.total_size_bytes();
+                total_values += partition.cols.len() * len;
+            }
+        }
+        metrics::PARTITION_COUNT.set(total_partitions as f64);
+        metrics::PARTITION_COLUMN_COUNT.set(total_partition_columns as f64);
+        metrics::PARTITION_VALUES.set(total_values as f64);
+        metrics::DATABASE_SIZE_BYTES.set(total_bytes as f64);
+        metrics::TABLE_COUNT.set(table_count as f64);
+        metrics::ROW_COUNT.set(total_rows as f64);
     }
 }
 

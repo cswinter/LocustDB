@@ -22,7 +22,7 @@ use self::wal_segment::WalSegment;
 pub struct Table {
     name: String,
     // To prevent deadlocks, `frozen_buffer` lock has to be always acquired before `partitions` before `buffer`
-    partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
+    pub(crate) partitions: RwLock<HashMap<PartitionID, Arc<Partition>>>,
     next_partition_id: AtomicU64,
     next_partition_offset: AtomicUsize,
     buffer: Mutex<Buffer>,
