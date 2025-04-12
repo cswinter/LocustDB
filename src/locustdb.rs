@@ -236,7 +236,7 @@ pub struct Options {
     /// Internal metrics collection interval in seconds
     pub metrics_interval: u64,
     /// Internal metrics table name
-    pub metrics_table_name: String,
+    pub metrics_table_name: Option<String>,
 }
 
 impl Default for Options {
@@ -256,7 +256,7 @@ impl Default for Options {
             max_partition_length: 1024 * 1024,
             wal_flush_compaction_threads: 1,
             metrics_interval: 15,
-            metrics_table_name: "_metrics".to_string(),
+            metrics_table_name: Some("_metrics".to_string()),
         }
     }
 }

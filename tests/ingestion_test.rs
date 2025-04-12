@@ -275,6 +275,7 @@ async fn test_persist_meta_tables() {
     let opts = locustdb::Options {
         db_path: Some(db_path),
         threads: 1,
+        metrics_table_name: None,
         ..locustdb::Options::default()
     };
     let port = 8890;

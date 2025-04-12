@@ -699,11 +699,17 @@ impl InnerLocustDB {
     fn log_metrics(self: Arc<InnerLocustDB>) {
         let mut last_log_time = Instant::now() - Duration::from_secs(self.opts.metrics_interval);
         let mut last_value = HashMap::new();
+        let metrics_table_name = match self.opts.metrics_table_name.clone() {
+            Some(name) => name,
+            None => return,
+        };
         while self.running.load(Ordering::SeqCst) {
             if last_log_time.elapsed() >= Duration::from_secs(self.opts.metrics_interval) {
                 last_log_time = Instant::now();
                 metrics::WAL_SIZE_BYTES.set(*self.wal_size.0.lock().unwrap() as f64);
-                metrics::WAL_UTILIZATION.set(*self.wal_size.0.lock().unwrap() as f64 / self.opts.max_wal_size_bytes as f64);
+                metrics::WAL_UTILIZATION.set(
+                    *self.wal_size.0.lock().unwrap() as f64 / self.opts.max_wal_size_bytes as f64,
+                );
 
                 let metrics = prometheus::gather();
                 let timestamp = SystemTime::now()
@@ -718,7 +724,6 @@ impl InnerLocustDB {
                     },
                 );
                 self.log_table_stats();
-
 
                 for metric_family in metrics {
                     for metric in metric_family.get_metric() {
@@ -756,10 +761,7 @@ impl InnerLocustDB {
 
                 let table_buffer = TableBuffer { len: 1, columns };
                 let event_buffer = EventBuffer {
-                    tables: HashMap::from([(
-                        self.opts.metrics_table_name.to_string(),
-                        table_buffer,
-                    )]),
+                    tables: HashMap::from([(metrics_table_name.clone(), table_buffer)]),
                 };
                 self.ingest_efficient(event_buffer);
             }

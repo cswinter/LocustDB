@@ -112,8 +112,8 @@ struct Opt {
     metrics_interval: u64,
 
     /// Internal metrics table name
-    #[structopt(long, default_value = "_metrics")]
-    metrics_table_name: String,
+    #[structopt(long)]
+    metrics_table_name: Option<String>,
 }
 
 fn main() {
