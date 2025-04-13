@@ -1,4 +1,5 @@
 use capnp::serialize_packed;
+use datasize::DataSize;
 use itertools::Itertools;
 use locustdb_serialization::{dbmeta_capnp, default_reader_options};
 use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
@@ -6,12 +7,12 @@ use pco::standalone::{simple_decompress, simpler_compress};
 use pco::DEFAULT_COMPRESSION_LEVEL;
 use std::collections::{HashMap, HashSet};
 
-use crate::simple_trace::SimpleTracer;
+use crate::observability::SimpleTracer;
 
 type TableName = String;
 type PartitionID = u64;
 
-#[derive(Clone)]
+#[derive(Clone, DataSize)]
 pub struct MetaStore {
     // ID for the next WAL segment to be written
     pub next_wal_id: u64,
@@ -25,7 +26,7 @@ pub struct MetaStore {
 /// Metadata for a partition of a table.
 /// A partition is a contigous subset of rows in the table.
 /// A partition may be split into subpartitions, each of which holds a subset of the columns of the partition.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DataSize)]
 pub struct PartitionMetadata {
     pub id: PartitionID,
     pub tablename: String,
@@ -35,7 +36,7 @@ pub struct PartitionMetadata {
     pub column_name_to_subpartition_index: HashMap<String, usize>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DataSize)]
 pub struct SubpartitionMetadata {
     pub size_bytes: u64,
     pub subpartition_key: String,

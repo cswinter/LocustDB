@@ -12,7 +12,7 @@ lazy_static! {
 }
 
 use crate::mem_store::column::Column;
-use crate::perf_counter::QueryPerfCounter;
+use crate::observability::QueryPerfCounter;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
 
 pub trait ColumnLoader: Sync + Send + 'static {

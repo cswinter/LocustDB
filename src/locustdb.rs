@@ -10,7 +10,7 @@ use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
 use crate::mem_store::*;
-use crate::perf_counter::PerfCounter;
+use crate::observability::{metrics, PerfCounter};
 use crate::scheduler::*;
 use crate::syntax::parser;
 use crate::QueryError;
@@ -43,6 +43,7 @@ impl LocustDB {
         show: Vec<usize>,
     ) -> Result<QueryResult, oneshot::Canceled> {
         let (sender, receiver) = oneshot::channel();
+        metrics::QUERY_COUNT.inc();
 
         // PERF: perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query) {
@@ -97,9 +98,13 @@ impl LocustDB {
             Ok(task) => {
                 self.schedule(task);
                 let result = receiver.await?;
+                metrics::QUERY_OK_COUNT.inc();
                 Ok(result)
             }
-            Err(err) => Ok(Err(err)),
+            Err(err) => {
+                metrics::QUERY_ERROR_COUNT.inc();
+                Ok(Err(err))
+            }
         }
     }
 
@@ -228,6 +233,10 @@ pub struct Options {
     pub max_partition_length: usize,
     /// Number of parallel threads used during WAL flush table batching and compacting
     pub wal_flush_compaction_threads: usize,
+    /// Internal metrics collection interval in seconds
+    pub metrics_interval: u64,
+    /// Internal metrics table name
+    pub metrics_table_name: Option<String>,
 }
 
 impl Default for Options {
@@ -246,6 +255,8 @@ impl Default for Options {
             batch_size: 1024,
             max_partition_length: 1024 * 1024,
             wal_flush_compaction_threads: 1,
+            metrics_interval: 15,
+            metrics_table_name: Some("_metrics".to_string()),
         }
     }
 }

@@ -340,6 +340,35 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)
 }
 
+#[get("/metrics")]
+async fn metrics() -> impl Responder {
+    use prometheus::{Encoder, TextEncoder};
+
+    // Gather all metrics from the default registry
+    let metric_families = prometheus::gather();
+
+    // Create a text encoder for Prometheus format
+    let encoder = TextEncoder::new();
+
+    // Encode the metrics into a buffer
+    let mut buffer = Vec::new();
+    if let Err(e) = encoder.encode(&metric_families, &mut buffer) {
+        log::error!("Failed to encode metrics: {}", e);
+        return HttpResponse::InternalServerError().body("Failed to encode metrics");
+    }
+
+    // Convert the buffer to a string
+    match String::from_utf8(buffer) {
+        Ok(metrics_text) => HttpResponse::Ok()
+            .content_type("text/plain; version=0.0.4")
+            .body(metrics_text),
+        Err(e) => {
+            log::error!("Failed to convert metrics to UTF-8: {}", e);
+            HttpResponse::InternalServerError().body("Failed to convert metrics to UTF-8")
+        }
+    }
+}
+
 async fn manual_hello() -> impl Responder {
     HttpResponse::Ok().body("Hey there!")
 }
@@ -408,6 +437,7 @@ pub fn run(
             .service(multi_query_cols)
             .service(columns)
             .service(plot)
+            .service(metrics)
             .route("/hey", web::get().to(manual_hello))
     })
     .bind(&addrs)?

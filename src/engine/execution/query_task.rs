@@ -16,7 +16,7 @@ use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
 use crate::mem_store::column::DataSource;
 use crate::mem_store::partition::Partition;
-use crate::perf_counter::QueryPerfCounter;
+use crate::observability::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
 use crate::syntax::expression::*;

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use locustdb::disk_store::storage::Storage;
-use locustdb::perf_counter::PerfCounter;
+use locustdb::observability::PerfCounter;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]

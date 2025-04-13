@@ -106,6 +106,14 @@ struct Opt {
     /// Number of parallel threads used during WAL flush table batching and compacting
     #[structopt(long, default_value = "1")]
     wal_flush_compaction_threads: usize,
+
+    /// Internal metrics collection interval in seconds
+    #[structopt(long, default_value = "15")]
+    metrics_interval: u64,
+
+    /// Internal metrics table name
+    #[structopt(long)]
+    metrics_table_name: Option<String>,
 }
 
 fn main() {
@@ -133,6 +141,8 @@ fn main() {
         addrs,
         batch_size,
         wal_flush_compaction_threads,
+        metrics_interval,
+        metrics_table_name,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -149,6 +159,8 @@ fn main() {
         batch_size,
         max_partition_length: 1024 * 1024,
         wal_flush_compaction_threads,
+        metrics_interval,
+        metrics_table_name,
     };
 
     if options.readahead > options.mem_size_limit_tables {
