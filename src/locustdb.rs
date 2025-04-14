@@ -153,8 +153,21 @@ impl LocustDB {
         }
     }
 
-    pub fn search_column_names(&self, table: &str, query: &str) -> Vec<String> {
-        self.inner_locustdb.search_column_names(table, query)
+    pub async fn search_column_names(
+        &self,
+        table: &str,
+        query: &str,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        let query = format!(
+            "SELECT column_name FROM \"_meta_columns_{}\" WHERE regex(column_name, '{}');",
+            table, query
+        );
+        // TODO: remove unwraps, propagate errors
+        let result = self.run_query(&query, false, false, vec![]).await?.unwrap();
+        match &result.columns[..] {
+            [(_, BasicTypeColumn::String(column_names))] => Ok(column_names.to_vec()),
+            _ => panic!("Expected string column, got {:?}", result.columns),
+        }
     }
 
     pub fn recover(&self) {

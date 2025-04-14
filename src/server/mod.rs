@@ -281,8 +281,9 @@ async fn columns(
 ) -> impl Responder {
     let mut cols = HashSet::new();
     let pattern = req_body.pattern.clone().unwrap_or("".to_string());
+    // TODO: push limit/offset into query
     for table in &req_body.tables {
-        cols.extend(data.db.search_column_names(table, &pattern));
+        cols.extend(data.db.search_column_names(table, &pattern).await);
     }
     let len = cols.len();
     let limit = req_body.limit.unwrap_or(usize::MAX);

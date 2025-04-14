@@ -850,15 +850,6 @@ impl InnerLocustDB {
         bytes_evicted
     }
 
-    pub fn search_column_names(&self, _table: &str, _column: &str) -> Vec<String> {
-        // TODO: query meta table
-        // let tables = self.tables.read().unwrap();
-        // tables
-        //     .get(table)
-        //     .map_or(vec![], |t| t.search_column_names(column))
-        vec![]
-    }
-
     fn log_table_stats(&self) {
         let mut total_rows = 0;
         let mut total_values = 0;

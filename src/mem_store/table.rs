@@ -154,7 +154,6 @@ impl Table {
         });
         for (col, _) in &row {
             if !column_names.contains(col) {
-                // TODO: Also need to insert into meta column name table
                 column_names.insert(col.clone());
             }
         }
