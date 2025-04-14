@@ -68,7 +68,14 @@ impl Table {
                 None => frozen_buffer.clone(),
             };
             partitions.push(Arc::new(
-                Partition::from_buffer(self.name(), u64::MAX, buffer, self.lru.clone(), offset).0,
+                Partition::from_buffer(
+                    self.name(),
+                    0xDEADBEEF_DEADBEEF,
+                    buffer,
+                    self.lru.clone(),
+                    offset,
+                )
+                .0,
             ));
             offset += frozen_buffer.len();
         }
@@ -78,7 +85,14 @@ impl Table {
                 None => buffer.clone(),
             };
             partitions.push(Arc::new(
-                Partition::from_buffer(self.name(), u64::MAX, buffer, self.lru.clone(), offset).0,
+                Partition::from_buffer(
+                    self.name(),
+                    0xDEADBEEF_DEADBEEF,
+                    buffer,
+                    self.lru.clone(),
+                    offset,
+                )
+                .0,
             ));
         }
         partitions
@@ -266,7 +280,8 @@ impl Table {
         columns: Vec<Arc<Column>>,
         old_partitions: &[PartitionID],
     ) {
-        let (partition, keys) = Partition::new(self.name(), id, columns, self.lru.clone(), offset);
+        let (partition, keys) =
+            Partition::new(self.name(), id, columns, self.lru.clone(), false, offset);
         {
             let mut partitions = self.partitions.write().unwrap();
             for old_id in old_partitions {

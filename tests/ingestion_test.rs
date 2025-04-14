@@ -188,10 +188,7 @@ fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
 }
 
 async fn query(db: &LocustDB, query: &str) -> QueryOutput {
-    db.run_query(query, false, true, vec![])
-        .await
-        .unwrap()
-        .unwrap()
+    db.run_query(query, false, true, vec![]).await.unwrap()
 }
 
 fn create_locustdb(opts: &locustdb::Options, port: u16) -> (Arc<locustdb::LocustDB>, ServerHandle) {
@@ -249,7 +246,6 @@ async fn test_ingest_sparse_nullable() {
     let all_nonzero = db
         .run_query(query, false, true, show.clone())
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(
         all_nonzero.rows.as_ref().unwrap(),
@@ -259,11 +255,7 @@ async fn test_ingest_sparse_nullable() {
             .map(|(i, &v)| vec![Float((i * interval) as f64), Float(v)])
             .collect::<Vec<_>>()
     );
-    let all_nonzero2 = db
-        .run_query(query2, false, true, show)
-        .await
-        .unwrap()
-        .unwrap();
+    let all_nonzero2 = db.run_query(query2, false, true, show).await.unwrap();
     assert_eq!(all_nonzero.rows.unwrap(), all_nonzero2.rows.unwrap(),);
 }
 
@@ -305,7 +297,6 @@ async fn test_persist_meta_tables() {
     let _meta_tables = db
         .run_query(query, false, true, show.clone())
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(
         _meta_tables.rows.as_ref().unwrap(),

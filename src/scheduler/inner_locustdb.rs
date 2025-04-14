@@ -123,7 +123,9 @@ impl InnerLocustDB {
                 let rows = data.len;
                 // TODO: eliminate conversion
                 if !table.columns_names_loaded() {
-                    let column_names = locustdb.query_column_names(&table_name);
+                    let column_names = locustdb
+                        .query_column_names(&table_name)
+                        .expect("Failed to query column names");
                     table.init_column_names(column_names.into_iter().collect());
                 }
                 let columns = data
@@ -243,7 +245,9 @@ impl InnerLocustDB {
             // Ensure columns are loaded for the table
             let table = self.tables.read().unwrap()[table].clone();
             if !table.columns_names_loaded() {
-                let column_names = self.query_column_names(table.name());
+                let column_names = self
+                    .query_column_names(table.name())
+                    .expect("Failed to query column names");
                 table.init_column_names(column_names.into_iter().collect());
             }
             let new_column_names =
@@ -410,7 +414,7 @@ impl InnerLocustDB {
     pub(crate) fn schedule_query_column_names(
         &self,
         table: &str,
-    ) -> oneshot::Receiver<Result<QueryOutput, QueryError>> {
+    ) -> Result<oneshot::Receiver<Result<QueryOutput, QueryError>>, QueryError> {
         let meta_table = format!("_meta_columns_{}", table);
         let query = Query::read_column(&meta_table, "column_name");
         let data = self
@@ -418,7 +422,13 @@ impl InnerLocustDB {
             .read()
             .unwrap()
             .get(&meta_table)
-            .unwrap()
+            .ok_or_else(|| {
+                fatal!(
+                    "Table column name meta table {} not found for table {}",
+                    meta_table,
+                    table
+                )
+            })?
             .snapshot(None);
         let (sender, receiver) = oneshot::channel();
         let query_task = QueryTask::new(
@@ -434,16 +444,19 @@ impl InnerLocustDB {
         )
         .unwrap();
         self.schedule(query_task);
-        receiver
+        Ok(receiver)
     }
 
-    fn query_column_names(&self, table: &str) -> Vec<String> {
-        let receiver = self.schedule_query_column_names(table);
-        let mut result = block_on(receiver).unwrap().unwrap();
+    fn query_column_names(&self, table: &str) -> Result<Vec<String>, QueryError> {
+        let receiver = self.schedule_query_column_names(table)?;
+        let mut result = block_on(receiver).unwrap()?;
         assert!(result.columns.len() == 1, "Expected 1 column");
         let column_names = match result.columns.pop().unwrap() {
-            (_, BasicTypeColumn::String(names)) => names.into_iter().collect(),
-            _ => panic!("Expected string column"),
+            (_, BasicTypeColumn::String(names)) => Ok(names.into_iter().collect()),
+            _ => Err(fatal!(
+                "Expected single string column in meta columns table for {}",
+                table
+            )),
         };
         column_names
     }

@@ -105,6 +105,10 @@ impl MetaStore {
         partition: PartitionID,
         column_name: &str,
     ) -> String {
+        println!(
+            "table_name: {} partition: {} column_name: {}",
+            table_name, partition, column_name
+        );
         self.partitions[table_name][&partition].subpartition_key(column_name)
     }
 

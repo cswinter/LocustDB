@@ -25,6 +25,8 @@ pub struct Partition {
     table_name: String,
     range: Range<usize>,
     total_size_bytes: usize,
+    // Not backed by disk, created on the fly during query from currently open table buffers
+    ephemeral: bool,
     // Column name -> ColumnHandle
     cols: RwLock<HashMap<String, Arc<ColumnHandle>>>,
     lru: Lru,
@@ -36,6 +38,7 @@ impl Partition {
         id: PartitionID,
         cols: Vec<Arc<Column>>,
         lru: Lru,
+        ephemeral: bool,
         // Offset of this partition in the table
         offset: usize,
     ) -> (Partition, Vec<(u64, String)>) {
@@ -62,6 +65,7 @@ impl Partition {
                 total_size_bytes,
                 cols: RwLock::new(cols),
                 lru,
+                ephemeral,
             },
             keys,
         )
@@ -79,6 +83,7 @@ impl Partition {
             range,
             cols: RwLock::new(HashMap::new()),
             lru,
+            ephemeral: false,
             total_size_bytes,
         }
     }
@@ -99,6 +104,7 @@ impl Partition {
                 .map(|(name, raw_col)| raw_col.finalize(&name))
                 .collect(),
             lru,
+            true,
             offset,
         )
     }
@@ -112,18 +118,20 @@ impl Partition {
         let mut columns = HashMap::<String, Arc<dyn DataSource>>::new();
         for colname in referenced_cols {
             let cols = self.cols.read().unwrap();
-            let cols =
-                if !cols.contains_key(colname) {
-                    drop(cols);
-                    let mut cols = self.cols.write().unwrap();
-                    cols.entry(colname.to_string()).or_insert(Arc::new(
-                        ColumnHandle::non_resident(&self.table_name, self.id, colname.to_string()),
-                    ));
-                    drop(cols);
-                    self.cols.read().unwrap()
+            let cols = if !cols.contains_key(colname) {
+                drop(cols);
+                let mut cols = self.cols.write().unwrap();
+                let handle = if self.ephemeral {
+                    ColumnHandle::empty(&self.table_name, self.id, colname)
                 } else {
-                    cols
+                    ColumnHandle::non_resident(&self.table_name, self.id, colname.to_string())
                 };
+                cols.entry(colname.to_string()).or_insert(Arc::new(handle));
+                drop(cols);
+                self.cols.read().unwrap()
+            } else {
+                cols
+            };
             let handle = cols.get(colname).unwrap().clone();
             drop(cols);
             if let Some(column) = drs.get_or_load(&handle, &self.cols, perf_counter) {
@@ -298,6 +306,18 @@ impl ColumnHandle {
             resident: AtomicBool::new(false),
             load_scheduled: AtomicBool::new(false),
             empty: AtomicBool::new(false),
+            col: Mutex::new(None),
+        }
+    }
+
+    pub fn empty(table: &str, id: PartitionID, name: &str) -> ColumnHandle {
+        ColumnHandle {
+            key: ColumnLocator::new(table, id, name),
+            name: "".to_string(),
+            size_bytes: AtomicUsize::new(0),
+            resident: AtomicBool::new(false),
+            load_scheduled: AtomicBool::new(false),
+            empty: AtomicBool::new(true),
             col: Mutex::new(None),
         }
     }

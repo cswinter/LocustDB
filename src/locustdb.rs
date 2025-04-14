@@ -39,14 +39,14 @@ impl LocustDB {
         explain: bool,
         rowformat: bool,
         show: Vec<usize>,
-    ) -> Result<QueryResult, oneshot::Canceled> {
+    ) -> QueryResult {
         let (sender, receiver) = oneshot::channel();
         metrics::QUERY_COUNT.inc();
 
         // PERF: perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query) {
             Ok(query) => query,
-            Err(err) => return Ok(Err(err)),
+            Err(err) => return Err(err),
         };
 
         let referenced_cols = query.find_referenced_cols();
@@ -54,20 +54,20 @@ impl LocustDB {
         let all_cols = if referenced_cols.contains("*") {
             let colnames = self
                 .inner_locustdb
-                .schedule_query_column_names(&query.table)
+                .schedule_query_column_names(&query.table)?
                 .await?;
             match colnames {
                 Ok(results) => match &results.columns[..] {
                     [(_, BasicTypeColumn::String(names))] => Some(names.to_vec()),
                     _ => {
-                        return Ok(Err(fatal!(
+                        return Err(fatal!(
                             "Expected string column when querying _meta_columns_{}, got {:?}",
                             query.table,
                             results
-                        )))
+                        ))
                     }
                 },
-                Err(err) => return Ok(Err(err)),
+                Err(err) => return Err(err),
             }
         } else {
             None
@@ -81,10 +81,10 @@ impl LocustDB {
         let data = match self.inner_locustdb.snapshot(&query.table, column_filter) {
             Some(data) => data,
             None => {
-                return Ok(Err(QueryError::NotImplemented(format!(
+                return Err(QueryError::NotImplemented(format!(
                     "Table {} does not exist!",
                     &query.table
-                ))))
+                )))
             }
         };
 
@@ -105,11 +105,11 @@ impl LocustDB {
                 self.schedule(task);
                 let result = receiver.await?;
                 metrics::QUERY_OK_COUNT.inc();
-                Ok(result)
+                result
             }
             Err(err) => {
                 metrics::QUERY_ERROR_COUNT.inc();
-                Ok(Err(err))
+                Err(err)
             }
         }
     }
@@ -162,11 +162,13 @@ impl LocustDB {
             "SELECT column_name FROM \"_meta_columns_{}\" WHERE regex(column_name, '{}');",
             table, query
         );
-        // TODO: remove unwraps, propagate errors
-        let result = self.run_query(&query, false, false, vec![]).await?.unwrap();
+        let result = self.run_query(&query, false, false, vec![]).await?;
         match &result.columns[..] {
             [(_, BasicTypeColumn::String(column_names))] => Ok(column_names.to_vec()),
-            _ => panic!("Expected string column, got {:?}", result.columns),
+            _ => Err(Box::new(fatal!(
+                "Expected string column, got {:?}",
+                result.columns
+            ))),
         }
     }
 

@@ -7,7 +7,6 @@ use actix_cors::Cors;
 use actix_web::dev::ServerHandle;
 use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
-use futures::channel::oneshot::Canceled;
 use itertools::Itertools;
 use locustdb_compression_utils::xor_float;
 use locustdb_serialization::api::{
@@ -66,17 +65,41 @@ async fn index(data: web::Data<AppState>) -> impl Responder {
 
     let perf_counter = data.db.perf_counter();
     context.insert("disk_write_bytes", &perf_counter.disk_write_bytes());
-    context.insert("disk_write_new_partition_bytes", &perf_counter.disk_write_new_partition_bytes());
-    context.insert("disk_write_compaction_bytes", &perf_counter.disk_write_compaction_bytes());
-    context.insert("disk_write_meta_store_bytes", &perf_counter.disk_write_meta_store_bytes());
+    context.insert(
+        "disk_write_new_partition_bytes",
+        &perf_counter.disk_write_new_partition_bytes(),
+    );
+    context.insert(
+        "disk_write_compaction_bytes",
+        &perf_counter.disk_write_compaction_bytes(),
+    );
+    context.insert(
+        "disk_write_meta_store_bytes",
+        &perf_counter.disk_write_meta_store_bytes(),
+    );
     context.insert("files_created", &perf_counter.files_created());
     context.insert("files_created_wal", &perf_counter.files_created_wal());
-    context.insert("files_created_new_partition", &perf_counter.files_created_new_partition());
-    context.insert("files_created_meta_store", &perf_counter.files_created_meta_store());
+    context.insert(
+        "files_created_new_partition",
+        &perf_counter.files_created_new_partition(),
+    );
+    context.insert(
+        "files_created_meta_store",
+        &perf_counter.files_created_meta_store(),
+    );
     context.insert("ingestion_requests", &perf_counter.ingestion_requests());
-    context.insert("ingestion_bytes", &perf_counter.network_read_ingestion_bytes());
-    context.insert("files_opened_partition", &perf_counter.files_opened_partition());
-    context.insert("disk_read_partition_bytes", &perf_counter.disk_read_partition_bytes());
+    context.insert(
+        "ingestion_bytes",
+        &perf_counter.network_read_ingestion_bytes(),
+    );
+    context.insert(
+        "files_opened_partition",
+        &perf_counter.files_opened_partition(),
+    );
+    context.insert(
+        "disk_read_partition_bytes",
+        &perf_counter.disk_read_partition_bytes(),
+    );
 
     let body = TEMPLATES.render("index.html", &context).unwrap();
     HttpResponse::Ok()
@@ -105,7 +128,6 @@ async fn table_handler(path: web::Path<String>, data: web::Data<AppState>) -> im
             vec![],
         )
         .await
-        .unwrap()
         .unwrap()
         .colnames;
 
@@ -173,7 +195,6 @@ async fn query(data: web::Data<AppState>, req_body: web::Json<QueryRequest>) -> 
         .db
         .run_query(&req_body.query, false, true, vec![])
         .await
-        .unwrap()
         .unwrap();
 
     let response = json!({
@@ -199,7 +220,7 @@ async fn query_cols(
         .db
         .run_query(&req_body.query, false, false, vec![])
         .await;
-    match flatmap_err_response(x) {
+    match map_err_response(x) {
         Ok(result) => {
             let response = query_output_to_json_cols(result);
             HttpResponse::Ok().json(response)
@@ -222,7 +243,7 @@ async fn multi_query_cols(
     }
     let mut results = vec![];
     for future in futures {
-        let result = match flatmap_err_response(future.await) {
+        let result = match map_err_response(future.await) {
             Ok(result) => result,
             Err(err) => return err,
         };
@@ -283,7 +304,12 @@ async fn columns(
     let pattern = req_body.pattern.clone().unwrap_or("".to_string());
     // TODO: push limit/offset into query
     for table in &req_body.tables {
-        cols.extend(data.db.search_column_names(table, &pattern).await);
+        match data.db.search_column_names(table, &pattern).await {
+            Err(err) => {
+                return HttpResponse::BadRequest().json(err.to_string());
+            }
+            Ok(cs) => cols.extend(cs),
+        }
     }
     let len = cols.len();
     let limit = req_body.limit.unwrap_or(usize::MAX);
@@ -295,17 +321,14 @@ async fn columns(
     }))
 }
 
-fn flatmap_err_response(
-    err: Result<Result<QueryOutput, QueryError>, Canceled>,
-) -> Result<QueryOutput, HttpResponse> {
+fn map_err_response(err: Result<QueryOutput, QueryError>) -> Result<QueryOutput, HttpResponse> {
     match err {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(QueryError::NotImplemented(msg))) => Err(HttpResponse::NotImplemented().json(msg)),
-        Ok(Err(QueryError::FatalError(msg, bt))) => {
+        Ok(result) => Ok(result),
+        Err(QueryError::NotImplemented(msg)) => Err(HttpResponse::NotImplemented().json(msg)),
+        Err(QueryError::FatalError(msg, bt)) => {
             Err(HttpResponse::InternalServerError().json((msg, bt.to_string())))
         }
-        Ok(Err(err)) => Err(HttpResponse::BadRequest().json(err.to_string())),
-        Err(err) => Err(HttpResponse::InternalServerError().json(err.to_string())),
+        Err(err) => Err(HttpResponse::BadRequest().json(err.to_string())),
     }
 }
 

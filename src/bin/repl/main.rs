@@ -1,7 +1,7 @@
+use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use failure::Fail;
 use futures::executor::block_on;
 use structopt::StructOpt;
 use time::OffsetDateTime;
@@ -276,7 +276,7 @@ fn repl(locustdb: &LocustDB) {
                                 s[9..comma]
                                     .parse::<usize>()
                                     .expect("must pass integer to :memtree(x) command"),
-                                Some(s[comma+1..end].trim_start_matches(' ').to_string()),
+                                Some(s[comma + 1..end].trim_start_matches(' ').to_string()),
                             )
                         }
                         None => (
@@ -370,11 +370,8 @@ fn repl(locustdb: &LocustDB) {
 
         let query = locustdb.run_query(s, explain, true, show);
         match block_on(query) {
-            Ok(result) => match result {
-                Ok(output) => print_results::print_query_result(&output),
-                Err(fail) => print_error(&fail),
-            },
-            _ => println!("Error: Query execution was canceled!"),
+            Ok(output) => print_results::print_query_result(&output),
+            Err(fail) => print_error(&fail),
         }
     }
     rl.save_history(".locustdb_history").ok();
@@ -382,10 +379,10 @@ fn repl(locustdb: &LocustDB) {
 
 fn print_error(fail: &locustdb::QueryError) {
     println!("{}", fail);
-    while let Some(cause) = fail.cause() {
+    if let locustdb::QueryError::FatalError(_, bt) = fail {
+        println!("{}", bt);
+    }
+    while let Some(cause) = fail.source() {
         println!("{}", cause);
-        if let Some(bt) = cause.backtrace() {
-            println!("{}", bt);
-        }
     }
 }
