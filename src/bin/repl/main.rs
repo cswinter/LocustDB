@@ -67,8 +67,9 @@ struct Opt {
     #[structopt(long, name = "MB", default_value = "256")]
     readahead: usize,
 
-    /// Improves performance on HDD, can hurt performance on SSD.
+    /// DEPRECATED: Old performance optimization that has no effect with new storage backend.
     #[structopt(long)]
+    #[allow(dead_code)]
     seq_disk_read: bool,
 
     /// Number of worker threads. [default: number of cores]
@@ -128,7 +129,7 @@ fn main() {
         mem_lz4,
         partition_size,
         readahead,
-        seq_disk_read,
+        seq_disk_read: _,
         threads,
         reduced_trips,
         trips,
@@ -147,12 +148,11 @@ fn main() {
 
     let options = locustdb::Options {
         threads: threads.unwrap_or_else(num_cpus::get),
-        read_threads: if seq_disk_read { 1 } else { num_cpus::get() },
+        read_threads: num_cpus::get(),
         db_path: db_path.clone(),
         mem_size_limit_tables: mem_limit_tables * 1024 * 1024 * 1024,
         mem_lz4,
         readahead: readahead * 1024 * 1024,
-        seq_disk_read,
         max_wal_size_bytes,
         max_partition_size_bytes,
         partition_combine_factor,
@@ -309,20 +309,21 @@ fn repl(locustdb: &LocustDB) {
             continue;
         }
         if s.starts_with(":restore") {
-            let start = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
-            match block_on(locustdb.bulk_load()) {
-                Ok(trees) => {
-                    println!(
-                        "Restored DB from disk in {}",
-                        ns((OffsetDateTime::unix_epoch().unix_timestamp_nanos() - start) as usize)
-                    );
-                    for tree in trees {
-                        println!("{}\n", &tree)
-                    }
-                }
-                _ => println!("Error: Query execution was canceled!"),
-            }
-            continue;
+            // TODO: reimplement bulk load
+            // let start = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
+            // match block_on(locustdb.bulk_load()) {
+            //     Ok(trees) => {
+            //         println!(
+            //             "Restored DB from disk in {}",
+            //             ns((OffsetDateTime::unix_epoch().unix_timestamp_nanos() - start) as usize)
+            //         );
+            //         for tree in trees {
+            //             println!("{}\n", &tree)
+            //         }
+            //     }
+            //     _ => println!("Error: Query execution was canceled!"),
+            // }
+            // continue;
         }
         if s.starts_with(":load") {
             let args = &s[6..].split(' ').collect::<Vec<_>>();

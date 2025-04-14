@@ -35,7 +35,8 @@ impl MixedCol {
 
     pub fn push_floats(&mut self, floats: Vec<f64>) {
         self.types = self.types | ColType::float();
-        self.data.extend(floats.into_iter().map(|f| RawVal::Float(OrderedFloat(f))));
+        self.data
+            .extend(floats.into_iter().map(|f| RawVal::Float(OrderedFloat(f))));
     }
 
     pub fn push_strings(&mut self, strs: Vec<String>) {
@@ -55,7 +56,7 @@ impl MixedCol {
     }
 
     pub fn finalize(self, name: &str) -> Arc<Column> {
-        let present =  if self.types.contains_null {
+        let present = if self.types.contains_null {
             let mut present = vec![0u8; self.data.len().div_ceil(8)];
             for (i, v) in self.data.iter().enumerate() {
                 if *v != RawVal::Null {

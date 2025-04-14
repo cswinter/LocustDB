@@ -1975,7 +1975,6 @@ fn test_sum_where_nullable_gte_constant() {
     );
 }
 
-
 #[test]
 fn test_sum_where_nullable_and_bool() {
     test_query_ec(
@@ -1983,7 +1982,6 @@ fn test_sum_where_nullable_and_bool() {
         &[vec![Int(9)]],
     );
 }
-
 
 #[test]
 fn test_gt_float_filter_offset_encoded_int() {
@@ -1993,11 +1991,30 @@ fn test_gt_float_filter_offset_encoded_int() {
     );
 }
 
-
 #[test]
 fn test_gt_float_filter_offset_encoded_nullable_int() {
     test_query_ec(
         "SELECT id FROM default WHERE nullable_int2 <= 0.123;",
         &[vec![Int(1)], vec![Int(3)]],
+    );
+}
+
+#[test]
+fn test_meta_column_names() {
+    test_query_nyc(
+        "SELECT column_name FROM _meta_columns_default ORDER BY column_name;",
+        &[
+            vec![Str("cab_type")],
+            vec![Str("dropoff_puma")],
+            vec![Str("ehail_fee")],
+            vec![Str("improvement_surcharge")],
+            vec![Str("mta_tax")],
+            vec![Str("passenger_count")],
+            vec![Str("payment_type")],
+            vec![Str("pickup_cdeligibil")],
+            vec![Str("pickup_datetime")],
+            vec![Str("pickup_ntaname")],
+            vec![Str("pickup_puma")],
+        ],
     );
 }

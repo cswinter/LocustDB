@@ -1,6 +1,7 @@
 use std::fmt;
 use std::mem;
 
+use locustdb_serialization::api::AnyVal;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -95,5 +96,27 @@ impl From<&str> for RawVal {
 impl From<i64> for RawVal {
     fn from(val: i64) -> RawVal {
         RawVal::Int(val)
+    }
+}
+
+impl From<AnyVal> for RawVal {
+    fn from(val: AnyVal) -> Self {
+        match val {
+            AnyVal::Int(i) => RawVal::Int(i),
+            AnyVal::Float(f) => RawVal::Float(OrderedFloat(f)),
+            AnyVal::Str(s) => RawVal::Str(s),
+            AnyVal::Null => RawVal::Null,
+        }
+    }
+}
+
+impl From<RawVal> for AnyVal {
+    fn from(val: RawVal) -> Self {
+        match val {
+            RawVal::Int(i) => AnyVal::Int(i),
+            RawVal::Float(f) => AnyVal::Float(f.0),
+            RawVal::Str(s) => AnyVal::Str(s),
+            RawVal::Null => AnyVal::Null,
+        }
     }
 }

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -19,7 +19,6 @@ use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer
 use threadpool::ThreadPool;
 
 use crate::disk_store::storage::Storage;
-use crate::disk_store::*;
 use crate::engine::query_task::{BasicTypeColumn, QueryTask};
 use crate::engine::Query;
 use crate::ingest::colgen::GenTable;
@@ -31,6 +30,7 @@ use crate::mem_store::table::*;
 use crate::observability::{metrics, PerfCounter, SimpleTracer};
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
+use crate::{disk_store::*, QueryError, QueryOutput};
 use crate::{mem_store::*, NoopStorage};
 
 use self::meta_store::SubpartitionMetadata;
@@ -59,22 +59,23 @@ pub struct InnerLocustDB {
 }
 
 impl InnerLocustDB {
-    pub fn new(opts: &Options) -> InnerLocustDB {
+    pub fn new(opts: &Options) -> Arc<InnerLocustDB> {
         let lru = Lru::default();
         let perf_counter = Arc::new(PerfCounter::default());
-        let (storage, tables, wal_size) = match opts.db_path.clone() {
+        let (storage, tables, wal_segments, wal_size) = match opts.db_path.clone() {
             Some(path) => {
                 let perf_counter = perf_counter.clone();
                 let lru = lru.clone();
                 std::thread::spawn(move || {
                     let (storage, wal, wal_size) = Storage::new(&path, perf_counter, false);
-                    let tables = Table::restore_tables_from_disk(&storage, wal, &lru);
-                    (Some(Arc::new(storage)), tables, wal_size)
+                    let tables = Table::restore_tables_from_disk(&storage, &lru);
+
+                    (Some(Arc::new(storage)), tables, wal, wal_size)
                 })
                 .join()
                 .unwrap()
             }
-            None => (None, HashMap::new(), 0),
+            None => (None, HashMap::new(), vec![], 0),
         };
         let disk_read_scheduler = Arc::new(DiskReadScheduler::new(
             storage
@@ -86,7 +87,7 @@ impl InnerLocustDB {
             !opts.mem_lz4,
         ));
 
-        let locustdb = InnerLocustDB {
+        let locustdb = Arc::new(InnerLocustDB {
             tables: RwLock::new(tables),
             lru,
             disk_read_scheduler,
@@ -104,8 +105,35 @@ impl InnerLocustDB {
             task_queue: Mutex::new(VecDeque::new()),
 
             walflush_threadpool: ThreadPool::new(opts.wal_flush_compaction_threads),
-        };
+        });
+
+        InnerLocustDB::start_worker_threads(&locustdb);
+
         let _ = locustdb.create_if_empty_no_ingest("_meta_tables");
+        let mut next_id = None;
+        for wal_segment in wal_segments {
+            if let Some(id) = next_id {
+                assert_eq!(wal_segment.id, id, "WAL segments are not contiguous");
+            }
+            next_id = Some(wal_segment.id + 1);
+            for (table_name, data) in wal_segment.data.into_owned().tables {
+                let _ = locustdb.create_if_empty_no_ingest(&table_name);
+                let tables = locustdb.tables.read().unwrap();
+                let table = tables.get(&table_name).unwrap();
+                let rows = data.len;
+                // TODO: eliminate conversion
+                if !table.columns_names_loaded() {
+                    let column_names = locustdb.query_column_names(&table_name);
+                    table.init_column_names(column_names.into_iter().collect());
+                }
+                let columns = data
+                    .columns
+                    .into_iter()
+                    .map(|(k, v)| (k, InputColumn::from_column_data(v.data, rows)))
+                    .collect();
+                table.ingest_homogeneous(columns);
+            }
+        }
         locustdb
     }
 
@@ -186,7 +214,7 @@ impl InnerLocustDB {
         self.idle_queue.notify_one();
     }
 
-    pub fn ingest_single(&self, table: &str, row: Vec<(String, RawVal)>) {
+    fn ingest_single(&self, table: &str, row: Vec<(String, RawVal)>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
         tables.get(table).unwrap().ingest(row)
@@ -194,6 +222,7 @@ impl InnerLocustDB {
 
     pub fn ingest_efficient(&self, mut events: EventBuffer) {
         let (wal_size, wal_condvar) = &self.wal_size;
+        // Holding wal lock ensures single-threaded ingestion
         let mut wal_size = wal_size.lock().unwrap();
         while *wal_size > self.opts.max_wal_size_bytes {
             log::warn!("wal size limit exceeded, blocking ingestion");
@@ -201,9 +230,26 @@ impl InnerLocustDB {
         }
 
         let mut _meta_tables_rows = vec![];
-        for table in events.tables.keys() {
+        let mut _new_column_rows = vec![];
+        for (table, table_buffer) in &events.tables {
+            // Ensure table and corresponding _meta_columns table exists
             if let Some(row) = self.create_if_empty_no_ingest(table) {
                 _meta_tables_rows.push(row);
+            }
+            let meta_columns_table = format!("_meta_columns_{}", table);
+            if let Some(row) = self.create_if_empty_no_ingest(&meta_columns_table) {
+                _meta_tables_rows.push(row);
+            }
+            // Ensure columns are loaded for the table
+            let table = self.tables.read().unwrap()[table].clone();
+            if !table.columns_names_loaded() {
+                let column_names = self.query_column_names(table.name());
+                table.init_column_names(column_names.into_iter().collect());
+            }
+            let new_column_names =
+                table.new_column_names(table_buffer.columns.keys().map(|s| s.as_str()));
+            if !new_column_names.is_empty() {
+                _new_column_rows.push((meta_columns_table.clone(), new_column_names));
             }
         }
         if !_meta_tables_rows.is_empty() {
@@ -227,6 +273,17 @@ impl InnerLocustDB {
                 .tables
                 .insert("_meta_tables".to_string(), meta_tables_buffer);
         }
+        for (table, names) in _new_column_rows {
+            let len = names.len() as u64;
+            let columns = HashMap::from([(
+                "column_name".to_string(),
+                ColumnBuffer {
+                    data: ColumnData::String(names),
+                },
+            )]);
+            let meta_columns_buffer = TableBuffer { len, columns };
+            events.tables.insert(table, meta_columns_buffer);
+        }
 
         let bytes_written_join_handle = self.storage.as_ref().map(|storage| {
             let events = events.clone();
@@ -238,7 +295,6 @@ impl InnerLocustDB {
                 })
             })
         });
-        // TODO: code duplicated in Table::restore_tables_from_disk
         for (table, data) in events.tables {
             let tables = self.tables.read().unwrap();
             let table = tables.get(&table).unwrap();
@@ -247,44 +303,7 @@ impl InnerLocustDB {
             let columns = data
                 .columns
                 .into_iter()
-                .map(|(k, v)| {
-                    let col = match v.data {
-                        ColumnData::Dense(data) => {
-                            if (data.len() as u64) < rows {
-                                InputColumn::NullableFloat(
-                                    rows,
-                                    data.into_iter()
-                                        .enumerate()
-                                        .map(|(i, v)| (i as u64, v))
-                                        .collect(),
-                                )
-                            } else {
-                                InputColumn::Float(data)
-                            }
-                        }
-                        ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
-                        ColumnData::I64(data) => {
-                            if (data.len() as u64) < rows {
-                                InputColumn::NullableInt(
-                                    rows,
-                                    data.into_iter()
-                                        .enumerate()
-                                        .map(|(i, v)| (i as u64, v))
-                                        .collect(),
-                                )
-                            } else {
-                                InputColumn::Int(data)
-                            }
-                        }
-                        ColumnData::String(data) => {
-                            assert!(data.len() == rows as usize);
-                            InputColumn::Str(data)
-                        }
-                        ColumnData::Empty => InputColumn::Null(rows as usize),
-                        ColumnData::SparseI64(data) => InputColumn::NullableInt(rows, data),
-                    };
-                    (k, col)
-                })
+                .map(|(k, v)| (k, InputColumn::from_column_data(v.data, rows)))
                 .collect();
             table.ingest_homogeneous(columns);
         }
@@ -309,14 +328,14 @@ impl InnerLocustDB {
         // After this block, ingestion is unblocked again.
         let span_freeze_buffers = tracer.start_span("freeze_buffers");
         let tables;
-        let uncommited_wal_ids;
+        let unflushed_wal_ids;
         {
             let (wal_size, wal_condvar) = &self.wal_size;
             let mut wal_size = wal_size.lock().unwrap();
-            uncommited_wal_ids = self
+            unflushed_wal_ids = self
                 .storage
                 .as_ref()
-                .map(|s| s.uncommited_wal_ids())
+                .map(|s| s.unflushed_wal_ids())
                 .unwrap_or(0..0);
             tables = self
                 .tables
@@ -378,14 +397,55 @@ impl InnerLocustDB {
 
         // Update metastore and clean up orphaned partitions and WAL segments
         if let Some(storage) = self.storage.as_ref() {
-            storage.persist_metastore(uncommited_wal_ids.end, &mut tracer);
+            storage.persist_metastore(unflushed_wal_ids.end, &mut tracer);
             storage.delete_orphaned_partitions(partitions_to_delete, &mut tracer);
-            storage.delete_wal_segments(uncommited_wal_ids, &mut tracer);
+            storage.delete_wal_segments(unflushed_wal_ids, &mut tracer);
         }
 
         tracer.end_span(span_wal_flush);
 
         log::info!("Completed WAL flush\n{}", tracer.summary());
+    }
+
+    pub(crate) fn schedule_query_column_names(
+        &self,
+        table: &str,
+    ) -> oneshot::Receiver<Result<QueryOutput, QueryError>> {
+        let meta_table = format!("_meta_columns_{}", table);
+        let query = Query::read_column(&meta_table, "column_name");
+        let data = self
+            .tables
+            .read()
+            .unwrap()
+            .get(&meta_table)
+            .unwrap()
+            .snapshot(None);
+        let (sender, receiver) = oneshot::channel();
+        let query_task = QueryTask::new(
+            query,
+            false,
+            false,
+            vec![],
+            data.clone(),
+            self.disk_read_scheduler().clone(),
+            SharedSender::new(sender),
+            self.opts.batch_size,
+            None,
+        )
+        .unwrap();
+        self.schedule(query_task);
+        receiver
+    }
+
+    fn query_column_names(&self, table: &str) -> Vec<String> {
+        let receiver = self.schedule_query_column_names(table);
+        let mut result = block_on(receiver).unwrap().unwrap();
+        assert!(result.columns.len() == 1, "Expected 1 column");
+        let column_names = match result.columns.pop().unwrap() {
+            (_, BasicTypeColumn::String(names)) => names.into_iter().collect(),
+            _ => panic!("Expected string column"),
+        };
+        column_names
     }
 
     /// Triggers a WAL flush and blocks until it is complete.
@@ -415,27 +475,23 @@ impl InnerLocustDB {
 
         if let Some(partition) = table.batch() {
             let columns: Vec<_> = partition
-                .col_handles()
+                .clone_column_handles()
+                .into_iter()
                 .map(|c| c.try_get().as_ref().unwrap().clone())
                 .sorted_by(|a, b| a.name().cmp(b.name()))
                 .collect();
             let (metadata, subpartitions) = subpartition(&self.opts, columns);
-            let column_name_to_subpartition_index = subpartitions
-                .iter()
-                .enumerate()
-                .flat_map(|(i, subpartition)| {
-                    subpartition
-                        .iter()
-                        .map(move |column| (column.name().to_string(), i))
-                })
-                .collect();
+            let mut subpartitions_by_last_column = BTreeMap::new();
+            for (i, subpartition) in metadata.iter().enumerate() {
+                subpartitions_by_last_column.insert(subpartition.last_column.clone(), i);
+            }
             let partition_metadata = PartitionMetadata {
                 id: partition.id,
                 tablename: table.name().to_string(),
                 len: partition.len(),
                 offset: partition.range().start,
                 subpartitions: metadata,
-                column_name_to_subpartition_index,
+                subpartitions_by_last_column,
             };
             new_partition = Some((partition_metadata, subpartitions));
         }
@@ -458,7 +514,7 @@ impl InnerLocustDB {
         // - get names of all columns
         // - run query for each column, construct Column
         // - create subpartitions
-        let colnames = table.column_names(parts);
+        let colnames = table.column_names();
         let data = table.snapshot_parts(parts);
         let mut columns = Vec::with_capacity(colnames.len());
         for column in &colnames {
@@ -473,6 +529,7 @@ impl InnerLocustDB {
                 self.disk_read_scheduler().clone(),
                 SharedSender::new(sender),
                 self.opts.batch_size,
+                None,
             )
             .unwrap();
             self.schedule(query_task);
@@ -524,14 +581,14 @@ impl InnerLocustDB {
     }
 
     #[allow(dead_code)]
-    pub fn ingest_homogeneous(&self, table: &str, columns: HashMap<String, InputColumn>) {
+    fn ingest_homogeneous(&self, table: &str, columns: HashMap<String, InputColumn>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
         tables.get(table).unwrap().ingest_homogeneous(columns)
     }
 
     #[allow(dead_code)]
-    pub fn ingest_heterogeneous(&self, table: &str, columns: HashMap<String, Vec<RawVal>>) {
+    fn ingest_heterogeneous(&self, table: &str, columns: HashMap<String, Vec<RawVal>>) {
         self.create_if_empty(table);
         let tables = self.tables.read().unwrap();
         tables.get(table).unwrap().ingest_heterogeneous(columns)
@@ -571,7 +628,7 @@ impl InnerLocustDB {
                 let mut tables = self.tables.write().unwrap();
                 tables.insert(
                     table.to_string(),
-                    Arc::new(Table::new(table, self.lru.clone())),
+                    Arc::new(Table::new(table, self.lru.clone(), Some(HashSet::new()))),
                 );
             }
             Some((
@@ -596,7 +653,7 @@ impl InnerLocustDB {
                 let mut tables = self.tables.write().unwrap();
                 tables.insert(
                     table.to_string(),
-                    Arc::new(Table::new(table, self.lru.clone())),
+                    Arc::new(Table::new(table, self.lru.clone(), Some(HashSet::new()))),
                 );
             }
             self.ingest_single(
@@ -626,8 +683,10 @@ impl InnerLocustDB {
                     .map(|table| table.heap_size_of_children())
                     .sum()
             };
-            let mem_usage_metastore =
-                data_size(&*ldb.storage.as_ref().unwrap().meta_store().read().unwrap());
+            let mem_usage_metastore = match ldb.storage.as_ref() {
+                Some(storage) => data_size(&*storage.meta_store().read().unwrap()),
+                None => 0,
+            };
             metrics::META_STORE_BYTES.set(mem_usage_metastore as f64);
 
             metrics::COLUMN_CACHE_BYTES.set(mem_usage_bytes as f64);
@@ -791,11 +850,13 @@ impl InnerLocustDB {
         bytes_evicted
     }
 
-    pub fn search_column_names(&self, table: &str, column: &str) -> Vec<String> {
-        let tables = self.tables.read().unwrap();
-        tables
-            .get(table)
-            .map_or(vec![], |t| t.search_column_names(column))
+    pub fn search_column_names(&self, _table: &str, _column: &str) -> Vec<String> {
+        // TODO: query meta table
+        // let tables = self.tables.read().unwrap();
+        // tables
+        //     .get(table)
+        //     .map_or(vec![], |t| t.search_column_names(column))
+        vec![]
     }
 
     fn log_table_stats(&self) {
@@ -812,9 +873,9 @@ impl InnerLocustDB {
 
                 let len = partition.range().len();
                 total_rows += len;
-                total_partition_columns += partition.cols.len();
+                total_partition_columns += partition.col_handle_count();
                 total_bytes += partition.total_size_bytes();
-                total_values += partition.cols.len() * len;
+                total_values += partition.col_handle_count() * len;
             }
         }
         metrics::PARTITION_COUNT.set(total_partitions as f64);
@@ -857,7 +918,11 @@ fn subpartition(
         acc.bytes = 0;
     }
 
+    let mut last_column = "".to_string();
     for column in columns {
+        if column.name() > last_column.as_str() {
+            last_column = column.name().to_string();
+        }
         let size_bytes = column.heap_size_of_children() as u64;
         if acc.bytes + size_bytes > opts.max_partition_size_bytes {
             create_subpartition(&mut acc);
@@ -871,33 +936,40 @@ fn subpartition(
         vec![SubpartitionMetadata {
             subpartition_key: "all".to_string(),
             size_bytes: acc.subpartition_metadata[0].1,
+            last_column,
         }]
     } else {
         acc.subpartition_metadata
             .iter()
             .map(|(column_names, size)| {
-                let first_col = column_names.iter().next().unwrap();
-                let is_column_name_filesystem_safe = first_col.len() <= 64
-                    && first_col
-                        .chars()
-                        .all(|c| (c.is_alphanumeric() && c.is_lowercase()) || c == '_');
-                let subpartition_key = if column_names.len() == 1 && is_column_name_filesystem_safe
-                {
-                    format!("x{}", first_col)
+                let mut last_column = column_names[0].to_string();
+                for col in column_names {
+                    if *col > last_column {
+                        last_column = col.to_string();
+                    }
+                }
+                let subpartition_key = if is_filesystem_safe(&last_column) {
+                    format!("upto_{}", last_column)
                 } else {
                     use sha2::{Digest, Sha256};
                     let mut hasher = Sha256::new();
-                    for col in column_names {
-                        hasher.update(col);
-                    }
+                    hasher.update(last_column.as_bytes());
                     format!("{:x}", hasher.finalize())
                 };
                 SubpartitionMetadata {
                     subpartition_key,
                     size_bytes: *size,
+                    last_column,
                 }
             })
             .collect()
     };
     (subpartition_metadata, acc.subpartitions)
+}
+
+fn is_filesystem_safe(column_name: &str) -> bool {
+    column_name.len() <= 64
+        && column_name
+            .chars()
+            .all(|c| (c.is_alphanumeric() && c.is_lowercase()) || c == '_')
 }

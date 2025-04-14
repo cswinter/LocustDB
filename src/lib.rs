@@ -10,7 +10,8 @@
     box_patterns,
     proc_macro_hygiene,
     let_chains,
-    duration_constructors
+    duration_constructors,
+    btree_cursors,
 )]
 #[macro_use]
 extern crate failure_derive;

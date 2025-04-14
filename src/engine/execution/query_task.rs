@@ -19,7 +19,7 @@ use crate::mem_store::partition::Partition;
 use crate::observability::QueryPerfCounter;
 use crate::scheduler::disk_read_scheduler::DiskReadScheduler;
 use crate::scheduler::*;
-use crate::syntax::expression::*;
+use crate::syntax::expression::Expr;
 use crate::QueryResult;
 
 pub struct QueryTask {
@@ -95,10 +95,12 @@ impl QueryTask {
         db: Arc<DiskReadScheduler>,
         sender: SharedSender<QueryResult>,
         batch_size: usize,
+        column_names: Option<Vec<String>>,
     ) -> Result<QueryTask, QueryError> {
         let start_time = Instant::now();
         if query.is_select_star() {
-            query.select = find_all_cols(&source)
+            query.select = column_names
+                .unwrap()
                 .into_iter()
                 .map(|name| ColumnInfo {
                     expr: Expr::ColName(name.clone()),
@@ -449,17 +451,6 @@ impl Task for QueryTask {
     fn multithreaded(&self) -> bool {
         true
     }
-}
-
-fn find_all_cols(source: &[Arc<Partition>]) -> Vec<String> {
-    let mut cols = HashSet::new();
-    for partition in source {
-        for name in partition.col_names() {
-            cols.insert(name.to_string());
-        }
-    }
-
-    cols.into_iter().collect()
 }
 
 impl BasicTypeColumn {

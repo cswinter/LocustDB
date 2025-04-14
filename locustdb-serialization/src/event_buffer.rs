@@ -29,6 +29,7 @@ pub enum ColumnData {
     I64(Vec<i64>),
     SparseI64(Vec<(u64, i64)>),
     String(Vec<String>),
+    Mixed(Vec<AnyVal>),
 }
 
 impl ColumnData {
@@ -39,6 +40,7 @@ impl ColumnData {
             ColumnData::I64(data) => data.len(),
             ColumnData::SparseI64(data) => data.len(),
             ColumnData::String(data) => data.len(),
+            ColumnData::Mixed(data) => data.len(),
             ColumnData::Empty => 0,
         }
     }
@@ -51,6 +53,7 @@ impl ColumnData {
             ColumnData::I64(data) => data.is_empty(),
             ColumnData::SparseI64(data) => data.is_empty(),
             ColumnData::String(data) => data.is_empty(),
+            ColumnData::Mixed(data) => data.is_empty(),
             ColumnData::Empty => true,
         }
     }
@@ -190,6 +193,29 @@ impl EventBuffer {
                         sparse_builder.reborrow().set_indices(&indices[..]).unwrap();
                         sparse_builder.reborrow().set_values(&values[..]).unwrap();
                     }
+                    ColumnData::Mixed(mixed) => {
+                        let mut mixed_builder =
+                            column_builder.get_data().init_mixed(mixed.len() as u32);
+                        assert!(mixed.len() < u32::MAX as usize);
+                        for (i, value) in mixed.iter().enumerate() {
+                            let mut value_builder =
+                                mixed_builder.reborrow().get(i as u32).init_value();
+                            match value {
+                                AnyVal::Int(i) => {
+                                    value_builder.set_i64(*i);
+                                }
+                                AnyVal::Float(f) => {
+                                    value_builder.set_f64(*f);
+                                }
+                                AnyVal::Str(s) => {
+                                    value_builder.set_string(s);
+                                }
+                                AnyVal::Null => {
+                                    value_builder.set_null(());
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -235,6 +261,22 @@ impl EventBuffer {
                         let indices = sparse.get_indices()?;
                         let values = sparse.get_values()?;
                         ColumnData::SparseI64(indices.iter().zip(values.iter()).collect())
+                    }
+                    Which::Mixed(mixed) => {
+                        let mut values = Vec::new();
+                        for value in mixed?.iter() {
+                            let value = value.get_value();
+                            use crate::wal_segment_capnp::any_val;
+                            match value.which()? {
+                                any_val::value::Which::I64(i) => values.push(AnyVal::Int(i)),
+                                any_val::value::Which::F64(f) => values.push(AnyVal::Float(f)),
+                                any_val::value::Which::String(s) => {
+                                    values.push(AnyVal::Str(s?.to_string().unwrap()))
+                                }
+                                any_val::value::Which::Null(()) => values.push(AnyVal::Null),
+                            }
+                        }
+                        ColumnData::Mixed(values)
                     }
                 };
                 columns.insert(colname, ColumnBuffer { data });

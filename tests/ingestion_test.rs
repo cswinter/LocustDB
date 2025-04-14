@@ -309,7 +309,12 @@ async fn test_persist_meta_tables() {
         .unwrap();
     assert_eq!(
         _meta_tables.rows.as_ref().unwrap(),
-        &[[Str("qwerty")], [Str("asdf")]],
+        &[
+            [Str("qwerty")],
+            [Str("_meta_columns_qwerty")],
+            [Str("asdf")],
+            [Str("_meta_columns_asdf")]
+        ],
     );
 }
 
@@ -383,7 +388,12 @@ async fn test_many_concurrent_requests() {
                             log::info!("[query {}] Query result is correct", tid);
                             break;
                         } else if last_log_time.elapsed() > Duration::from_secs(5) {
-                            log::info!("[query {}] Query result is incorrect: {:?}, expected [{}]", tid, vec, sum);
+                            log::info!(
+                                "[query {}] Query result is incorrect: {:?}, expected [{}]",
+                                tid,
+                                vec,
+                                sum
+                            );
                             last_log_time = Instant::now();
                             if last_sum != vec[0] {
                                 last_sum = vec[0];

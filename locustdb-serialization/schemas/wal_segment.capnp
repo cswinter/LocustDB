@@ -31,5 +31,15 @@ struct Column {
             indices @7 :List(UInt64);
             values @8 :List(Int64);
         }
+        mixed @9 :List(AnyVal);
+    }
+}
+
+struct AnyVal {
+    value :union {
+        f64 @0 :Float64;
+        i64 @1 :Int64;
+        string @2 :Text;
+        null @3: Void;
     }
 }
