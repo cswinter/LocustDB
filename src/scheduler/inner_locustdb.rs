@@ -14,7 +14,6 @@ use datasize::data_size;
 use futures::channel::oneshot;
 use futures::executor::block_on;
 use inner_locustdb::meta_store::PartitionMetadata;
-use itertools::Itertools;
 use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer, TableBuffer};
 use threadpool::ThreadPool;
 
@@ -53,7 +52,7 @@ pub struct InnerLocustDB {
 
     running: AtomicBool,
     idle_queue: Condvar,
-    task_queue: Mutex<VecDeque<Arc<dyn Task>>>,
+    task_queue: Mutex<VecDeque<(Arc<dyn Task>, usize)>>,
 
     walflush_threadpool: ThreadPool,
 }
@@ -199,12 +198,12 @@ impl InnerLocustDB {
             }
             task_queue = ldb.idle_queue.wait(task_queue).unwrap();
         }
-        while let Some(task) = task_queue.pop_front() {
+        while let Some((task, max_parallelism)) = task_queue.pop_front() {
             if task.completed() {
                 continue;
             }
-            if task.multithreaded() {
-                task_queue.push_front(task.clone());
+            if max_parallelism > 1 {
+                task_queue.push_front((task.clone(), max_parallelism - 1));
             }
             if !task_queue.is_empty() {
                 ldb.idle_queue.notify_one();
@@ -218,7 +217,8 @@ impl InnerLocustDB {
         // This function may be entered by event loop thread so it's important it always returns quickly.
         // Since the task queue locks are never held for long, we should be fine.
         let mut task_queue = self.task_queue.lock().unwrap();
-        task_queue.push_back(Arc::new(task));
+        let max_parallelism = task.max_parallelism();
+        task_queue.push_back((Arc::new(task), max_parallelism));
         self.idle_queue.notify_one();
     }
 
@@ -497,7 +497,6 @@ impl InnerLocustDB {
                 .clone_column_handles()
                 .into_iter()
                 .map(|c| c.try_get().as_ref().unwrap().clone())
-                .sorted_by(|a, b| a.name().cmp(b.name()))
                 .collect();
             let (metadata, subpartitions) = subpartition(&self.opts, columns);
             let mut subpartitions_by_last_column = BTreeMap::new();
@@ -828,7 +827,7 @@ impl InnerLocustDB {
                                 let rate =
                                     (value - last_value.get()) / self.opts.metrics_interval as f64;
                                 columns.insert(
-                                    format!("rate.{}", metric_family.name()),
+                                    format!("{}.rate", metric_family.name()),
                                     ColumnBuffer {
                                         data: ColumnData::Dense(vec![rate]),
                                     },
@@ -918,9 +917,10 @@ struct PartitionBuilder {
 
 fn subpartition(
     opts: &Options,
-    columns: Vec<Arc<Column>>,
+    mut columns: Vec<Arc<Column>>,
 ) -> (Vec<SubpartitionMetadata>, Vec<Vec<Arc<Column>>>) {
     let mut acc = PartitionBuilder::default();
+    columns.sort_by(|a, b| a.name().cmp(b.name()));
     fn create_subpartition(acc: &mut PartitionBuilder) {
         acc.subpartition_metadata.push((
             acc.subpartition
@@ -939,7 +939,7 @@ fn subpartition(
             last_column = column.name().to_string();
         }
         let size_bytes = column.heap_size_of_children() as u64;
-        if acc.bytes + size_bytes > opts.max_partition_size_bytes {
+        if acc.bytes + size_bytes > opts.max_partition_size_bytes && !acc.subpartition.is_empty() {
             create_subpartition(&mut acc);
         }
         acc.subpartition.push(column);
@@ -957,14 +957,9 @@ fn subpartition(
         acc.subpartition_metadata
             .iter()
             .map(|(column_names, size)| {
-                let mut last_column = column_names[0].to_string();
-                for col in column_names {
-                    if *col > last_column {
-                        last_column = col.to_string();
-                    }
-                }
+                let last_column = column_names.last().unwrap().to_string();
                 let subpartition_key = if is_filesystem_safe(&last_column) {
-                    format!("upto_{}", last_column)
+                    format!("-{}", last_column)
                 } else {
                     use sha2::{Digest, Sha256};
                     let mut hasher = Sha256::new();

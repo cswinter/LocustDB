@@ -265,8 +265,8 @@ impl Task for CSVIngestionTask {
     fn completed(&self) -> bool {
         false
     }
-    fn multithreaded(&self) -> bool {
-        false
+    fn max_parallelism(&self) -> usize {
+        1
     }
 }
 

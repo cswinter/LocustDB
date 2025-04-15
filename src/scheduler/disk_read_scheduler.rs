@@ -92,13 +92,25 @@ impl DiskReadScheduler {
                 debug!("Point lookup for {}.{}", handle.name(), handle.id());
                 let columns = {
                     let _token = self.reader_semaphore.access();
-                    self.disk_store.load_column(
+                    match self.disk_store.load_column(
                         &handle.key().table,
                         handle.id(),
                         handle.name(),
                         perf_counter,
-                    )
+                    ) {
+                        Some(columns) => columns,
+                        None => {
+                            handle.set_empty();
+                            return None;
+                        }
+                    }
                 };
+                if handle.is_resident() {
+                    log::warn!(
+                        "Loaded partition for column which was already resident: {}",
+                        handle.name()
+                    );
+                }
                 let mut result = None;
                 #[allow(unused_mut)]
                 let mut cols = cols.write().unwrap();

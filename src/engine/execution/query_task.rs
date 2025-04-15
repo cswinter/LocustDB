@@ -448,8 +448,8 @@ impl Task for QueryTask {
         let batch_index = self.batch_index.load(Ordering::SeqCst);
         self.completed.load(Ordering::SeqCst) || batch_index >= self.partitions.len()
     }
-    fn multithreaded(&self) -> bool {
-        true
+    fn max_parallelism(&self) -> usize {
+        self.partitions.len()
     }
 }
 

@@ -22,7 +22,7 @@ pub trait ColumnLoader: Sync + Send + 'static {
         partition: PartitionID,
         column_name: &str,
         perf_counter: &QueryPerfCounter,
-    ) -> Vec<Column>;
+    ) -> Option<Vec<Column>>;
     fn load_column_range(
         &self,
         start: PartitionID,

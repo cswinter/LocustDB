@@ -54,15 +54,16 @@ pub struct SubpartitionMetadata {
 }
 
 impl PartitionMetadata {
-    pub fn subpartition_key(&self, column_name: &str) -> String {
-        let subpartition_index = self
+    pub fn subpartition_key(&self, column_name: &str) -> Option<String> {
+        let (_, subpartition_index) = self
             .subpartitions_by_last_column
-            .upper_bound(std::ops::Bound::Included(column_name))
-            .peek_prev()
-            .map_or(0, |(_, index)| *index);
-        self.subpartitions[subpartition_index]
-            .subpartition_key
-            .clone()
+            .lower_bound(std::ops::Bound::Included(column_name))
+            .peek_next()?;
+        Some(
+            self.subpartitions[*subpartition_index]
+                .subpartition_key
+                .clone(),
+        )
     }
 }
 
@@ -104,7 +105,7 @@ impl MetaStore {
         table_name: &str,
         partition: PartitionID,
         column_name: &str,
-    ) -> String {
+    ) -> Option<String> {
         self.partitions[table_name][&partition].subpartition_key(column_name)
     }
 
@@ -166,12 +167,11 @@ impl MetaStore {
                 assert!(partition.subpartitions.len() < u32::MAX as usize);
                 let mut subpartitions_builder =
                     partition_builder.init_subpartitions(partition.subpartitions.len() as u32);
-                for (i, last_column) in partition.subpartitions_by_last_column.keys().enumerate() {
+                for (i, subpartition) in partition.subpartitions.iter().enumerate() {
                     let mut subpartition_builder = subpartitions_builder.reborrow().get(i as u32);
-                    let subpartition = &partition.subpartitions[i];
                     subpartition_builder.set_size_bytes(subpartition.size_bytes);
                     subpartition_builder.set_subpartition_key(&subpartition.subpartition_key);
-                    subpartition_builder.set_last_column(last_column);
+                    subpartition_builder.set_last_column(&subpartition.last_column);
                 }
                 i += 1;
             }

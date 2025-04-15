@@ -1757,6 +1757,7 @@ fn test_restore_from_disk() {
     let tmp_dir = TempDir::new().unwrap();
     let opts = Options {
         db_path: Some(tmp_dir.path().to_path_buf()),
+        max_partition_size_bytes: 1000,
         ..Default::default()
     };
     let old_db_contents = {
@@ -1776,8 +1777,20 @@ fn test_restore_from_disk() {
 
     let locustdb = LocustDB::new(&opts);
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
-    let result = block_on(locustdb.run_query(query, false, true, vec![]));
-    let actual_rows = result.unwrap().rows.unwrap();
+    let result = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
+    let actual_rows = result.rows.unwrap();
+    // Ensure segments are read efficiently without duplicate reads
+    assert!(
+        result.stats.disk_read_bytes < 80000,
+        "Disk read bytes = {}",
+        result.stats.disk_read_bytes
+    );
+    assert!(
+        result.stats.files_opened < (result.stats.rows_scanned.div_ceil(999)) as u64,
+        "Files opened = {}, rows = {}",
+        result.stats.files_opened,
+        result.stats.rows_scanned
+    );
     use Value::*;
     assert_eq!(
         &actual_rows[..min(5, actual_rows.len())],
@@ -1791,18 +1804,12 @@ fn test_restore_from_disk() {
     );
     let restored_db_contents = {
         let query = "SELECT * FROM default;";
-        let result = block_on(locustdb.run_query(query, true, true, vec![]))
-            .unwrap()
-            .rows
-            .unwrap();
+        let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
         result
     };
-    assert_eq!(old_db_contents.len(), restored_db_contents.len());
-    for (i, (old, new)) in old_db_contents
-        .iter()
-        .zip(restored_db_contents.iter())
-        .enumerate()
-    {
+    let restored_rows = restored_db_contents.rows.unwrap();
+    assert_eq!(old_db_contents.len(), restored_rows.len());
+    for (i, (old, new)) in old_db_contents.iter().zip(restored_rows.iter()).enumerate() {
         assert_eq!(old, new, "Row {} differs", i);
     }
 }

@@ -20,7 +20,7 @@ impl ColumnLoader for Storage {
         partition: PartitionID,
         column_name: &str,
         perf_counter: &QueryPerfCounter,
-    ) -> Vec<Column> {
+    ) -> Option<Vec<Column>> {
         Storage::load_column(self, partition, table_name, column_name, perf_counter)
     }
 
@@ -341,12 +341,12 @@ impl Storage {
         table_name: &str,
         column_name: &str,
         perf_counter: &QueryPerfCounter,
-    ) -> Vec<Column> {
+    ) -> Option<Vec<Column>> {
         let subpartition_key =
             self.meta_store
                 .read()
                 .unwrap()
-                .subpartition_key(table_name, partition, column_name);
+                .subpartition_key(table_name, partition, column_name)?;
         let path = self
             .tables_path
             .join(sanitize_table_name(table_name))
@@ -354,7 +354,7 @@ impl Storage {
         let data = self.writer.load(&path).unwrap();
         self.perf_counter.disk_read_partition(data.len() as u64);
         perf_counter.disk_read(data.len() as u64);
-        PartitionSegment::deserialize(&data).unwrap().columns
+        Some(PartitionSegment::deserialize(&data).unwrap().columns)
     }
 }
 
