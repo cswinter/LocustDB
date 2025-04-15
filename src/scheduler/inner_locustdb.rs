@@ -136,6 +136,9 @@ impl InnerLocustDB {
                 table.ingest_homogeneous(columns);
             }
         }
+
+        InnerLocustDB::start_background_threads(&locustdb);
+
         locustdb
     }
 
@@ -144,6 +147,9 @@ impl InnerLocustDB {
             let cloned = locustdb.clone();
             thread::spawn(move || InnerLocustDB::worker_loop(cloned));
         }
+    }
+
+    pub fn start_background_threads(locustdb: &Arc<InnerLocustDB>) {
         let ldb = locustdb.clone();
         thread::spawn(move || InnerLocustDB::enforce_mem_limit(&ldb));
         let ldb = locustdb.clone();
@@ -689,48 +695,53 @@ impl InnerLocustDB {
 
     fn enforce_mem_limit(ldb: &Arc<InnerLocustDB>) {
         while ldb.running.load(Ordering::SeqCst) {
-            let mut mem_usage_bytes: usize = {
+            let mut mem_usage_buffers = 0;
+            let mut mem_usage_partitions = 0;
+            {
                 let tables = ldb.tables.read().unwrap();
-                tables
-                    .values()
-                    .map(|table| table.heap_size_of_children())
-                    .sum()
-            };
+                for table in tables.values() {
+                    let (batches_size, buffer_size) = table.heap_size_of_children();
+                    mem_usage_buffers += buffer_size;
+                    mem_usage_partitions += batches_size;
+                }
+            }
             let mem_usage_metastore = match ldb.storage.as_ref() {
                 Some(storage) => data_size(&*storage.meta_store().read().unwrap()),
                 None => 0,
             };
             metrics::META_STORE_BYTES.set(mem_usage_metastore as f64);
-
-            metrics::COLUMN_CACHE_BYTES.set(mem_usage_bytes as f64);
+            metrics::UNFLUSHED_BUFFER_CACHE_BYTES.set(mem_usage_buffers as f64);
+            metrics::COLUMN_CACHE_BYTES.set(mem_usage_partitions as f64);
+            let mut total_mem_usage =
+                mem_usage_buffers + mem_usage_partitions + mem_usage_metastore;
             metrics::COLUMN_CACHE_UTILIZATION.set(
-                (mem_usage_bytes + mem_usage_metastore) as f64
+                (mem_usage_buffers + mem_usage_partitions + mem_usage_metastore) as f64
                     / ldb.opts.mem_size_limit_tables as f64,
             );
 
-            if (mem_usage_bytes + mem_usage_metastore) > ldb.opts.mem_size_limit_tables {
+            if total_mem_usage > ldb.opts.mem_size_limit_tables {
                 info!(
-                    "Evicting. mem_usage_bytes = {} mem_usage_metastore = {}",
-                    mem_usage_bytes, mem_usage_metastore
+                    "Evicting. mem_usage_buffers = {} mem_usage_partitions = {} mem_usage_metastore = {}",
+                    mem_usage_buffers, mem_usage_partitions, mem_usage_metastore
                 );
-                while mem_usage_bytes > ldb.opts.mem_size_limit_tables {
+                while total_mem_usage > ldb.opts.mem_size_limit_tables {
                     match ldb.lru.evict() {
                         Some(victim) => {
                             let tables = ldb.tables.read().unwrap();
-                            mem_usage_bytes -= tables[&victim.table].evict(&victim);
+                            total_mem_usage -= tables[&victim.table].evict(&victim);
                         }
                         None => {
                             if ldb.opts.mem_size_limit_tables > 0 {
                                 warn!(
                                     "Table memory usage is {} but failed to find column to evict!",
-                                    mem_usage_bytes
+                                    total_mem_usage
                                 );
                             }
                             break;
                         }
                     }
                 }
-                info!("mem_usage_bytes = {}", mem_usage_bytes);
+                info!("mem_usage_bytes = {}", total_mem_usage);
             }
             thread::sleep(Duration::from_millis(1000));
         }

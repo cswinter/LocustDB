@@ -333,7 +333,7 @@ impl Table {
         }
     }
 
-    pub fn heap_size_of_children(&self) -> usize {
+    pub fn heap_size_of_children(&self) -> (usize, usize) {
         let batches_size: usize = {
             let batches = self.partitions.read().unwrap();
             batches
@@ -345,7 +345,7 @@ impl Table {
             let buffer = self.buffer.lock().unwrap();
             buffer.heap_size_of_children()
         };
-        batches_size + buffer_size
+        (batches_size, buffer_size)
     }
 
     fn size_per_column(partitions: &[Arc<Partition>]) -> Vec<(String, usize)> {

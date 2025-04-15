@@ -15,7 +15,9 @@ lazy_static! {
     pub static ref WAL_UTILIZATION: Gauge =
         register_gauge!("wal_utilization", "Utilization of the WAL").unwrap();
     pub static ref COLUMN_CACHE_BYTES: Gauge =
-        register_gauge!("column_cache_bytes", "In-memory size of the column cache").unwrap();
+        register_gauge!("column_cache_bytes", "In-memory size of columns loaded in-memory").unwrap();
+    pub static ref UNFLUSHED_BUFFER_CACHE_BYTES: Gauge =
+        register_gauge!("unflushed_buffer_cache_bytes", "In-memory size of open table buffers").unwrap();
     pub static ref COLUMN_CACHE_UTILIZATION: Gauge =
         register_gauge!("column_cache_utilization", "Utilization of the column cache").unwrap();
     pub static ref META_STORE_BYTES: Gauge =
