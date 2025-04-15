@@ -33,6 +33,14 @@ impl ColumnLoader for Storage {
     ) {
         todo!()
     }
+
+    fn partition_has_been_loaded(&self, _: &str, _: PartitionID, _: &str) -> bool {
+        true
+    }
+
+    fn mark_subpartition_as_loaded(&self, table: &str, partition: PartitionID, column: &str) {
+        Storage::mark_subpartition_as_loaded(self, table, partition, column);
+    }
 }
 
 pub struct Storage {
@@ -355,6 +363,27 @@ impl Storage {
         self.perf_counter.disk_read_partition(data.len() as u64);
         perf_counter.disk_read(data.len() as u64);
         Some(PartitionSegment::deserialize(&data).unwrap().columns)
+    }
+
+    /// Checks whether a subpartition has been loaded before.
+    /// This implies that existing columns have handles, and columns without handles do not exist.
+    pub fn partition_has_been_loaded(
+        &self,
+        table: &str,
+        partition: PartitionID,
+        column: &str,
+    ) -> bool {
+        self.meta_store
+            .read()
+            .unwrap()
+            .subpartition_has_been_loaded(table, partition, column)
+    }
+
+    pub fn mark_subpartition_as_loaded(&self, table: &str, partition: PartitionID, column: &str) {
+        self.meta_store
+            .write()
+            .unwrap()
+            .mark_subpartition_as_loaded(table, partition, column);
     }
 }
 

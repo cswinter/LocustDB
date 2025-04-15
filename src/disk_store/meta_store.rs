@@ -5,6 +5,8 @@ use lz4_flex::block::decompress_size_prepended;
 use pco::standalone::simple_decompress;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use crate::observability::SimpleTracer;
 
@@ -51,6 +53,12 @@ pub struct SubpartitionMetadata {
     pub size_bytes: u64,
     pub subpartition_key: String,
     pub last_column: String,
+    #[data_size(with = atomic_bool_size)]
+    pub loaded: Arc<AtomicBool>,
+}
+
+fn atomic_bool_size(_: &Arc<AtomicBool>) -> usize {
+    std::mem::size_of::<AtomicBool>()
 }
 
 impl PartitionMetadata {
@@ -64,6 +72,32 @@ impl PartitionMetadata {
                 .subpartition_key
                 .clone(),
         )
+    }
+
+    pub fn subpartition_has_been_loaded(&self, column_name: &str) -> bool {
+        let subpartition_index = match self
+            .subpartitions_by_last_column
+            .lower_bound(std::ops::Bound::Included(column_name))
+            .peek_next()
+        {
+            Some((_, subpartition_index)) => subpartition_index,
+            None => return true,
+        };
+        self.subpartitions[*subpartition_index]
+            .loaded
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn mark_subpartition_as_loaded(&self, column_name: &str) {
+        if let Some((_, subpartition_index)) = self
+            .subpartitions_by_last_column
+            .lower_bound(std::ops::Bound::Included(column_name))
+            .peek_next()
+        {
+            self.subpartitions[*subpartition_index]
+                .loaded
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 
@@ -107,6 +141,24 @@ impl MetaStore {
         column_name: &str,
     ) -> Option<String> {
         self.partitions[table_name][&partition].subpartition_key(column_name)
+    }
+
+    pub fn subpartition_has_been_loaded(
+        &self,
+        table_name: &str,
+        partition: PartitionID,
+        column_name: &str,
+    ) -> bool {
+        self.partitions[table_name][&partition].subpartition_has_been_loaded(column_name)
+    }
+
+    pub fn mark_subpartition_as_loaded(
+        &mut self,
+        table_name: &str,
+        partition: PartitionID,
+        column_name: &str,
+    ) {
+        self.partitions[table_name][&partition].mark_subpartition_as_loaded(column_name);
     }
 
     pub fn add_wal_segment(&mut self) -> u64 {
@@ -271,6 +323,7 @@ impl MetaStore {
                     size_bytes,
                     subpartition_key,
                     last_column,
+                    loaded: Arc::new(AtomicBool::new(false)),
                 });
             }
             let partition = PartitionMetadata {

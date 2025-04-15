@@ -121,7 +121,9 @@ impl Partition {
             let cols = if !cols.contains_key(colname) {
                 drop(cols);
                 let mut cols = self.cols.write().unwrap();
-                let handle = if self.ephemeral {
+                let handle = if self.ephemeral
+                    || drs.partition_has_been_loaded(&self.table_name, self.id, colname)
+                {
                     ColumnHandle::empty(&self.table_name, self.id, colname)
                 } else {
                     ColumnHandle::non_resident(&self.table_name, self.id, colname.to_string())
@@ -140,23 +142,6 @@ impl Partition {
         }
         columns
     }
-
-    // pub fn nonresidents_match(
-    //     &self,
-    //     nonresidents: &HashSet<String>,
-    //     eligible: &HashSet<String>,
-    // ) -> bool {
-    //     for handle in self.col_handles() {
-    //         if handle.is_resident() {
-    //             if nonresidents.contains(handle.name()) {
-    //                 return false;
-    //             }
-    //         } else if eligible.contains(handle.name()) && !nonresidents.contains(handle.name()) {
-    //             return false;
-    //         }
-    //     }
-    //     true
-    // }
 
     pub fn restore(&self, col: &Arc<Column>) {
         let cols = self.cols.read().unwrap();

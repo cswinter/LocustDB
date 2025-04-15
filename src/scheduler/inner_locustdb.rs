@@ -952,6 +952,7 @@ fn subpartition(
             subpartition_key: "all".to_string(),
             size_bytes: acc.subpartition_metadata[0].1,
             last_column,
+            loaded: Arc::new(AtomicBool::new(true)),
         }]
     } else {
         acc.subpartition_metadata
@@ -970,6 +971,7 @@ fn subpartition(
                     subpartition_key,
                     size_bytes: *size,
                     last_column,
+                    loaded: Arc::new(AtomicBool::new(true)),
                 }
             })
             .collect()

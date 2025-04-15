@@ -3,8 +3,8 @@ mod file_writer;
 mod gcs_writer;
 pub mod meta_store;
 pub mod noop_storage;
-pub mod storage;
 mod partition_segment;
+pub mod storage;
 pub mod wal_segment;
 
 lazy_static! {
@@ -30,6 +30,8 @@ pub trait ColumnLoader: Sync + Send + 'static {
         column_name: &str,
         ldb: &InnerLocustDB,
     );
+    fn partition_has_been_loaded(&self, table: &str, partition: PartitionID, column: &str) -> bool;
+    fn mark_subpartition_as_loaded(&self, table: &str, partition: PartitionID, column: &str);
 }
 
 pub type PartitionID = u64;

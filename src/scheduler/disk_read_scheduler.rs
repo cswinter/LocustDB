@@ -137,6 +137,11 @@ impl DiskReadScheduler {
                         result = Some(column);
                     }
                 }
+                self.disk_store.mark_subpartition_as_loaded(
+                    &handle.key().table,
+                    handle.id(),
+                    handle.name(),
+                );
                 match result {
                     Some(column) => return Some(column),
                     None => handle.set_empty(),
@@ -173,5 +178,15 @@ impl DiskReadScheduler {
             self.disk_store
                 .load_column_range(run.start, run.end, col, ldb);
         }
+    }
+
+    pub fn partition_has_been_loaded(
+        &self,
+        table: &str,
+        partition: PartitionID,
+        column: &str,
+    ) -> bool {
+        self.disk_store
+            .partition_has_been_loaded(table, partition, column)
     }
 }
