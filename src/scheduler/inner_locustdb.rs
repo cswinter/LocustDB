@@ -959,7 +959,7 @@ fn subpartition(
             .map(|(column_names, size)| {
                 let last_column = column_names.last().unwrap().to_string();
                 let subpartition_key = if is_filesystem_safe(&last_column) {
-                    format!("-{}", last_column)
+                    last_column.clone()
                 } else {
                     use sha2::{Digest, Sha256};
                     let mut hasher = Sha256::new();
