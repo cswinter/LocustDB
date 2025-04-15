@@ -46,7 +46,7 @@ impl Table {
             lru,
             column_names: RwLock::new(if name.starts_with("_meta_columns_") {
                 Some(HashSet::from(["column_names".to_string()]))
-            } else if name.starts_with("_meta_tables_") {
+            } else if name.starts_with("_meta_tables") {
                 Some(HashSet::from(["timestamp".to_string(), "name".to_string()]))
             } else {
                 column_names
