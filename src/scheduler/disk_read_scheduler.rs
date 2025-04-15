@@ -138,7 +138,7 @@ impl DiskReadScheduler {
                     }
                 }
                 self.disk_store.mark_subpartition_as_loaded(
-                    &handle.key().table,
+                    handle.table(),
                     handle.id(),
                     handle.name(),
                 );

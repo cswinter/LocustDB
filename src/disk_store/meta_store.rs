@@ -85,7 +85,7 @@ impl PartitionMetadata {
         };
         self.subpartitions[*subpartition_index]
             .loaded
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn mark_subpartition_as_loaded(&self, column_name: &str) {
@@ -96,7 +96,7 @@ impl PartitionMetadata {
         {
             self.subpartitions[*subpartition_index]
                 .loaded
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
     }
 }

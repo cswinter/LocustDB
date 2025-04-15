@@ -34,8 +34,8 @@ impl ColumnLoader for Storage {
         todo!()
     }
 
-    fn partition_has_been_loaded(&self, _: &str, _: PartitionID, _: &str) -> bool {
-        true
+    fn partition_has_been_loaded(&self, table: &str, partition: PartitionID, column: &str) -> bool {
+        Storage::partition_has_been_loaded(self, table, partition, column)
     }
 
     fn mark_subpartition_as_loaded(&self, table: &str, partition: PartitionID, column: &str) {

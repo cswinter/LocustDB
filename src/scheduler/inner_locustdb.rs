@@ -460,8 +460,9 @@ impl InnerLocustDB {
         let column_names = match result.columns.pop().unwrap() {
             (_, BasicTypeColumn::String(names)) => Ok(names.into_iter().collect()),
             _ => Err(fatal!(
-                "Expected single string column in meta columns table for {}",
-                table
+                "Expected single string column in meta columns table for {}, got {:?}",
+                table,
+                result,
             )),
         };
         column_names
