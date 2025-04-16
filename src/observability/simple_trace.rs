@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SimpleTracer {
-    completed_spans: Vec<SimpleSpan>,
-    span_stack: Vec<(&'static str, Instant, usize)>,
+    open_spans: Vec<OpenSpan>,
     annotations: Vec<(String, String)>,
 }
 
@@ -15,43 +14,70 @@ pub struct SimpleSpan {
     pub duration: Duration,
     pub depth: usize,
     pub annotations: Vec<(String, String)>,
-    pub child_count: usize,
+    pub children: Vec<SimpleSpan>,
+}
+
+#[derive(Debug)]
+struct OpenSpan {
+    pub name: String,
+    pub depth: usize,
+    pub start_time: Instant,
+    pub annotations: Vec<(String, String)>,
+    pub children: Vec<SimpleSpan>,
+    pub self_name: &'static str,
 }
 
 pub struct SpanToken(&'static str);
 
-impl SimpleTracer {
-    pub fn new() -> Self {
+impl Default for SimpleTracer {
+    fn default() -> Self {
         SimpleTracer {
-            completed_spans: Vec::new(),
-            span_stack: Vec::new(),
+            open_spans: vec![OpenSpan {
+                name: "".to_string(),
+                depth: 0,
+                start_time: Instant::now(),
+                annotations: Vec::new(),
+                children: Vec::new(),
+                self_name: "",
+            }],
             annotations: Vec::new(),
         }
     }
+}
 
+impl SimpleTracer {
     #[must_use]
     pub fn start_span(&mut self, full_name: &'static str) -> SpanToken {
-        self.span_stack.push((full_name, Instant::now(), 0));
+        let name = match self.open_spans.last() {
+            Some(span) if !span.name.is_empty() => format!("{}.{}", span.name, full_name),
+            _ => full_name.to_string(),
+        };
+        self.open_spans.push(OpenSpan {
+            name,
+            depth: self.open_spans.len() - 1,
+            start_time: Instant::now(),
+            annotations: Vec::new(),
+            children: Vec::new(),
+            self_name: full_name,
+        });
         SpanToken(full_name)
     }
 
     pub fn end_span(&mut self, span_token: SpanToken) {
         assert!(
-            self.span_stack.last().unwrap().0 == span_token.0,
+            self.open_spans.last().unwrap().self_name == span_token.0,
             "Span token mismatch"
         );
-        let (_, start_time, child_count) = self.span_stack.pop().unwrap();
-        if let Some((_, _, child_count)) = self.span_stack.last_mut() {
-            *child_count += 1;
-        }
-        let duration = start_time.elapsed();
-        self.completed_spans.push(SimpleSpan {
-            name: span_token.0.to_string(),
+        let span = self.open_spans.pop().unwrap();
+        let duration = span.start_time.elapsed();
+        let span = SimpleSpan {
+            name: span.name,
             duration,
-            depth: self.span_stack.len(),
-            annotations: std::mem::take(&mut self.annotations),
-            child_count,
-        });
+            depth: span.depth,
+            annotations: span.annotations,
+            children: span.children,
+        };
+        self.open_spans.last_mut().unwrap().children.push(span);
     }
 
     pub fn annotate<S: Display>(&mut self, key: &'static str, value: S) {
@@ -71,68 +97,60 @@ impl SimpleTracer {
         //     string_sorting: 0.2s
 
         let mut result = String::new();
-
-        // Process spans in reverse order
-        let mut i = self.completed_spans.len();
-        while i > 0 {
-            i -= 1;
-            let span = &self.completed_spans[i];
-            let indent = "  ".repeat(span.depth);
-
-            // Render span name, duration, and annotations
-            result.push_str(&format!(
-                "{}{}: {}\n",
-                indent,
-                span.name,
-                format_duration(span.duration)
-            ));
-            for (key, value) in &span.annotations {
-                result.push_str(&format!("{}  - {}: {}\n", indent, key, value));
-            }
-
-            // If span has more than 10 children, aggregate similar subspans
-            if span.child_count > 10 {
-                // Find and aggregate all children of this span
-                let mut aggregated_spans: HashMap<String, (Duration, usize)> = HashMap::new();
-                let mut path = Vec::new();
-                let mut last_depth = span.depth;
-
-                while i > 0 && self.completed_spans[i - 1].depth > span.depth {
-                    i -= 1;
-                    if last_depth == self.completed_spans[i].depth {
-                        path.pop();
-                    }
-                    path.push(self.completed_spans[i].name.clone());
-                    let name = path.join(".");
-                    let entry = aggregated_spans.entry(name).or_insert((Duration::ZERO, 0));
-                    entry.0 += self.completed_spans[i].duration;
-                    entry.1 += 1;
-
-                    last_depth = self.completed_spans[i].depth;
-                }
-
-                // Print aggregated children sorted by name
-                let mut agg_spans: Vec<_> = aggregated_spans.into_iter().collect();
-                agg_spans.sort_by(|a, b| a.0.cmp(&b.0));
-
-                for (name, (total_duration, count)) in agg_spans {
-                    let child_indent = "  ".repeat(span.depth + 1);
-                    let duration_str = format_duration(total_duration);
-                    if count > 1 {
-                        result.push_str(&format!(
-                            "{}{}: {} (× {})\n",
-                            child_indent, name, duration_str, count
-                        ));
-                    } else {
-                        result.push_str(&format!("{}{}: {}\n", child_indent, name, duration_str));
-                    }
-                }
-            }
+        for span in &self.open_spans.last().unwrap().children {
+            result.push_str(&span.summary().to_string());
         }
-
         result
     }
 }
+
+impl SimpleSpan {
+    fn summary(&self) -> String {
+        let mut result = String::new();
+
+        let indent = "  ".repeat(self.depth);
+
+        result.push_str(&format!(
+            "{}{}: {}\n",
+            indent,
+            self.name,
+            format_duration(self.duration)
+        ));
+
+        for (key, value) in &self.annotations {
+            result.push_str(&format!("{}  - {}: {}\n", indent, key, value));
+        }
+
+        if self.children.len() > 10 {
+            let mut aggregated_spans: HashMap<String, (Duration, usize)> = HashMap::new();
+            for child in &self.children {
+                let entry = aggregated_spans
+                    .entry(child.name.clone())
+                    .or_insert((Duration::ZERO, 0));
+                entry.0 += child.duration;
+                entry.1 += 1;
+            }
+
+            let mut agg_spans: Vec<_> = aggregated_spans.into_iter().collect();
+            agg_spans.sort_by(|a, b| a.0.cmp(&b.0));
+
+            for (name, (total_duration, count)) in agg_spans {
+                let duration_str = format_duration(total_duration);
+                if count > 1 {
+                    result.push_str(&format!("{}: {} (× {})\n", name, duration_str, count));
+                } else {
+                    result.push_str(&format!("{}: {}\n", name, duration_str));
+                }
+            }
+        } else {
+            for child in &self.children {
+                result.push_str(&child.summary().to_string());
+            }
+        }
+        result
+    }
+}
+
 fn format_duration(duration: Duration) -> String {
     let nanos = duration.as_nanos();
     let value: f64;

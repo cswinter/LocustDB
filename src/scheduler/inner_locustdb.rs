@@ -332,7 +332,7 @@ impl InnerLocustDB {
     /// this function is never called concurrently.
     fn wal_flush(self: &Arc<InnerLocustDB>) {
         log::info!("Commencing WAL flush");
-        let mut tracer = SimpleTracer::new();
+        let mut tracer = SimpleTracer::default();
         let span_wal_flush = tracer.start_span("wal_flush");
 
         // Acquire wal_size lock to block creation of new WAL segments and modifications of open buffers,
