@@ -1,26 +1,37 @@
 use capnp::serialize_packed;
 use datasize::DataSize;
-use itertools::Itertools;
 use locustdb_serialization::{dbmeta_capnp, default_reader_options};
-use lz4_flex::block::{compress_prepend_size, decompress_size_prepended};
-use pco::standalone::{simple_decompress, simpler_compress};
-use pco::DEFAULT_COMPRESSION_LEVEL;
-use std::collections::{HashMap, HashSet};
+use lz4_flex::block::decompress_size_prepended;
+use pco::standalone::simple_decompress;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use crate::observability::SimpleTracer;
 
 type TableName = String;
 type PartitionID = u64;
 
-#[derive(Clone, DataSize)]
+#[derive(Clone, DataSize, Default, Debug)]
 pub struct MetaStore {
+    // ID for the next WAL segment to be written
+    next_wal_id: u64,
+    // ID of the earliest WAL segment that has not been flushed into partitions (this WAL segment may not exist yet)
+    earliest_unflushed_wal_id: u64,
+    /// Maps each table to it's set of partitions.
+    /// Each partition is a contigous subset of rows in the table.
+    partitions: HashMap<TableName, HashMap<PartitionID, PartitionMetadata>>,
+}
+
+#[derive(Clone, DataSize, Debug)]
+pub struct MetaStoreDirectory {
     // ID for the next WAL segment to be written
     pub next_wal_id: u64,
     // ID of the earliest WAL segment that has not been flushed into partitions (this WAL segment may not exist yet)
     pub earliest_uncommited_wal_id: u64,
-    /// Maps each table to it's set of partitions.
-    /// Each partition is a contigous subset of rows in the table.
-    pub partitions: HashMap<TableName, HashMap<PartitionID, PartitionMetadata>>,
+    // IDs of metastore partition segments
+    pub partitions: Vec<u64>,
 }
 
 /// Metadata for a partition of a table.
@@ -33,114 +44,178 @@ pub struct PartitionMetadata {
     pub offset: usize,
     pub len: usize,
     pub subpartitions: Vec<SubpartitionMetadata>,
-    pub column_name_to_subpartition_index: HashMap<String, usize>,
+    // Maps the last column name in each subpartition to the corresponding index in `subpartitions`
+    pub subpartitions_by_last_column: BTreeMap<String, usize>,
 }
 
 #[derive(Clone, Debug, DataSize)]
 pub struct SubpartitionMetadata {
     pub size_bytes: u64,
     pub subpartition_key: String,
+    pub last_column: String,
+    #[data_size(with = atomic_bool_size)]
+    pub loaded: Arc<AtomicBool>,
+}
+
+fn atomic_bool_size(_: &Arc<AtomicBool>) -> usize {
+    std::mem::size_of::<AtomicBool>()
 }
 
 impl PartitionMetadata {
-    pub fn subpartition_key(&self, column_name: &str) -> String {
-        let subpartition_index = self.column_name_to_subpartition_index[column_name];
-        self.subpartitions[subpartition_index]
-            .subpartition_key
-            .clone()
+    pub fn subpartition_key(&self, column_name: &str) -> Option<String> {
+        let (_, subpartition_index) = self
+            .subpartitions_by_last_column
+            .lower_bound(std::ops::Bound::Included(column_name))
+            .peek_next()?;
+        Some(
+            self.subpartitions[*subpartition_index]
+                .subpartition_key
+                .clone(),
+        )
+    }
+
+    pub fn subpartition_has_been_loaded(&self, column_name: &str) -> bool {
+        let subpartition_index = match self
+            .subpartitions_by_last_column
+            .lower_bound(std::ops::Bound::Included(column_name))
+            .peek_next()
+        {
+            Some((_, subpartition_index)) => subpartition_index,
+            None => return true,
+        };
+        self.subpartitions[*subpartition_index]
+            .loaded
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn mark_subpartition_as_loaded(&self, column_name: &str) {
+        if let Some((_, subpartition_index)) = self
+            .subpartitions_by_last_column
+            .lower_bound(std::ops::Bound::Included(column_name))
+            .peek_next()
+        {
+            self.subpartitions[*subpartition_index]
+                .loaded
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 }
 
 impl MetaStore {
+    pub fn earliest_uncommited_wal_id(&self) -> u64 {
+        self.earliest_unflushed_wal_id
+    }
+
+    pub fn register_wal_segment(&mut self, wal_id: u64) {
+        self.next_wal_id = self.next_wal_id.max(wal_id + 1);
+    }
+
+    pub fn unflushed_wal_ids(&self) -> Range<u64> {
+        self.earliest_unflushed_wal_id..self.next_wal_id
+    }
+
+    pub fn advance_earliest_unflushed_wal_id(&mut self, wal_id: u64) {
+        self.earliest_unflushed_wal_id = wal_id;
+    }
+
+    pub fn next_wal_id(&self) -> u64 {
+        self.next_wal_id
+    }
+
+    /// Iterate over all partitions in the metastore. (used once on startup to restore tables)
+    pub fn partitions(&self) -> impl Iterator<Item = &PartitionMetadata> {
+        self.partitions.values().flat_map(|x| x.values())
+    }
+
+    pub fn partitions_for_table(
+        &self,
+        table_name: &str,
+    ) -> impl Iterator<Item = &PartitionMetadata> {
+        self.partitions.get(table_name).unwrap().values()
+    }
+
+    pub fn subpartition_key(
+        &self,
+        table_name: &str,
+        partition: PartitionID,
+        column_name: &str,
+    ) -> Option<String> {
+        self.partitions[table_name][&partition].subpartition_key(column_name)
+    }
+
+    pub fn subpartition_has_been_loaded(
+        &self,
+        table_name: &str,
+        partition: PartitionID,
+        column_name: &str,
+    ) -> bool {
+        self.partitions[table_name][&partition].subpartition_has_been_loaded(column_name)
+    }
+
+    pub fn mark_subpartition_as_loaded(
+        &mut self,
+        table_name: &str,
+        partition: PartitionID,
+        column_name: &str,
+    ) {
+        self.partitions[table_name][&partition].mark_subpartition_as_loaded(column_name);
+    }
+
+    pub fn add_wal_segment(&mut self) -> u64 {
+        let wal_id = self.next_wal_id;
+        self.next_wal_id += 1;
+        wal_id
+    }
+
+    pub fn insert_partition(&mut self, partition: PartitionMetadata) {
+        self.partitions
+            .entry(partition.tablename.clone())
+            .or_default()
+            .insert(partition.id, partition);
+    }
+
+    pub fn delete_partitions(
+        &mut self,
+        table: &str,
+        old_partitions: &[PartitionID],
+    ) -> Vec<(u64, String)> {
+        let all_partitions = self.partitions.get_mut(table).unwrap();
+        old_partitions
+            .iter()
+            .map(|id| all_partitions.remove(id).unwrap())
+            .flat_map(|partition| {
+                let id = partition.id;
+                partition
+                    .subpartitions
+                    .iter()
+                    .map(move |sb| (id, (*sb.subpartition_key).to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    }
+
     pub fn serialize(&self, tracer: &mut SimpleTracer) -> Vec<u8> {
         let span_serialize = tracer.start_span("serialize_metastore");
 
         let mut builder = ::capnp::message::Builder::new_default();
         let mut dbmeta = builder.init_root::<dbmeta_capnp::d_b_meta::Builder>();
-        dbmeta.set_next_wal_id(self.earliest_uncommited_wal_id);
+        dbmeta.set_next_wal_id(self.earliest_unflushed_wal_id);
 
         let total_partitions = self.partitions.values().map(|x| x.len()).sum::<usize>();
         assert!(total_partitions < u32::MAX as usize);
         let mut i = 0;
-
-        // Find all unique column names
-        let span_string_interning = tracer.start_span("string_interning");
-        let mut total_column_names = 0;
-        let unique_strings = self
-            .partitions
-            .values()
-            .flat_map(|x| x.values())
-            .flat_map(|x| {
-                total_column_names += x.column_name_to_subpartition_index.len();
-                x.column_name_to_subpartition_index.keys()
-            })
-            .collect::<HashSet<_>>();
-        let mut sorted_strings = unique_strings.iter().cloned().collect::<Vec<_>>();
-        tracer.end_span(span_string_interning);
-
-        // Sort unique column names
-        let span_string_sorting = tracer.start_span("string_sorting");
-        sorted_strings.sort();
-        tracer.end_span(span_string_sorting);
-
-        // Write out all column name strings and lenghts into contiguous memory
-        let span_string_writing = tracer.start_span("string_writing");
-        let mut string_bytes: Vec<u8> = Vec::new();
-        let mut lens = Vec::new();
-        for string in &sorted_strings {
-            assert!(string.len() <= u16::MAX as usize);
-            lens.push(string.len() as u16);
-            string_bytes.extend(string.as_bytes());
-        }
-        tracer.end_span(span_string_writing);
-
-        // Compress column names
-        let span_string_compression = tracer.start_span("string_compression");
-        let compressed_strings = compress_prepend_size(&string_bytes);
-        tracer.end_span(span_string_compression);
-
-        // Set the serialized data into the capnproto message
-        dbmeta
-            .reborrow()
-            .set_compressed_strings(&compressed_strings);
-        dbmeta
-            .reborrow()
-            .set_lengths_compressed_strings(&lens[..])
-            .unwrap();
-
-        // Create a mapping from column names to their indices
-        let span_column_name_mapping = tracer.start_span("column_name_mapping");
-        assert!(sorted_strings.len() < u32::MAX as usize);
-        let column_name_to_id = sorted_strings
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(i, s)| (s, i as u64))
-            .collect::<HashMap<_, _>>();
-        tracer.end_span(span_column_name_mapping);
-
-        let column_names_bytes = string_bytes.len() as u64;
-        let compressed_column_names_bytes = compressed_strings.len() as u64;
-        let column_name_lengths_bytes = (size_of::<u16>() * lens.len()) as u64;
 
         // Serialize partitions
         let span_partition_serialization = tracer.start_span("partition_serialization");
         let mut partitions_builder = dbmeta.reborrow().init_partitions(total_partitions as u32);
         for table in self.partitions.values() {
             for partition in table.values() {
-                let mut subpartition_index_to_column_names =
-                    vec![Vec::new(); partition.subpartitions.len()];
-                for (column_name, subpartition_index) in
-                    &partition.column_name_to_subpartition_index
-                {
-                    let column_id = column_name_to_id[column_name];
-                    subpartition_index_to_column_names[*subpartition_index].push(column_id);
-                }
                 let mut partition_builder = partitions_builder.reborrow().get(i);
                 partition_builder.set_id(partition.id);
                 partition_builder.set_tablename(&partition.tablename);
                 partition_builder.set_offset(partition.offset as u64);
                 partition_builder.set_len(partition.len as u64);
+
                 assert!(partition.subpartitions.len() < u32::MAX as usize);
                 let mut subpartitions_builder =
                     partition_builder.init_subpartitions(partition.subpartitions.len() as u32);
@@ -148,19 +223,7 @@ impl MetaStore {
                     let mut subpartition_builder = subpartitions_builder.reborrow().get(i as u32);
                     subpartition_builder.set_size_bytes(subpartition.size_bytes);
                     subpartition_builder.set_subpartition_key(&subpartition.subpartition_key);
-                    let subpartition_column_ids_sorted: Vec<_> = subpartition_index_to_column_names
-                        [i]
-                        .iter()
-                        .cloned()
-                        .sorted()
-                        .collect();
-                    let all_column_ids_compressed = simpler_compress(
-                        &subpartition_column_ids_sorted,
-                        DEFAULT_COMPRESSION_LEVEL,
-                    )
-                    .unwrap();
-                    subpartition_builder
-                        .set_compressed_interned_columns(&all_column_ids_compressed[..]);
+                    subpartition_builder.set_last_column(&subpartition.last_column);
                 }
                 i += 1;
             }
@@ -176,15 +239,12 @@ impl MetaStore {
 
         tracer.annotate("table_count", self.partitions.len());
         tracer.annotate("partition_count", total_partitions);
-        tracer.annotate("unique_column_count", sorted_strings.len());
-        tracer.annotate("column_count", total_column_names);
+        tracer.annotate("unique_column_count", 0);
+        tracer.annotate("column_count", -1);
         tracer.annotate("total_bytes", buf.len());
-        tracer.annotate("column_names_bytes", column_names_bytes);
-        tracer.annotate(
-            "compressed_column_names_bytes",
-            compressed_column_names_bytes,
-        );
-        tracer.annotate("column_name_lengths_bytes", column_name_lengths_bytes);
+        tracer.annotate("column_names_bytes", 0);
+        tracer.annotate("compressed_column_names_bytes", 0);
+        tracer.annotate("column_name_lengths_bytes", 0);
 
         buf
     }
@@ -219,23 +279,25 @@ impl MetaStore {
             let offset = partition.get_offset() as usize;
             let len = partition.get_len() as usize;
             let mut subpartitions = Vec::new();
-            let mut column_name_to_subpartition_index = HashMap::new();
-            for (i, subpartition) in partition.get_subpartitions()?.iter().enumerate() {
+            let mut subpartitions_by_last_column = BTreeMap::new();
+            for subpartition in partition.get_subpartitions()?.iter() {
                 let size_bytes = subpartition.get_size_bytes();
                 let subpartition_key = subpartition.get_subpartition_key()?.to_string().unwrap();
-                subpartitions.push(SubpartitionMetadata {
-                    size_bytes,
-                    subpartition_key,
-                });
+
+                let mut last_column = "".to_string();
                 // v0
                 for column in subpartition.get_columns()? {
                     let column = column?.to_string().unwrap();
-                    column_name_to_subpartition_index.insert(column, i);
+                    if column > last_column {
+                        last_column = column;
+                    }
                 }
                 // v1
                 for column_string_id in subpartition.get_interned_columns()? {
                     let column = strings[column_string_id as usize].clone();
-                    column_name_to_subpartition_index.insert(column, i);
+                    if column > last_column {
+                        last_column = column;
+                    }
                 }
                 // v2
                 let compressed_interned_columns = subpartition.get_compressed_interned_columns()?;
@@ -244,9 +306,25 @@ impl MetaStore {
                         simple_decompress::<u64>(compressed_interned_columns).unwrap();
                     for column_id in interned_columns {
                         let column = strings[column_id as usize].clone();
-                        column_name_to_subpartition_index.insert(column, i);
+                        if column > last_column {
+                            last_column = column;
+                        }
                     }
                 }
+                // v3
+                let explicit_last_column = subpartition.get_last_column()?.to_string().unwrap();
+                if !explicit_last_column.is_empty() {
+                    last_column = explicit_last_column;
+                }
+
+                subpartitions_by_last_column.insert(last_column.clone(), subpartitions.len());
+
+                subpartitions.push(SubpartitionMetadata {
+                    size_bytes,
+                    subpartition_key,
+                    last_column,
+                    loaded: Arc::new(AtomicBool::new(false)),
+                });
             }
             let partition = PartitionMetadata {
                 id,
@@ -254,7 +332,7 @@ impl MetaStore {
                 offset,
                 len,
                 subpartitions,
-                column_name_to_subpartition_index,
+                subpartitions_by_last_column,
             };
             partitions
                 .entry(tablename)
@@ -264,7 +342,7 @@ impl MetaStore {
 
         Ok(MetaStore {
             next_wal_id,
-            earliest_uncommited_wal_id: next_wal_id,
+            earliest_unflushed_wal_id: next_wal_id,
             partitions,
         })
     }

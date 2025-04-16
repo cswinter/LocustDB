@@ -2,6 +2,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use locustdb::disk_store::meta_store::PartitionMetadata;
 use locustdb::disk_store::storage::Storage;
 use locustdb::observability::PerfCounter;
 use structopt::StructOpt;
@@ -38,39 +39,16 @@ fn main() {
     {
         let meta = storage.meta_store().read().unwrap();
         println!("### META STORE ###");
-        println!("Next WAL ID: {}", meta.next_wal_id);
-        println!("Number of partitions: {:?}", meta.partitions.len());
-        let column_names: usize = meta
-            .partitions
-            .values()
-            .flat_map(|table| {
-                table
-                    .values()
-                    .map(|part| part.column_name_to_subpartition_index.len())
-            })
-            .sum();
-        let column_name_byes: usize = meta
-            .partitions
-            .values()
-            .flat_map(|table| {
-                table.values().flat_map(|part| {
-                    part.column_name_to_subpartition_index
-                        .keys()
-                        .map(|s| s.len())
-                })
-            })
-            .sum();
-        println!("Number of column names (duplicated across partitions): {}", column_names);
-        println!("Column name bytes: {}", column_name_byes);
+        println!("Next WAL ID: {}", meta.next_wal_id());
+        println!("Number of partitions: {:?}", meta.partitions().count());
         if opts.meta > 0 {
-            for (table, partitions) in &meta.partitions {
-                if let Some(filter) = &opts.table
-                    && filter != table
-                {
-                    continue;
-                }
-                for partition in partitions.values() {
-                    println!(
+            let partitions = match &opts.table {
+                Some(table) => Box::new(meta.partitions_for_table(table))
+                    as Box<dyn Iterator<Item = &PartitionMetadata>>,
+                None => Box::new(meta.partitions()),
+            };
+            for partition in partitions {
+                println!(
                     "Partition {} for table {} has {} subpartitions and {} rows ({}..{}, {} bytes)",
                     partition.id,
                     partition.tablename,
@@ -84,29 +62,24 @@ fn main() {
                         .map(|sp| sp.size_bytes)
                         .sum::<u64>()
                 );
-                    if opts.meta > 1 {
-                        for (i, subpartition) in partition.subpartitions.iter().enumerate() {
+                if opts.meta > 1 {
+                    for (i, subpartition) in partition.subpartitions.iter().enumerate() {
+                        println!(
+                            "  Subpartition {} has last column {} ({} bytes)",
+                            i,
+                            subpartition.last_column,
+                            subpartition.size_bytes,
+                        );
+                        if opts.meta > 2 {
                             println!(
-                                "  Subpartition {} has {} columns ({} bytes)",
-                                i,
+                                "    {:?}",
                                 partition
-                                    .column_name_to_subpartition_index
-                                    .values()
-                                    .filter(|&&idx| idx == i)
-                                    .count(),
-                                subpartition.size_bytes,
+                                    .subpartitions_by_last_column
+                                    .iter()
+                                    .filter(|(_, &idx)| idx == i)
+                                    .map(|(name, _)| name)
+                                    .collect::<Vec<_>>()
                             );
-                            if opts.meta > 2 {
-                                println!(
-                                    "    {:?}",
-                                    partition
-                                        .column_name_to_subpartition_index
-                                        .iter()
-                                        .filter(|(_, &idx)| idx == i)
-                                        .map(|(name, _)| name)
-                                        .collect::<Vec<_>>()
-                                );
-                            }
                         }
                     }
                 }

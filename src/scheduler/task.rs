@@ -4,7 +4,10 @@ use futures::channel::oneshot;
 pub trait Task: Sync + Send {
     fn execute(&self);
     fn completed(&self) -> bool;
-    fn multithreaded(&self) -> bool;
+    fn max_parallelism(&self) -> usize;
+    fn multithreaded(&self) -> bool {
+        self.max_parallelism() > 1
+    }
 }
 
 impl Task for dyn Fn() + Send + Sync + 'static {
@@ -15,8 +18,8 @@ impl Task for dyn Fn() + Send + Sync + 'static {
     fn completed(&self) -> bool {
         false
     }
-    fn multithreaded(&self) -> bool {
-        false
+    fn max_parallelism(&self) -> usize {
+        1
     }
 }
 
@@ -42,8 +45,8 @@ where
     fn completed(&self) -> bool {
         false
     }
-    fn multithreaded(&self) -> bool {
-        false
+    fn max_parallelism(&self) -> usize {
+        1
     }
 }
 

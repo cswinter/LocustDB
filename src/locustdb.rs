@@ -9,12 +9,12 @@ use locustdb_serialization::event_buffer::EventBuffer;
 use crate::engine::query_task::QueryTask;
 use crate::ingest::colgen::GenTable;
 use crate::ingest::csv_loader::{CSVIngestionTask, Options as LoadOptions};
-use crate::mem_store::*;
 use crate::observability::{metrics, PerfCounter};
 use crate::scheduler::*;
 use crate::syntax::parser;
 use crate::QueryError;
 use crate::QueryResult;
+use crate::{mem_store::*, BasicTypeColumn};
 
 // Cannot implement Clone on LocustDB without changing Drop implementation.
 pub struct LocustDB {
@@ -28,10 +28,8 @@ impl LocustDB {
 
     pub fn new(opts: &Options) -> LocustDB {
         opts.validate().expect("Invalid options");
-        let locustdb = Arc::new(InnerLocustDB::new(opts));
-        InnerLocustDB::start_worker_threads(&locustdb);
         LocustDB {
-            inner_locustdb: locustdb,
+            inner_locustdb: InnerLocustDB::new(opts),
         }
     }
 
@@ -41,47 +39,54 @@ impl LocustDB {
         explain: bool,
         rowformat: bool,
         show: Vec<usize>,
-    ) -> Result<QueryResult, oneshot::Canceled> {
+    ) -> QueryResult {
         let (sender, receiver) = oneshot::channel();
         metrics::QUERY_COUNT.inc();
 
         // PERF: perform compilation and table snapshot in asynchronous task?
         let query = match parser::parse_query(query) {
             Ok(query) => query,
-            Err(err) => return Ok(Err(err)),
+            Err(err) => return Err(err),
         };
 
         let referenced_cols = query.find_referenced_cols();
         let colsvec;
+        let all_cols = if referenced_cols.contains("*") {
+            let colnames = self
+                .inner_locustdb
+                .schedule_query_column_names(&query.table)?
+                .await?;
+            match colnames {
+                Ok(results) => match &results.columns[..] {
+                    [(_, BasicTypeColumn::String(names))] => Some(names.to_vec()),
+                    _ => {
+                        return Err(fatal!(
+                            "Expected string column when querying _meta_columns_{}, got {:?}",
+                            query.table,
+                            results
+                        ))
+                    }
+                },
+                Err(err) => return Err(err),
+            }
+        } else {
+            None
+        };
         let column_filter = if referenced_cols.contains("*") {
             None
         } else {
             colsvec = referenced_cols.into_iter().collect::<Vec<_>>();
             Some(&colsvec[..])
         };
-        let mut data = match self.inner_locustdb.snapshot(&query.table, column_filter) {
+        let data = match self.inner_locustdb.snapshot(&query.table, column_filter) {
             Some(data) => data,
             None => {
-                return Ok(Err(QueryError::NotImplemented(format!(
+                return Err(QueryError::NotImplemented(format!(
                     "Table {} does not exist!",
                     &query.table
-                ))))
+                )))
             }
         };
-
-        if self.inner_locustdb.opts().seq_disk_read {
-            self.inner_locustdb
-                .disk_read_scheduler()
-                .schedule_sequential_read(
-                    &mut data,
-                    &query.find_referenced_cols(),
-                    self.inner_locustdb.opts().readahead,
-                );
-            let ldb = self.inner_locustdb.clone();
-            let (read_data, _) =
-                <dyn Task>::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
-            self.inner_locustdb.schedule(read_data);
-        }
 
         let query_task = QueryTask::new(
             query,
@@ -92,6 +97,7 @@ impl LocustDB {
             self.inner_locustdb.disk_read_scheduler().clone(),
             SharedSender::new(sender),
             self.inner_locustdb.opts().batch_size,
+            all_cols,
         );
 
         match query_task {
@@ -99,11 +105,11 @@ impl LocustDB {
                 self.schedule(task);
                 let result = receiver.await?;
                 metrics::QUERY_OK_COUNT.inc();
-                Ok(result)
+                result
             }
             Err(err) => {
                 metrics::QUERY_ERROR_COUNT.inc();
-                Ok(Err(err))
+                Err(err)
             }
         }
     }
@@ -147,28 +153,23 @@ impl LocustDB {
         }
     }
 
-    pub fn search_column_names(&self, table: &str, query: &str) -> Vec<String> {
-        self.inner_locustdb.search_column_names(table, query)
-    }
-
-    pub async fn bulk_load(&self) -> Result<Vec<MemTreeTable>, oneshot::Canceled> {
-        for table in self.inner_locustdb.full_snapshot() {
-            self.inner_locustdb
-                .disk_read_scheduler()
-                .schedule_bulk_load(table, self.inner_locustdb.opts().readahead);
+    pub async fn search_column_names(
+        &self,
+        table: &str,
+        query: &str,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        let query = format!(
+            "SELECT column_name FROM \"_meta_columns_{}\" WHERE regex(column_name, '{}');",
+            table, query
+        );
+        let result = self.run_query(&query, false, false, vec![]).await?;
+        match &result.columns[..] {
+            [(_, BasicTypeColumn::String(column_names))] => Ok(column_names.to_vec()),
+            _ => Err(Box::new(fatal!(
+                "Expected string column, got {:?}",
+                result.columns
+            ))),
         }
-        let mut receivers = Vec::new();
-        for _ in 0..self.inner_locustdb.opts().read_threads {
-            let ldb = self.inner_locustdb.clone();
-            let (read_data, receiver) =
-                <dyn Task>::from_fn(move || ldb.disk_read_scheduler().service_reads(&ldb));
-            self.inner_locustdb.schedule(read_data);
-            receivers.push(receiver);
-        }
-        for receiver in receivers {
-            receiver.await?;
-        }
-        self.mem_tree(2, None).await
     }
 
     pub fn recover(&self) {
@@ -220,7 +221,6 @@ pub struct Options {
     pub mem_size_limit_tables: usize,
     pub mem_lz4: bool,
     pub readahead: usize,
-    pub seq_disk_read: bool,
     /// Maximum size of WAL in bytes before triggering compaction
     pub max_wal_size_bytes: u64,
     /// Maximum size of partition
@@ -247,8 +247,7 @@ impl Default for Options {
             db_path: None,
             mem_size_limit_tables: 8 * 1024 * 1024 * 1024, // 8 GiB
             mem_lz4: true,
-            readahead: 256 * 1024 * 1024, // 256 MiB
-            seq_disk_read: false,
+            readahead: 256 * 1024 * 1024,              // 256 MiB
             max_wal_size_bytes: 64 * 1024 * 1024,      // 64 MiB
             max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
             partition_combine_factor: 4,

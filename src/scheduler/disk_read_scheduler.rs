@@ -3,12 +3,11 @@
 
 use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std_semaphore::Semaphore;
 
 use crate::disk_store::*;
 use crate::mem_store::partition::ColumnHandle;
-use crate::mem_store::partition::Partition;
 use crate::mem_store::*;
 use crate::observability::QueryPerfCounter;
 use crate::scheduler::inner_locustdb::InnerLocustDB;
@@ -29,7 +28,6 @@ struct DiskRun {
     start: PartitionID,
     end: PartitionID,
     columns: HashSet<String>,
-    bytes: usize,
 }
 
 impl DiskReadScheduler {
@@ -50,73 +48,20 @@ impl DiskReadScheduler {
         }
     }
 
-    pub fn schedule_sequential_read(
+    /// Returns the column if it's already loaded.
+    /// If not, loads the relevant partition and also populates all other columns in the same subpartition.
+    pub fn get_or_load(
         &self,
-        snapshot: &mut Vec<Arc<Partition>>,
-        columns: &HashSet<String>,
-        readahead: usize,
-    ) {
-        let mut task_queue = self.task_queue.lock().unwrap();
-        snapshot.sort_unstable_by_key(|p| p.id);
-        let mut current_run = DiskRun::default();
-        let mut previous_partitionid = 0;
-        for partition in snapshot {
-            if current_run.bytes > readahead
-                || !partition.nonresidents_match(&current_run.columns, columns)
-            {
-                if !current_run.columns.is_empty() {
-                    current_run.end = previous_partitionid;
-                    task_queue.push_back(current_run);
-                }
-                let columns = partition.non_residents(columns);
-                current_run = DiskRun {
-                    start: partition.id,
-                    end: 0,
-                    bytes: partition.promise_load(&columns),
-                    columns,
-                };
-            } else {
-                current_run.bytes += partition.promise_load(&current_run.columns);
-            }
-            previous_partitionid = partition.id;
-        }
-        current_run.end = previous_partitionid;
-        task_queue.push_back(current_run);
-        debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
-    }
-
-    pub fn schedule_bulk_load(&self, mut snapshot: Vec<Arc<Partition>>, chunk_size: usize) {
-        let mut task_queue = self.task_queue.lock().unwrap();
-        snapshot.sort_unstable_by_key(|p| p.id);
-        let mut runs = HashMap::<&str, DiskRun>::default();
-        for partition in &snapshot {
-            for col in partition.col_names() {
-                let reached_chunk_size = {
-                    let run = runs.entry(col).or_insert(DiskRun {
-                        start: partition.id,
-                        end: partition.id,
-                        bytes: 0,
-                        columns: [col.to_string()].iter().cloned().collect(),
-                    });
-                    run.bytes += partition.promise_load(&run.columns);
-                    run.end = partition.id;
-
-                    run.bytes > chunk_size
-                };
-                if reached_chunk_size {
-                    task_queue.push_back(runs.remove(&col.as_str()).unwrap());
-                }
-            }
-        }
-        for (_, run) in runs {
-            task_queue.push_back(run);
-        }
-        debug!("Scheduled sequential reads. Queue: {:#?}", &*task_queue);
-    }
-
-    pub fn get_or_load(&self, handle: &ColumnHandle, cols: &HashMap<String, ColumnHandle>, perf_counter: &QueryPerfCounter) -> Arc<Column> {
+        handle: &ColumnHandle,
+        cols: &RwLock<HashMap<String, Arc<ColumnHandle>>>,
+        perf_counter: &QueryPerfCounter,
+    ) -> Option<Arc<Column>> {
         loop {
-            if handle.is_resident() {
+            // Empty marker
+            if handle.is_empty() {
+                return None;
+            // Handle already loaded! Return data.
+            } else if handle.is_resident() {
                 let mut maybe_column = handle.try_get();
                 if let Some(ref mut column) = *maybe_column {
                     if self.lz4_decode {
@@ -126,10 +71,12 @@ impl DiskReadScheduler {
                         handle.update_size_bytes(column.heap_size_of_children());
                     }
                     self.lru.touch(handle.key());
-                    return column.clone();
+                    return Some(column.clone());
                 } else {
                     debug!("{}.{} was not resident!", handle.name(), handle.id());
                 }
+            // Load for column is already scheduled, wait for it to complete.
+            // TODO: this doesn't do anything currently, was only used by sequential disk reads. should check whether relevant subpartition is currently being loaded.
             } else if handle.is_load_scheduled() {
                 let mut is_load_in_progress = self.background_load_in_progress.lock().unwrap();
                 while *is_load_in_progress && !handle.is_resident() && handle.is_load_scheduled() {
@@ -139,16 +86,42 @@ impl DiskReadScheduler {
                         .wait(is_load_in_progress)
                         .unwrap();
                 }
+            // Load for column is not scheduled, load all columns in the same subpartition..
             } else {
+                // TODO: ensure same partition isn't being loaded multiple times
                 debug!("Point lookup for {}.{}", handle.name(), handle.id());
                 let columns = {
                     let _token = self.reader_semaphore.access();
-                    self.disk_store.load_column(&handle.key().table, handle.id(), handle.name(), perf_counter)
+                    match self.disk_store.load_column(
+                        &handle.key().table,
+                        handle.id(),
+                        handle.name(),
+                        perf_counter,
+                    ) {
+                        Some(columns) => columns,
+                        None => {
+                            handle.set_empty();
+                            return None;
+                        }
+                    }
                 };
+                if handle.is_resident() {
+                    log::warn!(
+                        "Loaded partition for column which was already resident: {}",
+                        handle.name()
+                    );
+                }
                 let mut result = None;
                 #[allow(unused_mut)]
+                let mut cols = cols.write().unwrap();
                 for mut column in columns {
-                    let _handle = cols.get(column.name()).unwrap();
+                    let _handle = cols.entry(column.name().to_string()).or_insert(Arc::new(
+                        ColumnHandle::non_resident(
+                            handle.table(),
+                            handle.id(),
+                            column.name().to_string(),
+                        ),
+                    ));
                     // Need to hold lock when we put new value into lru
                     let mut maybe_column = _handle.try_get();
                     // TODO: if not main handle, put it at back of lru
@@ -164,7 +137,15 @@ impl DiskReadScheduler {
                         result = Some(column);
                     }
                 }
-                return result.unwrap()
+                self.disk_store.mark_subpartition_as_loaded(
+                    handle.table(),
+                    handle.id(),
+                    handle.name(),
+                );
+                match result {
+                    Some(column) => return Some(column),
+                    None => handle.set_empty(),
+                }
             }
         }
     }
@@ -197,5 +178,15 @@ impl DiskReadScheduler {
             self.disk_store
                 .load_column_range(run.start, run.end, col, ldb);
         }
+    }
+
+    pub fn partition_has_been_loaded(
+        &self,
+        table: &str,
+        partition: PartitionID,
+        column: &str,
+    ) -> bool {
+        self.disk_store
+            .partition_has_been_loaded(table, partition, column)
     }
 }

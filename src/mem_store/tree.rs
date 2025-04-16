@@ -3,6 +3,7 @@ use std::fmt;
 use std::f64;
 use crate::unit_fmt::*;
 
+/// Aggregate stats for all tables that are used to render summary similar to `tree` command in repl
 pub struct MemTreeTable {
     pub name: String,
     pub size_bytes: usize,

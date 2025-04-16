@@ -39,6 +39,11 @@ impl Buffer {
                 InputColumn::Str(vec) => buffered_col.push_strings(vec),
                 InputColumn::Float(vec) => buffered_col.push_floats(vec),
                 InputColumn::Null(c) => buffered_col.push_nulls(c),
+                InputColumn::Mixed(vec) => {
+                    for val in vec {
+                        buffered_col.push(val);
+                    }
+                }
                 InputColumn::NullableFloat(c, data) => {
                     let mut next_i = 0;
                     for (i, f) in data {

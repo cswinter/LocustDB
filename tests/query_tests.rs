@@ -25,7 +25,7 @@ fn test_query(query: &str, expected_rows: &[Vec<Value>]) {
     } else {
         block_on(locustdb.run_query(query, true, true, vec![])).unwrap()
     };
-    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 }
 
 fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
@@ -73,11 +73,10 @@ fn test_query_ec(query: &str, expected_rows: &[Vec<Value>]) {
         let result2 = block_on(locustdb.run_query(query, false, true, show)).unwrap();
 
         assert_eq!(
-            result1.as_ref().unwrap().rows,
-            result2.as_ref().unwrap().rows,
+            result1.rows, result2.rows,
             "Query results differ after flush"
         );
-        assert_eq!(result1.unwrap().rows.unwrap(), expected_rows);
+        assert_eq!(result1.rows.unwrap(), expected_rows);
     }
 }
 
@@ -97,9 +96,9 @@ fn test_query_ec_err(query: &str, _expected_err: QueryError) {
         ),
     );
     let result = if env::var("DEBUG_TESTS").is_ok() {
-        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![0, 1, 2, 3]))
     } else {
-        block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
+        block_on(locustdb.run_query(query, false, true, vec![]))
     };
     assert!(result.is_err());
 }
@@ -125,7 +124,7 @@ fn test_query_nyc(query: &str, expected_rows: &[Vec<Value>]) {
     } else {
         vec![]
     };
-    let result = block_on(locustdb.run_query(query, false, true, show)).unwrap();
+    let result = block_on(locustdb.run_query(query, false, true, show));
     let actual_rows = result.unwrap().rows.unwrap();
     assert_eq!(
         &actual_rows[..min(expected_rows.len(), actual_rows.len())],
@@ -153,7 +152,7 @@ fn test_query_colnames(query: &str, expected_result: Vec<String>) {
     } else {
         block_on(locustdb.run_query(query, false, true, vec![])).unwrap()
     };
-    assert_eq!(result.unwrap().colnames, expected_result);
+    assert_eq!(result.colnames, expected_result);
 }
 
 #[test]
@@ -1343,7 +1342,7 @@ fn test_gen_table() {
         [Str("Hazelnut".to_string()), Int(76_356)],
         [Str("Walnut".to_string()), Int(23_868)],
     ];
-    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
+    let result = block_on(locustdb.run_query(query, true, true, vec![]));
     assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
 }
 
@@ -1373,14 +1372,10 @@ fn test_column_with_null_partitions() {
     }));
     println!(
         "{:?}",
-        block_on(locustdb.run_query("SELECT * FROM test;", true, true, vec![]))
-            .unwrap()
-            .unwrap()
+        block_on(locustdb.run_query("SELECT * FROM test;", true, true, vec![])).unwrap()
     );
     let query = "SELECT partition_sparse FROM test;";
-    let result = block_on(locustdb.run_query(query, true, true, vec![]))
-        .unwrap()
-        .unwrap();
+    let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
     assert_eq!(
         result
             .rows
@@ -1430,7 +1425,7 @@ fn test_long_nullable() {
     let query = "SELECT nullable_int FROM test LIMIT 0;";
     let expected_rows: Vec<[Value; 1]> = vec![];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
-    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     let query = "SELECT nullable_int, count(1) FROM test;";
     let expected_rows = vec![
@@ -1439,12 +1434,12 @@ fn test_long_nullable() {
         [Int(1), Int(12931)],
     ];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
-    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 
     locustdb.force_flush();
     let query = "SELECT nullable_int FROM test WHERE nullable_int IS NOT NULL;";
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
-    assert_eq!(result.unwrap().rows.unwrap().len(), 26227);
+    assert_eq!(result.rows.unwrap().len(), 26227);
 }
 
 #[test]
@@ -1490,7 +1485,7 @@ fn test_partition_alias_mismatch() {
         [Null, Null, Null, Null],
     ];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
-    assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
+    assert_eq!(result.rows.unwrap(), expected_rows);
 }
 
 #[test]
@@ -1515,7 +1510,7 @@ fn test_sequential_int_sort() {
         [Int(7)],
         [Int(8)],
     ];
-    let result = block_on(locustdb.run_query(query, true, true, vec![0, 1, 2, 3])).unwrap();
+    let result = block_on(locustdb.run_query(query, true, true, vec![0, 1, 2, 3]));
     assert_eq!(result.unwrap().rows.unwrap()[0..9], expected_rows);
 }
 
@@ -1543,9 +1538,7 @@ fn test_hex_scrambled_int<const N: usize>(query: &str, expected: &[[Value; N]]) 
             ("ints".to_string(), locustdb::colgen::int_uniform(-10, 256)),
         ],
     }));
-    let result = block_on(locustdb.run_query(query, true, true, show()))
-        .unwrap()
-        .unwrap();
+    let result = block_on(locustdb.run_query(query, true, true, show())).unwrap();
     assert_eq!(&result.rows.unwrap()[..5], expected);
 }
 
@@ -1565,9 +1558,7 @@ fn test_hex_scrambled_int_small<const N: usize>(query: &str, expected: &[[Value;
             ("ints".to_string(), locustdb::colgen::int_uniform(-10, 256)),
         ],
     }));
-    let result = block_on(locustdb.run_query(query, true, true, show()))
-        .unwrap()
-        .unwrap();
+    let result = block_on(locustdb.run_query(query, true, true, show())).unwrap();
     assert_eq!(&result.rows.unwrap()[..5], expected);
 }
 
@@ -1766,6 +1757,7 @@ fn test_restore_from_disk() {
     let tmp_dir = TempDir::new().unwrap();
     let opts = Options {
         db_path: Some(tmp_dir.path().to_path_buf()),
+        max_partition_size_bytes: 1000,
         ..Default::default()
     };
     let old_db_contents = {
@@ -1779,7 +1771,6 @@ fn test_restore_from_disk() {
         load.unwrap();
         block_on(locustdb.run_query("SELECT * FROM default;", true, true, vec![]))
             .unwrap()
-            .unwrap()
             .rows
             .unwrap()
     };
@@ -1787,7 +1778,19 @@ fn test_restore_from_disk() {
     let locustdb = LocustDB::new(&opts);
     let query = "select passenger_count, to_year(pickup_datetime), trip_distance / 1000, count(0) from default;";
     let result = block_on(locustdb.run_query(query, false, true, vec![])).unwrap();
-    let actual_rows = result.unwrap().rows.unwrap();
+    let actual_rows = result.rows.unwrap();
+    // Ensure segments are read efficiently without duplicate reads
+    assert!(
+        result.stats.disk_read_bytes < 80000,
+        "Disk read bytes = {}",
+        result.stats.disk_read_bytes
+    );
+    assert!(
+        result.stats.files_opened < (result.stats.rows_scanned.div_ceil(999)) as u64,
+        "Files opened = {}, rows = {}",
+        result.stats.files_opened,
+        result.stats.rows_scanned
+    );
     use Value::*;
     assert_eq!(
         &actual_rows[..min(5, actual_rows.len())],
@@ -1801,19 +1804,12 @@ fn test_restore_from_disk() {
     );
     let restored_db_contents = {
         let query = "SELECT * FROM default;";
-        let result = block_on(locustdb.run_query(query, true, true, vec![]))
-            .unwrap()
-            .unwrap()
-            .rows
-            .unwrap();
+        let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
         result
     };
-    assert_eq!(old_db_contents.len(), restored_db_contents.len());
-    for (i, (old, new)) in old_db_contents
-        .iter()
-        .zip(restored_db_contents.iter())
-        .enumerate()
-    {
+    let restored_rows = restored_db_contents.rows.unwrap();
+    assert_eq!(old_db_contents.len(), restored_rows.len());
+    for (i, (old, new)) in old_db_contents.iter().zip(restored_rows.iter()).enumerate() {
         assert_eq!(old, new, "Row {} differs", i);
     }
 }
@@ -1975,7 +1971,6 @@ fn test_sum_where_nullable_gte_constant() {
     );
 }
 
-
 #[test]
 fn test_sum_where_nullable_and_bool() {
     test_query_ec(
@@ -1983,7 +1978,6 @@ fn test_sum_where_nullable_and_bool() {
         &[vec![Int(9)]],
     );
 }
-
 
 #[test]
 fn test_gt_float_filter_offset_encoded_int() {
@@ -1993,11 +1987,30 @@ fn test_gt_float_filter_offset_encoded_int() {
     );
 }
 
-
 #[test]
 fn test_gt_float_filter_offset_encoded_nullable_int() {
     test_query_ec(
         "SELECT id FROM default WHERE nullable_int2 <= 0.123;",
         &[vec![Int(1)], vec![Int(3)]],
+    );
+}
+
+#[test]
+fn test_meta_column_names() {
+    test_query_nyc(
+        "SELECT column_name FROM _meta_columns_default ORDER BY column_name;",
+        &[
+            vec![Str("cab_type")],
+            vec![Str("dropoff_puma")],
+            vec![Str("ehail_fee")],
+            vec![Str("improvement_surcharge")],
+            vec![Str("mta_tax")],
+            vec![Str("passenger_count")],
+            vec![Str("payment_type")],
+            vec![Str("pickup_cdeligibil")],
+            vec![Str("pickup_datetime")],
+            vec![Str("pickup_ntaname")],
+            vec![Str("pickup_puma")],
+        ],
     );
 }

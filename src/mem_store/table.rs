@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
 use itertools::Itertools;
-use locustdb_serialization::event_buffer::ColumnData;
 
 use crate::disk_store::storage::Storage;
 use crate::disk_store::*;
@@ -17,7 +16,6 @@ use crate::mem_store::partition::{ColumnLocator, Partition};
 use crate::mem_store::*;
 
 use self::meta_store::PartitionMetadata;
-use self::wal_segment::WalSegment;
 
 pub struct Table {
     name: String,
@@ -33,11 +31,11 @@ pub struct Table {
     lru: Lru,
 
     // Set of every column name that is present in any partition
-    column_names: RwLock<HashSet<String>>,
+    column_names: RwLock<Option<HashSet<String>>>,
 }
 
 impl Table {
-    pub fn new(name: &str, lru: Lru) -> Table {
+    pub fn new(name: &str, lru: Lru, column_names: Option<HashSet<String>>) -> Table {
         Table {
             name: name.to_string(),
             partitions: RwLock::new(HashMap::new()),
@@ -46,7 +44,13 @@ impl Table {
             buffer: Mutex::new(Buffer::default()),
             frozen_buffer: Mutex::new(Buffer::default()),
             lru,
-            column_names: RwLock::default(),
+            column_names: RwLock::new(if name.starts_with("_meta_columns_") {
+                Some(HashSet::from(["column_names".to_string()]))
+            } else if name.starts_with("_meta_tables") {
+                Some(HashSet::from(["timestamp".to_string(), "name".to_string()]))
+            } else {
+                column_names
+            }),
         }
     }
 
@@ -68,7 +72,7 @@ impl Table {
             partitions.push(Arc::new(
                 Partition::from_buffer(
                     self.name(),
-                    u64::MAX,
+                    0xDEADBEEF_DEADBEEF,
                     buffer,
                     self.lru.clone(),
                     offset,
@@ -85,7 +89,7 @@ impl Table {
             partitions.push(Arc::new(
                 Partition::from_buffer(
                     self.name(),
-                    u64::MAX,
+                    0xDEADBEEF_DEADBEEF,
                     buffer,
                     self.lru.clone(),
                     offset,
@@ -94,6 +98,18 @@ impl Table {
             ));
         }
         partitions
+    }
+
+    pub fn init_column_names(&self, column_names: HashSet<String>) {
+        let mut cns = self.column_names.write().unwrap();
+        assert!(
+            cns.is_none() || (*cns).as_ref() == Some(&column_names),
+            "Inconsistent concurrent column name initialization for table {} ({:?} vs {:?})",
+            self.name,
+            cns.as_ref().unwrap(),
+            column_names,
+        );
+        *cns = Some(column_names);
     }
 
     pub fn snapshot_parts(&self, parts: &[PartitionID]) -> Vec<Arc<Partition>> {
@@ -108,80 +124,13 @@ impl Table {
         std::mem::swap(&mut *buffer, &mut *frozen_buffer);
     }
 
-    pub fn restore_tables_from_disk(
-        storage: &Storage,
-        wal_segments: Vec<WalSegment>,
-        lru: &Lru,
-    ) -> HashMap<String, Arc<Table>> {
+    pub fn restore_tables_from_disk(storage: &Storage, lru: &Lru) -> HashMap<String, Arc<Table>> {
         let mut tables = HashMap::new();
-        for partitions in storage.meta_store().read().unwrap().partitions.values() {
-            for md in partitions.values() {
-                let table = tables
-                    .entry(md.tablename.clone())
-                    .or_insert_with(|| Arc::new(Table::new(&md.tablename, lru.clone())));
-                table.insert_nonresident_partition(md);
-            }
-        }
-        let mut next_id = None;
-        for wal_segment in wal_segments {
-            if let Some(id) = next_id {
-                assert_eq!(wal_segment.id, id, "WAL segments are not contiguous");
-            }
-            next_id = Some(wal_segment.id + 1);
-            for (table_name, table_data) in wal_segment.data.into_owned().tables {
-                let rows = table_data.len;
-                let table = tables
-                    .entry(table_name.clone())
-                    .or_insert_with(|| Arc::new(Table::new(&table_name, lru.clone())));
-                let columns = table_data
-                    .columns
-                    .into_iter()
-                    .map(|(k, v)| {
-                        let col = match v.data {
-                            ColumnData::Dense(data) => {
-                                if (data.len() as u64) < rows {
-                                    InputColumn::NullableFloat(
-                                        rows,
-                                        data.into_iter()
-                                            .enumerate()
-                                            .map(|(i, v)| (i as u64, v))
-                                            .collect(),
-                                    )
-                                } else {
-                                    InputColumn::Float(data)
-                                }
-                            }
-                            ColumnData::Sparse(data) => InputColumn::NullableFloat(rows, data),
-                            ColumnData::I64(data) => {
-                                if (data.len() as u64) < rows {
-                                    InputColumn::NullableInt(
-                                        rows,
-                                        data.into_iter()
-                                            .enumerate()
-                                            .map(|(i, v)| (i as u64, v))
-                                            .collect(),
-                                    )
-                                } else {
-                                    InputColumn::Int(data)
-                                }
-                            }
-                            ColumnData::String(data) => {
-                                assert!(
-                                    (data.len() as u64) == rows,
-                                    "rows: {}, data.len(): {}",
-                                    rows,
-                                    data.len()
-                                );
-                                InputColumn::Str(data)
-                            }
-                            ColumnData::Empty => InputColumn::Null(rows as usize),
-                            ColumnData::SparseI64(data) => InputColumn::NullableInt(rows, data),
-                        };
-                        (k, col)
-                    })
-                    .collect();
-                table.ingest_homogeneous(columns);
-            }
+        for md in storage.meta_store().read().unwrap().partitions() {
+            let table = tables
+                .entry(md.tablename.clone())
+                .or_insert_with(|| Arc::new(Table::new(&md.tablename, lru.clone(), None)));
+            table.insert_nonresident_partition(md);
         }
         tables
     }
@@ -200,15 +149,9 @@ impl Table {
     }
 
     pub fn insert_nonresident_partition(&self, md: &PartitionMetadata) {
-        let partition = Arc::new(Partition::nonresident(self.name(), md, self.lru.clone()));
+        let partition = Arc::new(Partition::nonresident(md, self.lru.clone()));
         let mut partitions = self.partitions.write().unwrap();
-        let mut column_names = self.column_names.write().unwrap();
         partitions.insert(md.id, partition);
-        for col in md.column_name_to_subpartition_index.keys() {
-            if !column_names.contains(col) {
-                column_names.insert(col.clone());
-            }
-        }
         self.next_partition_id
             .fetch_max(md.id + 1, std::sync::atomic::Ordering::SeqCst);
         self.next_partition_offset
@@ -219,6 +162,12 @@ impl Table {
         log::debug!("Ingesting row: {:?}", row);
         let mut buffer = self.buffer.lock().unwrap();
         let mut column_names = self.column_names.write().unwrap();
+        let column_names = column_names.as_mut().unwrap_or_else(|| {
+            panic!(
+                "Attmpting to ingest row in table {} but column names have not been initialized",
+                self.name
+            );
+        });
         for (col, _) in &row {
             if !column_names.contains(col) {
                 column_names.insert(col.clone());
@@ -230,6 +179,12 @@ impl Table {
     pub fn ingest_homogeneous(&self, columns: HashMap<String, InputColumn>) {
         let mut buffer = self.buffer.lock().unwrap();
         let mut column_names = self.column_names.write().unwrap();
+        let column_names = column_names.as_mut().unwrap_or_else(|| {
+            panic!(
+                "Attmpting to ingest row in table {} but column names have not been initialized",
+                self.name
+            );
+        });
         for col in columns.keys() {
             if !column_names.contains(col) {
                 column_names.insert(col.clone());
@@ -241,6 +196,12 @@ impl Table {
     pub fn ingest_heterogeneous(&self, columns: HashMap<String, Vec<RawVal>>) {
         let mut buffer = self.buffer.lock().unwrap();
         let mut column_names = self.column_names.write().unwrap();
+        let column_names = column_names.as_mut().unwrap_or_else(|| {
+            panic!(
+                "Attmpting to ingest row in table {} but column names have not been initialized",
+                self.name
+            );
+        });
         for col in columns.keys() {
             if !column_names.contains(col) {
                 column_names.insert(col.clone());
@@ -321,7 +282,8 @@ impl Table {
         columns: Vec<Arc<Column>>,
         old_partitions: &[PartitionID],
     ) {
-        let (partition, keys) = Partition::new(self.name(), id, columns, self.lru.clone(), offset);
+        let (partition, keys) =
+            Partition::new(self.name(), id, columns, self.lru.clone(), false, offset);
         {
             let mut partitions = self.partitions.write().unwrap();
             for old_id in old_partitions {
@@ -373,7 +335,7 @@ impl Table {
         }
     }
 
-    pub fn heap_size_of_children(&self) -> usize {
+    pub fn heap_size_of_children(&self) -> (usize, usize) {
         let batches_size: usize = {
             let batches = self.partitions.read().unwrap();
             batches
@@ -385,7 +347,7 @@ impl Table {
             let buffer = self.buffer.lock().unwrap();
             buffer.heap_size_of_children()
         };
-        batches_size + buffer_size
+        (batches_size, buffer_size)
     }
 
     fn size_per_column(partitions: &[Arc<Partition>]) -> Vec<(String, usize)> {
@@ -401,38 +363,29 @@ impl Table {
             .collect()
     }
 
-    pub fn column_names(&self, parts: &[u64]) -> Vec<String> {
-        let partitions = self.partitions.read().unwrap();
-        let mut columns = HashSet::new();
-        for pid in parts {
-            for col in partitions[pid].col_names() {
-                columns.insert(col.clone());
-            }
-        }
-        columns.into_iter().sorted().collect()
-    }
-
-    pub fn search_column_names(&self, pattern: &str) -> Vec<String> {
-        let column_names = self.column_names.read().unwrap();
-        match regex::Regex::new(pattern) {
-            Ok(re) => column_names
-                .iter()
-                .filter(|col| re.is_match(col))
-                .cloned()
-                .sorted()
-                .collect(),
-            Err(_) => column_names
-                .iter()
-                .filter(|col| col.contains(pattern))
-                .cloned()
-                .sorted()
-                .collect(),
-        }
-    }
-
     pub fn next_partition_id(&self) -> u64 {
         self.next_partition_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn columns_names_loaded(&self) -> bool {
+        self.column_names.read().unwrap().is_some()
+    }
+
+    pub fn column_names(&self) -> HashSet<String> {
+        self.column_names
+            .read()
+            .unwrap()
+            .clone()
+            .expect("Column names have not been initialized")
+    }
+
+    pub fn new_column_names<'a, I: Iterator<Item = &'a str>>(&self, columns: I) -> Vec<String> {
+        let column_names = self.column_names();
+        columns
+            .filter(|col| !column_names.contains(*col))
+            .map(|s| s.to_string())
+            .collect()
     }
 }
 

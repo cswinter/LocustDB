@@ -238,7 +238,6 @@ async fn query(db: &LocustDB, description: &str, query: &str) {
     let response = db
         .run_query(query, false, true, vec![])
         .await
-        .unwrap()
         .unwrap();
     println!(
         "Returned {} columns with {} rows in {:?} ({} files opened, {})",

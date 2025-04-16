@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
 
+use super::colgen::event_buffer_from_raw_vals;
 use super::extractor;
 
 use self::flate2::read::GzDecoder;
@@ -200,7 +201,8 @@ where
 
         if row_num % opts.partition_size == opts.partition_size - 1 {
             let cols = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
-            ldb.ingest_heterogeneous(&opts.tablename, cols);
+            let event_buffer = event_buffer_from_raw_vals(&opts.tablename, cols);
+            ldb.ingest_efficient(event_buffer);
             ldb.trigger_wal_flush();
         }
         row_num += 1;
@@ -208,7 +210,8 @@ where
 
     if row_num % opts.partition_size != 0 {
         let cols = create_batch(&mut raw_cols, colnames, &opts.extractors, &ignore, &string);
-        ldb.ingest_heterogeneous(&opts.tablename, cols);
+        let event_buffer = event_buffer_from_raw_vals(&opts.tablename, cols);
+        ldb.ingest_efficient(event_buffer);
     }
     // ingest_heterogeneous does not write to WAL, so need to flush to ensure data is persisted as partitions
     ldb.trigger_wal_flush();
@@ -262,8 +265,8 @@ impl Task for CSVIngestionTask {
     fn completed(&self) -> bool {
         false
     }
-    fn multithreaded(&self) -> bool {
-        false
+    fn max_parallelism(&self) -> usize {
+        1
     }
 }
 

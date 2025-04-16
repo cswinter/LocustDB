@@ -10,10 +10,10 @@
     box_patterns,
     proc_macro_hygiene,
     let_chains,
-    duration_constructors
+    duration_constructors,
+    btree_cursors,
+    error_generic_member_access,
 )]
-#[macro_use]
-extern crate failure_derive;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]

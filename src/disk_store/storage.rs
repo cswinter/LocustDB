@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -20,7 +20,7 @@ impl ColumnLoader for Storage {
         partition: PartitionID,
         column_name: &str,
         perf_counter: &QueryPerfCounter,
-    ) -> Vec<Column> {
+    ) -> Option<Vec<Column>> {
         Storage::load_column(self, partition, table_name, column_name, perf_counter)
     }
 
@@ -32,6 +32,14 @@ impl ColumnLoader for Storage {
         _ldb: &crate::scheduler::InnerLocustDB,
     ) {
         todo!()
+    }
+
+    fn partition_has_been_loaded(&self, table: &str, partition: PartitionID, column: &str) -> bool {
+        Storage::partition_has_been_loaded(self, table, partition, column)
+    }
+
+    fn mark_subpartition_as_loaded(&self, table: &str, partition: PartitionID, column: &str) {
+        Storage::mark_subpartition_as_loaded(self, table, partition, column);
     }
 }
 
@@ -132,15 +140,11 @@ impl Storage {
             perf_counter.disk_read_meta_store(data.len() as u64);
             MetaStore::deserialize(&data).unwrap()
         } else {
-            MetaStore {
-                next_wal_id: 0,
-                earliest_uncommited_wal_id: 0,
-                partitions: HashMap::new(),
-            }
+            MetaStore::default()
         };
 
         let mut wal_segments = Vec::new();
-        let earliest_uncommited_wal_id = meta_store.earliest_uncommited_wal_id;
+        let earliest_uncommited_wal_id = meta_store.earliest_uncommited_wal_id();
         log::info!(
             "Recovering from wal checkpoint {}",
             earliest_uncommited_wal_id
@@ -167,10 +171,8 @@ impl Storage {
                     log::info!("Deleting wal segment {}", wal_file.display());
                 }
             } else {
+                meta_store.register_wal_segment(wal_segment.id);
                 wal_segments.push(wal_segment);
-                meta_store.next_wal_id = meta_store
-                    .next_wal_id
-                    .max(wal_segments.last().unwrap().id + 1);
                 wal_size += wal_data.len() as u64;
             }
         }
@@ -222,8 +224,7 @@ impl Storage {
     pub fn persist_wal_segment(&self, mut segment: WalSegment) -> u64 {
         {
             let mut meta_store = self.meta_store.write().unwrap();
-            segment.id = meta_store.next_wal_id;
-            meta_store.next_wal_id += 1;
+            segment.id = meta_store.add_wal_segment();
         }
         let path = self.wal_dir.join(format!("{}.wal", segment.id));
         let data = segment.serialize();
@@ -232,9 +233,8 @@ impl Storage {
         data.len() as u64
     }
 
-    pub fn uncommited_wal_ids(&self) -> Range<u64> {
-        let meta_store = self.meta_store.read().unwrap();
-        meta_store.earliest_uncommited_wal_id..meta_store.next_wal_id
+    pub fn unflushed_wal_ids(&self) -> Range<u64> {
+        self.meta_store.read().unwrap().unflushed_wal_ids()
     }
 
     pub fn persist_partitions(
@@ -252,11 +252,7 @@ impl Storage {
 
             let span_lock_meta_store = tracer.start_span("lock_meta_store");
             let mut meta_store = self.meta_store.write().unwrap();
-            meta_store
-                .partitions
-                .entry(partition.tablename.clone())
-                .or_default()
-                .insert(partition.id, partition);
+            meta_store.insert_partition(partition);
             tracer.end_span(span_lock_meta_store);
         }
 
@@ -284,21 +280,16 @@ impl Storage {
         offset: usize,
     ) -> Vec<(u64, String)> {
         log::debug!(
-            "compacting {} parititions into {} for table {}",
+            "compacting {} partitions into {} for table {}",
             old_partitions.len(),
             id,
             table
         );
 
-        let column_name_to_subpartition_index = subpartitions
-            .iter()
-            .enumerate()
-            .flat_map(|(i, cols)| {
-                cols.iter()
-                    .map(|col| col.name().to_string())
-                    .map(move |name| (name, i))
-            })
-            .collect();
+        let mut subpartitions_by_last_column = BTreeMap::new();
+        for (i, subpartition) in metadata.iter().enumerate() {
+            subpartitions_by_last_column.insert(subpartition.last_column.clone(), i);
+        }
 
         // Persist new partition files
         let partition = PartitionMetadata {
@@ -307,30 +298,14 @@ impl Storage {
             len: subpartitions[0][0].len(),
             offset,
             subpartitions: metadata,
-            column_name_to_subpartition_index,
+            subpartitions_by_last_column,
         };
         self.write_subpartitions(&partition, subpartitions, true);
 
         // Update metastore
         let mut meta_store = self.meta_store.write().unwrap();
-        let all_partitions = meta_store.partitions.get_mut(table).unwrap();
-        let to_delete: Vec<(u64, String)> = old_partitions
-            .iter()
-            .map(|id| all_partitions.remove(id).unwrap())
-            .flat_map(|partition| {
-                let id = partition.id;
-                partition
-                    .subpartitions
-                    .iter()
-                    .map(move |sb| (id, (*sb.subpartition_key).to_string()))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        meta_store
-            .partitions
-            .get_mut(table)
-            .unwrap()
-            .insert(partition.id, partition);
+        let to_delete = meta_store.delete_partitions(table, old_partitions);
+        meta_store.insert_partition(partition);
 
         to_delete
     }
@@ -356,8 +331,10 @@ impl Storage {
         let span_persist_metastore = tracer.start_span("persist_metastore");
         let span_clone_meta_store = tracer.start_span("clone_meta_store");
         {
-            self.meta_store.write().unwrap().earliest_uncommited_wal_id =
-                earliest_uncommited_wal_id;
+            self.meta_store
+                .write()
+                .unwrap()
+                .advance_earliest_unflushed_wal_id(earliest_uncommited_wal_id);
         }
         let meta_store = { self.meta_store.read().unwrap().clone() };
         tracer.end_span(span_clone_meta_store);
@@ -372,9 +349,12 @@ impl Storage {
         table_name: &str,
         column_name: &str,
         perf_counter: &QueryPerfCounter,
-    ) -> Vec<Column> {
-        let subpartition_key = self.meta_store.read().unwrap().partitions[table_name][&partition]
-            .subpartition_key(column_name);
+    ) -> Option<Vec<Column>> {
+        let subpartition_key =
+            self.meta_store
+                .read()
+                .unwrap()
+                .subpartition_key(table_name, partition, column_name)?;
         let path = self
             .tables_path
             .join(sanitize_table_name(table_name))
@@ -382,7 +362,28 @@ impl Storage {
         let data = self.writer.load(&path).unwrap();
         self.perf_counter.disk_read_partition(data.len() as u64);
         perf_counter.disk_read(data.len() as u64);
-        PartitionSegment::deserialize(&data).unwrap().columns
+        Some(PartitionSegment::deserialize(&data).unwrap().columns)
+    }
+
+    /// Checks whether a subpartition has been loaded before.
+    /// This implies that existing columns have handles, and columns without handles do not exist.
+    pub fn partition_has_been_loaded(
+        &self,
+        table: &str,
+        partition: PartitionID,
+        column: &str,
+    ) -> bool {
+        self.meta_store
+            .read()
+            .unwrap()
+            .subpartition_has_been_loaded(table, partition, column)
+    }
+
+    pub fn mark_subpartition_as_loaded(&self, table: &str, partition: PartitionID, column: &str) {
+        self.meta_store
+            .write()
+            .unwrap()
+            .mark_subpartition_as_loaded(table, partition, column);
     }
 }
 

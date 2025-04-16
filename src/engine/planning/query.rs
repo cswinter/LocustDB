@@ -321,9 +321,9 @@ impl NormalFormQuery {
                     }
                 };
                 if t.is_encoded() {
-                    Ok(t.codec.decode(compacted, &mut qp))
+                    t.codec.decode(compacted, &mut qp)
                 } else {
-                    Ok(compacted)
+                    compacted
                 }
             };
 
@@ -332,7 +332,7 @@ impl NormalFormQuery {
             {
                 if selector_index != Some(i) {
                     let decode_compacted =
-                        decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
+                        decode_compact(aggregator, aggregate, t.clone(), input_nullable);
                     let aggregator = if aggregate.tag == EncodingType::F64 {
                         match aggregator {
                             Aggregator::SumI64 => Aggregator::SumF64,
@@ -350,7 +350,7 @@ impl NormalFormQuery {
             // There is probably a simpler way to do this
             if let Some(i) = selector_index {
                 let (aggregator, aggregate, ref t, input_nullable) = aggregation_results[i];
-                let selector = decode_compact(aggregator, aggregate, t.clone(), input_nullable)?;
+                let selector = decode_compact(aggregator, aggregate, t.clone(), input_nullable);
                 aggregation_cols.insert(i, (selector, aggregator));
             }
         }

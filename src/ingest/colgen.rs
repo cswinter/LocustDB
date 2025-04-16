@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use crate::ingest::alias_method_fork::*;
 use crate::ingest::raw_val::RawVal;
+use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer, TableBuffer};
 use rand::distributions::{Alphanumeric, Standard};
 use rand::Rng;
 use rand::SeedableRng;
@@ -260,10 +263,29 @@ impl GenTable {
                 )
             })
             .collect();
-        db.ingest_heterogeneous(&self.name, cols);
+        let event_buffer = event_buffer_from_raw_vals(&self.name, cols);
+        db.ingest_efficient(event_buffer);
     }
 }
 
 fn seeded_rng(seed: u64) -> rand::XorShiftRng {
     rand::XorShiftRng::seed_from_u64(seed)
+}
+
+pub fn event_buffer_from_raw_vals(
+    table: &str,
+    columns: HashMap<String, Vec<RawVal>>,
+) -> EventBuffer {
+    let mut event_buffer = EventBuffer::default();
+    let mut table_buffer = TableBuffer::default();
+    for (colname, values) in columns {
+        table_buffer.columns.insert(
+            colname,
+            ColumnBuffer {
+                data: ColumnData::Mixed(values.into_iter().map(RawVal::into).collect()),
+            },
+        );
+    }
+    event_buffer.tables.insert(table.to_string(), table_buffer);
+    event_buffer
 }
