@@ -10,7 +10,7 @@ pub struct SimpleTracer {
 
 #[derive(Debug)]
 pub struct SimpleSpan {
-    pub name: String,
+    pub name: &'static str,
     pub duration: Duration,
     pub depth: usize,
     pub annotations: Vec<(String, String)>,
@@ -19,12 +19,11 @@ pub struct SimpleSpan {
 
 #[derive(Debug)]
 struct OpenSpan {
-    pub name: String,
+    pub name: &'static str,
     pub depth: usize,
     pub start_time: Instant,
     pub annotations: Vec<(String, String)>,
     pub children: Vec<SimpleSpan>,
-    pub self_name: &'static str,
 }
 
 pub struct SpanToken(&'static str);
@@ -33,12 +32,11 @@ impl Default for SimpleTracer {
     fn default() -> Self {
         SimpleTracer {
             open_spans: vec![OpenSpan {
-                name: "".to_string(),
+                name: "",
                 depth: 0,
                 start_time: Instant::now(),
                 annotations: Vec::new(),
                 children: Vec::new(),
-                self_name: "",
             }],
             annotations: Vec::new(),
         }
@@ -47,25 +45,20 @@ impl Default for SimpleTracer {
 
 impl SimpleTracer {
     #[must_use]
-    pub fn start_span(&mut self, full_name: &'static str) -> SpanToken {
-        let name = match self.open_spans.last() {
-            Some(span) if !span.name.is_empty() => format!("{}.{}", span.name, full_name),
-            _ => full_name.to_string(),
-        };
+    pub fn start_span(&mut self, name: &'static str) -> SpanToken {
         self.open_spans.push(OpenSpan {
             name,
             depth: self.open_spans.len() - 1,
             start_time: Instant::now(),
             annotations: Vec::new(),
             children: Vec::new(),
-            self_name: full_name,
         });
-        SpanToken(full_name)
+        SpanToken(name)
     }
 
     pub fn end_span(&mut self, span_token: SpanToken) {
         assert!(
-            self.open_spans.last().unwrap().self_name == span_token.0,
+            self.open_spans.last().unwrap().name == span_token.0,
             "Span token mismatch"
         );
         let span = self.open_spans.pop().unwrap();
@@ -122,17 +115,17 @@ impl SimpleSpan {
         }
 
         if self.children.len() > 10 {
-            let mut aggregated_spans: HashMap<String, (Duration, usize)> = HashMap::new();
+            let mut aggregated_spans: HashMap<&'static str, (Duration, usize)> = HashMap::new();
             for child in &self.children {
                 let entry = aggregated_spans
-                    .entry(child.name.clone())
+                    .entry(child.name)
                     .or_insert((Duration::ZERO, 0));
                 entry.0 += child.duration;
                 entry.1 += 1;
             }
 
             let mut agg_spans: Vec<_> = aggregated_spans.into_iter().collect();
-            agg_spans.sort_by(|a, b| a.0.cmp(&b.0));
+            agg_spans.sort_by(|a, b| a.0.cmp(b.0));
 
             for (name, (total_duration, count)) in agg_spans {
                 let duration_str = format_duration(total_duration);
