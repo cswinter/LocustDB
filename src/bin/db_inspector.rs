@@ -34,7 +34,7 @@ struct Opt {
 fn main() {
     env_logger::init();
     let opts = Opt::from_args();
-    let (storage, wal, _) = Storage::new(&opts.db_path, Arc::new(PerfCounter::default()), true);
+    let (storage, wal, _) = Storage::new(&opts.db_path, Arc::new(PerfCounter::default()), true, 1);
 
     {
         let meta = storage.meta_store().read().unwrap();
@@ -66,9 +66,7 @@ fn main() {
                     for (i, subpartition) in partition.subpartitions.iter().enumerate() {
                         println!(
                             "  Subpartition {} has last column {} ({} bytes)",
-                            i,
-                            subpartition.last_column,
-                            subpartition.size_bytes,
+                            i, subpartition.last_column, subpartition.size_bytes,
                         );
                         if opts.meta > 2 {
                             println!(

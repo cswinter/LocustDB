@@ -65,8 +65,10 @@ impl InnerLocustDB {
             Some(path) => {
                 let perf_counter = perf_counter.clone();
                 let lru = lru.clone();
+                let io_threads = opts.io_threads;
                 std::thread::spawn(move || {
-                    let (storage, wal, wal_size) = Storage::new(&path, perf_counter, false);
+                    let (storage, wal, wal_size) =
+                        Storage::new(&path, perf_counter, false, io_threads);
                     let tables = Table::restore_tables_from_disk(&storage, &lru);
 
                     (Some(Arc::new(storage)), tables, wal, wal_size)
@@ -386,8 +388,8 @@ impl InnerLocustDB {
         tracer.end_span(span_batching);
 
         // Persist new partitions
-        if let Some(s) = self.storage.as_ref() {
-            s.persist_partitions(new_partitions, &mut tracer);
+        if let Some(storage) = self.storage.as_ref() {
+            storage.persist_partitions(new_partitions, &mut tracer);
         }
 
         // Write new segments from compactions to storage and apply compaction in-memory

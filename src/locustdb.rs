@@ -233,6 +233,8 @@ pub struct Options {
     pub max_partition_length: usize,
     /// Number of parallel threads used during WAL flush table batching and compacting
     pub wal_flush_compaction_threads: usize,
+    /// Number of parallel threads used for IO operations
+    pub io_threads: usize,
     /// Internal metrics collection interval in seconds
     pub metrics_interval: u64,
     /// Internal metrics table name
@@ -254,6 +256,7 @@ impl Default for Options {
             batch_size: 1024,
             max_partition_length: 1024 * 1024,
             wal_flush_compaction_threads: 1,
+            io_threads: 1,
             metrics_interval: 15,
             metrics_table_name: Some("_metrics".to_string()),
         }

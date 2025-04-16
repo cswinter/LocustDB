@@ -108,6 +108,10 @@ struct Opt {
     #[structopt(long, default_value = "1")]
     wal_flush_compaction_threads: usize,
 
+    /// Number of parallel threads used for IO operations
+    #[structopt(long, default_value = "1")]
+    io_threads: usize,
+
     /// Internal metrics collection interval in seconds
     #[structopt(long, default_value = "15")]
     metrics_interval: u64,
@@ -144,6 +148,7 @@ fn main() {
         wal_flush_compaction_threads,
         metrics_interval,
         metrics_table_name,
+        io_threads,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -159,6 +164,7 @@ fn main() {
         batch_size,
         max_partition_length: 1024 * 1024,
         wal_flush_compaction_threads,
+        io_threads,
         metrics_interval,
         metrics_table_name,
     };
