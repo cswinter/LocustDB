@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 #[derive(Debug)]
 pub struct SimpleTracer {
     open_spans: Vec<OpenSpan>,
-    annotations: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -38,7 +37,6 @@ impl Default for SimpleTracer {
                 annotations: Vec::new(),
                 children: Vec::new(),
             }],
-            annotations: Vec::new(),
         }
     }
 }
@@ -74,7 +72,11 @@ impl SimpleTracer {
     }
 
     pub fn annotate<S: Display>(&mut self, key: &'static str, value: S) {
-        self.annotations.push((key.to_string(), value.to_string()));
+        self.open_spans
+            .last_mut()
+            .unwrap()
+            .annotations
+            .push((key.to_string(), value.to_string()));
     }
 
     pub fn summary(&self) -> String {

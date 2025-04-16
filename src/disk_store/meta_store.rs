@@ -235,8 +235,6 @@ impl MetaStore {
         let mut buf = Vec::new();
         serialize_packed::write_message(&mut buf, &builder).unwrap();
         tracer.end_span(span_message_serialization);
-        tracer.end_span(span_serialize);
-
         tracer.annotate("table_count", self.partitions.len());
         tracer.annotate("partition_count", total_partitions);
         tracer.annotate("unique_column_count", 0);
@@ -245,6 +243,7 @@ impl MetaStore {
         tracer.annotate("column_names_bytes", 0);
         tracer.annotate("compressed_column_names_bytes", 0);
         tracer.annotate("column_name_lengths_bytes", 0);
+        tracer.end_span(span_serialize);
 
         buf
     }

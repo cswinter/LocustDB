@@ -426,9 +426,9 @@ impl Storage {
                 }
             }
         }
-        tracer.end_span(span_delete_orphaned_partitions);
         tracer.annotate("table_count", table_count);
         tracer.annotate("partition_count", partition_count);
+        tracer.end_span(span_delete_orphaned_partitions);
     }
 
     pub fn persist_metastore(&self, earliest_uncommited_wal_id: u64, tracer: &mut SimpleTracer) {
