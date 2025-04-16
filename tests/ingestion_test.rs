@@ -25,6 +25,7 @@ async fn test_ingestion() {
     log::info!("Creating LocustDB at {:?}", db_path);
     let opts = locustdb::Options {
         db_path: Some(db_path),
+        io_threads: 8,
         ..locustdb::Options::default()
     };
     let port = 8888;
