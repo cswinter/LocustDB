@@ -535,6 +535,12 @@ impl InnerLocustDB {
         // - get names of all columns
         // - run query for each column, construct Column
         // - create subpartitions
+        if !table.columns_names_loaded() {
+            let column_names = self
+                .query_column_names(table.name())
+                .expect("Failed to query column names");
+            table.init_column_names(column_names.into_iter().collect());
+        }
         let colnames = table.column_names();
         let data = table.snapshot_parts(parts);
         let mut columns = Vec::with_capacity(colnames.len());
