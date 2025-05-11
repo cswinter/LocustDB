@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::executor::block_on;
+use rustyline::DefaultEditor;
 use structopt::StructOpt;
 use time::OffsetDateTime;
 
@@ -169,7 +170,7 @@ fn main() {
 
     let locustdb = locustdb::LocustDB::new(&options);
 
-    let start_time = OffsetDateTime::unix_epoch().unix_timestamp_nanos();
+    let start_time = OffsetDateTime::now_utc().unix_timestamp_nanos();
     let mut loads = Vec::new();
     let file_count = load.len();
     for file in load {
@@ -198,7 +199,7 @@ fn main() {
     if file_count > 0 {
         println!(
             "Loaded data in {:.3}.",
-            ns((OffsetDateTime::unix_epoch().unix_timestamp_nanos() - start_time) as usize)
+            ns((OffsetDateTime::now_utc().unix_timestamp_nanos() - start_time) as usize)
         );
     }
 
@@ -230,7 +231,7 @@ fn table_stats(locustdb: &LocustDB) {
 
 #[allow(clippy::cognitive_complexity)]
 fn repl(locustdb: &LocustDB) {
-    let mut rl = rustyline::Editor::<()>::new();
+    let mut rl = DefaultEditor::new().unwrap();
     rl.load_history(".locustdb_history").ok();
     while let Ok(mut s) = rl.readline("locustdb> ") {
         if let Some('\n') = s.chars().next_back() {
@@ -258,7 +259,7 @@ fn repl(locustdb: &LocustDB) {
                       ");
             continue;
         }
-        rl.add_history_entry(&s);
+        rl.add_history_entry(&s).unwrap();
 
         let mut explain = false;
         let mut show = vec![];

@@ -175,7 +175,7 @@ fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
                 ("table_id".to_string(), vf64(i as f64)),
             ];
             for c in 0..random_cols {
-                row.push((format!("col_{c}"), vf64(rng.gen::<f64>())));
+                row.push((format!("col_{c}"), vf64(rng.random::<f64>())));
             }
             log.log(table, row);
         }
@@ -228,7 +228,7 @@ async fn test_ingest_sparse_nullable() {
     for i in 0..15 {
         let mut row = vec![("row".to_string(), vf64(i as f64))];
         if i % interval == 0 {
-            let val = rng.gen::<f64>();
+            let val = rng.random::<f64>();
             vals.push(val);
             row.push(("sparse_float".to_string(), vf64(val)));
         }

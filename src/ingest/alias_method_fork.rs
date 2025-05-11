@@ -62,8 +62,8 @@ impl<RNG: Rng> AliasMethod<RNG> {
 
     /// Chooses a index.
     pub fn random(&mut self, alias_table: &AliasTable) -> usize {
-        let u = self.rng.gen::<f64>();
-        let n = self.rng.gen_range(0, alias_table.len) as usize;
+        let u = self.rng.random::<f64>();
+        let n = self.rng.random_range(0..alias_table.len) as usize;
 
         if u <= alias_table.prob[n] {
             n

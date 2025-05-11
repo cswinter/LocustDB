@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ingest::alias_method_fork::*;
 use crate::ingest::raw_val::RawVal;
 use locustdb_serialization::event_buffer::{ColumnBuffer, ColumnData, EventBuffer, TableBuffer};
-use rand::distributions::{Alphanumeric, Standard};
+use rand::distr::{Alphanumeric, StandardUniform};
 use rand::Rng;
 use rand::SeedableRng;
 
@@ -103,7 +103,7 @@ where
     fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(seed);
         let mut builder = Vec::new();
-        let mut state = rng.gen_range(0, self.elem.len());
+        let mut state = rng.random_range(0..self.elem.len());
         let p = self
             .p_transition
             .iter()
@@ -151,7 +151,7 @@ impl ColumnGenerator for UniformInteger {
         let mut rng = seeded_rng(seed);
         let mut builder = Vec::new();
         for _ in 0..length {
-            builder.push(rng.gen_range::<i64>(self.low, self.high).into());
+            builder.push(rng.random_range(self.low..self.high).into());
         }
         builder
     }
@@ -167,13 +167,9 @@ impl ColumnGenerator for Splayed {
         let mut rng = seeded_rng(partition);
         let mut builder = Vec::new();
         for _ in 0..length {
-            builder.push(
-                rng.gen_range::<i64>(
-                    self.offset + self.coefficient * length as i64 * partition as i64,
-                    self.offset + self.coefficient * length as i64 * (partition as i64 + 1),
-                )
-                .into(),
-            );
+            let from = self.offset + self.coefficient * length as i64 * partition as i64;
+            let to = from + self.coefficient * length as i64;
+            builder.push(rng.random_range(from..to).into());
         }
         builder
     }
@@ -187,7 +183,7 @@ struct PartitionSparse {
 impl ColumnGenerator for PartitionSparse {
     fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
         let mut rng = seeded_rng(seed);
-        if rng.gen::<f64>() < self.null_probability {
+        if rng.random::<f64>() < self.null_probability {
             vec![RawVal::Null; length]
         } else {
             self.generator.generate(length, seed)
@@ -201,10 +197,13 @@ struct HexString {
 
 impl ColumnGenerator for HexString {
     fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
-        let mut rng = seeded_rng(seed);
         let mut builder = Vec::new();
-        for _ in 0..length {
-            let bytes: Vec<u8> = rng.sample_iter(&Standard).take(self.length).collect();
+        for i in 0..length {
+            let rng = seeded_rng(seed + i as u64);
+            let bytes: Vec<u8> = rng
+                .sample_iter(&StandardUniform)
+                .take(self.length)
+                .collect();
             builder.push(hex::encode(&bytes).into());
         }
         builder
@@ -218,12 +217,13 @@ struct RandomString {
 
 impl ColumnGenerator for RandomString {
     fn generate(&self, length: usize, seed: u64) -> Vec<RawVal> {
-        let mut rng = seeded_rng(seed);
         let mut builder = Vec::new();
-        for _ in 0..length {
-            let len = rng.gen_range(self.min_length, self.max_length + 1);
+        for i in 0..length {
+            let mut rng = seeded_rng(seed + i as u64);
+            let len = rng.random_range(self.min_length..self.max_length + 1);
             let string: String = rng
-                .sample_iter::<char, _>(&Alphanumeric)
+                .sample_iter(&Alphanumeric)
+                .map(|c| c as char)
                 .take(len)
                 .collect();
             builder.push(string.into());
@@ -268,8 +268,8 @@ impl GenTable {
     }
 }
 
-fn seeded_rng(seed: u64) -> rand::XorShiftRng {
-    rand::XorShiftRng::seed_from_u64(seed)
+fn seeded_rng(seed: u64) -> rand_xorshift::XorShiftRng {
+    rand_xorshift::XorShiftRng::seed_from_u64(seed)
 }
 
 pub fn event_buffer_from_raw_vals(

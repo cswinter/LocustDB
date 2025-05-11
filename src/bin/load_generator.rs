@@ -50,7 +50,7 @@ async fn main() {
     } = Opt::from_args();
     let rowcount = rowcount.unwrap_or_else(Vec::new);
     let tables: Vec<_> = (0..n_tables)
-        .map(|i| format!("{table_prefix}{}_{i}", random_word::gen(random_word::Lang::En),))
+        .map(|i| format!("{table_prefix}{}_{i}", random_word::get(random_word::Lang::En),))
         .collect();
     let mut log = locustdb::logging_client::LoggingClient::new(
         Duration::from_secs(1),

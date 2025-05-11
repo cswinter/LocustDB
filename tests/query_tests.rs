@@ -1338,9 +1338,9 @@ fn test_gen_table() {
     }));
     let query = "SELECT yum, count(1) FROM test;";
     let expected_rows = vec![
-        [Str("Cashew".to_string()), Int(161_920)],
-        [Str("Hazelnut".to_string()), Int(76_356)],
-        [Str("Walnut".to_string()), Int(23_868)],
+        [Str("Cashew".to_string()), Int(161_669)],
+        [Str("Hazelnut".to_string()), Int(76_750)],
+        [Str("Walnut".to_string()), Int(23_725)],
     ];
     let result = block_on(locustdb.run_query(query, true, true, vec![]));
     assert_eq!(result.unwrap().rows.unwrap(), expected_rows);
@@ -1429,9 +1429,9 @@ fn test_long_nullable() {
 
     let query = "SELECT nullable_int, count(1) FROM test;";
     let expected_rows = vec![
-        [Null, Int(235917)],
-        [Int(-10), Int(13296)],
-        [Int(1), Int(12931)],
+        [Null, Int(236031)],
+        [Int(-10), Int(13027)],
+        [Int(1), Int(13086)],
     ];
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
     assert_eq!(result.rows.unwrap(), expected_rows);
@@ -1439,7 +1439,7 @@ fn test_long_nullable() {
     locustdb.force_flush();
     let query = "SELECT nullable_int FROM test WHERE nullable_int IS NOT NULL;";
     let result = block_on(locustdb.run_query(query, true, true, vec![])).unwrap();
-    assert_eq!(result.rows.unwrap().len(), 26227);
+    assert_eq!(result.rows.unwrap().len(), 26113);
 }
 
 #[test]
@@ -1645,11 +1645,11 @@ fn test_group_by_hexstring_string() {
     test_hex_scrambled_int(
         "SELECT hex, scrambled, count(1) AS c FROM test ORDER BY count(1) DESC LIMIT 5;",
         &[
-            [Str("000365b5ea02afce"), Str("qj"), Int(1)],
-            [Str("00039e63ed327628"), Str("Fk"), Int(1)],
-            [Str("0007c07f9d36e02f"), Str("h"), Int(1)],
-            [Str("000c761329c01138"), Str("69"), Int(1)],
-            [Str("000d9e5ae13b57b7"), Str("m"), Int(1)],
+            [Str("0012a21995668100"), Str("87"), Int(3)],
+            [Str("0013d7ef90f8ee3c"), Str("4C"), Int(3)],
+            [Str("001bd84cb20a3972"), Str("41"), Int(3)],
+            [Str("0027791904037f36"), Str("1O"), Int(3)],
+            [Str("00294a27ff621010"), Str("63"), Int(3)],
         ],
     );
 }
@@ -1659,11 +1659,11 @@ fn test_group_by_int_string() {
     test_hex_scrambled_int(
         "SELECT ints, scrambled, count(1) FROM test DESC;",
         &[
-            [Int(-10), Str("0D"), Int(1)],
-            [Int(-10), Str("0Y"), Int(1)],
-            [Int(-10), Str("0n"), Int(1)],
-            [Int(-10), Str("0t"), Int(1)],
-            [Int(-10), Str("3"), Int(1)],
+            [Int(-10), Str("07"), Int(1)],
+            [Int(-10), Str("8"), Int(1)],
+            [Int(-10), Str("1f"), Int(2)],
+            [Int(-10), Str("1y"), Int(1)],
+            [Int(-10), Str("2"), Int(1)],
         ],
     )
 }

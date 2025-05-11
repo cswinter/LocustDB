@@ -54,12 +54,12 @@ async fn main() {
         BufferFullPolicy::Block,
         None,
     );
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut random_walks = (0..5)
         .map(|i| RandomWalk {
             name: format!("{table_prefix}random_walk_{}", i),
             curr_value: 0.0,
-            interval: rng.gen_range(1, 10),
+            interval: rng.random_range(1..10),
         })
         .collect::<Vec<_>>();
     let mut interval = time::interval(Duration::from_millis(interval));
@@ -76,11 +76,11 @@ async fn main() {
         );
         for walk in random_walks.iter_mut() {
             if i % walk.interval == 0 {
-                walk.curr_value += rng.gen_range(-1.0, 1.0);
+                walk.curr_value += rng.random_range(-1.0..1.0);
                 log.log(
                     &walk.name,
                     [
-                        ("value".to_string(), vf64(walk.curr_value + rng.gen_range(-noise, noise))),
+                        ("value".to_string(), vf64(walk.curr_value + rng.random_range(-noise..noise))),
                         ("step".to_string(), AnyVal::Int((i / walk.interval) as i64 * step_interval)),
                     ]
                     .iter()

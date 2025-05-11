@@ -7,7 +7,7 @@ license-file = "../LICENSE"
 repository = "https://github.com/cswinter/locustdb"
 
 [dependencies]
-capnp = "0.19"
+capnp = "0.21"
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]

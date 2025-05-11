@@ -99,7 +99,7 @@ async fn main() {
             &format!(
                 "SELECT {} FROM {}",
                 (0..100)
-                    .map(|_| format!("col_{}", rng.gen_range(0u64, 1 << load_factor)))
+                    .map(|_| format!("col_{}", rng.random_range(0..1 << load_factor)))
                     .collect::<Vec<String>>()
                     .join(", "),
                 small_tables[2]
@@ -202,7 +202,7 @@ fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
             for table in small_tables {
                 log.log(
                     table,
-                    (0..1 << load_factor).map(|c| (format!("col_{c}"), vf64(rng.gen::<f64>()))),
+                    (0..1 << load_factor).map(|c| (format!("col_{c}"), vf64(rng.random::<f64>()))),
                 );
             }
         }
@@ -221,7 +221,7 @@ fn ingest(opts: &Opts, db: &LocustDB, small_tables: &[String]) -> u64 {
         for table in &large_tables {
             log.log(
                 table,
-                (0..n).map(|c| (format!("col_{c:06}"), vf64(rng.gen::<f64>()))),
+                (0..n).map(|c| (format!("col_{c:06}"), vf64(rng.random::<f64>()))),
             );
         }
     }
@@ -265,7 +265,7 @@ fn small_table_names(load_factor: u64) -> Vec<String> {
     let words = random_word::all(random_word::Lang::En);
     // 2^N small tables with 2^N rows and 2^N columns each
     (0..1 << load_factor)
-        .map(|i| format!("{}{i}", words[rng.gen_range(0, words.len())],))
+        .map(|i| format!("{}{i}", words[rng.random_range(0..words.len())],))
         .collect()
 }
 

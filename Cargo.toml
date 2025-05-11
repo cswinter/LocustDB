@@ -12,65 +12,66 @@ readme = "README.md"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-actix-cors = "0.6"
+actix-cors = "0.7"
 actix-web = "4"
-aliasmethod = "0.1"
+aliasmethod = "0.4"
 azure_core = { version = "0.19.0", features = ["enable_reqwest_rustls"], default-features = false }
 azure_identity = { version = "0.19.0", features = ["enable_reqwest_rustls"], default-features = false }
 azure_storage = { version = "0.19.0", features = ["enable_reqwest_rustls"], default-features = false }
 azure_storage_blobs = { version = "0.19.0", features = ["enable_reqwest_rustls"], default-features = false }
-bit-vec = "0.4"
+bit-vec = "0.8"
 blake2 = "0.10"
-byteorder = "1.2"
-capnp = "0.19"
+byteorder = "1.5"
+capnp = "0.21"
 chrono = "0.4"
-clap = "2.32"
+clap = "4.5"
 csv = "1"
 datasize = "0.2.15"
 env_logger = "0.11"
-flate2 = "1.0"
+flate2 = "1.1"
 fnv = "1.0"
 futures = "0.3"
-google-cloud-storage = { version = "0.16", features = ["rustls-tls", "auth"], default-features = false }
-hex = "0.3"
-itertools = "0.13"
-lazy_static = "1.4.0"
+google-cloud-storage = { version = "0.24", features = ["rustls-tls", "auth"], default-features = false }
+hex = "0.4"
+itertools = "0.14"
+lazy_static = "1.5.0"
 locustdb-compression-utils = {path = "./locustdb-compression-utils", version = "0.2.0"}
 locustdb-derive = {path = "./locustdb-derive", version = "0.2.2"}
 locustdb-serialization = {path = "./locustdb-serialization", version = "0.2.2"}
 log = {features = ["max_level_trace", "release_max_level_debug"], version = "0.4"}
-lru = "0.12"
+lru = "0.14"
 lz4_flex = { version = "0.11" }
 num = "0.4"
-num_cpus = "1.0"
-ordered-float = { version = "3", features = ["serde"] }
+num_cpus = "1.16"
+ordered-float = { version = "5", features = ["serde"] }
 pco = "0.4.2"
 prometheus = "0.14.0"
-pyo3 = {features = ["extension-module"], version = "0.24", optional = true}
-rand = "0.5"
-random_word = { version = "0.4", features = ["en", "fr", "de"] }
+pyo3 = {features = ["extension-module"], version = "0.24.2", optional = true}
+rand = "0.9"
+rand_xorshift = "0.4.0"
+random_word = { version = "0.5", features = ["en", "fr", "de"] }
 regex = "1"
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
-rustyline = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustyline = "15.0"
 scoped_threadpool = "0.1"
-seahash = "3.0"
+seahash = "4.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
-sqlparser = "0.38"
+sqlparser = "0.56"
 std-semaphore = "0.1"
 structopt = "0.3"
-systemstat = "0.1.8"
+systemstat = "0.2.4"
 tempfile = "3"
 tera = "1"
 thiserror = "2.0.12"
 threadpool = "1.8.1"
-time = "0.2"
+time = "0.3"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 unicode-segmentation = "1"
-unicode-width = "0.1"
-walkdir = "2.4.0"
+unicode-width = "0.2"
+walkdir = "2.5.0"
 
 [dev-dependencies]
 pretty_assertions = "1"

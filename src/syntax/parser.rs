@@ -5,7 +5,7 @@ use crate::engine::*;
 use crate::ingest::raw_val::RawVal;
 use crate::syntax::expression::Expr;
 use crate::syntax::expression::*;
-use crate::syntax::limit::*;
+use crate::syntax::limit::LimitClause;
 use crate::QueryError;
 use sqlparser::ast::{Expr as ASTNode, *};
 use sqlparser::dialect::GenericDialect;
@@ -75,8 +75,7 @@ fn get_query_components(
     let sqlparser::ast::Query {
         body,
         order_by,
-        limit,
-        offset,
+        limit_clause,
         ..
     } = *query;
     match *body {
@@ -90,7 +89,9 @@ fn get_query_components(
             // TODO: ensure other items not set
             ..
         }) => {
-            if let GroupByExpr::Expressions(exprs) = group_by && !exprs.is_empty() {
+            if let GroupByExpr::Expressions(exprs, with_mods) = group_by
+                && (!exprs.is_empty() || !with_mods.is_empty())
+            {
                 Err(QueryError::NotImplemented("Group By  (Hint: If your SELECT clause contains any aggregation expressions, results will implicitly grouped by all other expresssions.)".to_string()))
             } else if having.is_some() {
                 Err(QueryError::NotImplemented("Having".to_string()))
@@ -103,15 +104,20 @@ fn get_query_components(
             } else if !from.is_empty() && !from[0].joins.is_empty() {
                 Err(QueryError::NotImplemented("JOIN".to_string()))
             } else {
+                let (limit, offset) = match limit_clause {
+                    Some(sqlparser::ast::LimitClause::LimitOffset { limit, offset, .. }) => {
+                        (limit, offset)
+                    }
+                    _ => (None, None),
+                };
                 Ok((
                     projection,
                     from.pop().map(|t| t.relation),
                     selection,
-                    if order_by.is_empty() {
-                        None
-                    } else {
-                        Some(order_by)
-                    },
+                    order_by.and_then(|o| match o.kind {
+                        OrderByKind::Expressions(exprs) => Some(exprs),
+                        _ => None,
+                    }),
                     limit,
                     offset,
                 ))
@@ -173,7 +179,10 @@ fn get_order_by(order_by: Option<Vec<OrderByExpr>>) -> Result<Vec<(Expr, bool)>,
     let mut order = Vec::new();
     if let Some(sql_order_by_exprs) = order_by {
         for e in sql_order_by_exprs {
-            order.push((*(convert_to_native_expr(&e.expr))?, !e.asc.unwrap_or(true)));
+            order.push((
+                *(convert_to_native_expr(&e.expr))?,
+                !e.options.asc.unwrap_or(true),
+            ));
         }
     }
     Ok(order)
@@ -181,7 +190,10 @@ fn get_order_by(order_by: Option<Vec<OrderByExpr>>) -> Result<Vec<(Expr, bool)>,
 
 fn get_limit(limit: Option<ASTNode>) -> Result<u64, QueryError> {
     match limit {
-        Some(ASTNode::Value(Value::Number(int, _))) => Ok(int.parse::<u64>().unwrap()),
+        Some(ASTNode::Value(ValueWithSpan {
+            value: Value::Number(int, _),
+            ..
+        })) => Ok(int.parse::<u64>().unwrap()),
         None => Ok(u64::MAX),
         _ => Err(QueryError::NotImplemented(format!(
             "Invalid expression in limit clause: {:?}",
@@ -194,7 +206,10 @@ fn get_offset(offset: Option<Offset>) -> Result<u64, QueryError> {
     match offset {
         None => Ok(0),
         Some(offset) => match offset.value {
-            ASTNode::Value(Value::Number(rows, _)) => Ok(rows.parse::<u64>().unwrap()),
+            ASTNode::Value(ValueWithSpan {
+                value: Value::Number(rows, _),
+                ..
+            }) => Ok(rows.parse::<u64>().unwrap()),
             expr => Err(QueryError::ParseError(format!(
                 "Invalid expression in offset clause: Expected constant integer, got {:?}",
                 expr,
@@ -210,12 +225,18 @@ fn function_arg_to_expr(node: &FunctionArg) -> Result<&ASTNode, QueryError> {
             name
         ))),
         FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Ok(expr),
-        FunctionArg::Unnamed(FunctionArgExpr::Wildcard) => {
-            Err(QueryError::NotImplemented("Wildcard function arguments are not supported".to_string()))
-        }
+        FunctionArg::Unnamed(FunctionArgExpr::Wildcard) => Err(QueryError::NotImplemented(
+            "Wildcard function arguments are not supported".to_string(),
+        )),
         FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(_)) => {
-            Err(QueryError::NotImplemented("Qualified wildcard function arguments are not supported".to_string()))
+            Err(QueryError::NotImplemented(
+                "Qualified wildcard function arguments are not supported".to_string(),
+            ))
         }
+        _ => Err(QueryError::NotImplemented(format!(
+            "Function argument {:?}",
+            node
+        ))),
     }
 }
 
@@ -234,117 +255,146 @@ fn convert_to_native_expr(node: &ASTNode) -> Result<Box<Expr>, QueryError> {
             ref op,
             expr: ref expression,
         } => Expr::Func1(map_unary_operator(op)?, convert_to_native_expr(expression)?),
-        ASTNode::Value(ref literal) => Expr::Const(get_raw_val(literal)?),
+        ASTNode::Value(ValueWithSpan {
+            value: ref literal, ..
+        }) => Expr::Const(get_raw_val(literal)?),
         ASTNode::Identifier(ref identifier) => {
             Expr::ColName(strip_quotes(identifier.value.as_ref()))
         }
         ASTNode::Nested(inner) => *convert_to_native_expr(inner)?,
         ASTNode::Function(f) => match format!("{}", f.name).to_uppercase().as_ref() {
-            "TO_YEAR" => {
-                if f.args.len() != 1 {
+            "TO_YEAR" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 1 => Expr::Func1(
+                    Func1Type::ToYear,
+                    convert_to_native_expr(function_arg_to_expr(&list.args[0])?)?,
+                ),
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected one argument in TO_YEAR function".to_string(),
                     ));
                 }
-                Expr::Func1(Func1Type::ToYear, convert_to_native_expr(function_arg_to_expr(&f.args[0])?)?)
-            }
-            "REGEX" => {
-                if f.args.len() != 2 {
+            },
+            "REGEX" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 2 => Expr::Func2(
+                    Func2Type::RegexMatch,
+                    func_arg_to_native_expr(&list.args[0])?,
+                    func_arg_to_native_expr(&list.args[1])?,
+                ),
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected two arguments in regex function".to_string(),
                     ));
                 }
-                Expr::Func2(
-                    Func2Type::RegexMatch,
-                    func_arg_to_native_expr(&f.args[0])?,
-                    func_arg_to_native_expr(&f.args[1])?,
-                )
-            }
-            "LENGTH" => {
-                if f.args.len() != 1 {
+            },
+            "LENGTH" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 1 => {
+                    Expr::Func1(Func1Type::Length, func_arg_to_native_expr(&list.args[0])?)
+                }
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected one arguments in length function".to_string(),
                     ));
                 }
-                Expr::Func1(Func1Type::Length, func_arg_to_native_expr(&f.args[0])?)
-            }
-            "COUNT" => {
-                if f.args.len() != 1 {
+            },
+            "COUNT" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 1 => {
+                    Expr::Aggregate(Aggregator::Count, func_arg_to_native_expr(&list.args[0])?)
+                }
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected one argument in COUNT function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::Count, func_arg_to_native_expr(&f.args[0])?)
-            }
-            "SUM" => {
-                if f.args.len() != 1 {
+            },
+            "SUM" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 1 => {
+                    Expr::Aggregate(Aggregator::SumI64, func_arg_to_native_expr(&list.args[0])?)
+                }
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected one argument in SUM function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::SumI64, func_arg_to_native_expr(&f.args[0])?)
-            }
-            "AVG" => {
-                if f.args.len() != 1 {
+            },
+            "AVG" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 1 => Expr::Func2(
+                    Func2Type::Divide,
+                    Box::new(Expr::Aggregate(
+                        Aggregator::SumI64,
+                        func_arg_to_native_expr(&list.args[0])?,
+                    )),
+                    Box::new(Expr::Aggregate(
+                        Aggregator::Count,
+                        func_arg_to_native_expr(&list.args[0])?,
+                    )),
+                ),
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected one argument in AVG function".to_string(),
                     ));
                 }
-                Expr::Func2(
-                    Func2Type::Divide,
-                    Box::new(Expr::Aggregate(
-                        Aggregator::SumI64,
-                        func_arg_to_native_expr(&f.args[0])?,
-                    )),
-                    Box::new(Expr::Aggregate(
-                        Aggregator::Count,
-                        func_arg_to_native_expr(&f.args[0])?,
-                    )),
-                )
-            }
-            "MAX" => {
-                if f.args.len() != 1 {
+            },
+            "MAX" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 1 => {
+                    Expr::Aggregate(Aggregator::MaxI64, func_arg_to_native_expr(&list.args[0])?)
+                }
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected one argument in MAX function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::MaxI64, func_arg_to_native_expr(&f.args[0])?)
-            }
-            "MIN" => {
-                if f.args.len() != 1 {
+            },
+            "MIN" => match &f.args {
+                FunctionArguments::List(list) if list.args.len() == 1 => {
+                    Expr::Aggregate(Aggregator::MinI64, func_arg_to_native_expr(&list.args[0])?)
+                }
+                _ => {
                     return Err(QueryError::ParseError(
                         "Expected one argument in MIN function".to_string(),
                     ));
                 }
-                Expr::Aggregate(Aggregator::MinI64, func_arg_to_native_expr(&f.args[0])?)
-            }
+            },
             _ => return Err(QueryError::NotImplemented(format!("Function {:?}", f.name))),
         },
         ASTNode::IsNull(ref node) => Expr::Func1(Func1Type::IsNull, convert_to_native_expr(node)?),
         ASTNode::IsNotNull(ref node) => {
             Expr::Func1(Func1Type::IsNotNull, convert_to_native_expr(node)?)
         }
-        ASTNode::Like { negated, expr, pattern, escape_char } => {
+        ASTNode::Like {
+            negated,
+            expr,
+            pattern,
+            escape_char,
+            ..
+        } => {
             if escape_char.is_some() {
-                return Err(QueryError::NotImplemented("LIKE with escape character".to_string()));
+                return Err(QueryError::NotImplemented(
+                    "LIKE with escape character".to_string(),
+                ));
             }
             Expr::Func2(
-                if *negated { Func2Type::NotLike } else { Func2Type::Like },
+                if *negated {
+                    Func2Type::NotLike
+                } else {
+                    Func2Type::Like
+                },
                 convert_to_native_expr(expr)?,
                 convert_to_native_expr(pattern)?,
             )
         }
-        ASTNode::Floor { expr, field: DateTimeField::NoDateTime } => {
-            Expr::Func1(Func1Type::Floor, convert_to_native_expr(expr)?)
+        ASTNode::Floor { expr, .. } => Expr::Func1(Func1Type::Floor, convert_to_native_expr(expr)?),
+        _ => {
+            return Err(QueryError::NotImplemented(format!(
+                "Parsing for this ASTNode not implemented: {:?}",
+                node
+            )))
         }
-        _ => return Err(QueryError::NotImplemented(format!("Parsing for this ASTNode not implemented: {:?}", node))),
     }))
 }
 
 fn func_arg_to_native_expr(node: &FunctionArg) -> Result<Box<Expr>, QueryError> {
     convert_to_native_expr(function_arg_to_expr(node)?)
 }
-
 
 fn strip_quotes(ident: &str) -> String {
     if ident.starts_with('`') || ident.starts_with('"') {
@@ -393,9 +443,11 @@ fn get_raw_val(constant: &Value) -> Result<RawVal, QueryError> {
             if num.parse::<i64>().is_ok() {
                 Ok(RawVal::Int(num.parse::<i64>().unwrap()))
             } else {
-                Ok(RawVal::Float(ordered_float::OrderedFloat(num.parse::<f64>().unwrap())))
+                Ok(RawVal::Float(ordered_float::OrderedFloat(
+                    num.parse::<f64>().unwrap(),
+                )))
             }
-        },
+        }
         Value::SingleQuotedString(string) => Ok(RawVal::Str(string.to_string())),
         Value::Null => Ok(RawVal::Null),
         _ => Err(QueryError::NotImplemented(format!("{:?}", constant))),
