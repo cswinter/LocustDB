@@ -3,6 +3,7 @@
 
 use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std_semaphore::Semaphore;
 
@@ -18,6 +19,8 @@ pub struct DiskReadScheduler {
     reader_semaphore: Semaphore,
     lru: Lru,
     lz4_decode: bool,
+    // Maps (TableName, PartitionID) to whether a load is scheduled for that partition.
+    load_scheduled: RwLock<HashMap<(String, PartitionID), AtomicBool>>,
 
     background_load_wait_queue: Condvar,
     background_load_in_progress: Mutex<bool>,
@@ -45,6 +48,7 @@ impl DiskReadScheduler {
             lz4_decode,
             background_load_wait_queue: Condvar::default(),
             background_load_in_progress: Mutex::default(),
+            load_scheduled: RwLock::default(),
         }
     }
 
@@ -56,6 +60,19 @@ impl DiskReadScheduler {
         cols: &RwLock<HashMap<String, Arc<ColumnHandle>>>,
         perf_counter: &QueryPerfCounter,
     ) -> Option<Arc<Column>> {
+        let partition_handle = (handle.table().to_string(), handle.id());
+        if !self
+            .load_scheduled
+            .read()
+            .unwrap()
+            .contains_key(&partition_handle)
+        {
+            self.load_scheduled
+                .write()
+                .unwrap()
+                .insert(partition_handle.clone(), AtomicBool::new(false));
+        }
+
         loop {
             // Empty marker
             if handle.is_empty() {
@@ -77,9 +94,12 @@ impl DiskReadScheduler {
                 }
             // Load for column is already scheduled, wait for it to complete.
             // TODO: this doesn't do anything currently, was only used by sequential disk reads. should check whether relevant subpartition is currently being loaded.
-            } else if handle.is_load_scheduled() {
+            } else if self.is_load_scheduled(&partition_handle) {
                 let mut is_load_in_progress = self.background_load_in_progress.lock().unwrap();
-                while *is_load_in_progress && !handle.is_resident() && handle.is_load_scheduled() {
+                while *is_load_in_progress
+                    && !handle.is_resident()
+                    && self.is_load_scheduled(&partition_handle)
+                {
                     debug!("Queuing for {}.{}", handle.name(), handle.id());
                     is_load_in_progress = self
                         .background_load_wait_queue
@@ -91,6 +111,22 @@ impl DiskReadScheduler {
                 // TODO: ensure same partition isn't being loaded multiple times
                 debug!("Point lookup for {}.{}", handle.name(), handle.id());
                 let columns = {
+                    {
+                        let mut load_scheduled = self.load_scheduled.write().unwrap();
+                        if load_scheduled
+                            .get(&partition_handle)
+                            .unwrap()
+                            .load(Ordering::SeqCst)
+                        {
+                            continue;
+                        } else {
+                            load_scheduled
+                                .get_mut(&partition_handle)
+                                .unwrap()
+                                .store(true, Ordering::SeqCst);
+                        }
+                    }
+
                     let _token = self.reader_semaphore.access();
                     match self.disk_store.load_column(
                         &handle.key().table,
@@ -142,6 +178,7 @@ impl DiskReadScheduler {
                     handle.id(),
                     handle.name(),
                 );
+                self.load_scheduled.read().unwrap().get(&partition_handle).unwrap().store(false, Ordering::SeqCst);
                 match result {
                     Some(column) => return Some(column),
                     None => handle.set_empty(),
@@ -169,6 +206,15 @@ impl DiskReadScheduler {
             self.service_sequential_read(&next_read, ldb);
             self.background_load_wait_queue.notify_all();
         }
+    }
+
+    pub fn is_load_scheduled(&self, partition_key: &(String, PartitionID)) -> bool {
+        self.load_scheduled
+            .read()
+            .unwrap()
+            .get(partition_key)
+            .unwrap()
+            .load(Ordering::SeqCst)
     }
 
     fn service_sequential_read(&self, run: &DiskRun, ldb: &InnerLocustDB) {
