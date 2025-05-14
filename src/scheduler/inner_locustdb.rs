@@ -65,8 +65,10 @@ impl InnerLocustDB {
             Some(path) => {
                 let perf_counter = perf_counter.clone();
                 let lru = lru.clone();
+                let io_threads = opts.io_threads;
                 std::thread::spawn(move || {
-                    let (storage, wal, wal_size) = Storage::new(&path, perf_counter, false);
+                    let (storage, wal, wal_size) =
+                        Storage::new(&path, perf_counter, false, io_threads);
                     let tables = Table::restore_tables_from_disk(&storage, &lru);
 
                     (Some(Arc::new(storage)), tables, wal, wal_size)
@@ -330,7 +332,7 @@ impl InnerLocustDB {
     /// this function is never called concurrently.
     fn wal_flush(self: &Arc<InnerLocustDB>) {
         log::info!("Commencing WAL flush");
-        let mut tracer = SimpleTracer::new();
+        let mut tracer = SimpleTracer::default();
         let span_wal_flush = tracer.start_span("wal_flush");
 
         // Acquire wal_size lock to block creation of new WAL segments and modifications of open buffers,
@@ -386,8 +388,8 @@ impl InnerLocustDB {
         tracer.end_span(span_batching);
 
         // Persist new partitions
-        if let Some(s) = self.storage.as_ref() {
-            s.persist_partitions(new_partitions, &mut tracer);
+        if let Some(storage) = self.storage.as_ref() {
+            storage.persist_partitions(new_partitions, &mut tracer);
         }
 
         // Write new segments from compactions to storage and apply compaction in-memory
@@ -533,6 +535,12 @@ impl InnerLocustDB {
         // - get names of all columns
         // - run query for each column, construct Column
         // - create subpartitions
+        if !table.columns_names_loaded() {
+            let column_names = self
+                .query_column_names(table.name())
+                .expect("Failed to query column names");
+            table.init_column_names(column_names.into_iter().collect());
+        }
         let colnames = table.column_names();
         let data = table.snapshot_parts(parts);
         let mut columns = Vec::with_capacity(colnames.len());
