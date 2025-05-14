@@ -328,6 +328,10 @@ impl ColumnHandle {
         self.load_scheduled.load(Ordering::SeqCst)
     }
 
+    pub fn set_load_scheduled(&self, load_scheduled: bool) {
+        self.load_scheduled.store(load_scheduled, Ordering::SeqCst);
+    }
+
     pub fn key(&self) -> &ColumnLocator {
         &self.key
     }
