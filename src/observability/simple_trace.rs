@@ -97,6 +97,15 @@ impl SimpleTracer {
         }
         result
     }
+
+    pub fn push_tracer(&mut self, mut tracer: SimpleTracer) {
+        assert_eq!(self.open_spans.len(), 1);
+        self.open_spans.last_mut().unwrap().children.extend(tracer.open_spans.pop().unwrap().children);
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        self.open_spans.last().unwrap().start_time.elapsed()
+    }
 }
 
 impl SimpleSpan {
