@@ -36,6 +36,9 @@ use self::meta_store::SubpartitionMetadata;
 use self::raw_col::MixedCol;
 use self::wal_segment::WalSegment;
 
+// Table name + list of partitions
+pub type PartitionList = (String, Vec<(u64, String)>);
+
 pub struct InnerLocustDB {
     tables: RwLock<HashMap<String, Arc<Table>>>,
     lru: Lru,
@@ -551,7 +554,7 @@ impl InnerLocustDB {
         id: PartitionID,
         range: Range<usize>,
         parts: &[u64],
-    ) -> (Option<(String, Vec<(u64, String)>)>, SimpleTracer) {
+    ) -> (Option<PartitionList>, SimpleTracer) {
         // get table, create new merged partition/sub-partitions (not registered with table)
         // - get names of all columns
         // - run query for each column, construct Column
