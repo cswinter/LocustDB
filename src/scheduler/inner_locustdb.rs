@@ -416,7 +416,13 @@ impl InnerLocustDB {
             }
         }
         tracer.annotate("table_count", num_compactions);
-        tracer.annotate("partition_count", partitions_to_delete.len());
+        tracer.annotate(
+            "partition_count",
+            partitions_to_delete
+                .iter()
+                .map(|(_, p)| p.len())
+                .sum::<usize>(),
+        );
         if let Some((compaction_tracer, _)) = longest_span {
             tracer.push_tracer(compaction_tracer);
         }

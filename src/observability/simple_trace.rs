@@ -99,12 +99,24 @@ impl SimpleTracer {
     }
 
     pub fn push_tracer(&mut self, mut tracer: SimpleTracer) {
-        assert_eq!(self.open_spans.len(), 1);
-        self.open_spans.last_mut().unwrap().children.extend(tracer.open_spans.pop().unwrap().children);
+        assert_eq!(tracer.open_spans.len(), 1);
+        let mut children = tracer.open_spans.pop().unwrap().children;
+        // Set depth of children to the depth of the current span + 1
+        for child in children.iter_mut() {
+            set_depth(child, self.open_spans.len());
+        }
+        self.open_spans.last_mut().unwrap().children.extend(children);
     }
 
     pub fn elapsed(&self) -> Duration {
         self.open_spans.last().unwrap().start_time.elapsed()
+    }
+}
+
+fn set_depth(child: &mut SimpleSpan, depth: usize) {
+    child.depth = depth;
+    for child in child.children.iter_mut() {
+        set_depth(child, depth + 1);
     }
 }
 
@@ -141,9 +153,9 @@ impl SimpleSpan {
             for (name, (total_duration, count)) in agg_spans {
                 let duration_str = format_duration(total_duration);
                 if count > 1 {
-                    result.push_str(&format!("{}: {} (× {})\n", name, duration_str, count));
+                    result.push_str(&format!("{}  {}: {} (×{})\n", indent, name, duration_str, count));
                 } else {
-                    result.push_str(&format!("{}: {}\n", name, duration_str));
+                    result.push_str(&format!("{}  {}: {}\n", indent, name, duration_str));
                 }
             }
         } else {
