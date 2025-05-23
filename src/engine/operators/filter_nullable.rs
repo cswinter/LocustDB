@@ -24,7 +24,7 @@ where
         }
         for (i, (d, &select)) in data.iter().zip(filter.iter()).enumerate() {
             if select > 0 {
-                if BitVec::is_set(&&*present, i) {
+                if BitVec::is_set(&*present, i) {
                     filtered_present.set(filtered.len());
                 }
                 filtered.push(*d);
@@ -82,8 +82,8 @@ where
             }
         }
         for i in 0..data.len() {
-            if filter[i] > 0 && (&*filter_present).is_set(i) {
-                if BitVec::is_set(&&*input_present, i) {
+            if filter[i] > 0 && (*filter_present).is_set(i) {
+                if BitVec::is_set(&*input_present, i) {
                     filtered_present.set(filtered.len());
                 }
                 filtered.push(data[i]);

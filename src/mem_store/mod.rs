@@ -1,13 +1,12 @@
 pub mod codec;
 pub mod column;
-pub mod column_builder;
+pub mod column_buffer;
 pub mod floats;
 pub mod integers;
 pub(crate) mod lru;
 pub mod lz4;
 mod mixed_column;
 pub mod partition;
-pub mod raw_col;
 pub mod strings;
 pub mod table;
 pub mod tree;

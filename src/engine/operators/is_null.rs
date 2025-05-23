@@ -14,7 +14,7 @@ impl<'a> VecOperator<'a> for IsNull {
         let mut is_null = scratchpad.get_mut(self.is_null);
         if stream { is_null.clear(); }
         for i in 0..len {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 is_null.push(false as u8);
             } else {
                 is_null.push(true as u8);
@@ -52,7 +52,7 @@ impl<'a> VecOperator<'a> for IsNotNull {
         let mut is_not_null = scratchpad.get_mut(self.is_not_null);
         if stream { is_not_null.clear(); }
         for i in 0..len {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 is_not_null.push(true as u8);
             } else {
                 is_not_null.push(false as u8);

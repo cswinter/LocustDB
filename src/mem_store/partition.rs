@@ -20,6 +20,7 @@ pub struct ColumnLocator {
     pub column: String,
 }
 
+#[derive(Debug)]
 pub struct Partition {
     pub id: PartitionID,
     table_name: String,
@@ -47,23 +48,28 @@ impl Partition {
         let mut keys = Vec::with_capacity(cols.len());
         let len = cols[0].len();
         let total_size_bytes = cols.iter().map(|c| c.heap_size_of_children()).sum();
-        let cols = cols
-            .into_iter()
-            .map(|c| {
-                keys.push((id, c.name().to_string()));
-                (
-                    c.name().to_string(),
-                    Arc::new(ColumnHandle::resident(table, id, c)),
-                )
-            })
-            .collect();
+        let mut columns: HashMap<String, Arc<ColumnHandle>> = HashMap::default();
+        for c in cols {
+            let name = c.name().to_string();
+            keys.push((id, name.clone()));
+            let column = Arc::new(ColumnHandle::resident(table, id, c));
+            assert!(
+                column.try_get().as_ref().unwrap().len() == len,
+                "Expected column \"{}\" to have length {} but got {} (column: {:?})",
+                name,
+                len,
+                column.try_get().as_ref().unwrap().len(),
+                column,
+            );
+            columns.insert(name, column);
+        }
         (
             Partition {
                 id,
                 table_name: table.to_string(),
                 range: offset..(offset + len),
                 total_size_bytes,
-                cols: RwLock::new(cols),
+                cols: RwLock::new(columns),
                 lru,
                 ephemeral,
             },
@@ -101,7 +107,18 @@ impl Partition {
             buffer
                 .buffer
                 .into_iter()
-                .map(|(name, raw_col)| raw_col.finalize(&name))
+                .map(|(name, raw_col)| {
+                    let orig_len = raw_col.len();
+                    let finalized = raw_col.finalize(&name);
+                    assert!(
+                        orig_len == finalized.len(),
+                        "Column {} has length {} but {} after finalization",
+                        name,
+                        orig_len,
+                        finalized.len()
+                    );
+                    finalized
+                })
                 .collect(),
             lru,
             true,
@@ -254,6 +271,7 @@ impl Partition {
     }
 }
 
+#[derive(Debug)]
 pub struct ColumnHandle {
     // Table, Partition, Subpartition
     key: ColumnLocator,

@@ -15,7 +15,7 @@ impl<'a, T: VecData<T> + 'a, U: GenericIntVec<U>> VecOperator<'a> for CompactWit
         // Remove all unmodified entries
         let mut j = 0;
         for (i, &s) in select.iter().take(data.len()).enumerate() {
-            if s > U::zero() && (&*select_present).is_set(i) {
+            if s > U::zero() && (*select_present).is_set(i) {
                 data[j] = data[i];
                 j += 1;
             }

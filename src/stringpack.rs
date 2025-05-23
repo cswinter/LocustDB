@@ -1,7 +1,11 @@
 use std::str;
 
-#[derive(Default)]
+use datasize::DataSize;
+
+#[derive(Default, Clone, Debug, DataSize)]
 pub struct IndexedPackedStrings {
+    // each element stores a pointer and length into the `backing_store`
+    // the pointer is in the upper 40 bits, and the length is in the lower 24 bits
     data: Vec<u64>,
     backing_store: Vec<u8>,
 }

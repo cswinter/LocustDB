@@ -707,7 +707,7 @@ impl<'a> QueryExecutor<'a> {
                         if let Some(present) = scratchpad.try_get_null_map(output) {
                             print!("  null map: ");
                             for i in 0..cmp::min(present.len() * 8, 100) {
-                                if (&*present).is_set(i) {
+                                if (*present).is_set(i) {
                                     print!("1")
                                 } else {
                                     print!("0")

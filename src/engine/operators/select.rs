@@ -56,7 +56,7 @@ impl<'a, T: 'a> VecOperator<'a> for SelectNullable<T> where T: VecData<T> {
         }
         for (i, &index) in indices.iter().enumerate() {
             data_out.push(data[index]);
-            if (&*present).is_set(index) { present_out.set(i) }
+            if (*present).is_set(index) { present_out.set(i) }
         }
         Ok(())
     }

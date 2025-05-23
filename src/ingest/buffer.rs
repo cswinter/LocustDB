@@ -1,14 +1,15 @@
+use datasize::DataSize;
 use ordered_float::OrderedFloat;
 
 use crate::ingest::input_column::InputColumn;
 use crate::ingest::raw_val::RawVal;
-use crate::mem_store::raw_col::MixedCol;
+use crate::mem_store::column_buffer::ColumnBuffer;
 use std::cmp;
 use std::collections::HashMap;
 
-#[derive(PartialEq, Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, DataSize)]
 pub struct Buffer {
-    pub buffer: HashMap<String, MixedCol>,
+    pub buffer: HashMap<String, ColumnBuffer>,
     pub length: usize,
 }
 
@@ -19,8 +20,8 @@ impl Buffer {
             let buffered_col = self
                 .buffer
                 .entry(name)
-                .or_insert_with(|| MixedCol::with_nulls(len));
-            buffered_col.push(input_val);
+                .or_insert_with(|| ColumnBuffer::null(len));
+            buffered_col.push_val(input_val);
         }
         self.length += 1;
         self.extend_to_largest();
@@ -33,22 +34,26 @@ impl Buffer {
             let buffered_col = self
                 .buffer
                 .entry(name)
-                .or_insert_with(|| MixedCol::with_nulls(len));
+                .or_insert_with(|| ColumnBuffer::null(len));
             match input_col {
-                InputColumn::Int(vec) => buffered_col.push_ints(vec),
-                InputColumn::Str(vec) => buffered_col.push_strings(vec),
-                InputColumn::Float(vec) => buffered_col.push_floats(vec),
+                InputColumn::Int(vec) => buffered_col.push_ints(vec, None),
+                InputColumn::Str(vec) => {
+                    buffered_col.push_strings(vec.iter().map(|s| s.as_str()), None)
+                }
+                InputColumn::Float(vec) => {
+                    buffered_col.push_floats(vec.into_iter().map(OrderedFloat), None)
+                }
                 InputColumn::Null(c) => buffered_col.push_nulls(c),
                 InputColumn::Mixed(vec) => {
                     for val in vec {
-                        buffered_col.push(val);
+                        buffered_col.push_val(val);
                     }
                 }
                 InputColumn::NullableFloat(c, data) => {
                     let mut next_i = 0;
                     for (i, f) in data {
                         buffered_col.push_nulls((i - next_i) as usize);
-                        buffered_col.push(RawVal::Float(OrderedFloat(f)));
+                        buffered_col.push_val(RawVal::Float(OrderedFloat(f)));
                         next_i = i + 1;
                     }
                     buffered_col.push_nulls((c - next_i) as usize);
@@ -57,28 +62,27 @@ impl Buffer {
                     let mut next_i = 0;
                     for (i, f) in data {
                         buffered_col.push_nulls((i - next_i) as usize);
-                        buffered_col.push(RawVal::Int(f));
+                        buffered_col.push_val(RawVal::Int(f));
                         next_i = i + 1;
                     }
                     buffered_col.push_nulls((c - next_i) as usize);
                 }
             }
+            assert!(buffered_col.len() > self.length);
+            assert!(new_length == 0 || new_length == buffered_col.len());
             new_length = cmp::max(new_length, buffered_col.len())
         }
+        assert!(new_length > self.length);
         self.length = new_length;
         self.extend_to_largest();
     }
 
     pub fn push_untyped_cols(&mut self, columns: HashMap<String, Vec<RawVal>>) {
-        let len = self.len();
         let mut new_length = 0;
         for (name, input_vals) in columns {
-            let buffered_col = self
-                .buffer
-                .entry(name)
-                .or_insert_with(|| MixedCol::with_nulls(len));
+            let buffered_col = self.buffer.entry(name).or_default();
             for input_val in input_vals {
-                buffered_col.push(input_val);
+                buffered_col.push_val(input_val);
             }
             new_length = cmp::max(new_length, buffered_col.len())
         }
@@ -98,16 +102,6 @@ impl Buffer {
 
     pub fn len(&self) -> usize {
         self.length
-    }
-
-    pub fn heap_size_of_children(&self) -> usize {
-        self.buffer
-            .values()
-            .map(|v| {
-                // Currently does not take into account the memory of String.
-                v.heap_size_of_children()
-            })
-            .sum()
     }
 
     pub fn filter(&self, columns: &[String]) -> Buffer {

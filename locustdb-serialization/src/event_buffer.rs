@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::AnyVal;
 use crate::default_reader_options;
@@ -11,10 +12,77 @@ pub struct EventBuffer {
 
 #[derive(Default, Clone, Debug)]
 pub struct TableBuffer {
-    pub len: u64,
-    pub columns: HashMap<String, ColumnBuffer>,
+    len: u64,
+    columns: HashMap<String, ColumnBuffer>,
 }
 
+impl TableBuffer {
+    pub fn new(columns: HashMap<String, ColumnBuffer>) -> Self {
+        let len = columns.values().map(|c| c.data.len()).max().unwrap_or(0) as u64;
+        assert!(
+            columns
+                .values()
+                .all(|c| c.data.len() == len as usize || matches!(c.data, ColumnData::Empty)),
+            "All columns must have the same length"
+        );
+        Self { len, columns }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len as usize
+    }
+
+    pub fn insert(&mut self, column_name: String, column: ColumnBuffer) {
+        if self.len == 0 {
+            self.len = column.data.len() as u64;
+        } else if self.len != column.data.len() as u64 {
+            panic!(
+                "Column {} has length {} but table has length {}",
+                column_name,
+                column.data.len(),
+                self.len
+            );
+        }
+        self.columns.insert(column_name, column);
+    }
+
+    pub fn push_row_and_timestamp<Row: IntoIterator<Item = (String, AnyVal)>>(
+        &mut self,
+        row: Row,
+    ) -> usize {
+        let time_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as f64
+            / 1000.0;
+        let mut cols = 0;
+        let mut timestamp_provided = false;
+        for (column_name, value) in row {
+            self.columns
+                .entry(column_name.to_string())
+                .or_default()
+                .push(value, self.len);
+            timestamp_provided |= column_name == "timestamp";
+            cols += 1;
+        }
+        if !timestamp_provided {
+            self.columns
+                .entry("timestamp".to_string())
+                .or_default()
+                .push(AnyVal::Float(time_millis), self.len);
+        }
+        self.len += 1;
+        cols
+    }
+
+    pub fn columns(&self) -> impl Iterator<Item = (&String, &ColumnBuffer)> {
+        self.columns.iter()
+    }
+
+    pub fn into_columns(self) -> HashMap<String, ColumnBuffer> {
+        self.columns
+    }
+}
 #[derive(Default, Clone, Debug)]
 pub struct ColumnBuffer {
     pub data: ColumnData,
@@ -164,6 +232,13 @@ impl EventBuffer {
                 .reborrow()
                 .init_columns(table.columns.len() as u32);
             for (j, (colname, column)) in table.columns.iter().enumerate() {
+                assert!(
+                    column.data.len() == table.len as usize || column.data.len() == 0,
+                    "Column {} has length {} but table has length {}",
+                    colname,
+                    column.data.len(),
+                    table.len,
+                );
                 let mut column_builder = columns.reborrow().get(j as u32);
                 column_builder.set_name(colname);
                 match &column.data {

@@ -1,6 +1,7 @@
 use std::fmt;
 use std::mem;
 
+use datasize::DataSize;
 use locustdb_serialization::api::AnyVal;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -117,6 +118,17 @@ impl From<RawVal> for AnyVal {
             RawVal::Float(f) => AnyVal::Float(f.0),
             RawVal::Str(s) => AnyVal::Str(s),
             RawVal::Null => AnyVal::Null,
+        }
+    }
+}
+
+impl DataSize for RawVal {
+    const IS_DYNAMIC: bool = true;
+    const STATIC_HEAP_SIZE: usize = 0;
+    fn estimate_heap_size(&self) -> usize {
+        match *self {
+            RawVal::Str(ref s) => s.capacity() * mem::size_of::<u8>(),
+            RawVal::Int(_) | RawVal::Float(_) | RawVal::Null => 0,
         }
     }
 }

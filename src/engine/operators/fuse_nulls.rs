@@ -15,7 +15,7 @@ impl<'a> VecOperator<'a> for FuseNullsI64 {
         let mut fused = scratchpad.get_mut(self.fused);
         if stream { fused.clear(); }
         for i in 0..input.len() {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 fused.push(input[i]);
             } else {
                 fused.push(I64_NULL);
@@ -91,7 +91,7 @@ impl<'a> VecOperator<'a> for FuseNullsStr<'a> {
         let mut fused = scratchpad.get_mut(self.fused);
         if stream { fused.clear(); }
         for i in 0..input.len() {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 fused.push(Some(input[i]));
             } else {
                 fused.push(None);
@@ -176,7 +176,7 @@ impl<'a, T: GenericIntVec<T>> VecOperator<'a> for FuseIntNulls<T> {
         let mut fused = scratchpad.get_mut(self.fused);
         if stream { fused.clear(); }
         for i in 0..input.len() {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 fused.push(input[i] + self.offset);
             } else {
                 fused.push(T::zero());
@@ -266,7 +266,7 @@ impl<'a> VecOperator<'a> for FuseNullsF64 {
         let mut fused = scratchpad.get_mut(self.fused);
         if stream { fused.clear(); }
         for i in 0..input.len() {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 fused.push(input[i]);
             } else {
                 fused.push(F64_NULL);

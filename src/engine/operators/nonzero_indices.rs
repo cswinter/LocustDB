@@ -54,7 +54,7 @@ impl<'a, T: GenericIntVec<T> + CastUsize, U: GenericIntVec<U>> VecOperator<'a> f
         let mut unique = scratchpad.get_mut(self.output);
         if stream { unique.clear(); }
         for (index, &n) in input.iter().enumerate() {
-            if n > T::zero() && (&*input_present).is_set(index) {
+            if n > T::zero() && (*input_present).is_set(index) {
                 unique.push(U::from(index).unwrap() + U::from(self.offset).unwrap());
             }
         }

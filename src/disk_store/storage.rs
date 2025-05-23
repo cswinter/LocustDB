@@ -170,7 +170,7 @@ impl Storage {
                 "Found wal segment {} with id {} and {} rows in {} tables",
                 wal_file.display(),
                 wal_segment.id,
-                wal_segment.data.tables.values().map(|t| t.len).sum::<u64>(),
+                wal_segment.data.tables.values().map(|t| t.len()).sum::<usize>(),
                 wal_segment.data.tables.len(),
             );
             if wal_segment.id < earliest_uncommited_wal_id {

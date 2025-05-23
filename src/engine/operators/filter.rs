@@ -73,7 +73,7 @@ where
             filtered.clear();
         }
         for i in 0..data.len() {
-            if filter[i] > 0 && (&*present).is_set(i) {
+            if filter[i] > 0 && (*present).is_set(i) {
                 filtered.push(data[i]);
             }
         }
