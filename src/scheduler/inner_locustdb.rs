@@ -625,6 +625,10 @@ impl InnerLocustDB {
                         decoded.cast_ref_str().iter().copied(),
                         Some(decoded.cast_ref_null_map()),
                     ),
+                    crate::engine::data_types::EncodingType::NullableI64 => builder.push_ints(
+                        decoded.cast_ref_i64().iter().cloned(),
+                        Some(decoded.cast_ref_null_map()),
+                    ),
                     _ => panic!(
                         "Unsupported encoding type for add: {:?}",
                         decoded.get_type()
