@@ -397,14 +397,9 @@ impl InnerLocustDB {
         let span_compaction = tracer.start_span("compaction");
         let (tx, rx) = mpsc::channel();
         let num_compactions = compactions.len();
-        let mut skipped = 0;
         for (table, id, range, parts) in compactions {
             let tx = tx.clone();
             let this = self.clone();
-            if table.name() == "sdfasdfTestTable" {
-                skipped += 1;
-                continue;
-            }
             self.walflush_threadpool.execute(move || {
                 let (to_delete, tracer) = this.compact(table, id, range, &parts);
                 tx.send((to_delete, tracer)).unwrap();
@@ -412,7 +407,7 @@ impl InnerLocustDB {
         }
         let mut partitions_to_delete = vec![];
         let mut longest_span: Option<(SimpleTracer, Duration)> = None;
-        for (to_delete, tracer) in rx.iter().take(num_compactions - skipped) {
+        for (to_delete, tracer) in rx.iter().take(num_compactions) {
             if let Some(to_delete) = to_delete {
                 partitions_to_delete.push(to_delete);
             }
@@ -579,17 +574,21 @@ impl InnerLocustDB {
         let data = table.snapshot_parts(parts);
         tracer.end_span(span_snapshot_partitions);
 
-        let span_load_columns = tracer.start_span("load_columns");
+        let span_build_columns = tracer.start_span("build_columns");
         let mut columns = Vec::with_capacity(colnames.len());
         let query_perf_counter = QueryPerfCounter::new();
         for column in &colnames {
             let mut builder = crate::mem_store::column_buffer::ColumnBuffer::default();
             for part in &data {
+                let span_load_columns = tracer.start_span("load_column");
                 let cols = part.get_cols(
                     &[column.clone()].into(),
                     self.disk_read_scheduler(),
                     &query_perf_counter,
                 );
+                tracer.end_span(span_load_columns);
+
+
                 let col = if cols.is_empty() {
                     let len = part.range().len();
                     Arc::new(Column::null(column, len)) as Arc<dyn DataSource>
@@ -603,7 +602,11 @@ impl InnerLocustDB {
                     cols.into_values().next().unwrap()
                 };
 
+                let span_decode = tracer.start_span("decode");
                 let decoded = col.decode();
+                tracer.end_span(span_decode);
+
+                let span_push = tracer.start_span("push");
                 match decoded.get_type() {
                     crate::engine::data_types::EncodingType::F64 => {
                         builder.push_floats(decoded.cast_ref_f64().iter().cloned(), None)
@@ -634,6 +637,7 @@ impl InnerLocustDB {
                         decoded.get_type()
                     ),
                 }
+                tracer.end_span(span_push);
             }
 
             assert_eq!(
@@ -649,7 +653,7 @@ impl InnerLocustDB {
             columns.push(builder.finalize(column));
             tracer.end_span(span_finalize_column);
         }
-        tracer.end_span(span_load_columns);
+        tracer.end_span(span_build_columns);
 
         let span_subpartition = tracer.start_span("subpartition");
         let (metadata, subpartitions) = subpartition(&self.opts, columns.clone());
