@@ -41,6 +41,10 @@ struct Opt {
     #[structopt(long, name = "WAL_SIZE", default_value = "16777216")]
     max_wal_size_bytes: u64,
 
+    /// Maximum number of WAL files before triggering compaction
+    #[structopt(long, name = "MAX_WAL_FILES", default_value = "1000")]
+    max_wal_files: usize,
+
     /// Maximum size of partition files in bytes
     #[structopt(long, name = "PART_SIZE", default_value = "8388608")]
     max_partition_size_bytes: u64,
@@ -150,6 +154,7 @@ fn main() {
         metrics_interval,
         metrics_table_name,
         io_threads,
+        max_wal_files,
     } = Opt::from_args();
 
     let options = locustdb::Options {
@@ -160,6 +165,7 @@ fn main() {
         mem_lz4,
         readahead: readahead * 1024 * 1024,
         max_wal_size_bytes,
+        max_wal_files,
         max_partition_size_bytes,
         partition_combine_factor,
         batch_size,

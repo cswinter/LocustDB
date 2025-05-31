@@ -50,7 +50,7 @@ pub struct Storage {
     meta_db_path: PathBuf,
     tables_path: PathBuf,
     meta_store: Arc<RwLock<MetaStore>>,
-    writer: Box<dyn BlobWriter + Send + Sync + 'static>,
+    writer: Arc<dyn BlobWriter + Send + Sync + 'static>,
     perf_counter: Arc<PerfCounter>,
 
     io_threadpool: Option<ThreadPool>,
@@ -107,16 +107,17 @@ impl Storage {
             } else {
                 (Box::new(FileBlobWriter::new()), path.to_owned())
             };
-        let writer = Box::new(VersionedChecksummedBlobWriter::new(writer));
+        let writer = Arc::new(VersionedChecksummedBlobWriter::new(writer));
         let meta_db_path = path.join("meta");
         let wal_dir = path.join("wal");
         let tables_path = path.join("tables");
         let (meta_store, wal_segments, wal_size) = Storage::recover(
-            writer.as_ref(),
+            writer.clone(),
             &meta_db_path,
             &wal_dir,
             readonly,
-            perf_counter.as_ref(),
+            perf_counter.clone(),
+            io_threads,
         );
         let meta_store = Arc::new(RwLock::new(meta_store));
         (
@@ -139,11 +140,12 @@ impl Storage {
     }
 
     fn recover(
-        writer: &dyn BlobWriter,
+        writer: Arc<dyn BlobWriter>,
         meta_db_path: &Path,
         wal_dir: &Path,
         readonly: bool,
-        perf_counter: &PerfCounter,
+        perf_counter: Arc<PerfCounter>,
+        io_threads: usize,
     ) -> (MetaStore, Vec<WalSegment<'static>>, u64) {
         let mut meta_store: MetaStore = if writer.exists(meta_db_path).unwrap() {
             let data = writer.load(meta_db_path).unwrap();
@@ -153,40 +155,57 @@ impl Storage {
             MetaStore::default()
         };
 
-        let mut wal_segments = Vec::new();
         let earliest_uncommited_wal_id = meta_store.earliest_uncommited_wal_id();
         log::info!(
             "Recovering from wal checkpoint {}",
             earliest_uncommited_wal_id
         );
         let wal_files = writer.list(wal_dir).unwrap();
+        let num_wal_files = wal_files.len();
         log::info!("Found {} wal segments", wal_files.len());
-        let mut wal_size = 0;
+
+        let threadpool = ThreadPool::new(io_threads.min(wal_files.len()));
+        let (tx, rx) = mpsc::channel();
         for wal_file in wal_files {
-            let wal_data = writer.load(&wal_file).unwrap();
-            perf_counter.disk_read_wal(wal_data.len() as u64);
-            let wal_segment = WalSegment::deserialize(&wal_data).unwrap();
-            log::info!(
-                "Found wal segment {} with id {} and {} rows in {} tables",
-                wal_file.display(),
-                wal_segment.id,
-                wal_segment.data.tables.values().map(|t| t.len()).sum::<usize>(),
-                wal_segment.data.tables.len(),
-            );
-            if wal_segment.id < earliest_uncommited_wal_id {
-                if readonly {
-                    log::info!("Skipping wal segment {}", wal_file.display());
-                } else {
-                    writer.delete(&wal_file).unwrap();
-                    log::info!("Deleting wal segment {}", wal_file.display());
-                }
-            } else {
-                meta_store.register_wal_segment(wal_segment.id);
-                wal_segments.push(wal_segment);
-                wal_size += wal_data.len() as u64;
-            }
+            let tx = tx.clone();
+            let writer = writer.clone();
+            let perf_counter = perf_counter.clone();
+            threadpool.execute(move || {
+                let wal_data = writer.load(&wal_file).unwrap();
+                perf_counter.disk_read_wal(wal_data.len() as u64);
+                let wal_segment = WalSegment::deserialize(&wal_data).unwrap();
+                log::info!(
+                    "Found wal segment {} with id {} and {} rows in {} tables",
+                    wal_file.display(),
+                    wal_segment.id,
+                    wal_segment
+                        .data
+                        .tables
+                        .values()
+                        .map(|t| t.len())
+                        .sum::<usize>(),
+                    wal_segment.data.tables.len(),
+                );
+                tx.send((wal_file, wal_segment, wal_data.len() as u64)).unwrap();
+            });
         }
 
+        let mut wal_size = 0;
+        let mut wal_segments = Vec::new();
+        for (path, wal_segment, size) in rx.iter().take(num_wal_files) {
+                if wal_segment.id < earliest_uncommited_wal_id {
+                    if readonly {
+                        log::info!("Skipping wal segment {}", path.display());
+                    } else {
+                        writer.delete(&path).unwrap();
+                        log::info!("Deleting wal segment {}", path.display());
+                    }
+                } else {
+                    meta_store.register_wal_segment(wal_segment.id);
+            wal_size += size;
+            wal_segments.push(wal_segment);
+                }
+        }
         wal_segments.sort_by_key(|s| s.id);
 
         (meta_store, wal_segments, wal_size)

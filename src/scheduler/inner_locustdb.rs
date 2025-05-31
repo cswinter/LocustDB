@@ -839,7 +839,19 @@ impl InnerLocustDB {
         while self.running.load(Ordering::SeqCst) {
             let wal_size = { *wal_size.lock().unwrap() };
             let pending_wal_flushes = mem::take(&mut *pending_wal_flushes_mutex.lock().unwrap());
-            if wal_size > self.opts.max_wal_size_bytes || !pending_wal_flushes.is_empty() {
+            let too_many_wal_files = match self.storage.as_ref() {
+                Some(storage) => {
+                    let unflushed_wal_ids =
+                        storage.meta_store().read().unwrap().unflushed_wal_ids();
+                    let wal_file_count = (unflushed_wal_ids.end - unflushed_wal_ids.start) as usize;
+                    wal_file_count > self.opts.max_wal_files
+                }
+                None => false,
+            };
+            if wal_size > self.opts.max_wal_size_bytes
+                || !pending_wal_flushes.is_empty()
+                || too_many_wal_files
+            {
                 self.wal_flush();
                 for sender in pending_wal_flushes {
                     let _ = sender.send(());
