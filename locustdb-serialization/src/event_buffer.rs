@@ -232,13 +232,6 @@ impl EventBuffer {
                 .reborrow()
                 .init_columns(table.columns.len() as u32);
             for (j, (colname, column)) in table.columns.iter().enumerate() {
-                assert!(
-                    column.data.len() == table.len as usize || column.data.len() == 0,
-                    "Column {} has length {} but table has length {}",
-                    colname,
-                    column.data.len(),
-                    table.len,
-                );
                 let mut column_builder = columns.reborrow().get(j as u32);
                 column_builder.set_name(colname);
                 match &column.data {
