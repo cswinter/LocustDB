@@ -164,7 +164,7 @@ impl Storage {
         let num_wal_files = wal_files.len();
         log::info!("Found {} wal segments", wal_files.len());
 
-        let threadpool = ThreadPool::new(io_threads.min(wal_files.len()));
+        let threadpool = ThreadPool::new(io_threads.min(wal_files.len()).max(1));
         let (tx, rx) = mpsc::channel();
         for wal_file in wal_files {
             let tx = tx.clone();
