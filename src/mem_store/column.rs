@@ -132,10 +132,10 @@ impl Column {
             self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);
             trace!("lz4_decode after: {:?}", self);
         }
-        if let Some(CodecOp::Pco(decoded_type, ..)) = self.codec.ops().first().copied() {
+        if let Some(CodecOp::Pco(decoded_type, length, ..)) = self.codec.ops().first().copied() {
             trace!("lz4_decode before: {:?}", self);
             self.codec = self.codec.without_pco();
-            self.data[0] = self.data[0].pco_decode(decoded_type);
+            self.data[0] = self.data[0].pco_decode(decoded_type, length);
             trace!("lz4_decode after: {:?}", self);
         }
     }
@@ -462,7 +462,7 @@ impl DataSection {
         }
     }
 
-    pub fn pco_decode(&self, decoded_type: EncodingType) -> DataSection {
+    pub fn pco_decode(&self, decoded_type: EncodingType, length: usize) -> DataSection {
         match self {
             DataSection::Pco { data, is_fp32, .. } => match decoded_type {
                 EncodingType::U8 => DataSection::U8(
@@ -482,13 +482,19 @@ impl DataSection {
                 EncodingType::U32 => DataSection::U32(simple_decompress(data).unwrap()),
                 EncodingType::U64 => DataSection::U64(simple_decompress(data).unwrap()),
                 EncodingType::I64 => DataSection::I64(simple_decompress(data).unwrap()),
-                EncodingType::F64 if *is_fp32 => DataSection::F64(
-                    simple_decompress::<f32>(data)
-                        .unwrap()
-                        .into_iter()
-                        .map(|v| OrderedFloat(v as f64))
-                        .collect(),
-                ),
+                EncodingType::F64 if *is_fp32 => match simple_decompress::<f32>(data) {
+                    Ok(decompressed) => DataSection::F64(
+                        decompressed
+                            .into_iter()
+                            .map(|v| OrderedFloat(v as f64))
+                            .collect(),
+                    ),
+                    Err(e) => {
+                        log::error!("Error decompressing PCO f32 data section: {:?}", e);
+                        log::error!("PCO data section (hex): {:02x?}", data);
+                        DataSection::F64(vec![OrderedFloat(0.0); length])
+                    }
+                },
                 EncodingType::F64 if !is_fp32 => DataSection::F64(unsafe {
                     std::mem::transmute::<Vec<f64>, Vec<of64>>(
                         simple_decompress::<f64>(data).unwrap(),
@@ -736,26 +742,24 @@ fn decode<'a>(codec: &Codec, sections: &[&'a dyn Data<'a>]) -> BoxedData<'a> {
                 }
                 Box::new(output) as BoxedData
             }
-            CodecOp::LZ4(encoding_type, count) => {
-                match encoding_type {
-                    EncodingType::U8 => {
-                        let mut decoded = vec![0; *count];
-                        lz4::decode::<u8>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
-                        Box::new(decoded) as BoxedData
-                    }
-                    EncodingType::I64 => {
-                        let mut decoded = vec![0; *count];
-                        lz4::decode::<i64>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
-                        Box::new(decoded)
-                    }
-                    EncodingType::F64 => {
-                        let mut decoded = vec![0.0; *count];
-                        lz4::decode::<f64>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
-                        Box::new(vec_f64_to_vec_of64(decoded))
-                    }
-                    other => panic!("Unsupported encoding type for CodecOp::LZ4: {:?}", other),
+            CodecOp::LZ4(encoding_type, count) => match encoding_type {
+                EncodingType::U8 => {
+                    let mut decoded = vec![0; *count];
+                    lz4::decode::<u8>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
+                    Box::new(decoded) as BoxedData
                 }
-            }
+                EncodingType::I64 => {
+                    let mut decoded = vec![0; *count];
+                    lz4::decode::<i64>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
+                    Box::new(decoded)
+                }
+                EncodingType::F64 => {
+                    let mut decoded = vec![0.0; *count];
+                    lz4::decode::<f64>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
+                    Box::new(vec_f64_to_vec_of64(decoded))
+                }
+                other => panic!("Unsupported encoding type for CodecOp::LZ4: {:?}", other),
+            },
             CodecOp::Pco(encoding_type, _, is_fp32) => {
                 let encoded_data = arg0.cast_ref_u8();
                 match encoding_type {
