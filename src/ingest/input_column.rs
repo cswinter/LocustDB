@@ -5,6 +5,7 @@ use crate::Value;
 pub enum InputColumn {
     Int(Vec<i64>),
     Float(Vec<f64>),
+    // (Length, [(Index, Value)])
     NullableFloat(u64, Vec<(u64, f64)>),
     NullableInt(u64, Vec<(u64, i64)>),
     Str(Vec<String>),
@@ -56,6 +57,18 @@ impl InputColumn {
             ColumnData::Mixed(data) => {
                 InputColumn::Mixed(data.into_iter().map(|v| v.into()).collect())
             }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            InputColumn::Int(data) => data.len(),
+            InputColumn::Float(data) => data.len(),
+            InputColumn::Str(data) => data.len(),
+            InputColumn::NullableFloat(rows, _) => *rows as usize,
+            InputColumn::NullableInt(rows, _) => *rows as usize,
+            InputColumn::Mixed(data) => data.len(),
+            InputColumn::Null(rows) => *rows,
         }
     }
 }

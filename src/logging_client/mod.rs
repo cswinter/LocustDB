@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use locustdb_serialization::api::{
     AnyVal, Column, ColumnNameRequest, ColumnNameResponse, EncodingOpts, MultiQueryRequest,
@@ -128,11 +128,6 @@ impl LoggingClient {
     }
 
     pub fn log<Row: IntoIterator<Item = (String, AnyVal)>>(&mut self, table: &str, row: Row) {
-        let time_millis = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as f64
-            / 1000.0;
         let mut warncount = 0;
         loop {
             if self.buffer_size.load(std::sync::atomic::Ordering::SeqCst) as usize
@@ -157,25 +152,9 @@ impl LoggingClient {
         }
         let mut events = self.events.lock().unwrap();
         let table = events.tables.entry(table.to_string()).or_default();
-        let mut timestamp_provided = false;
-        for (column_name, value) in row {
-            self.buffer_size
-                .fetch_add(8, std::sync::atomic::Ordering::SeqCst);
-            table
-                .columns
-                .entry(column_name.to_string())
-                .or_default()
-                .push(value, table.len);
-            timestamp_provided |= column_name == "timestamp";
-        }
-        if !timestamp_provided {
-            table
-                .columns
-                .entry("timestamp".to_string())
-                .or_default()
-                .push(AnyVal::Float(time_millis), table.len);
-        }
-        table.len += 1;
+        let cols = table.push_row_and_timestamp(row);
+        self.buffer_size
+            .fetch_add(8 * cols as u64, std::sync::atomic::Ordering::SeqCst);
         self.total_events += 1;
     }
 
@@ -260,11 +239,7 @@ impl BackgroundWorker {
         }
         log::info!(
             "Creating request data for {} events",
-            buffer
-                .tables
-                .values()
-                .map(|t| t.columns.values().next().map(|c| c.data.len()).unwrap_or(0))
-                .sum::<usize>()
+            buffer.tables.values().map(|t| t.len()).sum::<usize>()
         );
         self.buffer_size
             .store(0, std::sync::atomic::Ordering::SeqCst);

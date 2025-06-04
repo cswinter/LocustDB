@@ -31,7 +31,7 @@ impl BitVec for Vec<u8> {
     }
 }
 
-impl BitVec for &'_ [u8] {
+impl BitVec for [u8] {
     fn is_set(&self, index: usize) -> bool {
         let slot = index >> 3;
         slot < self.len() && self[slot] & (1 << (index as u8 & 7)) > 0

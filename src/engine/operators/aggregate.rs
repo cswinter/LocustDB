@@ -266,7 +266,7 @@ where
         }
 
         for i in 0..nums.len() {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 let g = grouping[i].cast_usize();
                 accumulators[g] = A::accumulate(accumulators[g], nums[i]);
                 accumulators_present.set(g);
@@ -411,7 +411,7 @@ where
 
         let mut any_overflow = false;
         for i in 0..nums.len() {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 let g = grouping[i].cast_usize();
                 let (result, overflow) = A::accumulate_checked(accumulators[g], nums[i]);
                 any_overflow |= overflow;

@@ -358,7 +358,7 @@ async fn insert_bin(data: web::Data<AppState>, req_body: Bytes) -> impl Responde
     };
     log::info!(
         "Received request data for {} events",
-        events.tables.values().map(|t| t.len).sum::<u64>()
+        events.tables.values().map(|t| t.len()).sum::<usize>()
     );
     data.db.ingest_efficient(events).await;
     HttpResponse::Ok().json(r#"{"status": "ok"}"#)

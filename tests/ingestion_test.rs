@@ -1,7 +1,7 @@
 use actix_web::dev::ServerHandle;
 use locustdb::logging_client::BufferFullPolicy;
 use locustdb_serialization::api::any_val_syntax::vf64;
-use locustdb_serialization::api::Column;
+use locustdb_serialization::api::{AnyVal, Column};
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
@@ -28,7 +28,7 @@ async fn test_ingestion() {
         io_threads: 8,
         ..locustdb::Options::default()
     };
-    let port = 8888;
+    let port = 8895;
     let (db, handle) = create_locustdb(&opts, port);
 
     let tables = (0..20)
@@ -36,7 +36,7 @@ async fn test_ingestion() {
         .collect::<Vec<String>>();
 
     let mut total_rows = 0;
-    ingest(total_rows, 127, 10, &tables);
+    ingest(total_rows, 127, 10, &tables, port);
     total_rows += 127;
     log::info!("completed ingestion");
 
@@ -50,7 +50,7 @@ async fn test_ingestion() {
         assert_eq!(
             id_sum.rows.unwrap(),
             vec![[
-                Float(i as f64),
+                Int(i as i64),
                 Float((total_rows * (total_rows - 1) / 2) as f64),
                 Int(total_rows as i64)
             ],]
@@ -98,7 +98,7 @@ async fn test_ingestion() {
 
         let start_time = Instant::now();
         let new_rows = 21 + 11 * i;
-        ingest(total_rows, new_rows, i, &tables);
+        ingest(total_rows, new_rows, i, &tables, port);
         log::info!("Ingested {} rows in {:?}", new_rows, start_time.elapsed());
 
         let start_time = Instant::now();
@@ -138,6 +138,41 @@ async fn test_ingestion() {
     }
 }
 
+// Need multiple threads since dropping logging client blocks main thread and prevents logging worker from flushing buffers
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_simple_ingestion() {
+    let _ = env_logger::try_init();
+
+    let db_path: PathBuf = tempdir().unwrap().path().into();
+    log::info!("Creating LocustDB at {:?}", db_path);
+    let opts = locustdb::Options {
+        db_path: Some(db_path),
+        io_threads: 8,
+        ..locustdb::Options::default()
+    };
+    let port = 8888;
+    let (mut db, mut handle) = create_locustdb(&opts, port);
+
+    let tables = ["TestTable".to_string()];
+    let mut total_rows = 0;
+    ingest_simple(total_rows, 1, &tables[0]);
+    total_rows += 1;
+
+    for i in 0..10 {
+        handle.stop(true).await;
+        drop(db);
+        (db, handle) = create_locustdb(&opts, port);
+        ingest_simple(total_rows, 3, &tables[0]);
+        total_rows += 3;
+        test_simple_db(&db, total_rows, &tables[0]).await;
+        if i % 3 == 0 {
+            db.force_flush();
+        }
+    }
+
+    test_simple_db(&db, total_rows, &tables[0]).await;
+}
+
 async fn test_db(db: &LocustDB, nrow: usize, tables: &[String]) {
     for (i, table) in tables.iter().enumerate() {
         let id_sum = query(
@@ -149,7 +184,7 @@ async fn test_db(db: &LocustDB, nrow: usize, tables: &[String]) {
         assert_eq!(
             id_sum.rows.unwrap(),
             vec![[
-                Float(i as f64),
+                Int(i as i64),
                 Float((nrow * (nrow - 1) / 2) as f64),
                 Int(nrow as i64)
             ],]
@@ -157,13 +192,49 @@ async fn test_db(db: &LocustDB, nrow: usize, tables: &[String]) {
     }
 }
 
-fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
-    let start_time = Instant::now();
-    log::info!("Ingesting {rows} rows into {} tables", tables.len());
+async fn test_simple_db(db: &LocustDB, nrow: usize, table: &String) {
+    let id_sum = query(
+        db,
+        &format!("SELECT table_id, SUM(row), COUNT(1) FROM {}", table),
+    )
+    .await;
+
+    assert_eq!(
+        id_sum.rows.unwrap(),
+        vec![[
+            Int(1),
+            Float((nrow * (nrow - 1) / 2) as f64),
+            Int(nrow as i64)
+        ],]
+    );
+}
+
+fn ingest_simple(offset: usize, rows: usize, table: &str) {
     let addr = "http://localhost:8888";
     let mut log = locustdb::logging_client::LoggingClient::new(
         Duration::from_secs(1),
         addr,
+        64 * (1 << 20),
+        BufferFullPolicy::Block,
+        None,
+    );
+    for row in 0..rows {
+        let row = vec![
+            ("table_id".to_string(), AnyVal::Int(1)),
+            ("row".to_string(), vf64((row + offset) as f64)),
+            ("name".to_string(), AnyVal::Str(table.to_string())),
+        ];
+        log.log(table, row);
+    }
+}
+
+fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String], port: u16) {
+    let start_time = Instant::now();
+    log::info!("Ingesting {rows} rows into {} tables", tables.len());
+    let addr = format!("http://localhost:{port}");
+    let mut log = locustdb::logging_client::LoggingClient::new(
+        Duration::from_secs(1),
+        &addr,
         64 * (1 << 20),
         BufferFullPolicy::Block,
         None,
@@ -173,7 +244,7 @@ fn ingest(offset: usize, rows: usize, random_cols: usize, tables: &[String]) {
         for (i, table) in tables.iter().enumerate() {
             let mut row = vec![
                 ("row".to_string(), vf64((row + offset) as f64)),
-                ("table_id".to_string(), vf64(i as f64)),
+                ("table_id".to_string(), AnyVal::Int(i as i64)),
             ];
             for c in 0..random_cols {
                 row.push((format!("col_{c}"), vf64(rng.random::<f64>())));

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::data_types::*;
 use crate::mem_store::*;
+use crate::stringpack::StringPackerIterator;
 
 #[derive(Serialize, Deserialize)]
 pub struct Column {
@@ -24,8 +25,12 @@ pub trait DataSource: fmt::Debug + Sync + Send {
     fn range(&self) -> Option<(i64, i64)>;
     fn codec(&self) -> Codec;
     fn len(&self) -> usize;
-    fn data_sections(&self) -> Vec<&dyn Data>;
+    fn data_sections<'a>(&'a self) -> Vec<&'a dyn Data<'a>>;
     fn full_type(&self) -> Type;
+
+    fn decode<'a>(&'a self) -> BoxedData<'a> {
+        decode(&self.codec(), &self.data_sections())
+    }
 }
 
 impl<T: DataSource> DataSource for Arc<T> {
@@ -127,10 +132,10 @@ impl Column {
             self.data[0] = self.data[0].lz4_decode(decoded_type, self.len);
             trace!("lz4_decode after: {:?}", self);
         }
-        if let Some(CodecOp::Pco(decoded_type, ..)) = self.codec.ops().first().copied() {
+        if let Some(CodecOp::Pco(decoded_type, length, ..)) = self.codec.ops().first().copied() {
             trace!("lz4_decode before: {:?}", self);
             self.codec = self.codec.without_pco();
-            self.data[0] = self.data[0].pco_decode(decoded_type);
+            self.data[0] = self.data[0].pco_decode(decoded_type, length);
             trace!("lz4_decode after: {:?}", self);
         }
     }
@@ -457,7 +462,7 @@ impl DataSection {
         }
     }
 
-    pub fn pco_decode(&self, decoded_type: EncodingType) -> DataSection {
+    pub fn pco_decode(&self, decoded_type: EncodingType, length: usize) -> DataSection {
         match self {
             DataSection::Pco { data, is_fp32, .. } => match decoded_type {
                 EncodingType::U8 => DataSection::U8(
@@ -477,13 +482,19 @@ impl DataSection {
                 EncodingType::U32 => DataSection::U32(simple_decompress(data).unwrap()),
                 EncodingType::U64 => DataSection::U64(simple_decompress(data).unwrap()),
                 EncodingType::I64 => DataSection::I64(simple_decompress(data).unwrap()),
-                EncodingType::F64 if *is_fp32 => DataSection::F64(
-                    simple_decompress::<f32>(data)
-                        .unwrap()
-                        .into_iter()
-                        .map(|v| OrderedFloat(v as f64))
-                        .collect(),
-                ),
+                EncodingType::F64 if *is_fp32 => match simple_decompress::<f32>(data) {
+                    Ok(decompressed) => DataSection::F64(
+                        decompressed
+                            .into_iter()
+                            .map(|v| OrderedFloat(v as f64))
+                            .collect(),
+                    ),
+                    Err(e) => {
+                        log::error!("Error decompressing PCO f32 data section: {:?}", e);
+                        log::error!("PCO data section (hex): {:02x?}", data);
+                        DataSection::F64(vec![OrderedFloat(0.0); length])
+                    }
+                },
                 EncodingType::F64 if !is_fp32 => DataSection::F64(unsafe {
                     std::mem::transmute::<Vec<f64>, Vec<of64>>(
                         simple_decompress::<f64>(data).unwrap(),
@@ -568,4 +579,245 @@ impl From<Vec<OrderedFloat<f64>>> for DataSection {
         assert_eq!(vec.len(), vec.capacity());
         DataSection::F64(vec)
     }
+}
+
+fn decode<'a>(codec: &Codec, sections: &[&'a dyn Data<'a>]) -> BoxedData<'a> {
+    let mut section_stack: Vec<BoxedData<'a>> = vec![sections[0].slice_box(0, sections[0].len())];
+    for codec_op in codec.ops() {
+        let arg0 = section_stack.first().unwrap();
+        let decoded = match codec_op {
+            CodecOp::Nullable => {
+                let present = section_stack.pop().unwrap();
+                let mut data = section_stack.pop().unwrap();
+                data.make_nullable(present.cast_ref_u8())
+            }
+            CodecOp::Add(encoding_type, value) => match encoding_type {
+                EncodingType::U8 => Box::new(
+                    arg0.cast_ref_u8()
+                        .iter()
+                        .map(|&v| v as i64 + value)
+                        .collect::<Vec<_>>(),
+                ),
+                EncodingType::U16 => Box::new(
+                    arg0.cast_ref_u16()
+                        .iter()
+                        .map(|&v| v as i64 + value)
+                        .collect::<Vec<_>>(),
+                ),
+                EncodingType::U32 => Box::new(
+                    arg0.cast_ref_u32()
+                        .iter()
+                        .map(|&v| v as i64 + value)
+                        .collect::<Vec<_>>(),
+                ),
+                _ => panic!(
+                    "Unsupported encoding type for CodecOp::Add: {:?}",
+                    encoding_type
+                ),
+            },
+            CodecOp::Delta(encoding_type) => match encoding_type {
+                EncodingType::U8 => {
+                    let mut decoded = Vec::with_capacity(arg0.len());
+                    let deltas = arg0.cast_ref_u8();
+                    let mut current = 0;
+                    for delta in deltas {
+                        current += *delta as i64;
+                        decoded.push(current);
+                    }
+                    Box::new(decoded)
+                }
+                EncodingType::U16 => {
+                    let mut decoded = Vec::with_capacity(arg0.len());
+                    let deltas = arg0.cast_ref_u16();
+                    let mut current = 0;
+                    for delta in deltas {
+                        current += *delta as i64;
+                        decoded.push(current);
+                    }
+                    Box::new(decoded)
+                }
+                EncodingType::U32 => {
+                    let mut decoded = Vec::with_capacity(arg0.len());
+                    let deltas = arg0.cast_ref_u32();
+                    let mut current = 0;
+                    for delta in deltas {
+                        current += *delta as i64;
+                        decoded.push(current);
+                    }
+                    Box::new(decoded)
+                }
+                EncodingType::I64 => {
+                    let mut decoded = Vec::with_capacity(arg0.len());
+                    let deltas = arg0.cast_ref_i64();
+                    let mut current = 0;
+                    for delta in deltas {
+                        current += *delta;
+                        decoded.push(current);
+                    }
+                    Box::new(decoded)
+                }
+                _ => panic!(
+                    "Unsupported encoding type for CodecOp::Delta: {:?}",
+                    encoding_type
+                ),
+            },
+            CodecOp::ToI64(encoding_type) => match encoding_type {
+                EncodingType::U8 => Box::new(
+                    arg0.cast_ref_u8()
+                        .iter()
+                        .map(|&v| v as i64)
+                        .collect::<Vec<_>>(),
+                ),
+                EncodingType::U16 => Box::new(
+                    arg0.cast_ref_u16()
+                        .iter()
+                        .map(|&v| v as i64)
+                        .collect::<Vec<_>>(),
+                ),
+                EncodingType::U32 => Box::new(
+                    arg0.cast_ref_u32()
+                        .iter()
+                        .map(|&v| v as i64)
+                        .collect::<Vec<_>>(),
+                ),
+                _ => panic!(
+                    "Unsupported encoding type for CodecOp::ToI64: {:?}",
+                    encoding_type
+                ),
+            },
+            CodecOp::PushDataSection(index) => {
+                let data_section = sections[*index].slice_box(0, sections[*index].len());
+                section_stack.push(data_section);
+                continue;
+            }
+            CodecOp::DictLookup(encoding_type) => {
+                let dict_data = section_stack.pop().unwrap();
+                // TODO: make lifetimes work out
+                let dict_data =
+                    unsafe { std::mem::transmute::<&[u8], &[u8]>(dict_data.cast_ref_u8()) };
+                let string_ranges = section_stack.pop().unwrap();
+                let string_ranges = string_ranges.cast_ref_u64();
+                let indices: Vec<usize> = match encoding_type {
+                    EncodingType::U8 => section_stack
+                        .pop()
+                        .unwrap()
+                        .cast_ref_u8()
+                        .iter()
+                        .map(|i| *i as usize)
+                        .collect(),
+                    EncodingType::U16 => section_stack
+                        .pop()
+                        .unwrap()
+                        .cast_ref_u16()
+                        .iter()
+                        .map(|i| *i as usize)
+                        .collect(),
+                    EncodingType::U32 => section_stack
+                        .pop()
+                        .unwrap()
+                        .cast_ref_u32()
+                        .iter()
+                        .map(|i| *i as usize)
+                        .collect(),
+                    EncodingType::I64 => section_stack
+                        .pop()
+                        .unwrap()
+                        .cast_ref_i64()
+                        .iter()
+                        .map(|i| *i as usize)
+                        .collect(),
+                    _ => panic!(
+                        "Unexpected encoding type for CodecOp::DictLookup: {:?}",
+                        encoding_type
+                    ),
+                };
+                let mut output = Vec::new();
+                for i in indices.iter() {
+                    let offset_len = string_ranges[*i];
+                    let offset = (offset_len >> 24) as usize;
+                    let len = (offset_len & 0x00ff_ffff) as usize;
+                    let string =
+                        unsafe { str::from_utf8_unchecked(&dict_data[offset..(offset + len)]) };
+                    output.push(string);
+                }
+                Box::new(output) as BoxedData
+            }
+            CodecOp::LZ4(encoding_type, count) => match encoding_type {
+                EncodingType::U8 => {
+                    let mut decoded = vec![0; *count];
+                    lz4::decode::<u8>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
+                    Box::new(decoded) as BoxedData
+                }
+                EncodingType::I64 => {
+                    let mut decoded = vec![0; *count];
+                    lz4::decode::<i64>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
+                    Box::new(decoded)
+                }
+                EncodingType::F64 => {
+                    let mut decoded = vec![0.0; *count];
+                    lz4::decode::<f64>(&mut lz4::decoder(arg0.cast_ref_u8()), &mut decoded);
+                    Box::new(vec_f64_to_vec_of64(decoded))
+                }
+                other => panic!("Unsupported encoding type for CodecOp::LZ4: {:?}", other),
+            },
+            CodecOp::Pco(encoding_type, _, is_fp32) => {
+                let encoded_data = arg0.cast_ref_u8();
+                match encoding_type {
+                    EncodingType::U8 => {
+                        let decoded = simple_decompress::<u32>(encoded_data).unwrap();
+                        Box::new(decoded.iter().map(|&x| x as u8).collect::<Vec<_>>()) as BoxedData
+                    }
+                    EncodingType::U16 => {
+                        let decoded = simple_decompress::<u32>(encoded_data).unwrap();
+                        Box::new(decoded.iter().map(|&x| x as u16).collect::<Vec<_>>())
+                    }
+                    EncodingType::U32 => {
+                        let decoded = simple_decompress::<u32>(encoded_data).unwrap();
+                        Box::new(decoded)
+                    }
+                    EncodingType::U64 => {
+                        let decoded = simple_decompress::<u64>(encoded_data).unwrap();
+                        Box::new(decoded)
+                    }
+                    EncodingType::I64 => {
+                        let decoded = simple_decompress::<i64>(encoded_data).unwrap();
+                        Box::new(decoded)
+                    }
+                    EncodingType::F64 => {
+                        if *is_fp32 {
+                            let decoded = simple_decompress::<f32>(encoded_data).unwrap();
+                            Box::new(
+                                decoded
+                                    .iter()
+                                    .map(|&v| OrderedFloat(v as f64))
+                                    .collect::<Vec<_>>(),
+                            )
+                        } else {
+                            let decoded = simple_decompress::<f64>(encoded_data).unwrap();
+                            Box::new(decoded.iter().map(|&v| OrderedFloat(v)).collect::<Vec<_>>())
+                        }
+                    }
+                    encoding_type => panic!(
+                        "Unsupported encoding type for CodecOp::Pco: {:?}",
+                        encoding_type
+                    ),
+                }
+            }
+            CodecOp::UnpackStrings => {
+                let mut output = Vec::new();
+                let packed: &'a [u8] = sections[0].cast_ref_u8();
+                let iterator = unsafe { StringPackerIterator::from_slice(packed) };
+                for str in iterator {
+                    output.push(str);
+                }
+                Box::new(output) as BoxedData
+            }
+            CodecOp::UnhexpackStrings(_, _) => todo!(),
+            CodecOp::Unknown => todo!(),
+        };
+        section_stack.pop();
+        section_stack.push(decoded);
+    }
+
+    section_stack.pop().unwrap()
 }

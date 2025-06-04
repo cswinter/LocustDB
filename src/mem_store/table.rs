@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::sync::{Mutex, RwLock};
 
+use datasize::DataSize;
 use itertools::Itertools;
 
 use crate::disk_store::storage::Storage;
@@ -330,7 +331,7 @@ impl Table {
                 .map(|partition| partition.heap_size_of_children())
                 .sum(),
             buffer_length: buffer.len(),
-            buffer_bytes: buffer.heap_size_of_children(),
+            buffer_bytes: buffer.estimate_heap_size(),
             size_per_column,
         }
     }
@@ -345,7 +346,7 @@ impl Table {
         };
         let buffer_size = {
             let buffer = self.buffer.lock().unwrap();
-            buffer.heap_size_of_children()
+            buffer.estimate_heap_size()
         };
         (batches_size, buffer_size)
     }

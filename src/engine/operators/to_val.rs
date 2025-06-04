@@ -60,7 +60,7 @@ impl<'a, T: VecData<T> + Cast<Val<'a>> + 'a> VecOperator<'a> for NullableToVal<'
         let mut vals = scratchpad.get_mut(self.vals);
         if stream { vals.clear(); }
         for i in 0..input.len() {
-            if (&*present).is_set(i) {
+            if (*present).is_set(i) {
                 vals.push(input[i].cast());
             } else {
                 vals.push(Val::Null);

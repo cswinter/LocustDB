@@ -279,7 +279,7 @@ pub fn event_buffer_from_raw_vals(
     let mut event_buffer = EventBuffer::default();
     let mut table_buffer = TableBuffer::default();
     for (colname, values) in columns {
-        table_buffer.columns.insert(
+        table_buffer.insert(
             colname,
             ColumnBuffer {
                 data: ColumnData::Mixed(values.into_iter().map(RawVal::into).collect()),

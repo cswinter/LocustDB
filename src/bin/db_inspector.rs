@@ -97,9 +97,9 @@ fn main() {
                     );
                     if opts.wal > 2 {
                         for (name, table) in &segment.data.as_ref().tables {
-                            println!("  Table {} has {} columns", name, table.columns.len());
+                            println!("  Table {} has {} columns", name, table.columns().count());
                             if opts.wal > 3 {
-                                for col in &table.columns {
+                                for (col, _) in table.columns() {
                                     println!("    {:?}", col);
                                 }
                             }

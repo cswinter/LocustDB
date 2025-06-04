@@ -275,7 +275,7 @@ impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for NullableCheckedBinaryOperator<LH
         let mut any_overflow = false;
         for (i, (l, r)) in lhs.iter().zip(rhs.iter()).enumerate() {
             let (result, overflow) = Op::perform_checked(*l, *r);
-            any_overflow |= overflow && (&*present).is_set(i);
+            any_overflow |= overflow && (*present).is_set(i);
             output.push(result);
         }
         if any_overflow { Err(QueryError::Overflow) } else { Ok(()) }
@@ -321,7 +321,7 @@ impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for NullableCheckedBinaryVSOperator<
         let mut any_overflow = false;
         for (i, &l) in lhs.iter().enumerate() {
             let (result, overflow) = Op::perform_checked(l, rhs);
-            any_overflow |= overflow && (&*present).is_set(i);
+            any_overflow |= overflow && (*present).is_set(i);
             output.push(result);
         }
         if any_overflow { Err(QueryError::Overflow) } else { Ok(()) }
@@ -367,7 +367,7 @@ impl<'a, LHS, RHS, Out, Op> VecOperator<'a> for NullableCheckedBinarySVOperator<
         let mut any_overflow = false;
         for (i, &r) in rhs.iter().enumerate() {
             let (result, overflow) = Op::perform_checked(lhs, r);
-            any_overflow |= overflow && (&*present).is_set(i);
+            any_overflow |= overflow && (*present).is_set(i);
             output.push(result);
         }
         if any_overflow { Err(QueryError::Overflow) } else { Ok(()) }

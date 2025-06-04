@@ -26,7 +26,7 @@ impl<'a> VecOperator<'a> for NullVecLike {
                 let mut count = 0;
                 let (data, present) = scratchpad.get_nullable(self.input.nullable_u8());
                 for (i, d) in data.iter().enumerate() {
-                    if *d != 0 && BitVec::is_set(&&*present, i) {
+                    if *d != 0 && BitVec::is_set(&*present, i) {
                         count += 1;
                     }
                 }

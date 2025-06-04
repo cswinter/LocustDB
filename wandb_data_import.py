@@ -17,6 +17,7 @@ runs = api.runs(f"{entity}/{project}", {
 
 print("Starting...")
 i = 0
+logger = locustdb.Client(url="http://localhost:8080")
 while True:
     try:
         run = next(runs)
@@ -33,7 +34,7 @@ while True:
     for row in run.history(pandas=False):
         clean_row = {k: v or 0.0 for k, v in row.items() if not isinstance(v, dict) and not isinstance(v, str)}
         # print(clean_row)
-        locustdb.log(table=run.name, metrics=clean_row)
+        logger.log(table="gb_9a43be3e-"+run.name, metrics=clean_row)
         rows += 1
     print(f"Logged {rows} rows")
     i += 1

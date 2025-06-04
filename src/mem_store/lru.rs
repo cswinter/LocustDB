@@ -2,7 +2,7 @@ use crate::mem_store::partition::ColumnLocator;
 use lru::LruCache;
 use std::sync::{Arc, Mutex};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Lru {
     cache: Arc<Mutex<LruCache<ColumnLocator, ()>>>,
 }

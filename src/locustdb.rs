@@ -223,6 +223,8 @@ pub struct Options {
     pub readahead: usize,
     /// Maximum size of WAL in bytes before triggering compaction
     pub max_wal_size_bytes: u64,
+    /// Maximum number of WAL files before triggering compaction
+    pub max_wal_files: usize,
     /// Maximum size of partition
     pub max_partition_size_bytes: u64,
     /// Combine partitions when the size of every original partition is less than this factor of the combined partition size
@@ -251,6 +253,7 @@ impl Default for Options {
             mem_lz4: true,
             readahead: 256 * 1024 * 1024,              // 256 MiB
             max_wal_size_bytes: 64 * 1024 * 1024,      // 64 MiB
+            max_wal_files: 1000,
             max_partition_size_bytes: 8 * 1024 * 1024, // 8 MiB
             partition_combine_factor: 4,
             batch_size: 1024,
