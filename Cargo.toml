@@ -44,7 +44,7 @@ lz4_flex = { version = "0.11" }
 num = "0.4"
 num_cpus = "1.16"
 ordered-float = { version = "5", features = ["serde"] }
-pco = "0.4.2"
+pco = "0.4.6"
 prometheus = "0.14.0"
 pyo3 = {features = ["extension-module"], version = "0.24.2", optional = true}
 rand = "0.9"

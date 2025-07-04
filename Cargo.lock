@@ -2017,7 +2017,7 @@ dependencies = [
  "num",
  "num_cpus",
  "ordered-float",
- "pco 0.4.2",
+ "pco 0.4.6",
  "pretty_assertions",
  "prometheus",
  "pyo3",
@@ -2392,9 +2392,9 @@ dependencies = [
 
 [[package]]
 name = "pco"
-version = "0.4.2"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adf5479ea1e9deceb7f0c07bc776ac6ecfea0eb0c708b11b7bfd07fec7f41ef1"
+checksum = "ab068b64f2c6f074cbdcafc80ebd83a27da92a3848deba2fabc21eba6691fc65"
 dependencies = [
  "better_io",
  "dtype_dispatch",
