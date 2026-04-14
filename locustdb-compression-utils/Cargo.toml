@@ -16,7 +16,7 @@ pco = "0.2.3"
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
-rand = { version = "0.8.5", features = ["small_rng"] }
+rand = { version = "0.9.3", features = ["small_rng"] }
 pretty_assertions = "1"
 
 [profile.release]
